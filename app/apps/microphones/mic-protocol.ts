@@ -168,7 +168,41 @@ export type MicStatus = {
   framesEmitted: number;
   /** The rate actually in effect (16 kHz on current firmware). */
   effectiveRateHz: number;
+  /** Tap diagnostics; absent from firmware that sends only the 21-byte body. */
+  diagnostics: MicStatusDiagnostics | null;
 };
+
+/** Result of a firmware call the temple has not made yet. */
+export const MIC_RET_NONE = 127;
+
+/** Occupant of one stock PCM app slot. */
+export type MicSlotState = "empty" | "other" | "tap";
+
+/**
+ * Counters from the status extension; they reset on each CONFIGURE. The
+ * firmware debug overlay shows the same values on each lens.
+ */
+export type MicStatusDiagnostics = {
+  /** Calls into the PCM tap (any outcome). */
+  tapCalls: number;
+  tapLastBytes: number;
+  tapLastSlot: number;
+  /** Tap calls dropped because the session was inactive or unarmed. */
+  skipIdle: number;
+  /** Tap calls dropped because the streaming lease had lapsed. */
+  skipLease: number;
+  /** Tap calls dropped because the frame buffer allocation failed. */
+  skipAlloc: number;
+  /** Signed firmware results, or MIC_RET_NONE when not called yet. */
+  registerResult: number;
+  unregisterResult: number;
+  notifyResult: number;
+  /** Stock PCM slot table, read live: [slot 0, slot 1]. */
+  slots: [MicSlotState, MicSlotState];
+  leaseRemainingS: number;
+};
+
+const MIC_STATUS_DIAGNOSTICS_BYTES = 40;
 
 function le16(data: Uint8Array, offset: number): number {
   return data[offset]! | (data[offset + 1]! << 8);
@@ -210,6 +244,27 @@ export function decodeMicStatus(body: Uint8Array): MicStatus | null {
     side: body[14] === 2 ? "left" : "right",
     framesEmitted: le32(body, 15),
     effectiveRateHz: le16(body, 19) * 100,
+    diagnostics: body.length >= MIC_STATUS_DIAGNOSTICS_BYTES ? decodeMicDiagnostics(body) : null,
+  };
+}
+
+const SLOT_STATES: MicSlotState[] = ["empty", "other", "tap", "other"];
+
+function decodeMicDiagnostics(body: Uint8Array): MicStatusDiagnostics {
+  const s8 = (offset: number) => (body[offset]! >= 0x80 ? body[offset]! - 0x100 : body[offset]!);
+  const table = body[37]!;
+  return {
+    tapCalls: le32(body, 21),
+    tapLastBytes: le16(body, 25),
+    tapLastSlot: body[27]!,
+    skipIdle: le16(body, 28),
+    skipLease: le16(body, 30),
+    skipAlloc: le16(body, 32),
+    registerResult: s8(34),
+    unregisterResult: s8(35),
+    notifyResult: s8(36),
+    slots: [SLOT_STATES[table & 3]!, SLOT_STATES[(table >> 2) & 3]!],
+    leaseRemainingS: le16(body, 38),
   };
 }
 

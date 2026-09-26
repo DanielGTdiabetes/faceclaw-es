@@ -124,6 +124,7 @@ class GlassesSessionCore(
     internal val compassSubscriptions = CopyOnWriteList<CompassSubscription>(platform)
     internal val ambientLightListeners = CopyOnWriteList<FaceclawAmbientLightListener>(platform)
     internal val micStatusListeners = CopyOnWriteList<FaceclawMicStatusListener>(platform)
+    internal val audioMonitorListeners = CopyOnWriteList<FaceclawAudioPacketListener>(platform)
     @Volatile internal var running = false
     @Volatile internal var userDisconnectRequested = false
     // Set when a connect attempt failed while an arm's OS bond is gone:
@@ -831,6 +832,24 @@ class GlassesSessionCore(
     fun removeMicStatusListener(listener: FaceclawMicStatusListener?) {
         if (listener != null) {
             micStatusListeners.remove(listener)
+        }
+    }
+
+    /**
+     * Observe every packet on the audio (render) characteristic, on the main
+     * thread, whether or not any capture is active. Purely passive: sends
+     * nothing to the glasses and does not affect the capture listener, so it
+     * shows what another app's mic activation actually produces.
+     */
+    fun addAudioMonitorListener(listener: FaceclawAudioPacketListener?) {
+        if (listener != null) {
+            audioMonitorListeners.add(listener)
+        }
+    }
+
+    fun removeAudioMonitorListener(listener: FaceclawAudioPacketListener?) {
+        if (listener != null) {
+            audioMonitorListeners.remove(listener)
         }
     }
 
@@ -1593,10 +1612,11 @@ class GlassesSessionCore(
             lastIncomingAtMs = arrivalMs
             listenerToCall = if (audioCaptureActive) audioPacketListener else null
         }
+        val arm = if (address.equals(leftAddress, ignoreCase = true)) "L" else if (address.equals(rightAddress, ignoreCase = true)) "R" else "?"
+        emitAudioMonitorPacket(data, arm, arrivalMs)
         if (listenerToCall == null) {
             return
         }
-        val arm = if (address.equals(leftAddress, ignoreCase = true)) "L" else if (address.equals(rightAddress, ignoreCase = true)) "R" else "?"
         try {
             listenerToCall.onAudioPacket(data.copyOf(), arm, arrivalMs)
         } catch (t: Throwable) {

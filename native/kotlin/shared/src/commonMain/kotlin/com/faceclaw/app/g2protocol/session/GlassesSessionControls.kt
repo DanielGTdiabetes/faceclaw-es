@@ -488,6 +488,22 @@ internal fun GlassesSessionCore.emitMicStatus(body: ByteArray, address: String) 
     }
 }
 
+internal fun GlassesSessionCore.emitAudioMonitorPacket(data: ByteArray, arm: String, arrivalMs: Long) {
+    if (audioMonitorListeners.isEmpty()) {
+        return
+    }
+    val copy = data.copyOf()
+    host.postToMain {
+        for (monitorListener in audioMonitorListeners) {
+            try {
+                monitorListener.onAudioPacket(copy, arm, arrivalMs)
+            } catch (t: Throwable) {
+                logWarn("audio monitor listener failed", t)
+            }
+        }
+    }
+}
+
 internal fun GlassesSessionCore.emitRingEvent(event: G2Event, frameId: Int) {
     val current = listener
     if (current == null) {
