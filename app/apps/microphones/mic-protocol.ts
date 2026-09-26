@@ -12,8 +12,8 @@
  *
  * Per-temple: each arm is its own endpoint and its own 2-mic array (front
  * mic near the hinge = chanMask bit0, rear mic near the touchpad = bit1);
- * the same config goes to both temples. Stereo payloads arrive as two
- * CONCATENATED channel blocks (front then rear), not interleaved. Sessions
+ * the same config goes to both temples. Stereo payloads are INTERLEAVED PCM16
+ * (ch0, ch1, ch0, ch1, ...), the capture dispatch buffer verbatim. Sessions
  * hold a 90 s lease; renew with op RENEW while streaming.
  *
  * Pure module: byte codecs only, no platform imports (the BLE plumbing lives
@@ -54,7 +54,7 @@ export type MicConfig = {
   /**
    * Host-side per-microphone selection. Each temple streams its full
    * front+rear stereo pair over BLE (wire channelMask stays 0b11); the phone
-   * splits the concatenated channels and this mask decides which of the four
+   * deinterleaves the channels and this mask decides which of the four
    * mics feed levels-for-use, beamforming, captions, and recording. A temple
    * with both mics off is sent STOP so its stream doesn't waste bandwidth.
    */
@@ -260,25 +260,26 @@ export function decodeMicStreamFrame(data: Uint8Array): MicStreamFrame | null {
 
 /**
  * Split a raw PCM16 SM payload into per-channel Float32Arrays in [-1, 1].
- * Channels arrive as CONCATENATED blocks (front then rear), matching the
- * firmware's stereo callback, which dispatches two back-to-back extraction
- * results rather than interleaving.
+ * Channels arrive INTERLEAVED: the firmware forwards the stock capture
+ * dispatch buffer, which the stock algo reads as ch0 = pcm[2i], ch1 =
+ * pcm[2i+1] (in samples). Channel 0 is assumed to be the front mic; that
+ * mapping is not yet confirmed on hardware.
  */
-export function splitConcatenatedPcm16(frame: MicStreamFrame): Float32Array[] | null {
+export function splitInterleavedPcm16(frame: MicStreamFrame): Float32Array[] | null {
   if (frame.codec !== "raw" || frame.format !== "pcm16" || frame.channelCount < 1) {
     return null;
   }
   const channels = frame.channelCount;
-  const bytesPerChannel = Math.floor(frame.payload.length / channels) & ~1;
-  const samplesPerChannel = bytesPerChannel / 2;
+  const frameBytes = channels * 2;
+  const samplesPerChannel = Math.floor(frame.payload.length / frameBytes);
   if (samplesPerChannel <= 0) return null;
   const out: Float32Array[] = [];
   for (let channel = 0; channel < channels; channel++) {
-    const base = channel * bytesPerChannel;
     const samples = new Float32Array(samplesPerChannel);
     for (let index = 0; index < samplesPerChannel; index++) {
-      const lo = frame.payload[base + index * 2]!;
-      const hi = frame.payload[base + index * 2 + 1]!;
+      const offset = index * frameBytes + channel * 2;
+      const lo = frame.payload[offset]!;
+      const hi = frame.payload[offset + 1]!;
       let value = lo | (hi << 8);
       if (value >= 0x8000) value -= 0x10000;
       samples[index] = value / 32768;
