@@ -11,6 +11,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 
 import java.util.ArrayList
+import java.util.HashMap
 
 /**
  * Keeps EvenHub app WebViews alive and rendering while the phone shows the
@@ -39,9 +40,11 @@ import java.util.ArrayList
  * crawl even though the renderer is still alive. Host-initiated
  * evaluateJavascript is NOT subject to that throttle, so we drive the app's
  * timers ourselves: a document-start shim replaces setTimeout/setInterval (and
- * requestAnimationFrame) with JS queues fired by window.__fcTimerTick() /
- * __fcRafTick(), and this host ticks those on the main thread at a fixed rate
- * regardless of screen state. The main Looper keeps running under the
+ * requestAnimationFrame) with JS queues fired by window.__fcTick(), and this
+ * host ticks those on the main thread regardless of screen state. The tick
+ * returns when the page next has work, so an idle page isn't evaluated at
+ * 60Hz; work scheduled between ticks wakes the host through
+ * FaceclawEvenHubJsBridge.wakeTimers. The main Looper keeps running under the
  * foreground service, so the tick survives the screen turning off. (Matches the
  * official Even app's approach.)
  *
@@ -73,22 +76,68 @@ class FaceclawEvenHubWebViewHost {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val webViews: MutableList<WebView> = ArrayList()
-    private var ticking = false
-    private val ticker: Runnable = object : Runnable {
+    private val tickers: MutableMap<WebView, Ticker> = HashMap()
+
+    /**
+     * Drives one page's timer/rAF queues (window.__fcTick). Each tick's result
+     * says when the page next has work; the ticker sleeps until then, or until
+     * the page wakes it. It also re-ticks after IDLE_POLL_MS regardless, so a
+     * lost evaluateJavascript callback (e.g. mid-navigation) or a page whose
+     * wake didn't reach us stalls its timers for at most that long.
+     */
+    private inner class Ticker(private val web: WebView) : Runnable {
+        private var inFlight = false
+        private var wakePending = false
+        private var stopped = false
+
         override fun run() {
-            for (i in 0 until webViews.size) {
-                webViews[i].evaluateJavascript(
-                    "window.__fcTimerTick&&__fcTimerTick();window.__fcRafTick&&__fcRafTick()", null)
+            if (stopped) return
+            inFlight = true
+            web.evaluateJavascript(TICK_JS) { result -> onTicked(result) }
+            schedule(IDLE_POLL_MS)
+        }
+
+        private fun onTicked(result: String?) {
+            inFlight = false
+            if (stopped) return
+            // -1 (nothing pending) and null (shim not installed yet) both leave
+            // only the idle poll; the page wakes us when it schedules work.
+            val next = result?.toDoubleOrNull()?.toLong() ?: -1L
+            val delay = when {
+                wakePending -> 0L
+                next < 0 -> IDLE_POLL_MS
+                else -> next.coerceIn(TICK_MS, IDLE_POLL_MS)
             }
-            if (ticking) mainHandler.postDelayed(this, TICK_MS)
+            wakePending = false
+            schedule(delay)
+        }
+
+        fun wake() {
+            if (stopped) return
+            if (inFlight) wakePending = true else schedule(0)
+        }
+
+        fun stop() {
+            stopped = true
+            mainHandler.removeCallbacks(this)
+        }
+
+        private fun schedule(delayMs: Long) {
+            mainHandler.removeCallbacks(this)
+            mainHandler.postDelayed(this, delayMs)
         }
     }
 
     companion object {
         private var instance: FaceclawEvenHubWebViewHost? = null
 
-        /** How often the host fires the JS timer queue. 60Hz keeps games smooth. */
+        /** Shortest interval between ticks. 60Hz keeps games smooth. */
         private const val TICK_MS = 16L
+
+        /** Longest a page goes without a tick, as a backstop for missed wakes. */
+        private const val IDLE_POLL_MS = 1000L
+
+        private const val TICK_JS = "window.__fcTick?__fcTick():null"
 
         @JvmStatic
         @Synchronized
@@ -148,9 +197,21 @@ class FaceclawEvenHubWebViewHost {
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         }
         if (!webViews.contains(web)) webViews.add(web)
-        if (!ticking) {
-            ticking = true
+        if (!tickers.containsKey(web)) {
+            val ticker = Ticker(web)
+            tickers[web] = ticker
             mainHandler.postDelayed(ticker, TICK_MS)
+        }
+    }
+
+    /**
+     * A page scheduled a timer or animation frame due before its next tick.
+     * Called from the JavaBridge thread; which page asked doesn't matter, as
+     * an extra tick for another page is harmless.
+     */
+    fun wakeTimers() {
+        mainHandler.post {
+            for (ticker in tickers.values) ticker.wake()
         }
     }
 
@@ -180,10 +241,7 @@ class FaceclawEvenHubWebViewHost {
     /** Remove and destroy a WebView (its app is closing). */
     fun detach(web: WebView) {
         webViews.remove(web)
-        if (webViews.isEmpty() && ticking) {
-            ticking = false
-            mainHandler.removeCallbacks(ticker)
-        }
+        tickers.remove(web)?.stop()
         overlay?.removeView(web)
         web.destroy()
     }

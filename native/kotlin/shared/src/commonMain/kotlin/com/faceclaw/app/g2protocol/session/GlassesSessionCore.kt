@@ -274,15 +274,17 @@ class GlassesSessionCore(
 
     internal val desiredTilesLock: ProtocolLock = platform.createLock()
     internal var desiredFingerprint = ""
-    // Headerless packed 4bpp frame (see BmpUtil.pack4bppFromGray8) plus its
-    // pixel dimensions.
-    internal var desiredPacked: ByteArray? = ByteArray(0)
+    // Composited 8bpp frame plus its pixel dimensions. The send loop packs it to
+    // the headerless 4bpp wire format (BmpUtil.pack4bppFromGray8) when it picks
+    // the frame up, so frames superseded before sending are never packed and
+    // the packing stays off the submitting (main) thread.
+    internal var desiredGray: ByteArray? = ByteArray(0)
     internal var desiredWidth = 0
     internal var desiredHeight = 0
     internal var desiredPaintMs = 0
     internal var desiredFrameId = 0
     // Screen-space deferred draws (glyphs + images) whose pixels are baked
-    // into desiredPacked; the resource-cache planner may replay them as
+    // into desiredGray; the resource-cache planner may replay them as
     // on-glasses cached draws.
     internal var desiredDraws: Array<SurfaceCompositor.ScreenDraw>? = arrayOf()
     // (frame, reason) of the last "waiting to send" line, so a frame that
@@ -943,9 +945,7 @@ class GlassesSessionCore(
         val frameId = frameTimings.startFrame(
                 "compositor:visible $id=$visible")
         compositor.setSurfaceVisible(id, visible)
-        val composite = compositor.composite()
-        val packed = BmpUtil.pack4bppFromGray8(composite.screenGray, composite.width, composite.height)
-        storeDesiredComposite(composite, packed, 0, frameId)
+        storeDesiredComposite(compositor.composite(), 0, frameId)
     }
 
     /**
@@ -957,9 +957,7 @@ class GlassesSessionCore(
         val frameId = frameTimings.startFrame(
                 "compositor:" + (if (blanked) "blank" else "unblank"))
         compositor.setBlanked(blanked)
-        val composite = compositor.composite()
-        val packed = BmpUtil.pack4bppFromGray8(composite.screenGray, composite.width, composite.height)
-        storeDesiredComposite(composite, packed, 0, frameId)
+        storeDesiredComposite(compositor.composite(), 0, frameId)
     }
 
     /**
@@ -979,7 +977,7 @@ class GlassesSessionCore(
     fun submitShellScene(bytes: ByteReader, paintMs: Int, frameId: Int) {
         compositor.setShellScene(bytes)
         val composite = compositor.composite()
-        storeDesiredComposite(composite, BmpUtil.pack4bppFromGray8(composite.screenGray, composite.width, composite.height), paintMs, frameId)
+        storeDesiredComposite(composite, paintMs, frameId)
     }
 
     /** Legacy compositor dimming for callers without a shell scene. */
@@ -1016,17 +1014,11 @@ class GlassesSessionCore(
         val composite = compositor.applyAndComposite(
                 surfaceId, pixels8bpp, rectX, rectY, rectWidth, rectHeight, contentFingerprint, glyphs)
         frameTimings.spanEnd(frameId, "composite")
-        // Pack the composited 8bpp buffer down to the headerless 4bpp frame
-        // format the wire planners consume; BMP framing is added later only for
-        // the uncompressed fallback.
-        frameTimings.spanStart(frameId, "pack-4bpp")
-        val packed = BmpUtil.pack4bppFromGray8(composite.screenGray, composite.width, composite.height)
-        frameTimings.spanEnd(frameId, "pack-4bpp")
-        storeDesiredComposite(composite, packed, paintMs, frameId)
+        storeDesiredComposite(composite, paintMs, frameId)
     }
 
     /** Store a composite as the desired frame unless a newer one won the race. */
-    internal fun storeDesiredComposite(composite: SurfaceCompositor.Composite, packed: ByteArray, paintMs: Int, frameId: Int) {
+    internal fun storeDesiredComposite(composite: SurfaceCompositor.Composite, paintMs: Int, frameId: Int) {
         var supersededFrameId = 0
         var stale = false
         desiredTilesLock.locked {
@@ -1037,7 +1029,7 @@ class GlassesSessionCore(
             } else {
                 lastStoredCompositeSeq = composite.seq
                 supersededFrameId = desiredFrameId
-                desiredPacked = packed
+                desiredGray = composite.screenGray
                 desiredWidth = composite.width
                 desiredHeight = composite.height
                 desiredFingerprint = composite.fingerprint

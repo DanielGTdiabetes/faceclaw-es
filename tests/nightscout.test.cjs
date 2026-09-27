@@ -206,7 +206,7 @@ test('bridge exposes numeric measurements and treats absent values as unknown', 
   let pump = { reservoir: '10.5', battery: { voltage: '1.15' } };
   const module = load('app/native/nightscout-bridge.ts', {
     '../ui/dashboard-settings': { nightscoutSiteUrlSetting: { get: () => 'https://example.test' }, nightscoutApiTokenSetting: { get: () => 'test' } },
-    '../util/http': { async fetchWithUserAgent(url) {
+    '../util/http': { async fetchTextWithUserAgent(url) {
       const body = url.includes('/entries.') ? [{ date: now, sgv: 100 }] : url.includes('/devicestatus.') ? [{ pump, openaps: { suggested: { mills: now - 60_000 } } }] : url.includes('/status.') ? {} : [];
       return { ok: true, json: async () => body };
     } },
@@ -231,7 +231,7 @@ test('polling starts once and stops even while the initial HTTP request is pendi
   const timers = new Map();
   const module = load('app/native/nightscout-bridge.ts', {
     '../ui/dashboard-settings': { nightscoutSiteUrlSetting: { get: () => 'https://example.test' }, nightscoutApiTokenSetting: { get: () => 'test' } },
-    '../util/http': { async fetchWithUserAgent() {
+    '../util/http': { async fetchTextWithUserAgent() {
       calls++;
       await pending;
       return { ok: true, json: async () => [] };

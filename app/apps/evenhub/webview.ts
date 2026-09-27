@@ -96,16 +96,7 @@ export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
   webView.addJavascriptInterface(new com.faceclaw.app.FaceclawEvenHubJsBridge(listener), "__faceclawEvenHub");
 
   // Surface the app's console in logcat (tag FaceclawEvenHubConsole).
-  const ChromeClient = (android.webkit.WebChromeClient as any).extend({
-    onConsoleMessage: (message: any): boolean => {
-      android.util.Log.i(
-        "FaceclawEvenHubConsole",
-        `${message.message()} (${message.sourceId()}:${message.lineNumber()})`,
-      );
-      return true;
-    },
-  });
-  webView.setWebChromeClient(new ChromeClient());
+  webView.setWebChromeClient(new com.faceclaw.app.FaceclawEvenHubChromeClient());
 
   const nativeHost = com.faceclaw.app.FaceclawEvenHubWebViewHost.getInstance();
   nativeHost.attach(activity, webView);

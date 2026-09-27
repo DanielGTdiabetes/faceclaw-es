@@ -36,6 +36,46 @@ class DisplayListTest {
         renderer.render(DrawProtocol.SCREEN, DisplayListRenderer.Target(source,640,480), DisplayListRenderer.Target(destination,640,480))
         assertContentEquals(source, destination)
     }
+    @Test fun rectCopyMatchesPerPixelReferenceWithShiftsClipsAndAliasing() {
+        val random = Random(7)
+        repeat(4000) { case ->
+            val width = random.nextInt(1, 20); val height = random.nextInt(1, 6)
+            val offset = random.nextInt(3); val shift = random.nextInt(-4, 5)
+            val clip = if (random.nextBoolean()) null else {
+                val left = random.nextInt(-3, width + 1); val top = random.nextInt(-2, height + 1)
+                intArrayOf(left, top, left + random.nextInt(0, width + 3), top + random.nextInt(0, height + 2))
+            }
+            // Screen as a separate array, the target's own array at another offset, or the target itself.
+            val mode = random.nextInt(3)
+            val screenWidth = random.nextInt(1, 20); val screenHeight = random.nextInt(1, 6)
+            val screenOffset = random.nextInt(3)
+            val targetSize = offset + (width + 1) / 2 * height
+            val screenSize = screenOffset + (screenWidth + 1) / 2 * screenHeight
+            val bytes = random.nextBytes(maxOf(targetSize, if (mode == 1) screenSize else 0) + 2)
+            val screenBytes = if (mode == 0) random.nextBytes(screenSize + 1) else bytes
+            val sourceId = if (mode == 2) DrawProtocol.CURRENT else DrawProtocol.SCREEN
+            val sourceWidth = if (mode == 2) width else screenWidth
+            val sourceHeight = if (mode == 2) height else screenHeight
+            val w = random.nextInt(1, sourceWidth + 1); val h = random.nextInt(1, sourceHeight + 1)
+            val x = random.nextInt(sourceWidth - w + 1); val y = random.nextInt(sourceHeight - h + 1)
+            val dx = random.nextInt(-w - 5, width + 5); val dy = random.nextInt(-h - 2, height + 2)
+
+            val expected = bytes.copyOf()
+            val expectedScreen = if (mode == 0) screenBytes.copyOf() else expected
+            val referenceTarget = DisplayListRenderer.Target(expected, width, height, offset, shift, clip)
+            val referenceSource = if (mode == 2) referenceTarget
+                else DisplayListRenderer.Target(expectedScreen, screenWidth, screenHeight, screenOffset)
+            val snapshot = IntArray(w * h) { referenceSource.get(x + it % w, y + it / w) }
+            for (i in snapshot.indices) referenceTarget.put(dx + i % w, dy + i / w, snapshot[i])
+
+            val target = DisplayListRenderer.Target(bytes, width, height, offset, shift, clip)
+            val screen = if (mode == 2) target else DisplayListRenderer.Target(screenBytes, screenWidth, screenHeight, screenOffset)
+            DisplayListRenderer(emptyMap()).execute(
+                DrawProtocol.sequence(listOf(DrawProtocol.rectCopy(sourceId, x, y, w, h, dx, dy))), target, screen)
+            assertContentEquals(expected, bytes, "case $case")
+            if (mode == 0) assertContentEquals(expectedScreen, screenBytes, "case $case screen")
+        }
+    }
     @Test fun invalidGraphDoesNotCopyScreenIntoComposition() {
         val screen = hex("12345678"); val composition = hex("9abcdef0")
         val resources = mapOf(1 to DrawProtocol.displayList(listOf(byteArrayOf(99,0))))

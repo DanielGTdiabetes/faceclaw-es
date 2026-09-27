@@ -298,11 +298,78 @@ class DisplayListRenderer(
         }
         require(width > 0 && height > 0 && x + width <= source.width && y + height <= source.height)
         // Mirrors the firmware's overflow guard before the depth shift.
-        if (walk.apply && dx in -65536..65536) {
-            // Snapshot the rectangle so overlapping copies have memmove semantics.
-            val copy = IntArray(width * height) { source.get(x + it % width, y + it / width) }
-            for (i in copy.indices) target.put(dx + i % width, dy + i / width, copy[i])
+        if (!walk.apply || dx !in -65536..65536) return
+        // Clip the destination to the writable area, in shifted target pixels.
+        // The source is read unshifted, like Target.get.
+        val originX = dx + target.shiftX
+        var left = maxOf(originX, 0)
+        var right = minOf(originX + width, target.width)
+        var top = maxOf(dy, 0)
+        var bottom = minOf(dy.toLong() + height, target.height.toLong()).toInt()
+        target.clip?.let { clip ->
+            left = maxOf(left, clip[0]); top = maxOf(top, clip[1])
+            right = minOf(right, clip[2]); bottom = minOf(bottom, clip[3])
         }
+        if (left >= right || top >= bottom) return
+        val count = right - left
+        val rows = bottom - top
+        var sourceX = x + (left - originX)
+        var sourceBytes = source.bytes
+        var sourceStride = source.stride
+        var sourceRow = source.offset + (y + (top - dy)) * sourceStride
+        if (sourceBytes === target.bytes) {
+            // Snapshot the packed source span so overlapping copies have memmove semantics.
+            val first = sourceX / 2
+            val span = (sourceX + count - 1) / 2 - first + 1
+            val snapshot = ByteArray(span * rows)
+            for (row in 0 until rows) {
+                val start = sourceRow + row * sourceStride + first
+                sourceBytes.copyInto(snapshot, row * span, start, start + span)
+            }
+            sourceBytes = snapshot
+            sourceStride = span
+            sourceRow = 0
+            sourceX = sourceX and 1
+        }
+        for (row in 0 until rows) {
+            copyPixels(sourceBytes, sourceRow + row * sourceStride, sourceX,
+                target.bytes, target.offset + (top + row) * target.stride, left, count)
+        }
+    }
+
+    /** Copy [count] packed 4bpp pixels between rows that must not overlap. */
+    private fun copyPixels(source: ByteArray, sourceRow: Int, sourceX: Int,
+                           destination: ByteArray, destinationRow: Int, destinationX: Int, count: Int) {
+        var sx = sourceX
+        var dx = destinationX
+        var remaining = count
+        if (dx and 1 != 0) {
+            putPixel(destination, destinationRow, dx++, getPixel(source, sourceRow, sx++))
+            remaining--
+        }
+        val pairs = remaining / 2
+        var si = sourceRow + sx / 2
+        var di = destinationRow + dx / 2
+        if (sx and 1 == 0) {
+            source.copyInto(destination, di, si, si + pairs)
+        } else {
+            // Misaligned: each destination byte straddles two source bytes.
+            repeat(pairs) {
+                destination[di++] = ((source[si].toInt() shl 4) or ((source[++si].toInt() and 255) ushr 4)).toByte()
+            }
+        }
+        if (remaining and 1 != 0) {
+            putPixel(destination, destinationRow, dx + pairs * 2, getPixel(source, sourceRow, sx + pairs * 2))
+        }
+    }
+
+    private fun getPixel(bytes: ByteArray, row: Int, x: Int): Int =
+        (bytes[row + x / 2].toInt() ushr (if (x and 1 == 0) 4 else 0)) and 15
+
+    private fun putPixel(bytes: ByteArray, row: Int, x: Int, value: Int) {
+        val index = row + x / 2
+        val old = bytes[index].toInt()
+        bytes[index] = if (x and 1 == 0) ((old and 15) or (value shl 4)).toByte() else ((old and 240) or value).toByte()
     }
 
     private fun drawStockText(reader: DrawReader, target: Target, walk: Walk) {
