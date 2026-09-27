@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 - Future
+
+* Add config settings to disable animation categories
+* EvenHub compatibility uses menu animations and is closer to style matched
+
 ## 0.8.0 - 2026-09-26
 
 ### Depth and Animation
