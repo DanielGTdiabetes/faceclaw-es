@@ -36,14 +36,34 @@ export type DisplayList = {
 };
 export type PlacedDisplayList = { displayList: DisplayList; x: number; y: number; width: number; height: number; depth: number };
 
+/**
+ * Growable byte buffer. Lists are encoded on every frame that carries one, and
+ * twice more for its fingerprint and the preview; resources (whole menu rows,
+ * scroll strips) are tens of KB, so they go in with one set() rather than a
+ * push per byte.
+ */
 class Writer {
-  bytes: number[] = [];
-  u8(n: number): void { this.bytes.push(integer(n, 0, 255)); }
+  private buffer = new Uint8Array(256);
+  length = 0;
+  private reserve(count: number): void {
+    const needed = this.length + count;
+    if (needed <= this.buffer.length) return;
+    let size = this.buffer.length * 2;
+    while (size < needed) size *= 2;
+    const grown = new Uint8Array(size);
+    grown.set(this.buffer.subarray(0, this.length));
+    this.buffer = grown;
+  }
+  u8(n: number): void { integer(n, 0, 255); this.reserve(1); this.buffer[this.length++] = n; }
   i8(n: number): void { this.u8(integer(n, -128, 127) & 255); }
-  u16(n: number): void { integer(n, 0, 65535); this.bytes.push(n & 255, n >>> 8); }
+  u16(n: number): void { integer(n, 0, 65535); this.reserve(2); this.buffer[this.length++] = n & 255; this.buffer[this.length++] = n >>> 8; }
   i16(n: number): void { this.u16(integer(n, -32768, 32767) & 65535); }
   u32(n: number): void { integer(n, 0, 4294967295); this.u16(n & 65535); this.u16(n >>> 16); }
-  raw(bytes: ArrayLike<number>): void { for (let i = 0; i < bytes.length; i++) this.bytes.push(bytes[i]); }
+  raw(bytes: ArrayLike<number>): void { this.reserve(bytes.length); this.buffer.set(bytes, this.length); this.length += bytes.length; }
+  /** The written bytes, in a buffer of their own. */
+  bytes(): Uint8Array { return this.buffer.slice(0, this.length); }
+  /** A view of the written bytes; valid until the next write. */
+  view(): Uint8Array { return this.buffer.subarray(0, this.length); }
 }
 
 /** Length-delimited bridge envelope; call operands use fixed widths except extended x/y. */
@@ -85,9 +105,9 @@ export function encodeDisplayList(placed: PlacedDisplayList, now = Date.now()): 
       }
     }
   }
-  if (out.bytes.length > 4 * 1024 * 1024) throw new Error('Display list exceeds bridge limit');
-  const header = new Writer(); header.u8(DISPLAY_LIST_RECORD); header.u32(out.bytes.length); header.raw(out.bytes);
-  return Uint8Array.from(header.bytes);
+  if (out.length > 4 * 1024 * 1024) throw new Error('Display list exceeds bridge limit');
+  const header = new Writer(); header.u8(DISPLAY_LIST_RECORD); header.u32(out.length); header.raw(out.view());
+  return header.bytes();
 }
 
 /** Replay-record sizes by tag, as in glyph-wire's frame draw buffer. */

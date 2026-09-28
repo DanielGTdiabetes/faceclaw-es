@@ -1,14 +1,24 @@
 package com.faceclaw.app
 
 import android.app.Activity
+import android.content.Context
 import android.content.MutableContextWrapper
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 import java.util.ArrayList
 import java.util.HashMap
@@ -33,6 +43,12 @@ import java.util.HashMap
  * To show one app's UI on the phone, the overlay is raised to the front (and
  * the chosen WebView to the top of the overlay); hiding sends it back behind.
  * All view work happens on the main thread (callers are on the NS/JS thread).
+ *
+ * Layout: the activity is edge-to-edge, so the overlay tracks the window
+ * insets itself. A top bar (the shown app's name and a close button) sits
+ * under the status bar, and the WebViews fill the area between it and the
+ * navigation bar / keyboard. That area is the same whether or not the overlay
+ * is shown, so showing an app doesn't resize (and re-lay-out) its page.
  *
  * Timer keep-alive: when the phone screen turns off, Chromium heavily throttles
  * the page's own setTimeout/setInterval (intensive background throttling clamps
@@ -71,8 +87,13 @@ import java.util.HashMap
  */
 class FaceclawEvenHubWebViewHost {
     private var overlay: FrameLayout? = null
+    /** Holds the WebViews, inside [overlay] below the top bar. */
+    private var stack: FrameLayout? = null
+    private var titleView: TextView? = null
     private var overlayActivity: Activity? = null
     private var shown = false
+    private var shownTitle = ""
+    private var onClose: Runnable? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val webViews: MutableList<WebView> = ArrayList()
@@ -139,6 +160,12 @@ class FaceclawEvenHubWebViewHost {
 
         private const val TICK_JS = "window.__fcTick?__fcTick():null"
 
+        /** Top bar height, below the status bar (Material toolbar height). */
+        private const val BAR_HEIGHT_DP = 56f
+
+        /** Matches the NativeScript ActionBar (NativeScriptToolbarStyle). */
+        private val BAR_COLOR = Color.parseColor("#424242")
+
         @JvmStatic
         @Synchronized
         fun getInstance(): FaceclawEvenHubWebViewHost {
@@ -152,23 +179,99 @@ class FaceclawEvenHubWebViewHost {
         val existing = overlay
         if (existing != null && overlayActivity === activity && existing.parent != null) return existing
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
+        (existing?.parent as ViewGroup?)?.removeView(existing)
         val created = FrameLayout(activity)
-        if (existing != null) {
-            (existing.parent as ViewGroup?)?.removeView(existing)
-            for (web in webViews) {
-                existing.removeView(web)
-                rebaseContext(web, activity)
-                created.addView(web, FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            }
+        created.setBackgroundColor(Color.BLACK)
+        val createdStack = FrameLayout(activity)
+        created.addView(createdStack, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val bar = buildTopBar(activity)
+        created.addView(bar, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        for (web in webViews) {
+            (web.parent as ViewGroup?)?.removeView(web)
+            rebaseContext(web, activity)
+            createdStack.addView(web, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        // Insets are passed on unconsumed: before API 30 a consuming child
+        // would starve its later siblings (the NativeScript UI) of them.
+        ViewCompat.setOnApplyWindowInsetsListener(created) { _, insets ->
+            applyInsets(bar, createdStack, insets)
+            insets
         }
         overlay = created
+        stack = createdStack
         overlayActivity = activity
         // index 0 = behind the NativeScript content view (raised again below if shown).
         content.addView(created, 0, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        ViewCompat.requestApplyInsets(created)
         if (shown) created.bringToFront()
         return created
+    }
+
+    /** The bar across the top of a shown app: the app's name, then a close button. */
+    private fun buildTopBar(activity: Activity): LinearLayout {
+        val bar = LinearLayout(activity)
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.gravity = Gravity.CENTER_VERTICAL
+        bar.setBackgroundColor(BAR_COLOR)
+        // Swallow touches so they don't fall through to the WebViews.
+        bar.isClickable = true
+
+        val title = TextView(activity)
+        title.text = shownTitle
+        title.setTextColor(Color.WHITE)
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        title.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        title.maxLines = 1
+        title.ellipsize = TextUtils.TruncateAt.END
+        bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            marginStart = dp(activity, 16f)
+            marginEnd = dp(activity, 12f)
+        })
+
+        val close = TextView(activity)
+        close.text = "\u2715"
+        close.setTextColor(Color.WHITE)
+        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+        close.gravity = Gravity.CENTER
+        close.contentDescription = "Close"
+        val ripple = TypedValue()
+        if (activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)) {
+            close.setBackgroundResource(ripple.resourceId)
+        }
+        close.setOnClickListener { onClose?.run() }
+        val closeSize = dp(activity, 48f)
+        bar.addView(close, LinearLayout.LayoutParams(closeSize, closeSize).apply {
+            marginEnd = dp(activity, 4f)
+        })
+        titleView = title
+        return bar
+    }
+
+    /**
+     * Put the bar under the status bar (its background filling in behind it)
+     * and the WebViews between the bar and the navigation bar or keyboard.
+     */
+    private fun applyInsets(bar: View, webStack: View, insets: WindowInsetsCompat) {
+        val bars = insets.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+        val barHeight = dp(bar.context, BAR_HEIGHT_DP)
+        bar.setPadding(bars.left, bars.top, bars.right, 0)
+        bar.layoutParams = (bar.layoutParams as FrameLayout.LayoutParams).apply {
+            height = bars.top + barHeight
+        }
+        webStack.layoutParams = (webStack.layoutParams as FrameLayout.LayoutParams).apply {
+            setMargins(bars.left, bars.top + barHeight, bars.right, maxOf(bars.bottom, ime.bottom))
+        }
+    }
+
+    private fun dp(context: Context, value: Float): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, value, context.resources.displayMetrics).toInt()
     }
 
     private fun rebaseContext(web: WebView, activity: Activity) {
@@ -177,11 +280,11 @@ class FaceclawEvenHubWebViewHost {
 
     /** Add a WebView to the host, full-size and rendering, hidden behind the UI. */
     fun attach(activity: Activity, web: WebView) {
-        val o = ensureOverlay(activity)
+        ensureOverlay(activity)
         rebaseContext(web, activity)
         web.visibility = View.VISIBLE
         if (web.parent == null) {
-            o.addView(web, FrameLayout.LayoutParams(
+            stack!!.addView(web, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         // resumeTimers() is process-global; make sure nothing left timers paused.
@@ -215,9 +318,15 @@ class FaceclawEvenHubWebViewHost {
         }
     }
 
-    /** Bring an app's WebView to the front of [activity] so it is visible on the phone. */
-    fun showOnPhone(activity: Activity?, web: WebView) {
+    /**
+     * Bring an app's WebView to the front of [activity] so it is visible on the
+     * phone, titled [title]. The top bar's close button runs [onClose].
+     */
+    fun showOnPhone(activity: Activity?, web: WebView, title: String, onClose: Runnable) {
         val o = if (activity != null) ensureOverlay(activity) else overlay ?: return
+        shownTitle = title
+        this.onClose = onClose
+        titleView?.text = title
         web.bringToFront()
         o.bringToFront()
         shown = true
@@ -226,6 +335,7 @@ class FaceclawEvenHubWebViewHost {
     /** Send the overlay back behind the NativeScript UI. */
     fun hideOnPhone() {
         shown = false
+        onClose = null
         val o = overlay ?: return
         val content = o.parent as ViewGroup?
         if (content != null) {
@@ -242,7 +352,7 @@ class FaceclawEvenHubWebViewHost {
     fun detach(web: WebView) {
         webViews.remove(web)
         tickers.remove(web)?.stop()
-        overlay?.removeView(web)
+        stack?.removeView(web)
         web.destroy()
     }
 }

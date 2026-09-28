@@ -78,7 +78,14 @@ import {
   installedEvenHubPackageId,
   uninstallEvenHubPackage,
 } from "../apps/evenhub/installed-apps";
-import { closeRunningPackage, launchInstalledPackage } from "../apps/evenhub/manager";
+import {
+  closeRunningPackage,
+  launchInstalledPackage,
+  onPhoneShownChanged,
+  phoneUiButton,
+  showOnPhone as showEvenHubPhoneUi,
+  type PhoneUiButton,
+} from "../apps/evenhub/manager";
 import { openEvenHubStoreForPackage } from "../apps/evenhub";
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
@@ -133,6 +140,11 @@ export type DashboardSnapshot = {
    * nothing is paired, so "Disconnected" would be the wrong label.
    */
   previewMode: boolean;
+  /**
+   * The foreground glasses window's EvenHub phone UI, when it can be opened
+   * (the action bar's app-icon button); null otherwise.
+   */
+  evenHubPhoneUi: PhoneUiButton | null;
 };
 
 type DashboardListener = (snapshot: DashboardSnapshot) => void;
@@ -149,6 +161,9 @@ const SHELL_REFRESH_INTERVAL_MS = 60_000;
 // schedules a refresh), so this just covers anything that slips through.
 const PREVIEW_INTERVAL_MS = 1_000;
 const SCREEN_TIMEOUT_CHECK_MS = 1_000;
+// The lock screen is a short notice, not something to read at leisure; it
+// ignores the screen-timeout setting (including "never").
+const LOCK_SCREEN_TIMEOUT_MS = 15_000;
 const EVENHUB_SCREEN_OFF_SUSPEND_DELAY_MS = 5_000;
 const EVENHUB_WAKE_READY_TIMEOUT_MS = 4_500;
 const FOREGROUND_NOTIFICATION_MIN_UPDATE_MS = 30_000;
@@ -358,6 +373,8 @@ class DashboardController {
       launchApp: (appId) => this.launchApp(appId),
       requestShellRender: () => this.requestShellRender(),
     });
+    // The action bar's EvenHub phone-UI button hides while that UI is showing.
+    onPhoneShownChanged(() => this.emit());
     shell.configure({
       actions: {
         ...sharedActions,
@@ -365,7 +382,8 @@ class DashboardController {
         // surface, so their repaints go through the shell render path.
         requestRender: () => this.requestShellRender(),
       },
-      getScreenTimeoutMs: () => screenTimeoutSettingToMs(screenTimeoutSetting.get()),
+      getScreenTimeoutMs: () =>
+        this.glassesLocked ? LOCK_SCREEN_TIMEOUT_MS : screenTimeoutSettingToMs(screenTimeoutSetting.get()),
       requestShellRender: () => this.requestShellRender(),
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
       onKeyboardInputChanged: (session) => {
@@ -626,6 +644,9 @@ class DashboardController {
   }
 
   private handleWearState(wearing: boolean): void {
+    // Only an observed OFF_HEAD -> ON_HEAD transition counts as putting the
+    // glasses on; the first snapshot of a session (null) is just the status.
+    const putOn = wearing && this.glassesWorn === false;
     this.glassesWorn = wearing;
     updateGlassesPresence({ worn: wearing });
     this.appendLog(wearing ? "glasses wear state: ON_HEAD" : "glasses wear state: OFF_HEAD");
@@ -633,6 +654,19 @@ class DashboardController {
     if (!wearing && this.phoneLocked && lockScreenEnabledSetting.get()) {
       this.setGlassesLocked(true, "glasses removed while phone locked");
     }
+    if (putOn) this.wakeForGlassesPutOn();
+  }
+
+  /**
+   * Putting the glasses on wakes the screen, like a double-tap would. While
+   * locked that shows the lock-screen notice (which then times out on its
+   * own short timer); otherwise it lands on the sidebar as a normal wake.
+   */
+  private wakeForGlassesPutOn(): void {
+    if (this.phase !== "connected" || !this.communicator || shell.isScreenOn()) return;
+    // wake() -> onScreenStateChanged(true) dismisses a showing Glanceboard,
+    // runs the EvenHub wake barrier and repaints the shell.
+    if (shell.wake("sidebar")) this.appendLog("screen woken: glasses put on");
   }
 
   private handlePhoneLockState(locked: boolean): void {
@@ -1005,7 +1039,13 @@ class DashboardController {
       fontsMissingWarningVisible: this.fontsMissingWarningVisible,
       alarmReliabilityMessage: this.alarmReliabilityMessage,
       previewMode: this.isPreviewDisplayActive(),
+      evenHubPhoneUi: phoneUiButton(),
     };
+  }
+
+  /** Overlay an EvenHub app's phone UI (the action bar's app-icon button). */
+  showEvenHubPhoneUi(windowId: string): void {
+    showEvenHubPhoneUi(windowId);
   }
 
   /**
@@ -2475,6 +2515,13 @@ class DashboardController {
       return;
     }
     const fingerprint = frameTimings.span(frameId, "fingerprint", () => planesFingerprint(planes));
+    // An identical repaint (e.g. every in-process window re-renders when the
+    // switcher brings it to the foreground) would flatten, encode and
+    // composite only to be deduped before sending.
+    if (display.isSurfaceCurrent(surfaceId, fingerprint)) {
+      frameTimings.finishFrame(frameId, "discarded: surface unchanged");
+      return;
+    }
     const { image, draws } = frameTimings.span(frameId, "flatten", () => flattenPlanesWithDraws(planes));
     const buffer = frameTimings.span(frameId, "to8bpp", () => image.to8bppBuffer());
     const preparedDraws = frameTimings.span(frameId, "prepareFrameDraws", () => prepareFrameDraws(draws));

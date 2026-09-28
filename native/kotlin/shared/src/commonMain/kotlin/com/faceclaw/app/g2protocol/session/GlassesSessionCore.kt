@@ -1036,6 +1036,10 @@ class GlassesSessionCore(
         storeDesiredComposite(composite, paintMs, frameId)
     }
 
+    /** See [SurfaceCompositor.isSurfaceCurrent]. */
+    fun isSurfaceCurrent(surfaceId: String, fingerprint: String): Boolean =
+        compositor.isSurfaceCurrent(surfaceId, fingerprint)
+
     /** Store a composite as the desired frame unless a newer one won the race. */
     internal fun storeDesiredComposite(composite: SurfaceCompositor.Composite, paintMs: Int, frameId: Int) {
         var supersededFrameId = 0

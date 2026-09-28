@@ -4,6 +4,11 @@
 
 * Add config settings to disable animation categories
 * EvenHub compatibility uses menu animations and is closer to style matched
+* Reduce phone CPU usage
+* Fix a crash on install of larger EvenHub apps
+* Fix line wrapping on EvenHub permissions dialog
+* Putting on the glasses auto-wakes the screen
+* Add a button to the phone screen top bar to open EvenHub app phone UI
 
 ## 0.8.0 - 2026-09-26
 

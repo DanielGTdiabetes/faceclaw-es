@@ -362,9 +362,13 @@ export class IosPreviewController {
     // Sample false to catch a notification missed during suspension. Do not
     // sample true here: WillBecomeUnavailable precedes the property transition.
     if (!UIApplication.sharedApplication.protectedDataAvailable) this.handlePhoneLockState(true)
+    // Putting the glasses on (an observed OFF_HEAD -> ON_HEAD transition, not
+    // a session's first snapshot) wakes the screen, to the lock notice if locked.
+    const putOn = wearing && this.glassesWorn === false
     this.glassesWorn = wearing
     this.logBluetooth(`Glasses wear state: ${wearing ? 'ON_HEAD' : 'OFF_HEAD'}`)
     if (!wearing && this.phoneLocked && this.lockEnabled) this.setGlassesLocked(true)
+    if (putOn && this.runtimeRunning && !shell.isScreenOn()) shell.wake('sidebar')
   }
   private setGlassesLocked(locked: boolean): void {
     if (locked === this.glassesLocked) return

@@ -43,11 +43,19 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             return maxOf(1, (((value * dim) + 128) shr 8))
         }
 
+        /**
+         * The rest of [reader] as a heap-array reader. Parsing reads field by field, and through a
+         * platform buffer (Android's direct ByteBuffer) each byte was its own native peek; one bulk
+         * copy first is far cheaper.
+         */
+        private fun heapReader(reader: ByteReader): ByteReader =
+            if (reader is ArrayByteReader) reader else ArrayByteReader(ByteArray(reader.remaining()).also { reader.get(it) })
+
         private fun parseDraws(draws: ByteReader?): Array<ScreenDraw> {
             if (((draws == null) || (draws.remaining() < 1))) {
                 return NO_DRAWS
             }
-            val cursor: ByteReader = draws
+            val cursor: ByteReader = heapReader(draws)
             var out: MutableList<ScreenDraw> = ArrayList()
             while ((cursor.remaining() >= 1)) {
                 var kind: Int = (cursor.get() and 0xff)
@@ -253,8 +261,11 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
 
     private var shellScene: ShellScene? = null
     fun setShellScene(reader: ByteReader) {
-        val scene = ShellScene.decode(reader)
-        lock.withLock { shellScene = scene }
+        val scene = ShellScene.decode(heapReader(reader))
+        lock.withLock {
+            shellScene = scene
+            changedSinceComposite = true
+        }
     }
 
     private class Surface {
@@ -284,6 +295,16 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         /** Surface-local deferred draws of the retained content (already baked into pixels). */
         @JvmField var draws: Array<ScreenDraw> = NO_DRAWS
 
+        /**
+         * [draws]' retained selections in screen coordinates, as built for [placedFor] at
+         * ([placedX], [placedY]). Reused by every composite until either changes, so the shell
+         * scene built from them (and its fingerprint) can be reused too.
+         */
+        @JvmField var placedSelections: List<RetainedDrawing> = emptyList()
+        @JvmField var placedFor: Array<ScreenDraw>? = null
+        @JvmField var placedX: Int = 0
+        @JvmField var placedY: Int = 0
+
         constructor(id: String) {
             this.id = id
         }
@@ -291,6 +312,8 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
 
     private val lock = protocolPlatform().createLock()
     private var animatedPreview: ShellScene.AnimatedPreview? = null
+    /** The last composite's scene; reused while its inputs are unchanged (see compositeLocked). */
+    private var lastScene: ShellScene? = null
     private var previewKey: String? = null
 
     private fun previewScene(scene: ShellScene, gray: ByteArray, key: String): ByteArray {
@@ -317,6 +340,13 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     private val surfaces: MutableMap<String, Surface> = HashMap()
 
     private var nextCompositeSeq: Long = 1
+
+    /**
+     * Set by changes that take effect at the next composite (geometry, dim, depth, blanking,
+     * visibility, a new shell scene, content retained without compositing) and cleared by a
+     * composite that is kept (not a preview); see [isSurfaceCurrent].
+     */
+    private var changedSinceComposite: Boolean = false
 
     /** Set the output frame size. Must be called before any surface work. */
     fun configureScreen(width: Int, height: Int): Unit {
@@ -376,12 +406,27 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             surface.height = height
             surface.zOrder = zOrder
             surface.transparency = transparency
+            changedSinceComposite = true
         }
     }
 
     fun removeSurface(id: String): Unit {
         lock.withLock {
             surfaces.remove(id)
+            changedSinceComposite = true
+        }
+    }
+
+    /**
+     * Whether a full-surface update carrying [fingerprint] would change nothing: the surface
+     * already retains that content and every other change has reached a kept composite. A
+     * submitter can then drop an identical repaint without flattening or sending it.
+     */
+    fun isSurfaceCurrent(id: String, fingerprint: String): Boolean {
+        lock.withLock {
+            if (changedSinceComposite) return false
+            val surface = surfaces.get(id) ?: return false
+            return surface.fingerprint.isNotEmpty() && surface.fingerprint == fingerprint
         }
     }
 
@@ -398,6 +443,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         lock.withLock {
             underlayDimBelowZOrder = belowZOrder
             underlayDim = maxOf(0, minOf(256, factor256))
+            changedSinceComposite = true
         }
     }
 
@@ -419,6 +465,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
                 throw IllegalArgumentException(("unknown surface " + id))
             }
             surface.visible = visible
+            changedSinceComposite = true
         }
     }
 
@@ -432,6 +479,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         lock.withLock {
             val surface = surfaces.get(id) ?: throw IllegalArgumentException(("unknown surface " + id))
             surface.depth = depth
+            changedSinceComposite = true
         }
     }
 
@@ -450,6 +498,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     fun setBlanked(blanked: Boolean): Unit {
         lock.withLock {
             this.blanked = blanked
+            changedSinceComposite = true
         }
     }
 
@@ -596,6 +645,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             }
             surface.fingerprint = (if ((contentFingerprint == null)) "" else contentFingerprint)
             surface.draws = parsed
+            if (!composeAfter) changedSinceComposite = true
             return if (composeAfter) compositeLocked() else null
         }
     }
@@ -618,8 +668,10 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
                 return null
             }
             val seq = nextCompositeSeq
+            val changed = changedSinceComposite
             val result = compositeLocked(includePreview = true)
             nextCompositeSeq = seq
+            changedSinceComposite = changed
             return result
         }
     }
@@ -640,6 +692,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     }
 
     private fun compositeLocked(includePreview: Boolean = includePreviewInFrames): Composite {
+        changedSinceComposite = false
         var gray: ByteArray = ByteArray((screenWidth * screenHeight))
         if (blanked) {
             animatedPreview?.player?.stop()
@@ -666,9 +719,9 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             }
             blendLocked(gray, surface)
             var dim: Int = dimForLocked(surface)
+            selections.addAll(placedSelectionsLocked(surface))
             for (draw in surface.draws) {
-                val selected = draw.selection
-                if (selected != null) { selections.add(selected.translated(surface.x, surface.y)); continue }
+                if (draw.selection != null) continue
                 if (((dim < 256) && (draw.kind == ScreenDraw.KIND_IMAGE))) {
                     continue
                 }
@@ -710,8 +763,16 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             }
         }
         val screenDepth = screenDepthLocked(ordered)
-        val scene = if (surfaces.values.any { it.visible && it.zOrder > 1 }) ShellScene(emptyList(), screenDepth = screenDepth)
-            else ShellScene(shellScene?.layers ?: emptyList(), selections, screenDepth)
+        val overlaid = surfaces.values.any { it.visible && it.zOrder > 1 }
+        val sceneLayers = if (overlaid) emptyList() else shellScene?.layers ?: emptyList()
+        val sceneSelections: List<RetainedDrawing> = if (overlaid) emptyList() else selections
+        // Built per composite, a scene rebuilt its fingerprint and resource lists every time even
+        // though its inputs (the decoded shell layers, cached placed selections) rarely change.
+        val previous = lastScene
+        val scene = if (previous != null && previous.layers === sceneLayers && previous.screenDepth == screenDepth &&
+            sameElements(previous.selections, sceneSelections)) previous
+            else ShellScene(sceneLayers, sceneSelections, screenDepth)
+        lastScene = scene
         val sceneKey = fingerprint.append("|shell:").append(scene.fingerprint).toString()
         val preview = if (includePreview && (shellScene != null || selections.isNotEmpty())) {
             previewScene(scene, gray, sceneKey)
@@ -725,6 +786,22 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         }
         return Composite(preview, screenWidth, screenHeight, sceneKey,
             nextCompositeSeq++, draws.toTypedArray()).also { it.screenGray = gray; it.shellScene = scene }
+    }
+
+    private fun placedSelectionsLocked(surface: Surface): List<RetainedDrawing> {
+        if (surface.placedFor !== surface.draws || surface.placedX != surface.x || surface.placedY != surface.y) {
+            surface.placedSelections = surface.draws.mapNotNull { it.selection?.translated(surface.x, surface.y) }
+            surface.placedFor = surface.draws
+            surface.placedX = surface.x
+            surface.placedY = surface.y
+        }
+        return surface.placedSelections
+    }
+
+    private fun sameElements(a: List<RetainedDrawing>, b: List<RetainedDrawing>): Boolean {
+        if (a.size != b.size) return false
+        for (i in a.indices) if (a[i] !== b[i]) return false
+        return true
     }
 
     private fun blendLocked(gray: ByteArray, surface: Surface): Unit {

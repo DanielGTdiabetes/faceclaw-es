@@ -25,6 +25,7 @@ import { isAutoReconnectSuppressed, resumeAutoReconnect } from "../g2/reconnect-
 import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
+import { type PhoneUiButton } from "../apps/evenhub/manager";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -63,6 +64,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   private _alarmReliabilityMessage = "";
   private _warningsModalVisible = false;
   private _previewMode = false;
+  private _evenHubPhoneUi: PhoneUiButton | null = null;
   private _phase: "disconnected" | "connecting" | "connected" | "charging" | "disconnecting" = "disconnected";
 
   // A new view model is built on every navigation to the main page; these
@@ -112,6 +114,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.batteryOptimizationWarningVisible = snapshot.batteryOptimizationWarningVisible;
       this.fontsMissingWarningVisible = snapshot.fontsMissingWarningVisible;
       this.alarmReliabilityMessage = snapshot.alarmReliabilityMessage;
+      this.evenHubPhoneUi = snapshot.evenHubPhoneUi;
       this.refreshPadFocusLine();
     }));
     // Brightness / display mode can change from the glasses' Settings app too.
@@ -771,6 +774,28 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   get warningsModalVisibility(): "visible" | "collapse" {
     return this._warningsModalVisible ? "visible" : "collapse";
+  }
+
+  set evenHubPhoneUi(value: PhoneUiButton | null) {
+    const current = this._evenHubPhoneUi;
+    if (current?.windowId === value?.windowId && current?.icon === value?.icon) return;
+    this._evenHubPhoneUi = value;
+    this.notifyPropertyChange("evenHubPhoneUiIcon", this.evenHubPhoneUiIcon);
+    this.notifyPropertyChange("evenHubPhoneUiVisibility", this.evenHubPhoneUiVisibility);
+  }
+
+  /** The foreground EvenHub app's icon, which opens its phone UI when tapped. */
+  get evenHubPhoneUiIcon(): ImageSource | null {
+    return this._evenHubPhoneUi?.icon ?? null;
+  }
+
+  get evenHubPhoneUiVisibility(): "visible" | "collapse" {
+    return this._evenHubPhoneUi?.icon ? "visible" : "collapse";
+  }
+
+  onEvenHubPhoneUiTap(): void {
+    const windowId = this._evenHubPhoneUi?.windowId;
+    if (windowId) dashboardController.showEvenHubPhoneUi(windowId);
   }
 
   onWarningIconTap(): void {
