@@ -102,6 +102,12 @@ export type ShellWindow = {
   /** A window owns microphone capture outside the shell voice dialog. */
   isVoiceCapturing?: () => boolean;
   /**
+   * True while the window shows something the wearer watches without
+   * touching anything (a playing video): the idle screen timeout waits, as
+   * it does for voice capture, while this window is in the foreground.
+   */
+  keepsScreenOn?: () => boolean;
+  /**
    * True when the window gives swipe-left / swipe-right (watch directional
    * input) a meaning; otherwise the shell forwards directionalFallback(event).
    */
@@ -647,7 +653,10 @@ class Shell {
     // ring. An in-flight assistant turn suspends it for the same reason (a
     // tool loop can run for a while with no input); once the turn ends and
     // the Done/Follow-up menu is showing, the normal idle timeout resumes.
-    if (this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantSession?.isTurnActive() || this.foregroundWindow()?.isVoiceCapturing?.()) {
+    // A foreground window that is playing video holds it off the same way.
+    const foreground = this.foregroundWindow();
+    if (this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantSession?.isTurnActive() ||
+        foreground?.isVoiceCapturing?.() || foreground?.keepsScreenOn?.()) {
       this.lastInputAtMs = nowMs;
       return false;
     }

@@ -56,6 +56,7 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   const load = loader({ global: { isIOS: true } }, {
     '../../native/file-access': {}, '../../native/font-files': { isFontFile: () => false },
     '../../graphics/installed-fonts': {}, '../../native/image-files': { isDecodableImageFile: () => false },
+    '../../native/video-player': { isPlayableVideoFile: () => true },
     '../evenhub/installed-apps': { readEvenHubPackageManifest: () => null }, '../evenhub/permission-dialog': {},
     './file-browser': { FileBrowserLayer: class { constructor(options) { browserOptions = options; } } },
     './file-info-dialog': { FileInfoDialogLayer: class { constructor(entry, value) { actions = value; } } },
@@ -64,6 +65,8 @@ test('Files on iOS exposes Run app for EHPKs and passes the selected local path'
   });
   load('app/apps/files/files-app.ts').createFilesAppWindow({ openEhpkApp: path => { opened = path; }, installEhpkApp: path => { installed = path; } });
   assert.equal(browserOptions.isSupportedFile('test.EHPK'), true);
+  // Video playback is Android-only for now.
+  assert.equal(browserOptions.isSupportedFile('clip.mp4'), false);
   const ctx = { stack: { push() {}, pop() {} } };
   browserOptions.onFilePicked({ name: 'test.ehpk', path: '/Documents/test.ehpk' }, ctx);
   assert.deepEqual(Array.from(actions, a => a.label), ['Run app', 'Install']);
