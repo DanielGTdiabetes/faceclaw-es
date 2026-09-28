@@ -149,6 +149,9 @@ const SHELL_REFRESH_INTERVAL_MS = 60_000;
 // schedules a refresh), so this just covers anything that slips through.
 const PREVIEW_INTERVAL_MS = 1_000;
 const SCREEN_TIMEOUT_CHECK_MS = 1_000;
+// The lock screen is a short notice, not something to read at leisure; it
+// ignores the screen-timeout setting (including "never").
+const LOCK_SCREEN_TIMEOUT_MS = 15_000;
 const EVENHUB_SCREEN_OFF_SUSPEND_DELAY_MS = 5_000;
 const EVENHUB_WAKE_READY_TIMEOUT_MS = 4_500;
 const FOREGROUND_NOTIFICATION_MIN_UPDATE_MS = 30_000;
@@ -365,7 +368,8 @@ class DashboardController {
         // surface, so their repaints go through the shell render path.
         requestRender: () => this.requestShellRender(),
       },
-      getScreenTimeoutMs: () => screenTimeoutSettingToMs(screenTimeoutSetting.get()),
+      getScreenTimeoutMs: () =>
+        this.glassesLocked ? LOCK_SCREEN_TIMEOUT_MS : screenTimeoutSettingToMs(screenTimeoutSetting.get()),
       requestShellRender: () => this.requestShellRender(),
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
       onKeyboardInputChanged: (session) => {
@@ -626,6 +630,9 @@ class DashboardController {
   }
 
   private handleWearState(wearing: boolean): void {
+    // Only an observed OFF_HEAD -> ON_HEAD transition counts as putting the
+    // glasses on; the first snapshot of a session (null) is just the status.
+    const putOn = wearing && this.glassesWorn === false;
     this.glassesWorn = wearing;
     updateGlassesPresence({ worn: wearing });
     this.appendLog(wearing ? "glasses wear state: ON_HEAD" : "glasses wear state: OFF_HEAD");
@@ -633,6 +640,19 @@ class DashboardController {
     if (!wearing && this.phoneLocked && lockScreenEnabledSetting.get()) {
       this.setGlassesLocked(true, "glasses removed while phone locked");
     }
+    if (putOn) this.wakeForGlassesPutOn();
+  }
+
+  /**
+   * Putting the glasses on wakes the screen, like a double-tap would. While
+   * locked that shows the lock-screen notice (which then times out on its
+   * own short timer); otherwise it lands on the sidebar as a normal wake.
+   */
+  private wakeForGlassesPutOn(): void {
+    if (this.phase !== "connected" || !this.communicator || shell.isScreenOn()) return;
+    // wake() -> onScreenStateChanged(true) dismisses a showing Glanceboard,
+    // runs the EvenHub wake barrier and repaints the shell.
+    if (shell.wake("sidebar")) this.appendLog("screen woken: glasses put on");
   }
 
   private handlePhoneLockState(locked: boolean): void {
