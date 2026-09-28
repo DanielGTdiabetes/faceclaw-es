@@ -16,6 +16,8 @@ declare const com: any;
 export const WEAR_PATHS = {
   /** Watch -> phone: a ring-style gesture. */
   input: "/faceclaw/input",
+  /** Watch -> phone: a finger landed on the pad (the ring-press ahead of a gesture); never acked. */
+  press: "/faceclaw/press",
   /** Watch -> phone: a shell command (launch app, wake, lock, ...). */
   command: "/faceclaw/command",
   /** Watch -> phone: a text query for the assistant. */

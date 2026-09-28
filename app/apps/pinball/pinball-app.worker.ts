@@ -12,7 +12,8 @@
  * keep the BLE payload down to the dirty region around the ball.
  *
  * Controls (ball ready): scroll sets launch power, click launches. In play:
- * ring-press flips both flippers for 300 ms; click launches from the plunger,
+ * a touch-down (ring-press) flips both flippers for 300 ms, as does a click
+ * without one; click launches from the plunger,
  * double-click pauses. Swipes no longer trigger individual flippers;
  * up/down raise and lower launch power at the plunger.
  * Paused/game over: click resumes or starts a new game, double-click yields
@@ -42,6 +43,7 @@ import {
   GESTURE_DOUBLE_CLICK,
   GESTURE_SCROLL,
   type InputEvent,
+  PressTracker,
 } from "../../ui/gestures";
 import { clamp } from "../../util/numeric-util";
 
@@ -273,6 +275,8 @@ type PinballWindow = {
   lastMinorSfxAtMs: number;
   soundOn: boolean;
   lastSubmittedFingerprint: string;
+  /** Which gestures already flipped on their ring-press. */
+  presses: PressTracker;
 };
 
 const windows = new Map<string, PinballWindow>();
@@ -336,6 +340,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         lastMinorSfxAtMs: 0,
         soundOn: loadSoundEnabled("pinball"),
         lastSubmittedFingerprint: "",
+        presses: new PressTracker(),
       };
       windows.set(message.windowId, window);
       break;
@@ -491,6 +496,7 @@ function windowMenu(window: PinballWindow): WindowMenu {
 }
 
 function handleInput(window: PinballWindow, event: InputEvent, frameId: number): void {
+  const followsPress = window.presses.followsPress(event);
   // An open window menu owns all input (it closes itself via pop); menus are
   // list UIs, so watch swipes take their standard fallback meanings there.
   if (window.menu?.isOpen()) {
@@ -502,13 +508,14 @@ function handleInput(window: PinballWindow, event: InputEvent, frameId: number):
   }
 
   if (window.phase === "playing") {
-    handlePlayingInput(window, event, frameId);
+    handlePlayingInput(window, event, frameId, followsPress);
   } else {
     handleIdleInput(window, event, frameId);
   }
 }
 
-function handlePlayingInput(window: PinballWindow, event: InputEvent, frameId: number): void {
+/** `followsPress` marks a gesture whose touch-down already flipped (see PressTracker). */
+function handlePlayingInput(window: PinballWindow, event: InputEvent, frameId: number, followsPress: boolean): void {
   const ready = window.ballState === "ready";
   switch (event.type) {
     case "scroll-up":
@@ -539,7 +546,7 @@ function handlePlayingInput(window: PinballWindow, event: InputEvent, frameId: n
     case "click":
       if (ready) {
         launchBall(window);
-      } else if (event.source !== "ring") {
+      } else if (!followsPress) {
         flip(window, window.flippers[0]!);
         flip(window, window.flippers[1]!);
       }

@@ -1838,6 +1838,8 @@ class DashboardController {
    * test buttons, the watch). "long-press" is a complete short hold;
    * "long-press-start" / "long-press-release" let a source with a real
    * finger-down/finger-up (the watch) hold for as long as the user does.
+   * Such a source also sends "ring-press" at each finger-down, as the ring
+   * does before it knows which gesture the touch will become.
    */
   async injectSyntheticRingInput(kind: WearRemoteInputKind, origin: SyntheticInputOrigin = "ring"): Promise<void> {
     // Match the ring while the display is dark: a double-click wakes it
@@ -2831,6 +2833,7 @@ class DashboardController {
 
   private buildSyntheticRingInput(
     kind:
+      | "ring-press"
       | "click"
       | "double-click"
       | "scroll-up"
@@ -2876,6 +2879,15 @@ class DashboardController {
           containerName: "",
           eventType: EvenAIStatus.EVEN_AI_WAKE_UP,
           eventSource: 0,
+          systemExitReasonCode: 0,
+          frameId,
+        };
+      case "ring-press":
+        return {
+          kind: "sys-event",
+          containerName: "",
+          eventType: OsEventTypeList.RING_PRESS_EVENT,
+          eventSource,
           systemExitReasonCode: 0,
           frameId,
         };

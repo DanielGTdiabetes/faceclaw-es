@@ -63,6 +63,8 @@ class FaceclawWearBridge private constructor(context: Context) {
         const val PATH_STATE_REQUEST = "/faceclaw/state/request"
         /** Watch -> phone: the watch's own battery; carries no seq and is never acked. */
         const val PATH_WATCH_BATTERY = "/faceclaw/battery"
+        /** Watch -> phone: touch-down ahead of a gesture; carries no seq and is never acked. */
+        const val PATH_WATCH_PRESS = "/faceclaw/press"
         /** Phone -> watch: answered with PATH_WATCH_BATTERY even while the watch app is closed. */
         const val PATH_WATCH_BATTERY_REQUEST = "/faceclaw/battery/request"
         const val PATH_ACK = "/faceclaw/ack"
@@ -331,6 +333,9 @@ class FaceclawWearBridge private constructor(context: Context) {
         // dashboard to receive it, it is simply dropped (the dashboard polls
         // again when it starts), and the watch does not expect an ack.
         if (PATH_WATCH_BATTERY == path) return
+        // A touch-down only matters live; the gesture that follows it gets
+        // the failure ack below.
+        if (PATH_WATCH_PRESS == path) return
 
         // No JS listener yet: tell the watch so it can explain why nothing is
         // happening. Only state requests are kept for replay (see class doc);

@@ -490,10 +490,12 @@ export class IosPreviewController {
   gesture(gesture: PhoneGesture, origin: 'watch' | 'ring' | 'mirror', nx = 0, ny = 0): void {
     this.inputQueue = this.inputQueue.then(async () => {
       if (!this.active) return
+      // A mirror tap may land on a hit target rather than being a gesture.
+      if (gesture === 'press' && origin === 'mirror') return
       if (gesture === 'tap' && origin === 'mirror' && shell.isScreenOn() && !this.glassesLocked) {
         await this.mirrorTap(nx, ny)
       } else {
-        let type: string = ({ tap: 'click', 'double-tap': 'double-click' } as Record<string, string>)[gesture] ?? gesture
+        let type: string = ({ press: 'ring-press', tap: 'click', 'double-tap': 'double-click' } as Record<string, string>)[gesture] ?? gesture
         if (origin === 'ring' && type.startsWith('swipe-')) {
           if (type === 'swipe-left' || type === 'swipe-right') return
           type = type === 'swipe-up' ? 'scroll-up' : 'scroll-down'

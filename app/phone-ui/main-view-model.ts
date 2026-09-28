@@ -1057,6 +1057,9 @@ export class MainViewModel extends RemoteControlsViewModel {
   // and the finger-up sends the release, so a hold really holds (the
   // Glanceboard stays up until the finger lifts). The firmware sends the
   // same release after a tap-then-hold, so that pair gets one too.
+  //
+  // Every finger-down (the second tap of a pair included) first sends a
+  // ring-press, as the ring does before it knows what the touch will become.
 
   private ringPadDoubleTapPending = false;
   private ringPadHeld = false;
@@ -1077,6 +1080,10 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   async onRingPadTouch(args: TouchGestureEventData): Promise<void> {
+    if (args.action === "down" && args.getPointerCount() === 1) {
+      await dashboardController.injectSyntheticRingInput("ring-press");
+      return;
+    }
     if (args.action !== "up" && args.action !== "cancel") return;
     const pending = this.ringPadDoubleTapPending;
     this.ringPadDoubleTapPending = false;
@@ -1148,11 +1155,15 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.refreshPadFocusLine();
   }
 
-  /** Two fingers down and up without moving: back (the watch's two-finger tap). */
+  /**
+   * The first finger down sends a ring-press, as the watch pad does. Two
+   * fingers down and up without moving: back (the watch's two-finger tap).
+   */
   async onPadTouch(args: TouchGestureEventData): Promise<void> {
     const count = args.getPointerCount();
     if (args.action === "down" || args.action === "move") {
       if (count >= 2) this.padTwoFingerDown = true;
+      else if (args.action === "down") await dashboardController.injectSyntheticRingInput("ring-press", "watch");
       return;
     }
     if (args.action === "up" || args.action === "cancel") {

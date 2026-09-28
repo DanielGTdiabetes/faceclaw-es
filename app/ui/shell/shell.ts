@@ -1569,6 +1569,10 @@ function rawInputEventToPayload(event: RawInputEvent): InputEventPayload {
       // The firmware emits this dedicated ID only for full raw source 4.
       // Its stock sender leaves the source unspecified for extension 14.
       return { type: "ring-press", source: "ring" };
+    } else if (event.eventType === OsEventTypeList.RING_PRESS_EVENT &&
+               event.eventSource === EventSourceType.TOUCH_EVENT_FROM_WATCH) {
+      // Synthetic: the watch pad's (or the phone's watch pad's) touch-down.
+      return { type: "ring-press", source: "watch" };
     } else if (event.eventType === OsEventTypeList.CLICK_EVENT) {
       return {
         type: "click",
@@ -1656,7 +1660,7 @@ function eventSourceToString(eventSource: number): InputSource {
 export function inputEventToString(event: InputEvent): string {
   switch (event.type) {
     case "ring-press":
-      return "Ring press";
+      return `Press from ${event.source}`;
     case "click":
       return `Click from ${event.source}`;
     case "double-click":
