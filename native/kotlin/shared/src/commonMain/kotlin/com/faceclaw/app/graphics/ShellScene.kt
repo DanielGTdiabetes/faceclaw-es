@@ -2,11 +2,17 @@ package com.faceclaw.app
 
 /** Immutable shell snapshot. Keys identify writable surfaces across repaints, not their pixels. */
 class ShellScene(val layers: List<Layer>, val selections: List<RetainedDrawing> = emptyList(), val screenDepth: Int = 0) {
-    class Layer(val key: Int, val x: Int, val y: Int, val width: Int, val height: Int, val dim: Int, val packed: ByteArray, val selections: List<RetainedDrawing> = emptyList(), val depth: Int = 0)
+    class Layer(val key: Int, val x: Int, val y: Int, val width: Int, val height: Int, val dim: Int, val packed: ByteArray, val selections: List<RetainedDrawing> = emptyList(), val depth: Int = 0) {
+        // Layers are reused by every composite until the shell repaints, and hashing packed
+        // byte-by-byte on each one was a measurable share of the compositor's time.
+        internal val fingerprint: String by lazy {
+            "$key,$x,$y,$width,$height,$dim,$depth,${CachedResource(packed).hash},${selections.joinToString { row -> row.fingerprint }}"
+        }
+    }
     val allSelections = selections + layers.flatMap { it.selections }
     val retainedResources = allSelections.flatMap { it.resources }
     init { require(retainedResources.size + layers.size < 511 && screenDepth in -128..127) }
-    val fingerprint: String = layers.joinToString(";") { "${it.key},${it.x},${it.y},${it.width},${it.height},${it.dim},${it.depth},${CachedResource(it.packed).hash},${it.selections.joinToString { row -> row.fingerprint }}" } + selections.joinToString { it.fingerprint } + "|depth:$screenDepth"
+    val fingerprint: String = layers.joinToString(";") { it.fingerprint } + selections.joinToString { it.fingerprint } + "|depth:$screenDepth"
     fun calls(width: Int, height: Int, surfaces: IntArray, selected: IntArray): List<ByteArray> {
         val calls = ArrayList<ByteArray>(); var rowId = 0
         val now = drawAnimationTimeMs()

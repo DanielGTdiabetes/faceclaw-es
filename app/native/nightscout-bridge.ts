@@ -1,5 +1,5 @@
 import { nightscoutApiTokenSetting, nightscoutSiteUrlSetting } from "../ui/dashboard-settings";
-import { fetchWithUserAgent } from "../util/http";
+import { fetchTextWithUserAgent } from "../util/http";
 
 export type NightscoutPoint = {
   timestampMs: number;
@@ -305,11 +305,11 @@ export class NightscoutBridge {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetchWithUserAgent(url);
+  const response = await fetchTextWithUserAgent(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
-  return (await response.json()) as T;
+  return response.json<T>();
 }
 
 function parseTreatments(treatments: NightscoutTreatmentResponse[], nowMs: number): {

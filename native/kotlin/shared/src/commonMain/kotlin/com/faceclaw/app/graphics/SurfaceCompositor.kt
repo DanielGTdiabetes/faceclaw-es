@@ -582,7 +582,11 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
                         expectedBytes)
                 )
             }
-            run {
+            if (rectX == 0 && rectWidth == surface.width) {
+                // Full-width rect (every current submitter): one bulk read. Per-row reads from a
+                // direct ByteBuffer each cross into native code, which showed up in profiles.
+                pixels.get(surface.pixels, rectY * surface.width, expectedBytes)
+            } else run {
                 var row: Int = 0
                 while ((row < rectHeight)) {
                     var dstOffset: Int = (((rectY + row) * surface.width) + rectX)

@@ -711,7 +711,7 @@ internal fun GlassesSessionCore.enqueueAmbientLightControlLocked(payload: ByteAr
 
 internal fun GlassesSessionCore.enqueueDesiredImageLocked() {
     val fingerprint: String
-    val packedSnapshot: ByteArray?
+    val graySnapshot: ByteArray?
     val width: Int
     val height: Int
     val paintMs: Int
@@ -720,7 +720,7 @@ internal fun GlassesSessionCore.enqueueDesiredImageLocked() {
     val scene: ShellScene
     desiredTilesLock.locked {
         fingerprint = desiredFingerprint
-        packedSnapshot = desiredPacked
+        graySnapshot = desiredGray
         width = desiredWidth
         height = desiredHeight
         paintMs = desiredPaintMs
@@ -729,7 +729,13 @@ internal fun GlassesSessionCore.enqueueDesiredImageLocked() {
         scene = desiredShellScene
         desiredFrameId = 0
     }
-    val packedFrame: ByteArray = packedSnapshot ?: ByteArray(0)
+    // Pack here rather than at submit: a frame superseded before the send loop
+    // gets to it is never packed, and the main thread doesn't pay for it.
+    frameTimings.spanStart(frameId, "pack-4bpp")
+    val packedFrame: ByteArray =
+        if (graySnapshot == null || graySnapshot.isEmpty()) ByteArray(0)
+        else BmpUtil.pack4bppFromGray8(graySnapshot, width, height)
+    frameTimings.spanEnd(frameId, "pack-4bpp")
     // Visibility belongs to this immutable composite, not the latest UI request.
     enqueueBrightnessLocked(!fingerprint.startsWith("blanked:"))
     if (customFirmwareDetected && packedFrame.size > 0) {
