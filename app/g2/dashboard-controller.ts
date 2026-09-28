@@ -78,7 +78,14 @@ import {
   installedEvenHubPackageId,
   uninstallEvenHubPackage,
 } from "../apps/evenhub/installed-apps";
-import { closeRunningPackage, launchInstalledPackage } from "../apps/evenhub/manager";
+import {
+  closeRunningPackage,
+  launchInstalledPackage,
+  onPhoneShownChanged,
+  phoneUiButton,
+  showOnPhone as showEvenHubPhoneUi,
+  type PhoneUiButton,
+} from "../apps/evenhub/manager";
 import { openEvenHubStoreForPackage } from "../apps/evenhub";
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
@@ -133,6 +140,11 @@ export type DashboardSnapshot = {
    * nothing is paired, so "Disconnected" would be the wrong label.
    */
   previewMode: boolean;
+  /**
+   * The foreground glasses window's EvenHub phone UI, when it can be opened
+   * (the action bar's app-icon button); null otherwise.
+   */
+  evenHubPhoneUi: PhoneUiButton | null;
 };
 
 type DashboardListener = (snapshot: DashboardSnapshot) => void;
@@ -361,6 +373,8 @@ class DashboardController {
       launchApp: (appId) => this.launchApp(appId),
       requestShellRender: () => this.requestShellRender(),
     });
+    // The action bar's EvenHub phone-UI button hides while that UI is showing.
+    onPhoneShownChanged(() => this.emit());
     shell.configure({
       actions: {
         ...sharedActions,
@@ -1025,7 +1039,13 @@ class DashboardController {
       fontsMissingWarningVisible: this.fontsMissingWarningVisible,
       alarmReliabilityMessage: this.alarmReliabilityMessage,
       previewMode: this.isPreviewDisplayActive(),
+      evenHubPhoneUi: phoneUiButton(),
     };
+  }
+
+  /** Overlay an EvenHub app's phone UI (the action bar's app-icon button). */
+  showEvenHubPhoneUi(windowId: string): void {
+    showEvenHubPhoneUi(windowId);
   }
 
   /**

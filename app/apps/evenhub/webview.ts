@@ -22,11 +22,13 @@ import { FACECLAW_VERSION } from "../../version";
 
 declare const android: any;
 declare const com: any;
+declare const java: any;
 
 export type EvenHubWebView = {
   evaluateJs: (js: string) => void;
   destroy: () => void;
-  showOnPhone: () => void;
+  /** Show the app's phone UI; `onClose` runs when its top bar's close button is tapped. */
+  showOnPhone: (onClose: () => void) => void;
   hideOnPhone: () => void;
   /** The native android.webkit.WebView, for the host. */
   native: unknown;
@@ -118,8 +120,13 @@ export function createEvenHubWebView(session: EvenHubSession): EvenHubWebView {
         console.warn(`evenhub webview destroy failed: ${error}`);
       }
     },
-    showOnPhone: () =>
-      nativeHost.showOnPhone(Application.android?.foregroundActivity ?? Application.android?.startActivity ?? null, webView),
+    showOnPhone: (onClose: () => void) =>
+      nativeHost.showOnPhone(
+        Application.android?.foregroundActivity ?? Application.android?.startActivity ?? null,
+        webView,
+        session.manifest.name,
+        new java.lang.Runnable({ run: onClose }),
+      ),
     hideOnPhone: () => nativeHost.hideOnPhone(),
   };
 }
