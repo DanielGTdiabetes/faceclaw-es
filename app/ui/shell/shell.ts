@@ -646,7 +646,7 @@ class Shell {
     // The keyboard dialog likewise: typing happens on the phone, not the
     // ring. An in-flight assistant turn suspends it for the same reason (a
     // tool loop can run for a while with no input); once the turn ends and
-    // the Follow-up/Done menu is showing, the normal idle timeout resumes.
+    // the Done/Follow-up menu is showing, the normal idle timeout resumes.
     if (this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantSession?.isTurnActive() || this.foregroundWindow()?.isVoiceCapturing?.()) {
       this.lastInputAtMs = nowMs;
       return false;
