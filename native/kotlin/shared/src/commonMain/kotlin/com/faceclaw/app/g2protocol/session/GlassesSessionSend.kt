@@ -1003,10 +1003,22 @@ internal fun GlassesSessionCore.updateChargingModeLocked(charging: Boolean, batt
         logLine("glasses are charging; pausing display communication")
         setStateDisplay("charging", GlassesSessionCore.chargingStatusText(battery))
     } else {
-        chargingMode = false
-        logLine("glasses removed from charger; reconnecting")
-        handleTransportFailure("charging ended")
+        endChargingModeLocked("glasses removed from charger")
     }
+}
+
+/**
+ * Leave charging mode, whether a battery poll or putting the glasses on
+ * (they can't be worn in the case) said charging is over. The rebuild goes
+ * through the normal reconnect loop.
+ */
+internal fun GlassesSessionCore.endChargingModeLocked(why: String) {
+    if (!chargingMode) {
+        return
+    }
+    chargingMode = false
+    logLine("$why; reconnecting")
+    handleTransportFailure("charging ended")
 }
 
 /**

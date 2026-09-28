@@ -1364,10 +1364,15 @@ class GlassesSessionCore(
         else
             null
         var emitWearState = false
+        var putOnWhileCharging = false
         var event: G2Event? = null
         monitor.withLock {
             lastIncomingAtMs = now()
             if (decodedWearState >= 0 && decodedWearState != wearState) {
+                // An observed OFF_HEAD -> ON_HEAD means charging is over, up
+                // to CHARGING_BATTERY_POLL_MS before a battery poll would say
+                // so. Like TS's put-on wake, a first snapshot doesn't count.
+                putOnWhileCharging = chargingMode && wearState == 0 && decodedWearState == 1
                 wearState = decodedWearState
                 emitWearState = true
             }
@@ -1540,6 +1545,11 @@ class GlassesSessionCore(
             logLine(if (decodedWearState > 0) "wear state ON_HEAD" else "wear state OFF_HEAD")
             emitWearState(decodedWearState > 0)
         }
+        if (putOnWhileCharging) {
+            // After the emit, so TS sees the put-on while still in its
+            // charging phase and wakes once the rebuilt session is ready.
+            monitor.withLock { endChargingModeLocked("glasses put on while charging") }
+        }
         if (compassEvent != null) {
             emitCompassEvent(compassEvent)
         }
@@ -1649,6 +1659,12 @@ class GlassesSessionCore(
     // Connect sequence (worker thread)
 
     internal fun connectLoopOnce() {
+        monitor.withLock {
+            // TS treats a wear snapshot as per-transport and forgets it on a
+            // reconnect; forget ours too, or the new session's first report
+            // (the CFW query reply) is deduped away and TS never relearns it.
+            wearState = -1
+        }
         setStateDisplay("connecting", "Connecting to the glasses...")
         try {
             connectArm(rightAddress, true)

@@ -291,6 +291,8 @@ class DashboardController {
   private customFirmwareConfirmed = false;
   private faceclawWakeLeaseState: boolean | null = null;
   private glassesWorn: boolean | null = null;
+  /** Put on while charging: Java reconnects on that, and the wake waits for the new session. */
+  private wakeAfterChargingReconnect = false;
   private phoneLocked = false;
   private glassesLocked = false;
   // Wear OS watch remote; constructed last so it sees a fully wired shell.
@@ -654,7 +656,16 @@ class DashboardController {
     if (!wearing && this.phoneLocked && lockScreenEnabledSetting.get()) {
       this.setGlassesLocked(true, "glasses removed while phone locked");
     }
-    if (putOn) this.wakeForGlassesPutOn();
+    if (!wearing) this.wakeAfterChargingReconnect = false;
+    if (putOn && this.phase === "charging") {
+      // They can't be worn in the case, so charging is over even though no
+      // battery poll has said so yet. Java reconnects on this same report
+      // (the wake barrier needs the rebuilt session), so wake after that.
+      this.wakeAfterChargingReconnect = true;
+      this.appendLog("glasses put on while charging; waking after reconnect");
+    } else if (putOn) {
+      this.wakeForGlassesPutOn();
+    }
   }
 
   /**
@@ -667,6 +678,16 @@ class DashboardController {
     // wake() -> onScreenStateChanged(true) dismisses a showing Glanceboard,
     // runs the EvenHub wake barrier and repaints the shell.
     if (shell.wake("sidebar")) this.appendLog("screen woken: glasses put on");
+  }
+
+  /**
+   * Finish a put-on that arrived while charging. Each arm reports "connected"
+   * as it links, before the prelude; the ready session reports it again.
+   */
+  private maybeWakeAfterChargingReconnect(): void {
+    if (!this.wakeAfterChargingReconnect || !this.communicator?.isSessionReady()) return;
+    this.wakeAfterChargingReconnect = false;
+    this.wakeForGlassesPutOn();
   }
 
   private handlePhoneLockState(locked: boolean): void {
@@ -692,10 +713,13 @@ class DashboardController {
 
   private ensureWearStateTracking(): void {
     const communicator = this.communicator;
+    // Charging counts: a session that starts in the case (firmware confirmed
+    // only after charging mode began) needs the OFF_HEAD snapshot so that
+    // putting the glasses on registers as a put-on.
     if (
       !lockScreenEnabledSetting.get() ||
       !this.customFirmwareConfirmed ||
-      this.phase !== "connected" ||
+      (this.phase !== "connected" && this.phase !== "charging") ||
       !communicator
     ) {
       return;
@@ -1358,6 +1382,7 @@ class DashboardController {
     this.welcomeSoundArmed = isWelcomeSoundPending();
     this.firmwareWarningMessage = "";
     this.glassesWorn = null;
+    this.wakeAfterChargingReconnect = false;
     this.glassesLocked = false;
     this.refreshBatteryOptimizationStatus();
     this.refreshEvenAppStatus();
@@ -1434,13 +1459,16 @@ class DashboardController {
           this.pushFirmwareDebugFlags();
           this.pushBrightness(true);
         }
-        if (mappedPhase !== "connected") {
+        if (mappedPhase !== "connected" && mappedPhase !== "charging") {
           // A wear snapshot is session-scoped. CFW reports a fresh value when
           // the transport comes back, so do not make lock decisions from a
-          // stale pre-disconnect value in the meantime.
+          // stale pre-disconnect value in the meantime. Charging keeps the
+          // link (and the value), so putting the glasses on registers.
           this.glassesWorn = null;
           updateGlassesPresence({ worn: null });
-          // The mic enable was session-scoped too: park any live capture so
+        }
+        if (mappedPhase !== "connected") {
+          // The mic enable was session-scoped: park any live capture so
           // the next session restarts it, instead of leaving a holder that
           // makes every later request think the mic is already running.
           voiceControlBridge.handleSessionEnded();
@@ -1450,6 +1478,7 @@ class DashboardController {
         if (mappedPhase === "connected") {
           this.syncEvenHubScreenOffSetting();
           this.ensureWearStateTracking();
+          this.maybeWakeAfterChargingReconnect();
         } else if (mappedPhase !== "charging") {
           this.cancelEvenHubSuspendTimer();
           this.evenHubSessionSuspended = false;

@@ -471,6 +471,11 @@ export class FaceclawCommunicatorBridge {
     await this.enqueueJavaCall(() => this.communicator.enableWearDetectionAndRequestState());
   }
 
+  /** Whether the transport prelude has finished (each arm reports "connected" before it). */
+  isSessionReady(): boolean {
+    return Boolean(this.communicator.isSessionReady());
+  }
+
   /** Set the compositor's output frame size. Call before configuring surfaces. */
   async configureCompositorScreen(width: number, height: number): Promise<void> {
     await this.enqueueJavaCall(() => {
