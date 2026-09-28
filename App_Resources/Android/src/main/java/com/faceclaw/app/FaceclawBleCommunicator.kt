@@ -349,6 +349,9 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
                 contentFingerprint, paintMs, frameId, if (glyphs == null) null else AndroidByteReader(glyphs))
     }
 
+    /** Whether submitting this full-surface content would change nothing (see [GlassesSessionCore.isSurfaceCurrent]). */
+    fun isSurfaceCurrent(surfaceId: String, fingerprint: String): Boolean = core.isSurfaceCurrent(surfaceId, fingerprint)
+
     /** Play a tone sequence via CFW load_image_z mode 5 kind 4 (payload built on the TS side). */
     fun playBuzzerSequence(payload: java.nio.ByteBuffer?) {
         val bytes = ByteArray(if (payload == null) 0 else payload.remaining())

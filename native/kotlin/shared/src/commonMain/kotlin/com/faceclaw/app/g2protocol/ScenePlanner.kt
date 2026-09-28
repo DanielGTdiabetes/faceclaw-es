@@ -63,7 +63,7 @@ class ScenePlanner(private val cache: ResourceCacheState) {
         val calls = ArrayList<ByteArray>()
         for (top in 0 until height step 32) {
             val rows = minOf(32, height - top)
-            if (old != null && (top * stride until (top + rows) * stride).all { old[it] == next[it] }) continue
+            if (old != null && sameBytes(old, next, top * stride, (top + rows) * stride)) continue
             var left = width; var right = -1
             for (y in top until top + rows) for (x in 0 until width) {
                 val p = y * stride + x / 2; val shift = if (x % 2 == 0) 4 else 0
@@ -74,5 +74,13 @@ class ScenePlanner(private val cache: ResourceCacheState) {
             calls.add(DrawProtocol.bbox(next, stride, left, top, right - left + 1, rows, target))
         }
         return calls
+    }
+    private fun sameBytes(a: ByteArray, b: ByteArray, from: Int, to: Int): Boolean {
+        var i = from
+        while (i < to) {
+            if (a[i] != b[i]) return false
+            i++
+        }
+        return true
     }
 }

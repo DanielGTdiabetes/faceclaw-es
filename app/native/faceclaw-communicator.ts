@@ -133,6 +133,8 @@ export class FaceclawCommunicatorBridge {
   private javaCallQueue: Promise<void> = Promise.resolve();
   /** Calls waiting on javaCallQueue; 0 means enqueueJavaCall's fast path is safe. */
   private queuedJavaCalls = 0;
+  /** Queued calls that may change what a surface holds; see isSurfaceCurrent. */
+  private queuedSurfaceChanges = 0;
   // Reused Java-side buffers for byte payloads; passing a JS ArrayBuffer to
   // Java leaks it (see java-direct-buffer.ts). Loaded inside the queued call,
   // immediately before the synchronous Java call that consumes them.
@@ -267,8 +269,12 @@ export class FaceclawCommunicatorBridge {
    * the frame timings), which is pure latency on a call the caller is already
    * awaiting. Off by default: a call that might block for a while should keep
    * yielding to the main looper first.
+   *
+   * preservesSurfaces marks a call that neither changes a surface's retained
+   * content nor leaves a change waiting for a later composite (it composites
+   * itself), so having it queued does not make isSurfaceCurrent answer false.
    */
-  private enqueueJavaCall<T>(operation: () => T, inlineWhenIdle = false): Promise<T> {
+  private enqueueJavaCall<T>(operation: () => T, inlineWhenIdle = false, preservesSurfaces = false): Promise<T> {
     if (inlineWhenIdle && this.queuedJavaCalls === 0) {
       try {
         return Promise.resolve(operation());
@@ -277,10 +283,12 @@ export class FaceclawCommunicatorBridge {
       }
     }
     this.queuedJavaCalls++;
+    if (!preservesSurfaces) this.queuedSurfaceChanges++;
     const run = () =>
       new Promise<T>((resolve, reject) => {
         setTimeout(() => {
           this.queuedJavaCalls--;
+          if (!preservesSurfaces) this.queuedSurfaceChanges--;
           try {
             resolve(operation());
           } catch (error) {
@@ -549,6 +557,7 @@ export class FaceclawCommunicatorBridge {
     await this.enqueueJavaCall(
       () => this.communicator.submitShellScene(this.shellSceneBuffer.load(snapshot), paintMs, frameId),
       true,
+      true,
     );
   }
 
@@ -562,7 +571,19 @@ export class FaceclawCommunicatorBridge {
   async setSurfaceVisible(id: string, visible: boolean): Promise<void> {
     await this.enqueueJavaCall(() => {
       this.communicator.setSurfaceVisible(id, Boolean(visible));
-    });
+    }, false, true);
+  }
+
+  /**
+   * Whether submitting a full-surface frame with this fingerprint would
+   * change nothing: Java already holds that content for the surface, and no
+   * queued or not-yet-composited change is waiting on a composite. Lets a
+   * repaint that came out identical (a window re-rendered when it comes to
+   * the foreground, say) skip flattening and submitting its frame.
+   */
+  isSurfaceCurrent(surfaceId: string, fingerprint: string): boolean {
+    if (this.queuedSurfaceChanges > 0) return false;
+    return Boolean(this.communicator.isSurfaceCurrent(surfaceId, fingerprint));
   }
 
   /**

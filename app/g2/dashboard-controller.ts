@@ -2515,6 +2515,13 @@ class DashboardController {
       return;
     }
     const fingerprint = frameTimings.span(frameId, "fingerprint", () => planesFingerprint(planes));
+    // An identical repaint (e.g. every in-process window re-renders when the
+    // switcher brings it to the foreground) would flatten, encode and
+    // composite only to be deduped before sending.
+    if (display.isSurfaceCurrent(surfaceId, fingerprint)) {
+      frameTimings.finishFrame(frameId, "discarded: surface unchanged");
+      return;
+    }
     const { image, draws } = frameTimings.span(frameId, "flatten", () => flattenPlanesWithDraws(planes));
     const buffer = frameTimings.span(frameId, "to8bpp", () => image.to8bppBuffer());
     const preparedDraws = frameTimings.span(frameId, "prepareFrameDraws", () => prepareFrameDraws(draws));

@@ -18,6 +18,7 @@ export type DisplayTarget = Pick<
   | "setUnderlayDim"
   | "setScreenBlanked"
   | "submitSurfaceFrame"
+  | "isSurfaceCurrent"
   | "submitShellScene"
   | "waitForFrameFinished"
   | "getCompositePreview"
@@ -107,6 +108,11 @@ export class PreviewDisplayTarget implements DisplayTarget {
     this.compositor.submitSurfaceFrame(surfaceId, pixels8bpp,
       { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }, glyphs);
     this.composited();
+  }
+
+  /** Never skips: preview frames are cheap and nothing is transmitted. */
+  isSurfaceCurrent(_surfaceId: string, _fingerprint: string): boolean {
+    return false;
   }
 
   async submitShellScene(bytes: Uint8Array, _paintMs = 0, _frameId = 0): Promise<void> {

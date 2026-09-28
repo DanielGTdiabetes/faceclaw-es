@@ -536,6 +536,14 @@ export class FaceclawCommunicatorBridge {
     await this.enqueueNativeCall(() => { this.communicator.setScreenBlankedBlanked(Boolean(blanked)); });
   }
 
+  /**
+   * See the Android bridge. Not wired to the shared compositor's check on iOS
+   * yet, so every repaint is submitted as before.
+   */
+  isSurfaceCurrent(_surfaceId: string, _fingerprint: string): boolean {
+    return false;
+  }
+
   async submitSurfaceFrame(
     surfaceId: string,
     pixels8bpp: Uint8Array,
