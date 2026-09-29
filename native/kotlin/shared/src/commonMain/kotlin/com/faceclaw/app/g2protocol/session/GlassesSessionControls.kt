@@ -386,11 +386,17 @@ internal fun GlassesSessionCore.handleUnpairedFailure(address: String) {
     interruptibleSleep.interrupt()
 }
 
-internal fun GlassesSessionCore.handleTransportFailure(reason: String?) {
+/**
+ * Tear the session down and schedule a reconnect. [displayStatus], when given, replaces the
+ * generic "Reconnecting after <reason>" status line.
+ */
+internal fun GlassesSessionCore.handleTransportFailure(reason: String?, displayStatus: String? = null) {
     logError("Transport failure: $reason")
+    val retryDelayMs: Long
     monitor.withLock {
         maybeEmitEvenAppConflictLocked(reason)
         finishBenchmarkLocked(true, "transport failure")
+        val sessionWasReady = sessionReady
         sessionReady = false
         fixedLayoutCreated = false
         startupProbePending = false
@@ -402,14 +408,36 @@ internal fun GlassesSessionCore.handleTransportFailure(reason: String?) {
         lastFaceclawWakeLeaseQueuedAtMs = 0
         faceclawWakeControlSentCount = 0
         clearAllMessagesLocked("transport failure: $reason")
-        reconnectAfterMs = now() + ConnectionOptions.RECONNECT_DELAY_MS
+        retryDelayMs = scheduleReconnectLocked(sessionWasReady)
         link.disconnect(rightAddress)
         link.disconnect(leftAddress)
     }
+    logLine("reconnect attempt in " + retryDelayMs + "ms")
     if (!userDisconnectRequested) {
-        setStateDisplay("retrying", if (reason == null || reason.isEmpty()) "Reconnecting..." else "Reconnecting after $reason")
+        setStateDisplay("retrying", when {
+            displayStatus != null -> displayStatus + " Retrying in " + ((retryDelayMs + 999) / 1000) + "s."
+            reason == null || reason.isEmpty() -> "Reconnecting..."
+            else -> "Reconnecting after $reason"
+        })
     }
     interruptibleSleep.interrupt()
+}
+
+/**
+ * Set [reconnectAfterMs] for the next attempt after a failure and return the delay. Repeated
+ * failures back off along RECONNECT_BACKOFF_MS; a session that stayed up for
+ * STABLE_SESSION_MS before failing ([sessionWasReady]) starts the schedule over.
+ */
+internal fun GlassesSessionCore.scheduleReconnectLocked(sessionWasReady: Boolean): Long {
+    val now = now()
+    if (sessionWasReady && now - lastSessionReadyAtMs >= ConnectionOptions.STABLE_SESSION_MS) {
+        consecutiveReconnects = 0
+    }
+    val schedule = ConnectionOptions.RECONNECT_BACKOFF_MS
+    val delayMs = schedule[minOf(consecutiveReconnects, schedule.size - 1)].toLong()
+    consecutiveReconnects++
+    reconnectAfterMs = now + delayMs
+    return delayMs
 }
 
 internal fun GlassesSessionCore.resetSessionStateLocked() {
@@ -424,6 +452,7 @@ internal fun GlassesSessionCore.resetSessionStateLocked() {
     ringConnected = false
     ringNotificationsReady = false
     reconnectAfterMs = 0
+    consecutiveReconnects = 0
     reconnectHalted = false
     ringReconnectAfterMs = 0
     lastAckAtMs = 0

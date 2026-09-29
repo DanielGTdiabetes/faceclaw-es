@@ -192,6 +192,8 @@ class GlassesSessionCore(
     internal var lastCfwCleanupAckMagic = 0
 
     internal var reconnectAfterMs = 0L
+    // Failed connects/sessions since the last stable session; indexes RECONNECT_BACKOFF_MS.
+    internal var consecutiveReconnects = 0
     internal var ringReconnectAfterMs = 0L
     internal var lastAckAtMs = 0L
     internal var lastIncomingAtMs = 0L
@@ -1611,19 +1613,26 @@ class GlassesSessionCore(
     }
 
     override fun onConnectionStateChange(address: String?, connected: Boolean) {
-        monitor.withLock {
-            if (address == null) {
-                return
-            }
-            if (isConfiguredRingAddress(address)) {
+        if (address == null) {
+            return
+        }
+        if (isConfiguredRingAddress(address)) {
+            monitor.withLock {
                 ringConnected = connected
-                ringNotificationsReady = false
-                if (!connected) {
+                if (connected) {
+                    // A background connect landed: finish setting it up right away.
+                    ringReconnectAfterMs = 0
+                } else {
+                    ringNotificationsReady = false
                     ringReconnectAfterMs = now() + ConnectionOptions.RING_RECONNECT_DELAY_MS
                 }
-                logLine(if (connected) "direct ring BLE connected" else "direct ring BLE disconnected")
-                return
             }
+            logLine(if (connected) "direct ring BLE connected" else "direct ring BLE disconnected")
+            interruptibleSleep.interrupt()
+            return
+        }
+        var lostSession = false
+        monitor.withLock {
             if (address.equals(rightAddress, ignoreCase = true)) {
                 rightConnected = connected
             } else if (address.equals(leftAddress, ignoreCase = true)) {
@@ -1632,6 +1641,10 @@ class GlassesSessionCore(
                 return
             }
             if (!connected) {
+                // Before the session is ready, this is an attempt failing (or an arm
+                // dropping mid-setup): the connect sequence notices on its own and
+                // schedules the retry, so leave the backoff alone.
+                lostSession = sessionReady
                 sessionReady = false
                 fixedLayoutCreated = false
                 startupProbePending = false
@@ -1640,17 +1653,14 @@ class GlassesSessionCore(
                 audioPacketListener = null
                 clearAllMessagesLocked("connection lost")
                 displayedFingerprint = ""
-                if (!reconnectHalted) {
-                    reconnectAfterMs = now() + ConnectionOptions.RECONNECT_DELAY_MS
+                if (lostSession && !reconnectHalted) {
+                    scheduleReconnectLocked(true)
                 }
             }
         }
         interruptibleSleep.interrupt()
-        if (connected) {
-            setStateDisplay("connected", "Connected.")
-        } else if (!reconnectHalted) {
-            // While parked on a missing bond, keep the "unpaired" display: this
-            // callback is just the teardown of the arm that did connect.
+        if (lostSession && !reconnectHalted) {
+            // While parked on a missing bond, keep the "unpaired" display.
             setStateDisplay("connecting", "Connecting to the glasses...")
         }
     }
@@ -1667,8 +1677,13 @@ class GlassesSessionCore(
         }
         setStateDisplay("connecting", "Connecting to the glasses...")
         try {
-            connectArm(rightAddress, true)
-            connectArm(leftAddress, true)
+            // Dial both arms at once, so the left arm's attempt is already pending (and
+            // can land) while the right arm is being set up; they share one window.
+            val deadlineMs = now() + ConnectionOptions.ARM_CONNECT_WINDOW_MS
+            link.beginConnect(rightAddress, false)
+            link.beginConnect(leftAddress, false)
+            connectArm(rightAddress, true, deadlineMs)
+            connectArm(leftAddress, true, deadlineMs)
             if (!sleepDuringConnectSettling(800)) {
                 return
             }
@@ -1733,6 +1748,17 @@ class GlassesSessionCore(
             val unpairedArm = firstUnpairedArm()
             if (unpairedArm != null) {
                 handleUnpairedFailure(unpairedArm)
+            } else if (t is ArmUnreachableException) {
+                val otherArm = if (t.side == "left") rightAddress else leftAddress
+                if (link.isConnected(otherArm)) {
+                    handleTransportFailure(
+                        t.side + " arm not found",
+                        "Can't reach the " + t.side + " arm of the glasses. It may be connected to"
+                            + " another device, or be off or out of range."
+                    )
+                } else {
+                    handleTransportFailure("glasses not found", "Can't find the glasses. They may be off or out of range.")
+                }
             } else {
                 handleTransportFailure("connect failed")
             }
@@ -1753,9 +1779,10 @@ class GlassesSessionCore(
         }
     }
 
-    internal fun connectArm(address: String, enableRenderNotify: Boolean) {
-        if (!link.connect(address, ConnectionOptions.CONNECT_TIMEOUT_MS)) {
-            throw IllegalStateException("connect failed: $address")
+    internal fun connectArm(address: String, enableRenderNotify: Boolean, deadlineMs: Long) {
+        val timeoutMs = maxOf(deadlineMs - now(), ConnectionOptions.CONNECT_TIMEOUT_MS.toLong())
+        if (!link.connect(address, timeoutMs.toInt())) {
+            throw ArmUnreachableException(if (address.equals(leftAddress, ignoreCase = true)) "left" else "right", address)
         }
         // requestConnectionPriority has no callback in this Android compile target, so there is
         // no reliable completion point to keep it in the global GATT operation pipeline. But it's
@@ -1802,6 +1829,16 @@ class GlassesSessionCore(
             return
         }
         try {
+            // The ring is often out of range or bound to the glasses. Rather than block this
+            // worker (and every frame and heartbeat behind it) on a timed connect, keep a
+            // low-duty background connection pending; its callback wakes us to finish setup.
+            // The periodic recheck re-arms it if the attempt died without a callback.
+            if (!link.isConnected(ringAddress) && link.beginConnect(ringAddress, true)) {
+                monitor.withLock {
+                    ringReconnectAfterMs = now() + ConnectionOptions.RING_RECONNECT_DELAY_MS
+                }
+                return
+            }
             connectRing()
         } catch (t: Throwable) {
             monitor.withLock {
@@ -1810,6 +1847,9 @@ class GlassesSessionCore(
                 ringReconnectAfterMs = now() + ConnectionOptions.RING_RECONNECT_DELAY_MS
             }
             logLine("direct ring connect failed (" + reason + "): " + safeMessage(t))
+            // Start the next attempt from a fresh connection rather than retrying setup on
+            // one that just failed it.
+            link.disconnect(ringAddress)
         }
     }
 
@@ -1980,3 +2020,7 @@ class GlassesSessionCore(
         }
     }
 }
+
+/** An arm's connection never came up within the connect window ([side] is "left" or "right"). */
+internal class ArmUnreachableException(val side: String, address: String) :
+    IllegalStateException("connect failed: $side arm $address")

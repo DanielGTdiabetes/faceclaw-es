@@ -46,6 +46,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
         }
         var messageToWrite: OutboundMessage? = null
         var messageToPrewrite: OutboundMessage? = null
+        var heartbeatToWrite: OutboundMessage? = null
         val now = now()
 
         maybeFinishNoChangeDesiredFrame()
@@ -196,8 +197,15 @@ internal fun GlassesSessionCore.driveSession(): Long {
                                 && (hasPendingImageLocked()
                                     || desiredFingerprintSnapshot() != lastEnqueuedFingerprint)))
                 noteImageStallLocked(now, windowHasRoom)
-                if (messageToPrewrite == null && handleHeartbeat(imageWaiting)) {
+                val heartbeatStep = if (messageToPrewrite == null) heartbeatStepLocked(imageWaiting) else HeartbeatStep.NONE
+                if (heartbeatStep == HeartbeatStep.HOLD) {
                     return ConnectionOptions.IDLE_SLEEP_MS.toLong()
+                }
+                if (heartbeatStep == HeartbeatStep.SEND) {
+                    logLine("Writing heartbeat")
+                    heartbeatToWrite = createHeartbeatMessage()
+                    lastHeartbeatSentAtMs = now()
+                    return@withLock
                 }
 
                 if (messageToPrewrite == null && sessionReady && windowHasRoom && !pendingMessages.isEmpty()
@@ -225,6 +233,15 @@ internal fun GlassesSessionCore.driveSession(): Long {
                     return 250
                 }
             }
+        }
+
+        val heartbeat = heartbeatToWrite
+        if (heartbeat != null) {
+            // Like every write, outside `monitor`: waiting for the write to complete while
+            // holding it would stall notification handling, which needs it. A failed write
+            // just leaves the heartbeat to its ack timeout (see createHeartbeatMessage).
+            writeMessage(heartbeat)
+            return ConnectionOptions.IDLE_SLEEP_MS.toLong()
         }
 
         val prewrite = messageToPrewrite
@@ -285,7 +302,17 @@ internal fun GlassesSessionCore.canPrewriteCandidate(message: OutboundMessage?):
     return message.message.size + 2 > 232
 }
 
-internal fun GlassesSessionCore.handleHeartbeat(imageWaiting: Boolean): Boolean {
+/** What the heartbeat schedule wants from one driveSession pass. */
+internal enum class HeartbeatStep {
+    /** Nothing due: carry on with other traffic. */
+    NONE,
+    /** Send nothing else this pass (a heartbeat is pending, or overdue but blocked). */
+    HOLD,
+    /** Write a heartbeat now, then hold. */
+    SEND,
+}
+
+internal fun GlassesSessionCore.heartbeatStepLocked(imageWaiting: Boolean): HeartbeatStep {
     val now = now()
     val heartbeatEligible = !shutdownRequested && fixedLayoutCreated
     val heartbeatPending = heartbeatEligible && hasPendingOrInflightKindLocked("heartbeat")
@@ -300,22 +327,18 @@ internal fun GlassesSessionCore.handleHeartbeat(imageWaiting: Boolean): Boolean 
             // the heartbeat still fires once we reach the URGENT threshold
             // if rendering goes quiet again. Preserves the pending-heartbeat
             // inter-lens-sync invariant below (that path is untouched).
-            return false
+            return HeartbeatStep.NONE
         }
-        logLine("Writing heartbeat")
-        val heartbeatMessage = createHeartbeatMessage()
-        lastHeartbeatSentAtMs = now
-        writeMessage(heartbeatMessage)
-        return true
+        return HeartbeatStep.SEND
     } else if (heartbeatUrgent) {
-        return true
+        return HeartbeatStep.HOLD
     } else if (heartbeatPending) {
         // Don't send other message types while a heartbeat is pending because that
         // can lead to inter-lens sync issues
-        return true
+        return HeartbeatStep.HOLD
     }
 
-    return false
+    return HeartbeatStep.NONE
 }
 
 internal fun GlassesSessionCore.createHeartbeatMessage(): OutboundMessage {
@@ -1099,7 +1122,7 @@ internal fun GlassesSessionCore.describeWriteBlockerLocked(now: Long, windowHasR
     if (hasPendingOrInflightKindLocked("heartbeat")) {
         return "heartbeat in flight"
     }
-    // handleHeartbeat is a barrier: while one is due it holds back every
+    // heartbeatStepLocked is a barrier: while one is due it holds back every
     // other write, so a frame queued at the wrong moment waits a heartbeat
     // round trip. Reported explicitly because it is otherwise invisible --
     // heartbeats belong to no frame.

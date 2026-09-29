@@ -62,6 +62,8 @@ private class FakeLink(private val platform: ProtocolPlatform) : SessionLink {
     val connected = HashSet<String>()
     val disconnected = ArrayList<String>()
     @Volatile var closed = false
+    /** An address whose connection attempts fail, like an arm that isn't advertising. */
+    @Volatile var unreachable: String? = null
     var seq = 0
 
     val writes: List<Write>
@@ -71,9 +73,12 @@ private class FakeLink(private val platform: ProtocolPlatform) : SessionLink {
     fun cfwMessages(): List<ByteArray> = writes.filter { it.sid == CfwTransport.SID && it.kind == "image" }.mapNotNull { it.message }
 
     override fun connect(address: String, timeoutMs: Int): Boolean {
-        connected.add(address)
+        if (address == unreachable) return false
+        lock.withLock { connected.add(address) }
         return true
     }
+
+    override fun isConnected(address: String): Boolean = lock.withLock { address in connected }
 
     override fun requestHighPriority(address: String) {}
 
@@ -115,8 +120,10 @@ private class FakeLink(private val platform: ProtocolPlatform) : SessionLink {
     }
 
     override fun disconnect(address: String) {
-        disconnected.add(address)
-        connected.remove(address)
+        lock.withLock {
+            disconnected.add(address)
+            connected.remove(address)
+        }
     }
 
     override fun close() {
@@ -196,12 +203,14 @@ private class FakeHost(private val platform: ProtocolPlatform) : SessionHost {
 
 private class FakeListener : FaceclawBleCommunicatorListener {
     val phases = ArrayList<String>()
+    @Volatile var lastStatus = ""
     val events = ArrayList<String>()
     val finished = ArrayList<String>()
     val batteries = ArrayList<String>()
 
     override fun onStateChange(phase: String?, status: String?) {
         phases.add(phase ?: "")
+        lastStatus = status ?: ""
     }
 
     override fun onRingEvent(kind: String?, containerName: String?, eventType: Int, eventSource: Int, systemExitReasonCode: Int, frameId: Int, ringTick: Long, ringType: Int, ringAux: Int, ringSpeed: Int) {
@@ -453,5 +462,54 @@ class GlassesSessionCoreTest {
         assertEquals(1, message.cfwRetries)
         assertContentEquals(first.message, second.message)
         s.core.disconnect()
+    }
+
+    @Test
+    fun reconnectBackoffGrowsAndRestartsAfterAStableSession() {
+        val core = Session().core
+        core.monitor.withLock {
+            assertEquals(2_000L, core.scheduleReconnectLocked(false))
+            assertEquals(6_000L, core.scheduleReconnectLocked(false))
+            assertEquals(10_000L, core.scheduleReconnectLocked(false))
+            assertEquals(10_000L, core.scheduleReconnectLocked(false))
+            // A session that dies soon after coming up keeps backing off...
+            core.lastSessionReadyAtMs = core.now() - 1_000
+            assertEquals(10_000L, core.scheduleReconnectLocked(true))
+            // ...one that stayed up starts the schedule over.
+            core.lastSessionReadyAtMs = core.now() - ConnectionOptions.STABLE_SESSION_MS
+            assertEquals(2_000L, core.scheduleReconnectLocked(true))
+            assertEquals(6_000L, core.scheduleReconnectLocked(false))
+        }
+    }
+
+    @Test
+    fun unreachableArmIsNamedAndRetriedWithBackoff() {
+        val s = Session()
+        s.link.unreachable = LEFT
+        fun retryDelayMs() = s.core.monitor.withLock { s.core.reconnectAfterMs } - s.platform.elapsedRealtimeMs()
+        fun attempts() = s.core.monitor.withLock { s.core.consecutiveReconnects }
+        try {
+            assertTrue(s.core.start())
+            assertTrue(waitUntil(5_000) { attempts() == 1 }, s.host.logs().takeLast(10).toString())
+            assertTrue(s.host.hasLog("Transport failure: left arm not found"))
+            assertTrue(s.listener.lastStatus.startsWith("Can't reach the left arm"), s.listener.lastStatus)
+            assertTrue(retryDelayMs() in 1_000L..2_000L)
+            // Both arms are torn down, so the right arm doesn't sit connected on its own.
+            assertTrue(s.link.disconnected.containsAll(listOf(RIGHT, LEFT)))
+
+            s.platform.offsetMs += 2_000
+            assertTrue(waitUntil(5_000) { attempts() == 2 })
+            assertTrue(retryDelayMs() in 5_000L..6_000L)
+            s.platform.offsetMs += 6_000
+            assertTrue(waitUntil(5_000) { attempts() == 3 })
+            assertTrue(retryDelayMs() in 9_000L..10_000L)
+
+            // Once the arm answers again, the session comes up.
+            s.link.unreachable = null
+            s.platform.offsetMs += 10_000
+            assertTrue(waitUntil(5_000) { s.layoutCreated() }, s.host.logs().takeLast(10).toString())
+        } finally {
+            s.core.close()
+        }
     }
 }
