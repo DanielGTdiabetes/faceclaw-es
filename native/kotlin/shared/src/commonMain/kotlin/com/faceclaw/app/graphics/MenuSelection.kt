@@ -39,7 +39,7 @@ class MenuSelection(val x: Int, val y: Int, val width: Int, val height: Int, val
             val radius = reader.getShort().toInt() and 65535
             val background = BmpUtil.nibbleForGray(reader.get() and 255)
             val border = BmpUtil.nibbleForGray(reader.get() and 255)
-            val depth = reader.get().toByte().toInt()
+            val depth = reader.get().toInt()
             val count = reader.getShort().toInt() and 65535
             require(count <= 2048)
             require(w in 1..640 && h in 1..480 && 5 + (w + 1) / 2 * h <= 65536 && reader.remaining() >= w * h)

@@ -130,7 +130,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 finishDesiredFrameLocked("discarded: glasses charging")
                 if (sessionReady && inFlightMessages.isEmpty() && !pendingMessages.isEmpty()) {
                     messageToWrite = pendingMessages.removeFirst()
-                    logLine("sending pending message (charging): " + messageToWrite!!.label)
+                    logLine("sending pending message (charging): " + messageToWrite.label)
                 } else if (sessionReady && pendingMessages.isEmpty() && inFlightMessages.isEmpty()
                         && now - lastBatteryRefreshAtMs >= ConnectionOptions.CHARGING_BATTERY_POLL_MS) {
                     logLine("Writing charging-mode battery poll")
@@ -203,7 +203,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 if (messageToPrewrite == null && sessionReady && windowHasRoom && !pendingMessages.isEmpty()
                         && CfwMessageWindow.canSend(inFlightMessages, pendingMessages.firstOrNull()!!)) {
                     messageToWrite = pendingMessages.removeFirst()
-                    logLine("sending pending message: " + messageToWrite!!.label)
+                    logLine("sending pending message: " + messageToWrite.label)
                 } else if (messageToPrewrite == null && !shutdownRequested && !benchmarkActive
                         && fixedLayoutCreated
                         && windowHasRoom && !hasPendingImageLocked()

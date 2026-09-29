@@ -392,10 +392,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
                 surface = Surface(id)
                 surfaces.put(id, surface)
             }
-            if (
-                (((surface.pixels == null) || (surface.width != width)) ||
-                    (surface.height != height))
-            ) {
+            if ((surface.width != width) || (surface.height != height)) {
                 surface.pixels = ByteArray((width * height))
                 surface.fingerprint = ""
                 surface.draws = NO_DRAWS
@@ -825,7 +822,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
                         var col: Int = 0
                         while ((col < copyWidth)) {
                             var value: Int = (surface.pixels[(srcOffset + col)] and 0xff)
-                            if ((value.toInt() != 0)) {
+                            if ((value != 0)) {
                                 gray[(dstOffset + col)] = (dimValue(value, dim)).toByte()
                             } else {
                                 if ((surface.transparency == TRANSPARENCY_OPAQUE)) {

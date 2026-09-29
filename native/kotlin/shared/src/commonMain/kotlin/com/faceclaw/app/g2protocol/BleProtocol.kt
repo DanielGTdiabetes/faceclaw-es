@@ -859,7 +859,7 @@ class BleProtocol {
         private fun concat(parts: MutableList<ByteArray>): ByteArray {
             var out: ByteSink = ByteSink()
             for (part in parts) {
-                if (((part != null) && (part.size > 0))) {
+                if (part.size > 0) {
                     out.write(part, 0, part.size)
                 }
             }

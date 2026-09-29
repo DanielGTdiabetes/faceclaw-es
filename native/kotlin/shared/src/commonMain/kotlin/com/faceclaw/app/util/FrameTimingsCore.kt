@@ -92,7 +92,7 @@ class FrameTimingsCore(
         fun root(): Frame {
             var frame: Frame = this
             while (frame.parent != null) {
-                frame = frame.parent!!
+                frame = frame.parent
             }
             return frame
         }

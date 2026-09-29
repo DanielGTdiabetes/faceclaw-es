@@ -7,6 +7,11 @@ plugins {
 
 // Compile the production sources without building NativeScript or touching BLE.
 kotlin {
+    // Match native/kotlin/shared/build.gradle.kts.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+        allWarningsAsErrors.set(true)
+    }
     android {
         namespace = "com.faceclaw.protocoltests"
         compileSdk = 35
