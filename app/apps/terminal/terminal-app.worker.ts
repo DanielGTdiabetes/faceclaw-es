@@ -39,7 +39,6 @@ import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../../gra
 import { prepareFrameDraws } from "../../graphics/glyph-wire";
 import { getDefaultSmallFont, getTerminalFontConfig } from "../../graphics/ui-fonts";
 import { layoutHubHeader } from "./hub-header";
-import { truncateText } from "../../graphics/textwrap";
 import { TERMINAL_ICON_GLYPHS, type IconActivity } from "../../graphics/icons";
 import {
   drawSessionRow,
@@ -64,7 +63,6 @@ import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-win
 import type { ToolResult, ToolSpec } from "../../assistant/tool-registry";
 
 declare const global: any;
-declare const com: any;
 
 // Cell geometry comes from the terminal font setting (Settings > Terminal >
 // Font; the default is Terminus-12's 6x12). Each window derives its grid from
@@ -429,6 +427,9 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         );
       break;
     }
+    case "input-focus":
+    case "navigation-sensors":
+      break;
   }
 };
 
@@ -1092,7 +1093,7 @@ function handleInput(window: TerminalWindow, event: InputEvent, frameId: number)
   if (window.kind === "view") activeViewId = window.windowId;
   // An open window menu owns all input (it closes itself via pop).
   if (window.menu?.isOpen()) {
-    window.menu
+    void window.menu
       .handleInput(event)
       .catch((error) => console.error(`terminal menu input failed: ${error}`))
       .then(() => renderAndSubmit(window, frameId));

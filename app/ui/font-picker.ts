@@ -22,7 +22,7 @@ import {
   type BitmapFace,
   type UiFontSelection,
 } from "../graphics/ui-fonts";
-import { GESTURE_DOUBLE_CLICK, type InputEvent } from "./gestures";
+import { type InputEvent } from "./gestures";
 import { drawRightValueMenuItem, openModalMenu, type MenuItem } from "./menu";
 import { Menu, type MenuDrawArgs } from "./menu-core";
 import { LIST_ROW_TEXT_INSET, listRowHeight } from "./metrics";

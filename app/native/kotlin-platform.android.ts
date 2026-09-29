@@ -4,6 +4,8 @@ import type { KotlinBridge } from './kotlin-platform';
 // Handwritten declarations for the small native surface, checked against the
 // compiled API. NativeScript runtime metadata is generated from the AAR.
 declare namespace com.faceclaw.shared {
+  // Used as com.faceclaw.shared.KotlinBridge; oxlint misses qualified references.
+  // oxlint-disable-next-line no-unused-vars
   class KotlinBridge extends java.lang.Object {
     constructor();
     platform(): string;

@@ -47,7 +47,7 @@ const MIRROR_TOUCH_GESTURES: Record<Exclude<MirrorTouchKind, "tap">, WearRemoteI
 import { findSoundEffect, playSoundEffect } from "../ui/sound-effects";
 import { GlanceHost } from "./glance-host";
 import { type GlanceEvent } from "./glance-state";
-import { isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
+import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
@@ -92,7 +92,6 @@ import { wearerVerificationOptions } from "../apps/microphones/speakers";
 import { micSession } from "../apps/microphones/mic-session";
 import { glassesDisplayLabel } from "./glasses-display-state";
 import { PreviewDisplayTarget, type DisplayTarget } from "../native/preview-display";
-import { isPreviewOnlyMode } from "../phone-ui/onboarding-state";
 
 type ConnectionPhase = "disconnected" | "connecting" | "connected" | "charging" | "disconnecting";
 
@@ -185,6 +184,9 @@ const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
 function createInitialDisplayPreview(): ImageSource | null {
   return grayImageToPreviewSource(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
 }
+
+/** Echo the controller's appendLog() trace to the console. */
+const VERBOSE_CONTROLLER_LOG = false;
 
 function formatTimestamp(date: Date): string {
   return date.toISOString().slice(11, 23);
@@ -2004,7 +2006,7 @@ class DashboardController {
   }
 
   private startContinuousVoiceCapture(): void {
-    this.beginVoiceCapture("continuous");
+    void this.beginVoiceCapture("continuous");
   }
 
   private stopContinuousVoiceCapture(): void {
@@ -2761,7 +2763,7 @@ class DashboardController {
   }
 
   private appendLog(line: string): void {
-    //console.log(`[${formatTimestamp(new Date())}] ${line}`);
+    if (VERBOSE_CONTROLLER_LOG) console.log(`[${formatTimestamp(new Date())}] ${line}`);
   }
 
   private setDisplayPreview(preview: ImageSource | null): void {

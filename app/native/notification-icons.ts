@@ -20,7 +20,7 @@ let cachedIcons: GrayImage[] = [];
 let cachedAtMs = 0;
 const keyedIconCache = new Map<string, { icon: GrayImage | null; atMs: number }>();
 const KEYED_ICON_CACHE_MAX = 128;
-let notificationListenerProxy: any | null = null;
+let notificationListenerProxy: any = null;
 const notificationPostedListeners = new Set<(notificationKey: string) => void>();
 
 function invalidateIconCaches(): void {

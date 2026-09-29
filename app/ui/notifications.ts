@@ -1,9 +1,8 @@
 import { clamp } from "~/util/numeric-util";
 import { formatRelativeTime } from "~/util/date-util";
 import { getDefaultSmallFont } from "../graphics/ui-fonts";
-import { truncateText } from "../graphics/textwrap";
+import { truncateText, wrapText } from "../graphics/textwrap";
 import { GrayImage, type UiFont } from "../graphics/image";
-import { wrapText } from "../graphics/textwrap";
 import { LIST_ROW_TEXT_INSET, lineStep, listRowHeight } from "./metrics";
 import {
   ALL_NOTIFICATIONS,
@@ -255,7 +254,7 @@ export class SingleNotificationLayer implements Layer {
       this.close(ctx);
     } else if (item.kind === "action") {
       invokeNotificationAction(this.notificationKey, item.action.index);
-      if (!readActiveNotifications(ALL_NOTIFICATIONS).some((item) => item.key === this.notificationKey)) {
+      if (!readActiveNotifications(ALL_NOTIFICATIONS).some((active) => active.key === this.notificationKey)) {
         this.closeUnavailableNotification(ctx);
       }
     } else if (item.kind === "dismiss") {
@@ -276,8 +275,8 @@ export class SingleNotificationLayer implements Layer {
           wrap: true,
           rowGap: 1,
           getHeight: () => listRowHeight(getDefaultSmallFont()),
-          draw: ({ image, item, x, y, selected }) => {
-            image.drawText(getDefaultSmallFont(), x + CONFIRM_TEXT_X, y + LIST_ROW_TEXT_INSET, item.label, selected ? 255 : 200);
+          draw: ({ image, item: option, x, y, selected }) => {
+            image.drawText(getDefaultSmallFont(), x + CONFIRM_TEXT_X, y + LIST_ROW_TEXT_INSET, option.label, selected ? 255 : 200);
           },
         }),
       };

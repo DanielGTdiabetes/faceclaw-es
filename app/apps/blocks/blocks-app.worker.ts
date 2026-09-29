@@ -284,6 +284,11 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         updateTickTimer(window);
       }
       break;
+    case "navigation-sensors":
+    case "resize-window":
+    case "text-input":
+    case "tool-call":
+      break;
   }
 };
 
@@ -349,7 +354,7 @@ function handleInput(window: BlocksWindow, event: InputEvent, frameId: number): 
   // An open window menu owns all input (it closes itself via pop); menus are
   // list UIs, so watch swipes take their standard fallback meanings there.
   if (window.menu?.isOpen()) {
-    window.menu
+    void window.menu
       .handleInput(directionalFallback(event))
       .catch((error) => console.error(`blocks menu input failed: ${error}`))
       .then(() => renderAndSubmit(window, frameId));
@@ -605,7 +610,7 @@ function paintContent(window: BlocksWindow): GrayImage {
     drawCenteredIn(image, smallFont, BOARD_X, COLS * CELL, BOARD_Y + 150, `${GESTURE_DOUBLE_CLICK} leave`, 150);
   } else {
     paintBoard(image, window);
-    if (window.phase === "game-over") paintGameOver(image, window);
+    if (window.phase === "game-over") paintGameOver(image);
   }
   paintPanel(image, window);
   return image;
@@ -637,7 +642,7 @@ function drawCell(image: GrayImage, x: number, y: number, shade: number): void {
   image.fillRect(BOARD_X + x * CELL, BOARD_Y + y * CELL, CELL - 1, CELL - 1, shade);
 }
 
-function paintGameOver(image: GrayImage, window: BlocksWindow): void {
+function paintGameOver(image: GrayImage): void {
   const boxY = BOARD_Y + 70;
   image.fillRect(BOARD_X, boxY, COLS * CELL, 100, 0);
   image.drawRect(BOARD_X + 4, boxY + 4, COLS * CELL - 8, 92, 150);

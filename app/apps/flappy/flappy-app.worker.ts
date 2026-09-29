@@ -287,6 +287,10 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         syncTickTimer(window);
       }
       break;
+    case "navigation-sensors":
+    case "text-input":
+    case "tool-call":
+      break;
   }
 };
 
@@ -383,7 +387,7 @@ function handleInput(window: FlappyWindow, event: InputEvent, frameId: number): 
   // An open window menu owns all input (it closes itself via pop); menus are
   // list UIs, so watch swipes take their standard fallback meanings there.
   if (window.menu?.isOpen()) {
-    window.menu
+    void window.menu
       .handleInput(directionalFallback(event))
       .catch((error) => console.error(`flappy menu input failed: ${error}`))
       .then(() => renderAndSubmit(window, frameId));
@@ -727,6 +731,9 @@ function paintHud(image: GrayImage, window: FlappyWindow): void {
         `score ${window.score}   best ${window.highScore}`,
         `${GESTURE_CLICK} new game   ${GESTURE_DOUBLE_CLICK} leave`,
       ]);
+      break;
+    case "playing":
+    case "dying":
       break;
   }
 }

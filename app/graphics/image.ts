@@ -288,7 +288,9 @@ export class GrayImage {
     const dst = this.pixels;
     // A blit within one image copies pixel by pixel, forwards, as it always has.
     const bulk = !opts.transparentZero && source !== this;
-    for (let row = rowStart; span > 0 && row < rowEnd; row++) {
+    // No columns in range means no rows to copy.
+    const rowLimit = span > 0 ? rowEnd : rowStart;
+    for (let row = rowStart; row < rowLimit; row++) {
       const from = (srcY + row) * source.width + srcX + colStart;
       const to = (destY + row) * this.width + destX + colStart;
       if (bulk) {

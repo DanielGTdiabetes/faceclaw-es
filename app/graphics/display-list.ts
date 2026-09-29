@@ -121,24 +121,24 @@ export function readDisplayList(bytes: Uint8Array, offset: number, now = Date.no
   const x = r.i16(), y = r.i16(), width = r.u16(), height = r.u16(), depth = r.u8() << 24 >> 24;
   const token = r.u32(), elapsed = r.u32(), count = r.u16(); integer(count, 0, 256);
   const resources: ListImage[] = [];
-  for (let i = 0; i < count; i++) { const width = r.u16(), height = r.u16(); resources.push({ width, height, pixels: r.take(width * height) }); }
+  for (let i = 0; i < count; i++) { const w = r.u16(), h = r.u16(); resources.push({ width: w, height: h, pixels: r.take(w * h) }); }
   const calls: ListCall[] = [], callCount = r.u16(); integer(callCount, 0, 4096);
   for (let i = 0; i < callCount; i++) {
-    const header = r.u8(), op = header & ~CLIPPED, depth = r.i16();
+    const header = r.u8(), op = header & ~CLIPPED, callDepth = r.i16();
     const clip = header & CLIPPED ? { x: r.i16(), y: r.i16(), width: r.u16(), height: r.u16() } : undefined;
-    const common = clip ? { depth, clip } : { depth };
+    const common = clip ? { depth: callDepth, clip } : { depth: callDepth };
     if (op === DrawOp.ROUNDED_RECT) calls.push({ op, ...common, x: readValue(r), y: readValue(r), width: r.u16(), height: r.u16(), radius: r.u16(), background: r.u8(), border: r.u8() });
     else if (op === DrawOp.IMAGE) calls.push({ op, ...common, resource: r.u16(), x: r.i16(), y: r.i16(), transparent: (r.u8() & 16) !== 0 });
     else if (op === DrawOp.RECT_COPY) calls.push({ op, ...common, resource: r.u16(), x: readValue(r), y: readValue(r), width: r.u16(), height: r.u16(), dx: readValue(r), dy: readValue(r) });
     else if (op === DrawOp.CLEAR) calls.push({ op, ...common, color: r.u8() });
     else if (op === DrawOp.DRAWS) {
-      const x = readValue(r), y = readValue(r), records = r.u16(), start = r.offset;
+      const drawX = readValue(r), drawY = readValue(r), records = r.u16(), start = r.offset;
       for (let n = 0; n < records; n++) {
         const size = RECORD_BYTES[r.bytes[r.offset]!];
         if (!size) throw new Error('Unsupported display-list draw record');
         r.take(size);
       }
-      calls.push({ op, ...common, x, y, count: records, records: r.bytes.slice(start, r.offset) });
+      calls.push({ op, ...common, x: drawX, y: drawY, count: records, records: r.bytes.slice(start, r.offset) });
     } else throw new Error('Unsupported display-list call');
   }
   if (r.offset !== length) throw new Error('Trailing display-list bytes');

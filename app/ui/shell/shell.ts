@@ -1440,7 +1440,6 @@ class Shell {
     if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return;
     const foreground = this.foregroundWindow();
     if (!foreground) return;
-    let layer: ShellOverlayMenuLayer;
     const items: MenuItem[] = [];
     if (foreground.closeable) {
       items.push({
@@ -1500,7 +1499,7 @@ class Shell {
     const footer = foreground.hasAppMenu?.()
       ? (foreground.holdToTalk ? undefined : gestureHints([[GESTURE_SHORT_THEN_LONG_PRESS, "app menu"]]))
       : undefined;
-    layer = new ShellOverlayMenuLayer(items, footer, () => this.yieldFocusToSidebar());
+    const layer = new ShellOverlayMenuLayer(items, footer, () => this.yieldFocusToSidebar());
     layer.selectItem(initialSelection);
     this.stack.push(layer);
     // Tell the window the system menu opened over it: an app with its own

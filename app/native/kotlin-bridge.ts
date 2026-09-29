@@ -33,6 +33,6 @@ export function runKotlinBridgeSmokeTest(): void {
     console.log("FACECLAW_KOTLIN_BRIDGE_PASS " + JSON.stringify({ platform, thread, reply }));
   } catch (error) {
     // Diagnostics must not prevent the rest of the app from launching.
-    console.error("FACECLAW_KOTLIN_BRIDGE_FAIL " + error);
+    console.error(`FACECLAW_KOTLIN_BRIDGE_FAIL ${error}`);
   }
 }

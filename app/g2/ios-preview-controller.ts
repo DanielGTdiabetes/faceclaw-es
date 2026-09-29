@@ -1,9 +1,8 @@
 import { startRemoteInput } from "../remote/service"
 import type { KeyboardInputSession } from '../ui/shell/keyboard-input'
 import { acceptInput, resetRingInputFilter } from "../ui/input-monitor";
-import { bindIosNotifications, iosNotificationsChanged, onIosNotificationPopup } from '../native/notification-icons.ios'
+import { bindIosNotifications, iosNotificationsChanged, onIosNotificationPopup, readActiveNotifications } from '../native/notification-icons.ios'
 import { shouldShowNotificationOnGlasses } from '../native/notification-sources'
-import { readActiveNotifications } from '../native/notification-icons.ios'
 import { launcherEntries } from '../apps/launcher'
 import { getInstalledEvenHubAppById, installedEvenHubPackageId, uninstallEvenHubPackage } from '../apps/evenhub/installed-apps'
 import { isInstalledPackagePresent } from '../apps/evenhub/updates'
@@ -14,9 +13,8 @@ import { registerWindowTools } from '../assistant/window-tools'
 import { registerNavigateTools } from '../assistant/navigate-tools'
 import { registerRoamTools } from '../assistant/roam-tools'
 import { IosNavigationSensors } from '../native/ios-navigation-sensors'
-import { Utils } from '@nativescript/core'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
-import { Dialogs, File, knownFolders, path, type ImageSource } from '@nativescript/core'
+import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { iosVoiceInput } from '../native/ios-voice-input'
 import { nightscoutBridge } from '../native/nightscout-bridge'
 import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorState, type RawInputEvent } from '../native/faceclaw-communicator.ios'
@@ -32,7 +30,6 @@ import { ALL_APPS } from '../apps/all-apps'
 import type { AppContext, AppDefinition, AppLaunchParams } from '../apps/app-definition'
 import { WorkerAppHost } from '../ui/shell/worker-window'
 import { createInProcessWindow, YieldAtRootLayer, type InProcessAppOptions, type InProcessWindow } from '../ui/shell/in-process-window'
-import { getStringSettingById, nightscoutSiteUrlSetting, nightscoutApiTokenSetting } from '../ui/dashboard-settings'
 import { readPhoneBatteryState } from '../native/phone-battery'
 import { iosAppUnavailableReason } from '../apps/ios-availability'
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from '../graphics/plane'
@@ -44,7 +41,8 @@ import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
 import { appViewportRect, SIDEBAR_WIDTH, sidebarStripVisible } from '../ui/shell/geometry'
 import { DISPLAY_MODE_VALUES, displayModeLabel, displayModeSetting, onAnySettingChanged,
-  previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences } from '../ui/dashboard-settings'
+  previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
+  nightscoutSiteUrlSetting, nightscoutApiTokenSetting } from '../ui/dashboard-settings'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { isWelcomeSoundPending, setWelcomeSoundPending } from '../phone-ui/onboarding-state'
 import { findSoundEffect, playSoundEffect } from '../ui/sound-effects'
@@ -548,10 +546,10 @@ export class IosPreviewController {
     this.requestShellRender()
   }
   async launchApp(id: string, params?: AppLaunchParams): Promise<void> {
-    const app = ALL_APPS.find(app => app.appId === id)
+    const app = ALL_APPS.find(candidate => candidate.appId === id)
     if (!app) {
       const installed = getInstalledEvenHubAppById(id)
-      const host = ALL_APPS.find(app => app.appId === 'evenhub')
+      const host = ALL_APPS.find(candidate => candidate.appId === 'evenhub')
       if (installed && host) {
         try {
           if (isInstalledPackagePresent(installed.packageId))

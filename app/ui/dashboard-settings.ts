@@ -100,7 +100,8 @@ export abstract class ConfigSetting<TValue, TId extends string = string> {
 }
 
 export class ConfigSettingBoolean<TId extends string = string> extends ConfigSetting<boolean, TId> {
-  constructor(options: ConfigSettingOptions<boolean, TId>) {
+  // Widens ConfigSetting's protected constructor.
+  public constructor(options: ConfigSettingOptions<boolean, TId>) {
     super(options);
   }
 
@@ -1086,11 +1087,6 @@ export function isNightscoutSettingsConfigured(): boolean {
 }
 
 
-function normalizeSystemCardName(name: string | null | undefined): string {
-  const normalized = (name ?? "").replace(/[\x00-\x1f]+/g, " ").replace(/\s+/g, " ").trim();
-  return normalized;
-}
-
 function normalizeNightscoutSiteUrl(siteUrl: string | null | undefined): string {
   return (siteUrl ?? "").replace(/[\x00-\x1f]+/g, "").trim().replace(/\/+$/, "");
 }
@@ -1169,7 +1165,6 @@ export function toggleSettingMenuItem<TId extends string = string>(
 
 export function textSettingMenuItem<TId extends string = string>(
   setting: ConfigSettingString<TId>,
-  opts?: SettingsMenuOptions<string>
 ): MenuItem {
   return {
     label: setting.label,

@@ -211,10 +211,9 @@ class CompassLayer implements Layer {
 }
 
 export function createCompassAppWindow(options: InProcessAppOptions): InProcessWindow {
-  let app: InProcessWindow;
   let requestRender = () => {};
   const layer = new CompassLayer(() => requestRender());
-  app = createInProcessWindow({
+  const app = createInProcessWindow({
     appId: "compass",
     windowId: COMPASS_WINDOW_ID,
     title: "Compass",

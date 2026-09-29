@@ -54,14 +54,14 @@ type MessageListener = (message: WearMessage) => void;
 type ConnectionListener = (connection: WearWatchConnection) => void;
 
 class WearBridge {
-  private java: any | null | undefined = undefined;
+  private java: any = undefined;
   // The Java-side listener proxy must stay referenced or it gets GC'd.
   private retainedListenerProxy: any = null;
   private readonly messageListeners = new Set<MessageListener>();
   private readonly connectionListeners = new Set<ConnectionListener>();
   private lastConnection: WearWatchConnection = { reachable: false, watchName: "" };
 
-  private getJava(): any | null {
+  private getJava(): any {
     if (this.java !== undefined) return this.java;
     if (!global.isAndroid) {
       this.java = null;

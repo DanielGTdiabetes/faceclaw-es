@@ -344,7 +344,6 @@ class GlancePreviewLayer implements Layer {
 export function createGlanceboardAppWindow(options: InProcessAppOptions): InProcessWindow {
   let previewVisible = false;
   const heightMode = () => previewVisible && glanceLayoutSetting.get() === "2x3" ? "max" as const : "medium" as const;
-  let unsubscribeSettings: (() => void) | undefined;
   const app = createInProcessWindow({
     appId: "glanceboard",
     windowId: GLANCEBOARD_WINDOW_ID,
@@ -367,10 +366,10 @@ export function createGlanceboardAppWindow(options: InProcessAppOptions): InProc
     removeSurface: options.removeSurface,
     reconfigureSurface: options.reconfigureSurface,
     onClosed: () => {
-      unsubscribeSettings?.();
+      unsubscribeSettings();
       options.onClosed();
     },
   });
-  unsubscribeSettings = onAnySettingChanged(() => app.setHeightMode(heightMode()));
+  const unsubscribeSettings = onAnySettingChanged(() => app.setHeightMode(heightMode()));
   return app;
 }

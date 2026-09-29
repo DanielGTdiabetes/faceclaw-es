@@ -63,7 +63,16 @@ import {
   GESTURE_SHORT_THEN_LONG_PRESS,
   type InputEvent,
 } from "../../ui/gestures";
-import { LocationTracker, type TrackedLocation } from "./navigation-sensors";
+import {
+  addCompassListener,
+  COMPASS_CHANGED,
+  handleNavigationSensorEvent,
+  LocationTracker,
+  magneticDeclinationDegrees,
+  setCompassEnabled,
+  type CompassEvent,
+  type TrackedLocation,
+} from "./navigation-sensors";
 import {
   fetchRoute,
   fetchStaticMapGray,
@@ -75,14 +84,11 @@ import {
   type RouteProfile,
   type StaticMapCamera,
 } from "../../native/mapbox";
-import { addCompassListener, COMPASS_CHANGED, setCompassEnabled, type CompassEvent } from "./navigation-sensors";
-import { magneticDeclinationDegrees, handleNavigationSensorEvent } from "./navigation-sensors";
 import { calibrateHeading, normalizeHeading } from "../compass/calibration";
 import { bearingDegrees, haversineMeters, RouteFollower, type RouteProgress } from "./route-follower";
 import { drawManeuverGlyph } from "./maneuver-icons";
 
 declare const global: any;
-declare const com: any;
 
 const MAP_SIZE = 260;
 const PANEL_X = MAP_SIZE + 10;
@@ -376,6 +382,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         );
       break;
     }
+    case "input-focus":
+      break;
   }
 };
 
@@ -914,7 +922,7 @@ function describeRouteStatus(): string {
  * display and saved-destination settings (Home, Work, custom named places), and the
  * recent-destinations preference.
  */
-function windowMenuItems(win: NavWindow): MenuItem[] {
+function windowMenuItems(): MenuItem[] {
   const items: MenuItem[] = [];
   if (phase !== "idle") {
     items.push({
@@ -993,15 +1001,15 @@ function savedDestinationMenuItems(): MenuItem[] {
   const work = saved.find((d) => d.id === WORK_DESTINATION_ID);
   items.push(addressMenuItem("Home", HOME_DESTINATION_ID, home?.address ?? ""));
   items.push(addressMenuItem("Work", WORK_DESTINATION_ID, work?.address ?? ""));
-  for (const destination of saved) {
-    if (destination.builtin) continue;
+  for (const dest of saved) {
+    if (dest.builtin) continue;
     items.push({
-      label: destination.name,
+      label: dest.name,
       onSelect: (ctx) => {
-        ctx.stack.push(new WindowMenuLayer(destination.name, customDestinationMenuItems(destination)));
+        ctx.stack.push(new WindowMenuLayer(dest.name, customDestinationMenuItems(dest)));
       },
       render: ({ image, x, y, width, height }) => {
-        drawAddressRow(image, x, y, width, destination.name, destination.address, true);
+        drawAddressRow(image, x, y, width, dest.name, dest.address, true);
         drawSubmenuIndicator(image, smallFont, x - 10, y, width + 20, height, 150);
       },
     });
@@ -1028,14 +1036,14 @@ function addressMenuItem(label: string, id: string, address: string): MenuItem {
   };
 }
 
-function customDestinationMenuItems(destination: SavedDestination): MenuItem[] {
+function customDestinationMenuItems(dest: SavedDestination): MenuItem[] {
   return [
     {
       label: "Navigate there",
-      disabled: !destination.address,
+      disabled: !dest.address,
       onSelect: (ctx) => {
         closeMenusAnd(ctx, () => {
-          void startNavigationTo({ kind: "query", query: destination.address, label: destination.name }, profile).catch(
+          void startNavigationTo({ kind: "query", query: dest.address, label: dest.name }, profile).catch(
             () => {},
           );
         });
@@ -1044,16 +1052,16 @@ function customDestinationMenuItems(destination: SavedDestination): MenuItem[] {
     {
       label: "Set address",
       onSelect: (ctx) => {
-        closeMenusAnd(ctx, () => beginAddressEdit(destination.id, destination.name, destination.address));
+        closeMenusAnd(ctx, () => beginAddressEdit(dest.id, dest.name, dest.address));
       },
     },
     {
       label: "Rename",
       onSelect: (ctx) => {
         closeMenusAnd(ctx, () => {
-          navigateDestinationNameDraftSetting.set(destination.name);
-          beginEdit(navigateDestinationNameDraftSetting, `Rename ${destination.name}`, (name) => {
-            if (name) updateCustomDestination(destination.id, { name });
+          navigateDestinationNameDraftSetting.set(dest.name);
+          beginEdit(navigateDestinationNameDraftSetting, `Rename ${dest.name}`, (name) => {
+            if (name) updateCustomDestination(dest.id, { name });
           });
         });
       },
@@ -1062,7 +1070,7 @@ function customDestinationMenuItems(destination: SavedDestination): MenuItem[] {
       label: "Remove",
       onSelect: (ctx) => {
         closeMenusAnd(ctx, () => {
-          removeCustomDestination(destination.id);
+          removeCustomDestination(dest.id);
           syncIdleList();
         });
       },
@@ -1195,10 +1203,10 @@ function idleEntries(): IdleEntry[] {
     run: () => { void startMap(); },
   }];
   entries.push(...loadSavedDestinations()
-    .filter((destination) => destination.address)
-    .map((destination): IdleEntry => ({ kind: "saved", destination })));
-  for (const destination of loadRecentDestinations()) {
-    entries.push({ kind: "recent", destination });
+    .filter((dest) => dest.address)
+    .map((dest): IdleEntry => ({ kind: "saved", destination: dest })));
+  for (const dest of loadRecentDestinations()) {
+    entries.push({ kind: "recent", destination: dest });
   }
   return entries;
 }
@@ -1250,7 +1258,7 @@ function windowMenu(win: NavWindow): WindowMenu {
       windowId: win.windowId,
       post,
       title: () => win.title,
-      items: () => windowMenuItems(win),
+      items: () => windowMenuItems(),
       size: { width: win.viewportWidth, height: win.viewportHeight },
       paintBase: () => paintContent(win),
       isFocused: () => win.focused,
@@ -1261,7 +1269,7 @@ function windowMenu(win: NavWindow): WindowMenu {
 
 function handleInput(win: NavWindow, event: InputEvent, frameId: number): void {
   if (win.menu?.isOpen()) {
-    win.menu
+    void win.menu
       .handleInput(event)
       .catch((error) => console.error(`navigate menu input failed: ${error}`))
       .then(() => renderAndSubmit(win, frameId));

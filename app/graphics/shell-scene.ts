@@ -30,7 +30,7 @@ export function encodeShellScene(planes: readonly Plane[]): Uint8Array {
         presentation: { ...d.presentation!, depth: d.presentation!.depth + (plane.depth ?? 0) } }))
     layers.push({ depth: plane.depth ?? 0, selections, image: cropped.image, x: plane.x + left, y: plane.y + top, key: plane.shellKey!, dim: Math.round((plane.dimUnderneath ?? 1) * 256) })
   }
-  const result = new Uint8Array(2 + layers.reduce((n, l) => n + 16 + l.image.pixels.length + l.selections.reduce((n, b) => n + b.length, 0), 0))
+  const result = new Uint8Array(2 + layers.reduce((n, l) => n + 16 + l.image.pixels.length + l.selections.reduce((sum, b) => sum + b.length, 0), 0))
   const view = new DataView(result.buffer); let p = 0
   const word = (n: number) => { view.setUint16(p, n, true); p += 2 }
   word(layers.length)

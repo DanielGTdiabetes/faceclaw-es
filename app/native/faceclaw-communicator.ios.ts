@@ -10,7 +10,6 @@ export type { FirmwareInfo };
 
 // Kotlin/Native facades exported by FaceclawKit (see native/kotlin/shared/src/iosMain/.../ble).
 declare const FaceclawKitIosGlassesSession: any;
-declare const FaceclawKitIosProtocolPlatform: any;
 declare const FaceclawKitFaceclawBleCommunicatorListener: any;
 declare const FaceclawKitIosAncsListener: any;
 declare const FaceclawKitIosAudioPacketListener: any;

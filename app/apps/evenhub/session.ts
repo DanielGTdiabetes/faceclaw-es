@@ -1177,7 +1177,7 @@ export class EvenHubSession implements EvenHubMicClient, EvenHubImuClient, EvenH
       }
       return out;
     };
-    if (requested.length === 0 || requested.every((id) => this.grantedApiKeys.has(id))) {
+    if (requested.every((id) => this.grantedApiKeys.has(id))) {
       return Promise.resolve(buildGrant());
     }
     if (!this.windowHooks) return Promise.resolve({});

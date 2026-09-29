@@ -148,7 +148,7 @@ export function createMainPage(): Page {
   model.set('onPadTouch', touch(watchInput))
   model.set('onRingPadTouch', touch(ringInput))
   model.set('onSyntheticMicTap', () => controller.startVoiceInput())
-  model.set('onKeyboardTap', () => { void controller.typeIntoApp() })
+  model.set('onKeyboardTap', () => { controller.typeIntoApp() })
   mirror.on('touch', touch(mirrorInput))
   const cancelGestures = () => { watchInput.cancel(); ringInput.cancel(); mirrorInput.cancel() }
   model.on('propertyChange', (args: PropertyChangeData) => {

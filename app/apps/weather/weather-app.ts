@@ -16,7 +16,6 @@ export function createWeatherAppWindow(options: InProcessAppOptions): InProcessW
   let closed = false;
   let requestingPermission = false;
   let unsubscribe: (() => void) | null = null;
-  let app: InProcessWindow;
 
   const requestUpdate = () => {
     if (closed || requestingPermission) return;
@@ -33,7 +32,7 @@ export function createWeatherAppWindow(options: InProcessAppOptions): InProcessW
     }).catch((error) => { requestingPermission = false; console.warn(`Weather permission: ${error}`); });
   };
 
-  app = createInProcessWindow({
+  const app = createInProcessWindow({
     appId: "weather",
     windowId: WEATHER_WINDOW_ID,
     title: "Weather",

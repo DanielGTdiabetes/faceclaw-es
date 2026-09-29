@@ -405,6 +405,11 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         syncTickTimer(window);
       }
       break;
+    case "navigation-sensors":
+    case "resize-window":
+    case "text-input":
+    case "tool-call":
+      break;
   }
 };
 
@@ -500,7 +505,7 @@ function handleInput(window: PinballWindow, event: InputEvent, frameId: number):
   // An open window menu owns all input (it closes itself via pop); menus are
   // list UIs, so watch swipes take their standard fallback meanings there.
   if (window.menu?.isOpen()) {
-    window.menu
+    void window.menu
       .handleInput(directionalFallback(event))
       .catch((error) => console.error(`pinball menu input failed: ${error}`))
       .then(() => renderAndSubmit(window, frameId));
@@ -743,6 +748,8 @@ function stepFlippers(window: PinballWindow, dt: number): void {
           flipper.angleDeg = FLIPPER_REST_DEG;
           flipper.state = "rest";
         }
+        break;
+      case "rest":
         break;
     }
   }

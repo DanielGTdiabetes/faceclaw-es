@@ -16,7 +16,7 @@ export const GLANCE_WIDGETS: readonly GlanceWidgetDefinition[] = [
   { id: "music", label: "Music", create: () => new MusicWidget() },
 ];
 
-export function findGlanceWidget(id: GlanceWidgetId | string): GlanceWidgetDefinition | null {
+export function findGlanceWidget(id: GlanceWidgetId | (string & {})): GlanceWidgetDefinition | null {
   return GLANCE_WIDGETS.find((widget) => widget.id === id) ?? null;
 }
 

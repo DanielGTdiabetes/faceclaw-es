@@ -6,7 +6,7 @@ import type { ToolDebugEntry } from "../../assistant/tool-registry";
 import { InputEvent } from "../gestures";
 import { Layer, LayerContext, PaintBelow } from "../layers";
 import { MenuLayer, drawListScrollbar, type MenuItem } from "../menu";
-import { MIN_WINDOW_HEIGHT, minWindowTop, sidebarWidth, TOP_BAR_HEIGHT } from "./geometry";
+import { minWindowTop, sidebarWidth, TOP_BAR_HEIGHT } from "./geometry";
 import { lineStep } from "../metrics";
 
 /**
@@ -152,6 +152,8 @@ class ToolDetailLayer implements Layer {
       case "click":
       case "double-click":
         ctx.stack.pop();
+        return;
+      default:
         return;
     }
   }

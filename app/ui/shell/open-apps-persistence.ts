@@ -57,12 +57,12 @@ export function savePersistedOpenApps(state: PersistedOpenApps): void {
   if (writeTimer !== null) clearTimeout(writeTimer);
   writeTimer = setTimeout(() => {
     writeTimer = null;
-    const state = pendingState;
+    const pending = pendingState;
     pendingState = null;
-    if (!state) return;
+    if (!pending) return;
     try {
       File.fromPath(openAppsFilePath()).writeTextSync(
-        JSON.stringify({ version: STATE_VERSION, ...state }),
+        JSON.stringify({ version: STATE_VERSION, ...pending }),
       );
     } catch (error) {
       console.warn("open-apps state write failed", error);

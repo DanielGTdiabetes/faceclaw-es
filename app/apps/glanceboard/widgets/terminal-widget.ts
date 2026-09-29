@@ -26,7 +26,7 @@ const BOTTOM_MARGIN = 2;
  * once the snapshot is in.
  */
 export class TerminalWidget implements GlanceWidget {
-  private snapshot: TerminalSessionsSnapshot | undefined = readWorkerState(TERMINAL_SESSIONS_STATE_KEY);
+  private snapshot = readWorkerState(TERMINAL_SESSIONS_STATE_KEY) as TerminalSessionsSnapshot | undefined;
   private unsubscribe: (() => void) | null = null;
   private requestRender: (() => void) | null = null;
   private phase = 0;
@@ -34,9 +34,9 @@ export class TerminalWidget implements GlanceWidget {
 
   start(requestRender: () => void): void {
     this.requestRender = requestRender;
-    this.snapshot = readWorkerState(TERMINAL_SESSIONS_STATE_KEY);
-    this.unsubscribe = onWorkerStateChanged<TerminalSessionsSnapshot>(TERMINAL_SESSIONS_STATE_KEY, (snapshot) => {
-      this.snapshot = snapshot;
+    this.snapshot = readWorkerState(TERMINAL_SESSIONS_STATE_KEY) as TerminalSessionsSnapshot | undefined;
+    this.unsubscribe = onWorkerStateChanged(TERMINAL_SESSIONS_STATE_KEY, (snapshot) => {
+      this.snapshot = snapshot as TerminalSessionsSnapshot;
       this.syncAnimation();
       requestRender();
     });
