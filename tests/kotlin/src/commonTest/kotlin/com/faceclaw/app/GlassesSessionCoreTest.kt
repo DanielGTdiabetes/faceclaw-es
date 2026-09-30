@@ -465,6 +465,59 @@ class GlassesSessionCoreTest {
     }
 
     @Test
+    fun aCfwAckSlowerThanHalfASecondIsNotReplayed() {
+        val s = Session()
+        s.link.muted.add("image")
+        s.startAndAwaitLayout()
+        s.core.configureCompositorScreen(64, 32)
+        s.core.configureSurface("s", 0, 0, 64, 32, 0, SurfaceCompositor.TRANSPARENCY_OPAQUE)
+        try {
+            s.submitFrame(3, 0x20, 1)
+            assertTrue(waitUntil(5_000) { s.link.cfwMessages().size == 1 })
+            // Well past the old 500 ms deadline, but inside the 3 s ack window.
+            s.platform.offsetMs += 1_500
+            sleepMs(400)
+            assertFalse(s.host.hasLog("CFW recovery"), s.host.logs().takeLast(10).toString())
+            assertEquals(1, s.link.cfwMessages().size)
+            // The late ack still completes the frame.
+            val first = s.link.writes.first { it.sid == CfwTransport.SID && it.kind == "image" }
+            val message = assertNotNull(s.core.monitor.withLock { s.core.inFlightMessages.firstOrNull { it.magic == first.magic } })
+            for (lens in 1..2) {
+                s.core.onNotification(LEFT, BleProtocol.NOTIFY_CHAR_UUID, cfwAck(first.magic, lens, message.message.size, message.cfwChecksum))
+            }
+            assertTrue(waitUntil(3_000) { s.displayedMatchesDesired() })
+        } finally {
+            s.core.close()
+        }
+    }
+
+    @Test
+    fun cfwAckDeadlinesFollowTheirOwnArmsWritesAndAcks() {
+        val core = Session().core
+        fun cfw(magic: Int, leftArm: Boolean) = OutboundMessage(
+            "image", "m$magic", CfwTransport.SID, 0, magic, byteArrayOf(1), CfwMessageWindow.ACK_STALL_MS, 0, leftArm)
+        val left = cfw(1, true)
+        val right = cfw(2, false)
+        core.monitor.withLock {
+            for (message in listOf(left, right)) {
+                message.sentAtMs = 1_000
+                message.ackDeadlineAtMs = 4_000
+                core.inFlightMessages.addLast(message)
+            }
+            core.lastArmCfwAckAtMs[0] = 2_000
+            core.lastArmWriteAtMs[1] = 5_000
+            core.refreshCfwAckDeadlinesLocked()
+        }
+        assertEquals(5_000L, left.ackDeadlineAtMs)
+        assertEquals(5_500L, right.ackDeadlineAtMs)
+        // Any CFW ack from an arm counts as that arm's progress, matched or not.
+        val before = core.now()
+        core.onNotification(LEFT, BleProtocol.NOTIFY_CHAR_UUID, cfwAck(77, 1, 1, 0))
+        assertTrue(core.monitor.withLock { core.lastArmCfwAckAtMs[0] } >= before)
+        assertEquals(0L, core.monitor.withLock { core.lastArmCfwAckAtMs[1] })
+    }
+
+    @Test
     fun reconnectBackoffGrowsAndRestartsAfterAStableSession() {
         val core = Session().core
         core.monitor.withLock {

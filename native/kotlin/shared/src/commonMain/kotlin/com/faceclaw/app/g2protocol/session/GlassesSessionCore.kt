@@ -314,6 +314,11 @@ class GlassesSessionCore(
 
     internal val pendingMessages = ArrayDeque<OutboundMessage>()
     internal val cfwTransports = arrayOf(CfwTransport(platform), CfwTransport(platform))
+    // Per arm (0 = left, 1 = right, like cfwTransports): when a write to it last
+    // completed and when a CFW ack last arrived from it. The CFW window's liveness
+    // signals (see CfwMessageWindow.ackDeadline).
+    internal val lastArmWriteAtMs = LongArray(2)
+    internal val lastArmCfwAckAtMs = LongArray(2)
     internal val inFlightMessages = ArrayDeque<OutboundMessage>()
     internal var prewrittenMessage: OutboundMessage? = null
     internal var prewrittenFrames: List<ByteArray> = emptyList()
@@ -350,8 +355,10 @@ class GlassesSessionCore(
         val active = monitor.withLock { running }
         if (!active) return false
         return try {
-            link.writeFrames(address, BleProtocol.WRITE_CHAR_UUID, listOf(packet), ConnectionOptions.WRITE_MODE,
+            val result = link.writeFrames(address, BleProtocol.WRITE_CHAR_UUID, listOf(packet), ConnectionOptions.WRITE_MODE,
                 ConnectionOptions.WRITE_TIMEOUT_MS)
+            if (result) monitor.withLock { noteWriteCompletedLocked(address, now()) }
+            result
         } catch (t: Throwable) {
             logLine("raw packet write failed: " + safeMessage(t))
             false
@@ -1348,6 +1355,8 @@ class GlassesSessionCore(
             val acks = CfwTransport.parseAcks(data) ?: return
             monitor.withLock {
                 lastIncomingAtMs = now()
+                val arm = armIndex(address)
+                if (arm >= 0) lastArmCfwAckAtMs[arm] = lastIncomingAtMs
                 for (ack in acks) {
                     for (message in inFlightMessages) {
                         val ingress = if (message.isLeftArmMessage) leftAddress else rightAddress
@@ -2016,6 +2025,13 @@ class GlassesSessionCore(
         val increment = if (connectionOptions.skipSessionIds) 2 else 1
         nextMapSessionIdValue = (nextMapSessionIdValue + increment) and 0xff
         return id
+    }
+
+    /** 0 for the left arm, 1 for the right (the cfwTransports order), -1 for anything else. */
+    internal fun armIndex(address: String): Int = when {
+        address.equals(leftAddress, ignoreCase = true) -> 0
+        address.equals(rightAddress, ignoreCase = true) -> 1
+        else -> -1
     }
 
     internal fun hasRingAddress(): Boolean {

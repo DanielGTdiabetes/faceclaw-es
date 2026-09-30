@@ -79,6 +79,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 )
             }
             if (!inFlightMessages.isEmpty()) {
+                refreshCfwAckDeadlinesLocked()
                 val oldest = inFlightMessages.firstOrNull()
                 val replay = CfwMessageWindow.replayWindow(inFlightMessages, now)
                 if (!replay.isEmpty()) {
@@ -415,6 +416,7 @@ internal fun GlassesSessionCore.writeMessage(message: OutboundMessage): Boolean 
 
     monitor.withLock {
         val sentAtMs = now()
+        if (result) noteWriteCompletedLocked(writeAddress, sentAtMs)
         message.sentAtMs = sentAtMs
         message.ackDeadlineAtMs = sentAtMs + message.ackTimeoutMs
         logImageUpdateSendLandmarkLocked(message)
@@ -463,6 +465,7 @@ internal fun GlassesSessionCore.prewriteMessage(message: OutboundMessage): Boole
     if (!result) {
         return false
     }
+    monitor.withLock { noteWriteCompletedLocked(writeAddress, now()) }
 
     prewrittenMessage = message
     prewrittenFrames = frames.toList()
@@ -486,13 +489,39 @@ internal fun GlassesSessionCore.spoilPrewrittenMessage(reason: String): Boolean 
 
     val writeAddress = if (message.isLeftArmMessage) leftAddress else rightAddress
     logLine("spoiling prewritten " + message.label + ": " + reason)
-    return link.writeFrames(
+    val result = link.writeFrames(
         writeAddress,
         BleProtocol.WRITE_CHAR_UUID,
         listOf(finalFrame),
         ConnectionOptions.WRITE_MODE,
         ConnectionOptions.WRITE_TIMEOUT_MS
     )
+    if (result) monitor.withLock { noteWriteCompletedLocked(writeAddress, now()) }
+    return result
+}
+
+/**
+ * Record that writes to [address] just completed: every frame's onCharacteristicWrite
+ * fired. The drive loop only checks ack deadlines between writes, so noting it when
+ * writeFrames returns is as good as noting each callback.
+ */
+internal fun GlassesSessionCore.noteWriteCompletedLocked(address: String, atMs: Long) {
+    val arm = armIndex(address)
+    if (arm >= 0) lastArmWriteAtMs[arm] = atMs
+}
+
+/**
+ * Re-derive each written, unresolved CFW message's ack deadline from its arm's latest
+ * write completion and CFW ack (CfwMessageWindow.ackDeadline), so either kind of
+ * progress keeps the window waiting. Deadlines only move later.
+ */
+internal fun GlassesSessionCore.refreshCfwAckDeadlinesLocked() {
+    for (message in inFlightMessages) {
+        if (message.sid != CfwTransport.SID || message.ackDeadlineAtMs <= 0) continue
+        val arm = if (message.isLeftArmMessage) 0 else 1
+        message.ackDeadlineAtMs = CfwMessageWindow.ackDeadline(
+            message.sentAtMs, lastArmWriteAtMs[arm], lastArmCfwAckAtMs[arm])
+    }
 }
 
 internal fun GlassesSessionCore.removePreparedMessageLocked(message: OutboundMessage?): Boolean {
