@@ -212,6 +212,10 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun stopG2AudioForwarding() = core.stopG2AudioForwarding()
 
+    fun addAudioMonitorListener(listener: FaceclawAudioPacketListener?) = core.addAudioMonitorListener(listener)
+
+    fun removeAudioMonitorListener(listener: FaceclawAudioPacketListener?) = core.removeAudioMonitorListener(listener)
+
     fun addCompassListener(listener: FaceclawCompassListener?) = core.addCompassListener(listener)
 
     fun removeCompassListener(listener: FaceclawCompassListener?) = core.removeCompassListener(listener)

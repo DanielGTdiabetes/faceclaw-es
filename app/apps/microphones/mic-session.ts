@@ -23,7 +23,7 @@ import {
   isStockAudioPacket,
   micChannelKey,
   micChannelLabel,
-  splitConcatenatedPcm16,
+  splitInterleavedPcm16,
   templeActive,
   type MicChannelKey,
   type MicConfig,
@@ -586,7 +586,7 @@ class MicSession {
       return;
     }
     const side: MicSide = arm === "L" ? "left" : "right";
-    const channels = splitConcatenatedPcm16(frame);
+    const channels = splitInterleavedPcm16(frame);
     if (!channels || channels.length === 0) return;
 
     // Meter every arriving channel — a host-disabled mic still shows its
