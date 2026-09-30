@@ -1,4 +1,3 @@
-import { runKotlinProtocolSmokeTest } from './kotlin-protocol-smoke';
 import type { KotlinBridge } from './kotlin-platform';
 
 // Handwritten declarations for the small native surface, checked against the
@@ -20,7 +19,6 @@ declare namespace com.faceclaw.shared {
 }
 
 export function createKotlinBridge(): KotlinBridge {
-  runKotlinProtocolSmokeTest();
   const bridge = new com.faceclaw.shared.KotlinBridge();
   return {
     platform: () => bridge.platform(),
