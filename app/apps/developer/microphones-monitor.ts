@@ -74,7 +74,7 @@ function emptyStats(): ArmStats {
     lastOtherBytes: 0,
     lastArrivalWallMs: null,
     recent: [],
-    buckets: new Array<number>(BUCKETS).fill(0),
+    buckets: Array.from({ length: BUCKETS }, () => 0),
     stockCounter: null,
     stockLost: 0,
     stockDuplicate: 0,
