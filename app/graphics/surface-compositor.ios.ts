@@ -1,6 +1,9 @@
 import { fromData, toData } from '../native/kotlin-data'
-import type { SurfaceConfiguration, SurfaceRect } from './surface-compositor'
-export type { SurfaceConfiguration, SurfaceRect } from './surface-compositor'
+export type SurfaceRect = { x: number; y: number; width: number; height: number }
+export type SurfaceConfiguration = SurfaceRect & {
+  zOrder: number
+  transparency: 'opaque' | 'color-key'
+}
 declare const FaceclawKitIosSurfaceCompositor: any
 /** Retained pixels, clipping, layers and composition live in shared Kotlin. */
 export class SurfaceCompositor {

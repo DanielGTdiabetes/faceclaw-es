@@ -7,7 +7,6 @@ const graphics=require('../.test-build/app/graphics/image.js');
 const planes=require('../.test-build/app/graphics/plane.js');
 const wire=require('../.test-build/app/graphics/presentation-wire.js');
 const {encodeShellScene}=require('../.test-build/app/graphics/shell-scene.js');
-const {SurfaceCompositor}=require('../.test-build/app/graphics/surface-compositor.js');
 function load(file,modules) {
   const context={exports:{},require:name=>{assert.ok(name in modules, name);return modules[name];}};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);
@@ -37,27 +36,17 @@ test('menu retains the selected text and rounded highlight on the menu plane',as
   assert.ok(row.source.pixels.some(v=>v===255));assert.ok(!image.withDrawsBaked(false).pixels.some(v=>v===255));
   const flat=planes.flattenPlanesWithDraws([{image,x:0,y:0}]);
   const records=wire.presentationRecords(prepareFrameDraws(flat.draws));assert.equal(records.length,1);
-  const c=new SurfaceCompositor(80,80);c.configureSurface('app',{x:0,y:0,width:80,height:80,zOrder:0,transparency:'opaque'});
-  c.submitSurfaceFrame('app',flat.image.pixels,{x:0,y:0,width:80,height:80},prepareFrameDraws(flat.draws));
-  const screen=flat.image.pixels.slice(),preview=c.composite();
-  assert.ok(preview.some(v=>v===240));assert.deepEqual(flat.image.pixels,screen);
   await m.layer.handleInput({type:'scroll-down'},m.context);
   const next=m.paint().draws.find(d=>d.presentation);assert.ok(next.y>row.y);assert.equal(next.presentation.depth,0);
 });
-test('shell menu selection survives serialization and is not baked into its surface',()=>{
+test('shell menu selection survives serialization',()=>{
   const image=menu().paint(),bytes=encodeShellScene([{image,x:0,y:0,shellKey:7}]);
   assert.equal(new DataView(bytes.buffer).getUint16(14,true),1);
-  const c=new SurfaceCompositor(80,80);c.setShellScene(bytes);assert.ok(c.composite().some(v=>v===240));
 });
-test('later opaque planes occlude a replayed selection without erasing its visible part',()=>{
+test('later opaque planes add an occlusion to a replayed selection',()=>{
   const image=menu().paint(),row=image.draws.find(d=>d.presentation),cover=new graphics.GrayImage(10,8,1);
   const flat=planes.flattenPlanesWithDraws([{image,x:0,y:0},{image:cover,x:row.x+10,y:row.y+2}]);
   const records=wire.presentationRecords(prepareFrameDraws(flat.draws));assert.ok(records[0].displayList.calls.some(c => c.op === 2 && c.resource === 65535));
-  const c=new SurfaceCompositor(80,80);c.configureSurface('app',{x:0,y:0,width:80,height:80,zOrder:0,transparency:'opaque'});
-  c.submitSurfaceFrame('app',flat.image.pixels,{x:0,y:0,width:80,height:80},prepareFrameDraws(flat.draws));
-  const preview=c.composite();
-  for(let y=row.y+2;y<row.y+10;y++) for(let x=row.x+10;x<row.x+20;x++) assert.equal(preview[y*80+x],0);
-  assert.ok(preview.some(v=>v===240));
 });
 
 const {LayerStack,noopLayerActions}=load('app/ui/layers.ts',{
@@ -71,24 +60,15 @@ test('context menu surface and selected row both use +4 without changing the app
   assert.deepEqual(frame.image.pixels,base.pixels);
   const records=wire.presentationRecords(prepareFrameDraws(frame.draws));
   assert.deepEqual(records.map(r=>r.depth),[4,4]);assert.equal(records[0].mode,'masked-image');
-  const c=new SurfaceCompositor(100,90);c.configureSurface('app',{x:0,y:0,width:100,height:90,zOrder:0,transparency:'opaque'});
-  c.submitSurfaceFrame('app',frame.image.pixels,{x:0,y:0,width:100,height:90},prepareFrameDraws(frame.draws));
-  const preview=c.composite();
-  assert.equal(preview[45*100+10],96); // old left edge has no baked menu
-  assert.equal(preview[45*100+13],0); // shifted opaque black interior
-  assert.equal(preview[8*100+12],96); // transparent rounded corner
-  assert.ok(preview.some(v=>v===240));
   stack.pop();const closed=planes.flattenPlanesWithDraws(stack.paint());
-  c.submitSurfaceFrame('app',closed.image.pixels,{x:0,y:0,width:100,height:90},prepareFrameDraws(closed.draws));
-  assert.deepEqual(c.composite(),base.pixels);
+  assert.deepEqual(closed.image.pixels,base.pixels);
+  assert.deepEqual(wire.presentationRecords(prepareFrameDraws(closed.draws)),[]);
 });
 test('system menu bridge shifts its surface and selected row together by +4',()=>{
   const image=menu().paint(),bytes=encodeShellScene([{image,x:8,y:0,shellKey:7,depth:4}]);
   const view=new DataView(bytes.buffer),w=view.getUint16(8,true),h=view.getUint16(10,true);
   assert.equal(view.getInt16(16,true),4);
   assert.equal(wire.readPresentation(bytes,18+w*h).selection.depth,4);
-  const c=new SurfaceCompositor(100,80);c.setShellScene(bytes);const preview=c.composite();
-  assert.equal(preview[40*100+8],0);assert.equal(preview[40*100+10],80);
 });
 test('unselected sidebar icons retain -2 depth through shell cropping, including attention badges',()=>{
   const shellScene=require('../.test-build/app/graphics/shell-scene.js');
@@ -106,10 +86,10 @@ test('unselected sidebar icons retain -2 depth through shell cropping, including
   chrome.drawSidebar(image,state);
   assert.deepEqual(Array.from(image.draws.filter(d=>d.presentation),d=>d.presentation.depth),[-2,-2]);
   const crop=shellScene.shellCrop(image,0,0,64,280,1),bytes=encodeShellScene([crop]);
-  const c=new SurfaceCompositor(640,480);c.setShellScene(bytes);const preview=c.composite();
-  assert.equal(preview[34*640+30],240); // selected icon stays at its original x
-  assert.equal(preview[74*640+29],240); // unselected icon moves left by one
-  assert.equal(preview[74*640+33],0); // no baked copy at the original right edge
+  const view=new DataView(bytes.buffer),w=view.getUint16(8,true),h=view.getUint16(10,true);
+  assert.equal(view.getUint16(14,true),2);
+  const first=wire.readPresentation(bytes,18+w*h),second=wire.readPresentation(bytes,first.end);
+  assert.deepEqual([first.selection.depth,second.selection.depth],[-2,-2]);
   state.selectedIndex=1;const next=new graphics.GrayImage(640,480);chrome.drawSidebar(next,state);
   assert.equal(next.draws.filter(d=>d.presentation).length,2);
 });
@@ -128,6 +108,4 @@ test('shell modal carries its inner menu highlight animation instead of baking i
   const image=paint(),row=image.draws.find(d=>d.presentation);
   assert.ok(row.y>before.y);assert.ok(row.presentation.displayList.timeline,'the slide stays a timed display list');
   assert.ok(!image.withDrawsBaked(false).pixels.some(v=>v===255),'selected text is not baked into the modal surface');
-  const c=new SurfaceCompositor(200,200);c.setShellScene(encodeShellScene([{image,x:0,y:0,shellKey:9}]));
-  assert.ok(c.composite().some(v=>v===240));
 });

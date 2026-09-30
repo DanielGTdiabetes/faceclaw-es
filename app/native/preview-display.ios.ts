@@ -1,5 +1,5 @@
 import { File, knownFolders, path, type ImageSource } from "@nativescript/core";
-import { SurfaceCompositor } from "../graphics/surface-compositor";
+import { SurfaceCompositor } from "../graphics/surface-compositor.ios";
 import { G2_LENS_WIDTH, G2_LENS_HEIGHT } from "../graphics/image";
 import { previewPixels } from "./ios-graphics";
 import { toData } from "./kotlin-data";

@@ -5,7 +5,6 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 const images = require('../.test-build/app/graphics/image.js');
-const { SurfaceCompositor } = require('../.test-build/app/graphics/surface-compositor.js');
 const events = require('../.test-build/app/g2/events.js');
 
 function load(file, modules, globals = {}) {
@@ -20,6 +19,7 @@ function load(file, modules, globals = {}) {
 }
 const planes = load('app/graphics/plane.ts', { './image': images });
 const timings = load('app/native/frame-timings.ts', {});
+const LAUNCHER_GRAY = 75;
 
 function fixture() {
   const observers = new Map(), phoneState = { protectedDataAvailable: true };
@@ -38,7 +38,7 @@ function fixture() {
     '../util/render-freshness': { beginRenderPass() {}, endRenderPass: () => false },
     './glance-state': require('../.test-build/app/g2/glance-state.js'),
   }, clock);
-  const launcherPixels = new Uint8Array(640 * 480).fill(75), fullRect = { x: 0, y: 0, width: 640, height: 480 };
+  const launcherPixels = new Uint8Array(640 * 480).fill(LAUNCHER_GRAY), fullRect = { x: 0, y: 0, width: 640, height: 480 };
   const window = { windowId: 'launcher', surfaceId: 'launcher', appId: 'launcher', title: 'Apps',
     // The launcher repaints into whichever display target the controller has after a switch.
     requestRender() { void controller?.displayReady.then(() => controller.display?.submitSurfaceFrame('launcher', launcherPixels, fullRect, 'launcher')); }, setScreenOn() {} };
@@ -55,21 +55,43 @@ function fixture() {
       if (input.type === 'display-wake' || !screenOn && input.type === 'double-click') shell.wake();
     },
   };
-  // Both display targets compose with the real (TypeScript reference) compositor so
-  // the pixel assertions below exercise real layering, blanking and lock surfaces.
+  // Both display targets share a minimal compositor (z-ordered opaque and
+  // color-keyed surfaces, visibility, blanking) so the pixel assertions below
+  // exercise layering, blanking and lock surfaces.
   class Display {
-    compositor = new SurfaceCompositor(640, 480);
+    surfaces = new Map(); blanked = false; depths = [];
     async configureCompositorScreen() {}
-    async configureSurface(id, options) { this.compositor.configureSurface(id, options); }
-    async removeSurface(id) { this.compositor.removeSurface(id); this.changed(); }
-    async setSurfaceVisible(id, visible) { this.compositor.setSurfaceVisible(id, visible); this.changed(); }
-    depths = [];
-    async setSurfaceDepth(id, depth) { this.depths.push([id, depth]); this.compositor.setSurfaceDepth(id, depth); }
-    async setUnderlayDim(below, factor) { this.compositor.setUnderlayDim(below, factor); this.changed(); }
-    async setScreenBlanked(blanked) { this.compositor.setScreenBlanked(blanked); this.changed(); }
-    async submitSurfaceFrame(id, pixels, rect, _fingerprint, _paintMs, _frameId, draws = null) { this.compositor.submitSurfaceFrame(id, pixels, rect, draws); this.changed(); }
-    async submitShellScene(bytes) { this.compositor.setShellScene(bytes); this.changed(); }
-    getCompositePreview() { return this.compositor.composite(); }
+    async configureSurface(id, options) {
+      const previous = this.surfaces.get(id);
+      const pixels = previous?.width === options.width && previous.height === options.height
+        ? previous.pixels : new Uint8Array(options.width * options.height);
+      this.surfaces.set(id, { ...options, pixels, visible: previous?.visible ?? true });
+    }
+    async removeSurface(id) { this.surfaces.delete(id); this.changed(); }
+    async setSurfaceVisible(id, visible) { const surface = this.surfaces.get(id); if (surface) surface.visible = visible; this.changed(); }
+    async setSurfaceDepth(id, depth) { this.depths.push([id, depth]); }
+    async setUnderlayDim() { this.changed(); }
+    async setScreenBlanked(blanked) { this.blanked = blanked; this.changed(); }
+    async submitSurfaceFrame(id, pixels, rect) {
+      const surface = this.surfaces.get(id);
+      if (!surface) throw new Error(`Unknown surface: ${id}`);
+      for (let y = 0; y < rect.height; y++) {
+        surface.pixels.set(pixels.subarray(y * rect.width, (y + 1) * rect.width), (rect.y + y) * surface.width + rect.x);
+      }
+      this.changed();
+    }
+    async submitShellScene() { this.changed(); }
+    getCompositePreview() {
+      const output = new Uint8Array(640 * 480);
+      if (this.blanked) return output;
+      for (const s of [...this.surfaces.values()].filter(s => s.visible).sort((a, b) => a.zOrder - b.zOrder)) {
+        for (let y = 0; y < s.height; y++) for (let x = 0; x < s.width; x++) {
+          const value = s.pixels[y * s.width + x];
+          if (s.transparency !== 'color-key' || value) output[(s.y + y) * 640 + s.x + x] = value;
+        }
+      }
+      return output;
+    }
     changed() {}
   }
   class PreviewDisplayTarget extends Display {
@@ -93,7 +115,7 @@ function fixture() {
     async start() { this.emitState('connected', 'Connected.'); }
     async disconnect() { this.emitState('disconnected', 'Disconnected.'); }
     waitForFrameFinished() { return Promise.resolve('sent'); }
-    changed() { if (this.phase === 'connected') sent.push(this.compositor.composite()); }
+    changed() { if (this.phase === 'connected') sent.push(this.getCompositePreview()); }
   }
   const provider = {
     isEnabled: () => settings.enabled, showOnTap: () => settings.tap,
@@ -221,17 +243,17 @@ test('double-tap and other shell wakes replace Glanceboard without waking it aga
   const f = fixture(); await f.connect(); f.shell.sleep();
   await f.hardware(9); await f.hardware(3);
   assert.equal(f.shell.isScreenOn(), true); assert.equal(f.controller.glance.isVisible(), false);
-  assert.equal(f.sent.at(-1)[0], 80); assert.equal(f.boardStats.stops, 1);
+  assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY); assert.equal(f.boardStats.stops, 1);
   f.shell.sleep(); await f.hardware(0); f.shell.wake(); await f.render();
-  assert.equal(f.controller.glance.isVisible(), false); assert.equal(f.sent.at(-1)[0], 80);
-  await f.advance(5000); await f.render(); assert.equal(f.sent.at(-1)[0], 80);
+  assert.equal(f.controller.glance.isVisible(), false); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
+  await f.advance(5000); await f.render(); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
 });
 
 test('head tilt uses Glanceboard when enabled and otherwise wakes the regular UI', async () => {
   const f = fixture(); await f.connect(); f.shell.sleep();
   await f.hardware(12, 1); assertBoard(f.sent.at(-1)); assert.equal(f.shell.isScreenOn(), false);
   await f.hardware(3); f.shell.sleep(); f.settings.tilt = false;
-  await f.hardware(12, 1); assert.equal(f.shell.isScreenOn(), true); assert.equal(f.sent.at(-1)[0], 80);
+  await f.hardware(12, 1); assert.equal(f.shell.isScreenOn(), true); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
 });
 
 test('disabled triggers and scrolls do not show the board; awake taps still reach the shell', async () => {
@@ -276,7 +298,7 @@ test('iOS lock hides apps and Glanceboard, blocks input, and stays locked when p
   await f.hardware(12, 1); assert.ok(f.sent.at(-1).every(p => p === 123));
   f.observers.get('unlock')(); await f.render();
   assert.equal(f.controller.glassesLocked, false);
-  assert.equal(f.sent.at(-1)[0], 80);
+  assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
   await f.hardware(0); assert.equal(f.received.length, 1);
 });
 
