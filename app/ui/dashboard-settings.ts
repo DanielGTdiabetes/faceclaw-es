@@ -308,19 +308,32 @@ export const timeFormatSetting = new ConfigSettingEnum<TimeFormat>({
  * How much of the 640x480 panel the UI uses. "576x288" is the stock band
  * (sidebar + a 288px-tall window at the vertical position); "576x480" keeps
  * the sidebar and gives every window the full height; "640x480" is the whole
- * panel, with the sidebar an overlay that shows only while it has focus.
+ * panel, with the sidebar an overlay that shows only while it has focus. The
+ * values name the sizes beside a side strip; with the app switcher along the
+ * bottom, the tall height loses the switcher row (displayModeLabel shows the
+ * actual size).
  */
 export const DISPLAY_MODE_VALUES = ["576x288", "576x480", "640x480"] as const;
 export type DisplayModeSetting = (typeof DISPLAY_MODE_VALUES)[number];
 
-const DISPLAY_MODE_LABELS: Record<DisplayModeSetting, string> = {
-  "576x288": "Band · 576×288",
-  "576x480": "Tall · 576×480",
-  "640x480": "Full panel · 640×480",
+const DISPLAY_MODE_NAMES: Record<DisplayModeSetting, string> = {
+  "576x288": "Band",
+  "576x480": "Tall",
+  "640x480": "Full panel",
+};
+
+/** Window size per mode with the app switcher along the bottom (see geometry.ts). */
+const BOTTOM_SWITCHER_SIZES: Record<DisplayModeSetting, string> = {
+  "576x288": "576×288",
+  "576x480": "576×444",
+  "640x480": "640×480",
 };
 
 export function displayModeLabel(value: DisplayModeSetting): string {
-  return DISPLAY_MODE_LABELS[value] ?? value;
+  const name = DISPLAY_MODE_NAMES[value];
+  if (!name) return value;
+  const size = appSwitcherPositionSetting.get() === "bottom" ? BOTTOM_SWITCHER_SIZES[value] : value.replace("x", "×");
+  return `${name} · ${size}`;
 }
 
 export const displayModeSetting = new ConfigSettingEnum<DisplayModeSetting>({
@@ -331,7 +344,52 @@ export const displayModeSetting = new ConfigSettingEnum<DisplayModeSetting>({
   values: DISPLAY_MODE_VALUES,
   formatValue: displayModeLabel,
   description:
-    "Band: the stock 576×288 window beside the sidebar. Tall: the sidebar plus full-height windows. Full panel: the whole 640×480 display; the sidebar overlays the app only while you are in it. Open apps reopen in the new size.",
+    "Band: the stock 288px-tall window beside the app switcher. Tall: the app switcher plus full-height windows. Full panel: the whole 640×480 display; the app switcher overlays the app only while you are in it. Open apps reopen in the new size.",
+});
+
+/** Which edge of the display the app switcher (the strip of open-window icons) sits on. */
+export type AppSwitcherPosition = "left" | "right" | "bottom";
+
+const APP_SWITCHER_POSITION_LABELS: Record<AppSwitcherPosition, string> = {
+  left: "Left",
+  right: "Right",
+  bottom: "Bottom",
+};
+
+export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosition>({
+  id: "app-switcher-position",
+  label: "App switcher position",
+  storageKey: "display.appSwitcherPosition",
+  defaultValue: "left",
+  values: ["left", "right", "bottom"],
+  formatValue: (value) => APP_SWITCHER_POSITION_LABELS[value] ?? value,
+  description:
+    "Which edge of the display the strip of open-app icons sits on. Left and right take a column beside windows; bottom puts a row beneath the window, which leaves room at the sides to set the display's depth, and makes full-height windows a little shorter. Moving it to or from the bottom reopens open apps in the new size.",
+});
+
+const UI_DEPTH_VALUES = ["-64", "-48", "-32", "-16", "0", "16", "32", "48", "64"] as const;
+export type UiDepth = (typeof UI_DEPTH_VALUES)[number];
+
+/**
+ * Stereo depth of the whole display, in the firmware's depth units: the
+ * lenses shift everything by half this many pixels each, in opposite
+ * directions. Only applies with the app switcher at the bottom, where the
+ * windows' 576px width leaves 32px at each side to shift into (see
+ * geometry.ts uiDepth); values stay even so the per-lens halves of nested
+ * depths add exactly.
+ */
+export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({
+  id: "ui-depth",
+  label: "Depth",
+  storageKey: "display.uiDepth",
+  defaultValue: "0",
+  values: UI_DEPTH_VALUES,
+  formatValue: (value) => {
+    const depth = Number(value);
+    return depth === 0 ? "0" : depth > 0 ? `+${depth} (nearer)` : `${depth} (farther)`;
+  },
+  description:
+    "Moves the whole display nearer (positive) or farther away (negative) by shifting it in opposite directions on the two lenses. Available with the app switcher at the bottom. Full-panel windows lose a sliver at the edges.",
 });
 
 export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({

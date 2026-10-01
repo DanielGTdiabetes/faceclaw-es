@@ -1,6 +1,10 @@
 package com.faceclaw.app
 
-/** Immutable shell snapshot. Keys identify writable surfaces across repaints, not their pixels. */
+/**
+ * Immutable shell snapshot. Keys identify writable surfaces across repaints, not their pixels.
+ * [screenDepth] is the stereo depth of the whole presentation: the screen copy and everything
+ * drawn over it shift together per lens (see [calls]).
+ */
 class ShellScene(val layers: List<Layer>, val selections: List<RetainedDrawing> = emptyList(), val screenDepth: Int = 0) {
     class Layer(val key: Int, val x: Int, val y: Int, val width: Int, val height: Int, val dim: Int, val packed: ByteArray, val selections: List<RetainedDrawing> = emptyList(), val depth: Int = 0) {
         // Layers are reused by every composite until the shell repaints, and hashing packed
@@ -13,22 +17,32 @@ class ShellScene(val layers: List<Layer>, val selections: List<RetainedDrawing> 
     val retainedResources = allSelections.flatMap { it.resources }
     init { require(retainedResources.size + layers.size < 511 && screenDepth in -128..127) }
     val fingerprint: String = layers.joinToString(";") { it.fingerprint } + selections.joinToString { it.fingerprint } + "|depth:$screenDepth"
+    /**
+     * The root list. A nonzero [screenDepth] adds to every positional call's own depth, so the
+     * scene moves as one; depths are even (see uiDepthSetting) so the per-lens halves add
+     * exactly. Dim LUTs stay put: they cover the whole target, and a shifted one would leave an
+     * undimmed strip at one edge.
+     */
     fun calls(width: Int, height: Int, surfaces: IntArray, selected: IntArray): List<ByteArray> {
         val calls = ArrayList<ByteArray>(); var rowId = 0
         val now = drawAnimationTimeMs()
+        fun shifted(call: ByteArray) = DrawProtocol.withAddedDepth(call, screenDepth)
         calls.addAll(DrawProtocol.screenCopy(width, height, screenDepth))
         fun add(row: RetainedDrawing) {
-            calls.addAll(row.calls(selected.copyOfRange(rowId, rowId + row.resources.size), now))
+            for (call in row.calls(selected.copyOfRange(rowId, rowId + row.resources.size), now)) calls.add(shifted(call))
             rowId += row.resources.size
         }
         for (row in selections) add(row)
         for ((index, layer) in layers.withIndex()) {
             if (layer.dim < 256) calls.add(DrawProtocol.lut(width, height, layer.dim))
-            calls.add(DrawProtocol.image(surfaces[index], layer.x, layer.y, depth = layer.depth))
+            calls.add(DrawProtocol.image(surfaces[index], layer.x, layer.y, depth = DrawProtocol.addDepth(layer.depth, screenDepth)))
             for (row in layer.selections) add(row)
         }
         return calls
     }
+    /** This scene without its whole-presentation shift: the phone mirror's view (see SurfaceCompositor.previewScene). */
+    fun unshifted(): ShellScene = if (screenDepth == 0) this else ShellScene(layers, selections, 0)
+
     fun preview(screenGray: ByteArray, width: Int, height: Int, rightLens: Boolean = false): ByteArray {
         val screen = BmpUtil.pack4bppFromGray8(screenGray, width, height)
         val output = ByteArray(screen.size); val resources = HashMap<Int, ByteArray>()
@@ -89,10 +103,11 @@ class ShellScene(val layers: List<Layer>, val selections: List<RetainedDrawing> 
                 val selections = List(selectionCount) { readRetainedDrawing(reader, reader.get().toInt()) }
                 layers.add(Layer(key, x, y, w, h, dim, BmpUtil.pack4bppFromGray8(gray, w, h), selections, depth))
             }
-            require(reader.remaining() == 0)
+            require(reader.remaining() == 2)
+            val screenDepth = reader.getShort().toInt()
             require(layers.sumOf { layer -> layer.selections.sumOf { it.resources.size } } + layers.size < 511)
             require(layers.map { it.key }.toSet().size == layers.size)
-            return ShellScene(layers)
+            return ShellScene(layers, screenDepth = screenDepth)
         }
     }
 }

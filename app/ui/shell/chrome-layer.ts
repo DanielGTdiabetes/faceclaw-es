@@ -16,6 +16,7 @@ import {
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
+  type AppSwitcherPosition,
   type BatteryIndicatorVisibility,
 } from "../dashboard-settings";
 import { formatClockDate, formatClockTime } from "../clock-format";
@@ -24,33 +25,42 @@ import { Layer, LayerStack } from "../layers";
 import { scrollToKeepSelectionVisible } from "../menu";
 import { lineStep } from "../metrics";
 import {
+  appViewportRect,
   MIN_WINDOW_HEIGHT,
   minWindowTop,
   SHELL_OPAQUE_BLACK,
   SIDEBAR_WIDTH,
   sidebarStripVisible,
+  SWITCHER_ROW_HEIGHT,
+  switcherPosition,
+  switcherRect,
   TOP_BAR_HEIGHT,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
 
 /**
- * Sidebar icon layout comes in two variants. Few enough windows for a single
- * column keeps the roomy 36px slots (32px icons) right-aligned against the
- * separator; past one column's worth it switches to two 32px slots (28px
- * icons) that exactly fill the 64px sidebar. In the two-column variant the
- * right column (against the app area) fills first and windows past that
- * overflow into the left column, so the common case keeps every icon next to
- * the content it belongs to.
+ * Sidebar icon layout (the app switcher on the left or right edge) comes in
+ * two variants. Few enough windows for a single column keeps the roomy 36px
+ * slots (32px icons) aligned against the separator; past one column's worth
+ * it switches to two 32px slots (28px icons) that exactly fill the 64px
+ * sidebar. In the two-column variant the column against the app area fills
+ * first and windows past that overflow into the outer column, so the common
+ * case keeps every icon next to the content it belongs to. A bottom row
+ * always uses the roomy slots, laid out left to right.
  */
 type SidebarVariant = { columns: number; columnWidth: number; iconSize: number };
 const ONE_COLUMN: SidebarVariant = { columns: 1, columnWidth: 36, iconSize: 32 };
 const TWO_COLUMN: SidebarVariant = { columns: 2, columnWidth: 32, iconSize: 28 };
 
 const ICON_SPACING = 8;
-/** Icon list top/bottom margins within the sidebar band, below the top bar. */
+/** Icon list top/bottom margins within the sidebar band, below the top bar (and a bottom row's end margins). */
 const LIST_MARGIN = 10;
 const LIST_HEIGHT = MIN_WINDOW_HEIGHT - TOP_BAR_HEIGHT - 2 * LIST_MARGIN;
+
+/** Bottom-row icons: one tall tab's worth of row, the icon inset 2px all round. */
+const ROW_ICON_SIZE = SWITCHER_ROW_HEIGHT - 4;
+const ROW_STEP = ROW_ICON_SIZE + ICON_SPACING;
 
 /** Icon rows that fit in one sidebar column. */
 function rowsPerColumn(variant: SidebarVariant): number {
@@ -61,23 +71,14 @@ function sidebarVariant(windowCount: number): SidebarVariant {
   return windowCount > rowsPerColumn(ONE_COLUMN) ? TWO_COLUMN : ONE_COLUMN;
 }
 
-/** Left x of a sidebar column; columns pack rightward against the separator. */
-function columnLeft(variant: SidebarVariant, column: number): number {
-  return SIDEBAR_WIDTH - (variant.columns - column) * variant.columnWidth;
-}
-
 /**
- * Column and top y of a visible sidebar slot; `position` counts from the
- * first visible (scrolled-to) icon. Slots fill the rightmost column top to
- * bottom, then overflow leftward. The single source of slot geometry for
- * both drawing and hit testing.
+ * Left x of a sidebar column. Column 0 sits against the separator (the
+ * strip's inner edge, toward the app area); further columns pack outward.
  */
-function slotPosition(variant: SidebarVariant, listTop: number, position: number): { column: number; y: number } {
-  const rows = rowsPerColumn(variant);
-  return {
-    column: variant.columns - 1 - ((position / rows) | 0),
-    y: listTop + (position % rows) * (variant.iconSize + ICON_SPACING),
-  };
+function columnLeft(variant: SidebarVariant, column: number, position: AppSwitcherPosition): number {
+  return position === "right"
+    ? G2_LENS_WIDTH - SIDEBAR_WIDTH + column * variant.columnWidth
+    : SIDEBAR_WIDTH - (column + 1) * variant.columnWidth;
 }
 
 /** Top y of the sidebar's icon list (below the band's top bar). */
@@ -86,12 +87,88 @@ function sidebarListTop(appId?: string): number {
 }
 
 /**
- * Left edge of the sidebar region that actually holds icons: the one-column
- * variant leaves a dead strip left of its single right-aligned column.
- * Screenshot cropping uses this to trim the unused part.
+ * One visible switcher icon's selection cell: the 2px-margined box around
+ * the icon that a selection tab or box fills. `atSeparator` is whether the
+ * cell touches the separator, so the selection can divert it (a tab) rather
+ * than sit apart from it (a box, for sidebar overflow-column icons).
  */
-export function sidebarContentLeft(windowCount: number): number {
-  return columnLeft(sidebarVariant(windowCount), 0);
+type SwitcherCell = { x: number; y: number; width: number; height: number; atSeparator: boolean };
+
+type SwitcherLayout = {
+  position: AppSwitcherPosition;
+  iconSize: number;
+  /** How many icons fit at once; the list scrolls to keep the selection among them. */
+  visibleCount: number;
+  /**
+   * Cell of the icon `slot` places past the first visible (scrolled-to) one.
+   * The single source of slot geometry for both drawing and hit testing.
+   */
+  cell: (slot: number) => SwitcherCell;
+};
+
+/** Switcher geometry for the foreground window (a bottom row sits under it). */
+function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId?: string): SwitcherLayout {
+  const position = switcherPosition();
+  if (position === "bottom") {
+    const row = switcherRect(heightMode, appId);
+    return {
+      position,
+      iconSize: ROW_ICON_SIZE,
+      visibleCount: Math.max(1, ((row.width - 2 * LIST_MARGIN + ICON_SPACING) / ROW_STEP) | 0),
+      cell: (slot) => ({
+        x: row.x + LIST_MARGIN - 2 + slot * ROW_STEP, y: row.y, width: ROW_ICON_SIZE + 4, height: SWITCHER_ROW_HEIGHT,
+        atSeparator: true,
+      }),
+    };
+  }
+  // Slots fill the column against the separator top to bottom, then
+  // overflow outward.
+  const variant = sidebarVariant(windowCount);
+  const rows = rowsPerColumn(variant);
+  const listTop = sidebarListTop(appId);
+  return {
+    position,
+    iconSize: variant.iconSize,
+    visibleCount: rows * variant.columns,
+    cell: (slot) => {
+      const column = (slot / rows) | 0;
+      return {
+        x: columnLeft(variant, column, position),
+        y: listTop + (slot % rows) * (variant.iconSize + ICON_SPACING) - 2,
+        width: variant.columnWidth,
+        height: variant.iconSize + 4,
+        atSeparator: column === 0,
+      };
+    },
+  };
+}
+
+/**
+ * Horizontal extent of the sidebar region that actually holds icons: the
+ * one-column variant leaves a dead strip on the outer side of its single
+ * column. Screenshot cropping uses this to trim the unused part.
+ */
+export function sidebarContentSpan(windowCount: number): { left: number; right: number } {
+  const variant = sidebarVariant(windowCount);
+  const width = variant.columns * variant.columnWidth;
+  return switcherPosition() === "right"
+    ? { left: G2_LENS_WIDTH - SIDEBAR_WIDTH, right: G2_LENS_WIDTH - SIDEBAR_WIDTH + width }
+    : { left: SIDEBAR_WIDTH - width, right: SIDEBAR_WIDTH };
+}
+
+/**
+ * Horizontal extent of the top bar: the foreground window's, short of a side
+ * strip overlaid on it (full-panel mode, sidebar focused).
+ */
+function topBarSpan(state: ShellChromeState): { left: number; right: number } {
+  const viewport = appViewportRect(state.foregroundHeightMode, state.foregroundAppId);
+  let left = viewport.x, right = viewport.x + viewport.width;
+  if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
+    const position = switcherPosition();
+    if (position === "left") left = Math.max(left, SIDEBAR_WIDTH);
+    if (position === "right") right = Math.min(right, G2_LENS_WIDTH - SIDEBAR_WIDTH);
+  }
+  return { left, right };
 }
 const NOTIFICATION_ICON_SIZE = 24;
 const BORDER_VALUE = 40;
@@ -195,12 +272,12 @@ export function makeImageWindowIcon(
 }
 
 /**
- * Base layer of the shell surface: the window sidebar on the left and the
- * status top bar. Everything not explicitly painted stays 0 (transparent on
- * the color-key shell surface), so the app viewport shows through.
+ * Base layer of the shell surface: the window sidebar (or bottom row) and
+ * the status top bar. Everything not explicitly painted stays 0 (transparent
+ * on the color-key shell surface), so the app viewport shows through.
  */
 export class ShellChromeLayer implements Layer {
-  // First sidebar row shown; adjusted each paint to keep the selection visible.
+  // First switcher icon shown; adjusted each paint to keep the selection visible.
   private scrollRow = 0;
 
   constructor(private readonly getState: () => ShellChromeState) {}
@@ -214,7 +291,7 @@ export class ShellChromeLayer implements Layer {
       this.drawSidebar(image, state);
     }
     this.drawTopBar(image, state);
-    drawAmbientCards(image);
+    drawAmbientCards(image, topBarSpan(state).right);
     return image;
   }
 
@@ -223,13 +300,14 @@ export class ShellChromeLayer implements Layer {
     if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
       const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
       this.drawSidebar(canvas, state);
-      parts.push(shellCrop(canvas, 0, minWindowTop(state.foregroundAppId), SIDEBAR_WIDTH, MIN_WINDOW_HEIGHT, 1));
+      const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
+      parts.push(shellCrop(canvas, strip.x, strip.y, strip.width, strip.height, 1));
     }
     const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
     this.drawTopBar(canvas, state);
-    const left = sidebarStripVisible(state.focus, state.foregroundAppId) ? SIDEBAR_WIDTH : 0;
-    parts.push({ ...shellCrop(canvas, left, windowTop(state.foregroundHeightMode, state.foregroundAppId), G2_LENS_WIDTH-left, TOP_BAR_HEIGHT, 2), depth: -2 });
-    drawAmbientCards(canvas, parts);
+    const bar = topBarSpan(state);
+    parts.push({ ...shellCrop(canvas, bar.left, windowTop(state.foregroundHeightMode, state.foregroundAppId), bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
+    drawAmbientCards(canvas, bar.right, parts);
     return parts;
   }
 
@@ -239,19 +317,18 @@ export class ShellChromeLayer implements Layer {
   }
 
   /**
-   * Which window's sidebar icon is under (x, y) on screen, if any — the same
-   * slot geometry drawSidebar uses, so a touch on the phone's mirror lands on
-   * the icon the mirror showed.
+   * Which window's switcher icon is under (x, y) on screen, if any — the
+   * same slot geometry drawSidebar uses, so a touch on the phone's mirror
+   * lands on the icon the mirror showed.
    */
   windowIndexAt(x: number, y: number, windowCount: number): number | null {
-    if (x < 0 || x >= SIDEBAR_WIDTH || windowCount === 0) return null;
-    const variant = sidebarVariant(windowCount);
-    const listTop = sidebarListTop(this.getState().foregroundAppId);
-    const lastVisible = Math.min(windowCount, this.scrollRow + rowsPerColumn(variant) * variant.columns);
+    if (windowCount === 0) return null;
+    const state = this.getState();
+    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId);
+    const lastVisible = Math.min(windowCount, this.scrollRow + layout.visibleCount);
     for (let index = this.scrollRow; index < lastVisible; index++) {
-      const { column, y: slotY } = slotPosition(variant, listTop, index - this.scrollRow);
-      const left = columnLeft(variant, column);
-      if (x >= left && x < left + variant.columnWidth && y >= slotY - 2 && y < slotY + variant.iconSize + 2) {
+      const cell = layout.cell(index - this.scrollRow);
+      if (x >= cell.x && x < cell.x + cell.width && y >= cell.y && y < cell.y + cell.height) {
         return index;
       }
     }
@@ -259,60 +336,48 @@ export class ShellChromeLayer implements Layer {
   }
 
   private drawSidebar(image: GrayImage, state: ShellChromeState): void {
-    // Align the sidebar with the app's preferred band. Legacy tall terminal
-    // sessions keep the sidebar at the global band position.
-    const bandTop = minWindowTop(state.foregroundAppId);
-    const bandBottom = bandTop + MIN_WINDOW_HEIGHT;
-    image.fillRect(0, bandTop, SIDEBAR_WIDTH, MIN_WINDOW_HEIGHT, SHELL_OPAQUE_BLACK);
+    // A side strip aligns with the app's preferred band (legacy tall
+    // terminal sessions keep it at the global band position); a bottom row
+    // sits under the foreground window.
+    const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
+    image.fillRect(strip.x, strip.y, strip.width, strip.height, SHELL_OPAQUE_BLACK);
 
     // Scroll the icon list to keep the selection visible; chevrons mark
-    // windows off-screen above/below. Icons fill the right column top to
-    // bottom, then overflow into the left one, so a visible slot's column is
-    // decided by its position within the scrolled window.
+    // windows off-screen before/after. Sidebar icons fill the column against
+    // the separator top to bottom, then overflow into the outer one, so a
+    // visible slot's column is decided by its position within the scrolled
+    // window.
     const count = state.windows.length;
-    const variant = sidebarVariant(count);
-    const iconSize = variant.iconSize;
-    const iconMarginX = ((variant.columnWidth - iconSize) / 2) | 0;
-    // Column index of the rightmost column (the one that fills first).
-    const firstColumn = variant.columns - 1;
-    const listTop = sidebarListTop(state.foregroundAppId);
-    const visibleCount = rowsPerColumn(variant) * variant.columns;
-    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, visibleCount, count);
-    const lastVisible = Math.min(count, this.scrollRow + visibleCount);
-    const slotOf = (index: number) => slotPosition(variant, listTop, index - this.scrollRow);
+    const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId);
+    const { iconSize, position } = layout;
+    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, layout.visibleCount, count);
+    const lastVisible = Math.min(count, this.scrollRow + layout.visibleCount);
+    const cellOf = (index: number) => layout.cell(index - this.scrollRow);
 
-    // The selection is a "diversion" of the sidebar/main separator line: the
-    // line bulges right around the selected icon (rounded on the left, open
-    // to the main area on the right), so the separator is drawn with a gap
-    // there. When the sidebar has focus, the diversion is filled white and
-    // the icon drawn inverted. Only the right column touches the separator;
-    // a selected overflow icon gets a self-contained box instead.
-    const sep = SIDEBAR_WIDTH - 1;
-    // Start beside the app content, leaving the area alongside the top bar open.
-    const sepTop = Math.max(bandTop, windowTop(state.foregroundHeightMode, state.foregroundAppId) + TOP_BAR_HEIGHT);
+    // The selection is a "diversion" of the switcher/main separator line:
+    // the line bulges toward the main area around the selected icon (rounded
+    // on the outer side, open to the main area), so the separator is drawn
+    // with a gap there. When the switcher has focus, the diversion is filled
+    // white and the icon drawn inverted. Only the sidebar column against the
+    // separator touches it; a selected overflow icon gets a self-contained
+    // box instead.
     const selVisible = state.selectedIndex >= this.scrollRow && state.selectedIndex < lastVisible;
-    const selSlot = selVisible ? slotOf(state.selectedIndex) : null;
-    const selTabTop = selSlot && selSlot.column === firstColumn ? selSlot.y - 2 : null;
-    if (selTabTop !== null) {
-      image.drawLine(sep, sepTop, sep, selTabTop, BORDER_VALUE);
-      image.drawLine(sep, selTabTop + iconSize + 4, sep, bandBottom - 1, BORDER_VALUE);
-    } else {
-      image.drawLine(sep, sepTop, sep, bandBottom - 1, BORDER_VALUE);
-    }
+    const selCell = selVisible ? cellOf(state.selectedIndex) : null;
+    drawSeparator(image, state, strip, selCell?.atSeparator ? selCell : null);
 
     for (let index = this.scrollRow; index < lastVisible; index++) {
       const window = state.windows[index]!;
-      const { column, y } = slotOf(index);
-      const left = columnLeft(variant, column);
-      const x = left + iconMarginX;
+      const cell = cellOf(index);
+      const x = cell.x + (((cell.width - iconSize) / 2) | 0);
+      const y = cell.y + (((cell.height - iconSize) / 2) | 0);
       const selected = index === state.selectedIndex;
       const focused = selected && state.focus === "sidebar";
-      if (selected && column === firstColumn) {
-        drawSelectionTab(image, left, y - 2, y + iconSize + 2, focused);
+      if (selected && cell.atSeparator) {
+        drawSelectionTab(image, cell, position, focused);
       } else if (selected) {
         // Spans the full column: only 2px of margin flanks the icon in its
         // slot, so anything wider would clip at the screen edge.
-        drawSelectionBox(image, left, y - 2, variant.columnWidth, iconSize + 4, focused);
+        drawSelectionBox(image, cell.x, cell.y, cell.width, cell.height, focused);
       }
       // Paint unselected icons into their own resource so only the replayed copy moves.
       const icon = selected ? image : new GrayImage(iconSize, iconSize + 1);
@@ -327,14 +392,26 @@ export class ShellChromeLayer implements Layer {
       if (!selected) image.drawDepthImage(icon, x, y - 1, -2);
     }
 
+    if (position === "bottom") {
+      // Chevrons sit in the row's end margins, pointing off either end.
+      const chevronY = strip.y + ((strip.height / 2) | 0);
+      if (this.scrollRow > 0) {
+        drawChevron(image, strip.x + 6, chevronY, "left");
+      }
+      if (lastVisible < count) {
+        drawChevron(image, strip.x + strip.width - 6, chevronY, "right");
+      }
+      return;
+    }
     // Chevrons center over the icon area, which in the one-column variant is
     // narrower than the sidebar strip.
-    const chevronX = ((columnLeft(variant, 0) + SIDEBAR_WIDTH) / 2) | 0;
+    const span = sidebarContentSpan(count);
+    const chevronX = ((span.left + span.right) / 2) | 0;
     if (this.scrollRow > 0) {
-      drawChevron(image, chevronX, bandTop + TOP_BAR_HEIGHT + 6, -1);
+      drawChevron(image, chevronX, strip.y + TOP_BAR_HEIGHT + 6, "up");
     }
     if (lastVisible < count) {
-      drawChevron(image, chevronX, bandBottom - 6, 1);
+      drawChevron(image, chevronX, strip.y + strip.height - 6, "down");
     }
   }
 
@@ -344,11 +421,11 @@ export class ShellChromeLayer implements Layer {
     // its height mode puts that (screen top for max height). It moves when
     // the foreground switches to a window of a different height.
     const barTop = windowTop(state.foregroundHeightMode, state.foregroundAppId);
-    // The bar spans the app viewport; with the sidebar overlaid (full-panel
-    // mode, sidebar focused) it still starts past the strip.
-    const barLeft = sidebarStripVisible(state.focus, state.foregroundAppId) ? SIDEBAR_WIDTH : 0;
-    image.fillRect(barLeft, barTop, G2_LENS_WIDTH - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);
-    image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, G2_LENS_WIDTH - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
+    // The bar spans the app viewport; with a side strip overlaid (full-panel
+    // mode, sidebar focused) it still stops at the strip.
+    const { left: barLeft, right: barRight } = topBarSpan(state);
+    image.fillRect(barLeft, barTop, barRight - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);
+    image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, barRight - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
 
     const now = new Date();
     const clock = `${formatClockDate(now)} ${formatClockTime(now)}`;
@@ -356,7 +433,7 @@ export class ShellChromeLayer implements Layer {
     const textY = barTop + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0);
     image.drawText(font, clockX, textY, clock, 210);
 
-    const batteryLeft = this.drawTopBarBatteries(image, state, barTop);
+    const batteryLeft = this.drawTopBarBatteries(image, state, barTop, barRight);
     const trayLeft = drawTrayIcons(image, state.trayIcons, batteryLeft, barTop);
 
     const iconsX = clockX + font.measureText(clock) + 16;
@@ -379,9 +456,10 @@ export class ShellChromeLayer implements Layer {
    * running the Faceclaw watch app is reachable (no placeholder otherwise).
    * The Settings > Customization > Battery indicators submenu picks the style (label beside a gauge icon or percentage, or stacked above
    * either) and, per device, whether the indicator shows always, only below
-   * 50%, or never. Returns the left edge of the battery block.
+   * 50%, or never. `barRight` is the bar's right edge (short of a right-hand
+   * sidebar). Returns the left edge of the battery block.
    */
-  private drawTopBarBatteries(image: GrayImage, state: ShellChromeState, barTop: number): number {
+  private drawTopBarBatteries(image: GrayImage, state: ShellChromeState, barTop: number, barRight: number): number {
     const mode = batteryDisplayModeSetting.get();
     const items: BatteryItem[] = [];
     const phone = readPhoneBatteryState();
@@ -401,9 +479,9 @@ export class ShellChromeLayer implements Layer {
       pushBatteryItem(items, ringBatteryVisibilitySetting.get(), "R1", state.battery.ring,
         Boolean(state.battery.ringCharging));
     }
-    if (!items.length) return G2_LENS_WIDTH;
+    if (!items.length) return barRight;
     if (mode === "stacked" || mode === "stacked-percentage") {
-      return drawStackedBatteries(image, items, barTop, mode === "stacked-percentage");
+      return drawStackedBatteries(image, items, barTop, barRight, mode === "stacked-percentage");
     }
 
     const font = getDefaultSmallFont();
@@ -411,7 +489,7 @@ export class ShellChromeLayer implements Layer {
     const labelGap = 5;
     const itemGap = 12;
     const textY = barTop + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0);
-    let x = G2_LENS_WIDTH - BATTERY_BLOCK_RIGHT_MARGIN;
+    let x = barRight - BATTERY_BLOCK_RIGHT_MARGIN;
     for (let index = items.length - 1; index >= 0; index--) {
       const item = items[index]!;
       const percentText = `${item.percent}%`;
@@ -474,14 +552,14 @@ const STACKED_ITEM_GAP = 10;
 
 /**
  * Stacked styles: each label centered above its gauge icon (or percentage
- * text), right-aligned in the bar. Returns the left edge of the battery
- * block.
+ * text), right-aligned in the bar (ending at barRight). Returns the left edge
+ * of the battery block.
  */
-function drawStackedBatteries(image: GrayImage, items: BatteryItem[], barTop: number, percentage: boolean): number {
+function drawStackedBatteries(image: GrayImage, items: BatteryItem[], barTop: number, barRight: number, percentage: boolean): number {
   const font = getFont("terminusv12");
   const labelTop = barTop + STACKED_LABEL_BASELINE - font.ascent;
   const percentTop = barTop + STACKED_PERCENT_BASELINE - font.ascent;
-  let x = G2_LENS_WIDTH - BATTERY_BLOCK_RIGHT_MARGIN;
+  let x = barRight - BATTERY_BLOCK_RIGHT_MARGIN;
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index]!;
     const percentText = `${item.percent}%`;
@@ -521,16 +599,18 @@ const AMBIENT_MAX_LINES_PER_CARD = 3;
 /**
  * Paint the active ambient cards bottom-up: the oldest card sits at the very
  * bottom of the window band and newer ones stack above it. Cards that would
- * cross into the top bar are dropped rather than clipped.
+ * cross into the top bar are dropped rather than clipped. `right` is the
+ * top bar's right edge, which the cards align to.
  */
 const ambientKeys = new Map<string, number>();
-function drawAmbientCards(image: GrayImage, parts?: Plane[]): void {
+function drawAmbientCards(image: GrayImage, right: number, parts?: Plane[]): void {
   const cards = activeAmbientCards();
   if (!cards.length) return;
   const font = getDefaultSmallFont();
   const bandTop = minWindowTop();
   const bandBottom = bandTop + MIN_WINDOW_HEIGHT;
-  const x = G2_LENS_WIDTH - AMBIENT_CARD_WIDTH - AMBIENT_CARD_MARGIN;
+  // Right-aligned with the top bar: clear of a right-hand sidebar.
+  const x = right - AMBIENT_CARD_WIDTH - AMBIENT_CARD_MARGIN;
   const textWidth = AMBIENT_CARD_WIDTH - 2 * AMBIENT_CARD_PADDING_X;
   let bottom = bandBottom - AMBIENT_CARD_MARGIN;
   for (const card of cards) {
@@ -591,33 +671,81 @@ const TAB_EXTEND = 0;
 const TAB_STROKE = 150;
 
 /**
- * Draw the selection "diversion" of the separator line around a sidebar icon
- * in the rightmost column: rounded on the left, square and open on the right,
- * extending a few px past the separator into the main area. Focused = filled
- * white; otherwise an outline. `left` is the column's left edge, which the
- * rounded corners curve in from.
+ * Draw the switcher/main separator line along the strip's inner edge, with
+ * a gap where the selection tab `gap` diverts it.
  */
-function drawSelectionTab(image: GrayImage, left: number, top: number, bottom: number, focused: boolean): void {
-  const right = SIDEBAR_WIDTH - 1 + TAB_EXTEND;
-  if (focused) {
-    for (let yy = top; yy < bottom; yy++) {
-      const x = left + tabLeftInset(yy, top, bottom, TAB_RADIUS);
-      image.fillRect(x, yy, right - x + 1, 1, 255);
+function drawSeparator(
+  image: GrayImage,
+  state: ShellChromeState,
+  strip: { x: number; y: number; width: number; height: number },
+  gap: SwitcherCell | null,
+): void {
+  if (switcherPosition() === "bottom") {
+    // Along the row's top edge, the full width of the row.
+    const y = strip.y, right = strip.x + strip.width - 1;
+    if (gap) {
+      image.drawLine(strip.x, y, gap.x, y, BORDER_VALUE);
+      image.drawLine(gap.x + gap.width, y, right, y, BORDER_VALUE);
+    } else {
+      image.drawLine(strip.x, y, right, y, BORDER_VALUE);
     }
     return;
   }
-  // Outline: the tab shape minus the same shape inset by a pixel, row by row.
-  // Stroking the curve one pixel per row instead would leave gaps wherever the
-  // corner steps in by more than one pixel, and the top/bottom edges have to
-  // start at the same inset the curve uses or they part company from it.
-  for (let yy = top; yy < bottom; yy++) {
-    const outer = left + tabLeftInset(yy, top, bottom, TAB_RADIUS);
-    // The top and bottom rows are the horizontal edges: solid out to the open
-    // right side. In between only the left edge is stroked.
-    const inner = yy > top && yy < bottom - 1
-      ? left + 1 + tabLeftInset(yy, top + 1, bottom - 1, TAB_RADIUS - 1)
-      : right + 1;
-    image.fillRect(outer, yy, Math.max(1, Math.min(inner, right + 1) - outer), 1, TAB_STROKE);
+  const sep = switcherPosition() === "right" ? strip.x : strip.x + strip.width - 1;
+  const bottom = strip.y + strip.height - 1;
+  // Start beside the app content, leaving the area alongside the top bar open.
+  const top = Math.max(strip.y, windowTop(state.foregroundHeightMode, state.foregroundAppId) + TOP_BAR_HEIGHT);
+  if (gap) {
+    image.drawLine(sep, top, sep, gap.y, BORDER_VALUE);
+    image.drawLine(sep, gap.y + gap.height, sep, bottom, BORDER_VALUE);
+  } else {
+    image.drawLine(sep, top, sep, bottom, BORDER_VALUE);
+  }
+}
+
+/**
+ * Draw the selection "diversion" of the separator line around a switcher
+ * icon whose cell touches the separator: rounded on the outer side, square
+ * and open on the side toward the main area, extending TAB_EXTEND px past
+ * the separator into it. Focused = filled white; otherwise an outline.
+ *
+ * Drawn in tab-local coordinates: `along` runs parallel to the separator,
+ * `across` from the rounded outer edge (0) to the open edge, and fillAcross
+ * maps a run of one along-line onto the screen for the strip's orientation.
+ */
+function drawSelectionTab(image: GrayImage, cell: SwitcherCell, position: AppSwitcherPosition, focused: boolean): void {
+  const vertical = position !== "bottom";
+  const along = vertical ? cell.height : cell.width;
+  const across = (vertical ? cell.width : cell.height) + TAB_EXTEND;
+  const fillAcross = (i: number, from: number, to: number, value: number) => {
+    switch (position) {
+      case "left":
+        image.fillRect(cell.x + from, cell.y + i, to - from, 1, value);
+        break;
+      case "right":
+        image.fillRect(cell.x + cell.width - to, cell.y + i, to - from, 1, value);
+        break;
+      default:
+        image.fillRect(cell.x + i, cell.y + cell.height - to, 1, to - from, value);
+    }
+  };
+  if (focused) {
+    for (let i = 0; i < along; i++) {
+      fillAcross(i, tabInset(i, 0, along, TAB_RADIUS), across, 255);
+    }
+    return;
+  }
+  // Outline: the tab shape minus the same shape inset by a pixel, line by
+  // line. Stroking the curve one pixel per line instead would leave gaps
+  // wherever the corner steps in by more than one pixel, and the two edges
+  // running across have to start at the same inset the curve uses or they
+  // part company from it.
+  for (let i = 0; i < along; i++) {
+    const outer = tabInset(i, 0, along, TAB_RADIUS);
+    // The first and last lines are the edges running across: solid out to
+    // the open side. In between only the outer edge is stroked.
+    const inner = i > 0 && i < along - 1 ? 1 + tabInset(i, 1, along - 1, TAB_RADIUS - 1) : across;
+    fillAcross(i, outer, Math.max(outer + 1, Math.min(inner, across)), TAB_STROKE);
   }
 }
 
@@ -634,24 +762,36 @@ function drawSelectionBox(image: GrayImage, x: number, y: number, width: number,
   }
 }
 
-/** Left boundary x of the tab at row yy: 0 in the middle, curving to the rounded left corners. */
-function tabLeftInset(yy: number, top: number, bottom: number, radius: number): number {
-  const cy = yy + 0.5;
-  let dy = 0;
-  if (cy < top + radius) {
-    dy = top + radius - cy;
-  } else if (cy > bottom - radius) {
-    dy = cy - (bottom - radius);
+/**
+ * How far the tab's outer edge is inset at along-line i (of the tab spanning
+ * start..end): 0 in the middle, curving in toward the rounded corners.
+ */
+function tabInset(i: number, start: number, end: number, radius: number): number {
+  const c = i + 0.5;
+  let d = 0;
+  if (c < start + radius) {
+    d = start + radius - c;
+  } else if (c > end - radius) {
+    d = c - (end - radius);
   } else {
     return 0;
   }
-  return Math.max(0, Math.round(radius - Math.sqrt(Math.max(0, radius * radius - dy * dy))));
+  return Math.max(0, Math.round(radius - Math.sqrt(Math.max(0, radius * radius - d * d))));
 }
 
-/** Small triangle marker for sidebar overflow; direction -1 = up, 1 = down. */
-function drawChevron(image: GrayImage, centerX: number, y: number, direction: -1 | 1): void {
+/**
+ * Small triangle marker for switcher overflow, pointing the way the hidden
+ * icons are; (x, y) is the middle of its base.
+ */
+function drawChevron(image: GrayImage, x: number, y: number, direction: "up" | "down" | "left" | "right"): void {
   const half = 5;
-  const tipY = direction < 0 ? y - 3 : y + 3;
-  image.drawLine(centerX - half, y, centerX, tipY, 140);
-  image.drawLine(centerX, tipY, centerX + half, y, 140);
+  if (direction === "left" || direction === "right") {
+    const tipX = direction === "left" ? x - 3 : x + 3;
+    image.drawLine(x, y - half, tipX, y, 140);
+    image.drawLine(tipX, y, x, y + half, 140);
+    return;
+  }
+  const tipY = direction === "up" ? y - 3 : y + 3;
+  image.drawLine(x - half, y, x, tipY, 140);
+  image.drawLine(x, tipY, x + half, y, 140);
 }

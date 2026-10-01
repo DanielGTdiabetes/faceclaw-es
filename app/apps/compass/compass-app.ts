@@ -161,7 +161,7 @@ class CompassLayer implements Layer {
     const readoutHeight = headingFont.lineHeight;
 
     // One column centred on the display's true centre, so the rose sits where
-    // the wearer is looking rather than 32px right of it.
+    // the wearer is looking rather than 32px beside it (with a side strip).
     const cx = screenCenterInViewportX();
 
     // The rose is sized and placed first — it hangs off the bottom edge — and

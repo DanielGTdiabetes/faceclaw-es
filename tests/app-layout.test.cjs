@@ -14,6 +14,7 @@ function geometry() {
     displayModeSetting: '576x288', verticalPositionSetting: 'middle',
     navigateDisplayModeSetting: 'global', navigateVerticalPositionSetting: 'global',
     terminalDisplayModeSetting: 'default', terminalVerticalPositionSetting: 'global',
+    appSwitcherPositionSetting: 'left', uiDepthSetting: '0',
   }).map(([name, value]) => [name, { value, get() { return this.value; } }]));
   const context = { exports: {}, require: (name) => {
     if (name === '../../graphics/image') return { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 };
@@ -65,21 +66,72 @@ test('Terminal can disable its tall default, inherit position or override both d
 
 test('all explicit size/position combinations stay within the display and align content below the bar', () => {
   const g = geometry();
-  for (const globalMode of ['576x288', '576x480', '640x480']) {
-    g.settings.displayModeSetting.value = globalMode;
-    for (const appId of ['navigate', 'terminal']) {
-      for (const mode of ['global', '576x288', '576x480', '640x480']) {
-        g.settings[`${appId}DisplayModeSetting`].value = mode;
-        for (const position of ['global', 'top', 'upper', 'middle', 'lower', 'bottom']) {
-          g.settings[`${appId}VerticalPositionSetting`].value = position;
-          const rect = g.rect('max', appId);
-          assert.equal(rect.x + rect.width, 640);
-          assert.equal(rect.y, g.windowTop('max', appId) + g.TOP_BAR_HEIGHT);
-          assert.ok(rect.y >= 28 && rect.y + rect.height <= 480);
+  for (const switcher of ['left', 'right', 'bottom']) {
+    g.settings.appSwitcherPositionSetting.value = switcher;
+    for (const globalMode of ['576x288', '576x480', '640x480']) {
+      g.settings.displayModeSetting.value = globalMode;
+      for (const appId of ['navigate', 'terminal']) {
+        for (const mode of ['global', '576x288', '576x480', '640x480']) {
+          g.settings[`${appId}DisplayModeSetting`].value = mode;
+          for (const position of ['global', 'top', 'upper', 'middle', 'lower', 'bottom']) {
+            g.settings[`${appId}VerticalPositionSetting`].value = position;
+            for (const heightMode of ['min', 'medium', 'max']) {
+              const rect = g.rect(heightMode, appId);
+              const fullPanel = g.displayMode(appId) === '640x480';
+              assert.equal(rect.x + rect.width, fullPanel ? 640 : { left: 640, right: 576, bottom: 608 }[switcher]);
+              assert.equal(rect.y, g.windowTop(heightMode, appId) + g.TOP_BAR_HEIGHT);
+              assert.ok(rect.y >= 28 && rect.y + rect.height <= 480 - g.switcherRowHeight(appId));
+              const row = g.switcherRect(heightMode, appId);
+              assert.ok(row.y + row.height <= 480);
+              // A reserved bottom row hangs right under the window, as wide as it.
+              if (g.switcherRowHeight(appId)) assert.deepEqual([row.x, row.y, row.width], [rect.x, rect.y + rect.height, rect.width]);
+            }
+          }
         }
       }
     }
   }
+});
+
+test('the app switcher can sit on the right edge', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'right';
+  assert.deepEqual(g.rect('min'), { x: 0, y: 124, width: 576, height: 260 });
+  assert.deepEqual({ ...g.switcherRect('max') }, { x: 576, y: 96, width: 64, height: 288 });
+  assert.equal(g.screenCenterInViewportX(), 320);
+  assert.equal(g.isOnSwitcherEdge(600, 10, 'min'), true);
+  assert.equal(g.isOnSwitcherEdge(10, 200, 'min'), false);
+  // Depth needs the bottom row's side margins.
+  g.settings.uiDepthSetting.value = '32';
+  assert.equal(g.uiDepth(), 0);
+  g.settings.displayModeSetting.value = '640x480';
+  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+});
+
+test('a bottom app switcher centres 576-wide windows and hangs one tall tab under them', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  assert.equal(g.SWITCHER_ROW_HEIGHT, 36);
+  assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 28, width: 576, height: 416 });
+  assert.deepEqual({ ...g.switcherRect('max', 'terminal') }, { x: 32, y: 444, width: 576, height: 36 });
+  // Band and row share the slack: no gap under a band shorter than the screen.
+  assert.deepEqual(g.rect('min'), { x: 32, y: 106, width: 576, height: 260 });
+  assert.deepEqual({ ...g.switcherRect('min') }, { x: 32, y: 366, width: 576, height: 36 });
+  assert.equal(g.isOnSwitcherEdge(10, 370, 'min'), true);
+  assert.equal(g.isOnSwitcherEdge(10, 360, 'min'), false);
+  g.settings.verticalPositionSetting.value = 'bottom';
+  assert.equal(g.switcherRect('min').y, 444);
+  // The true centre is the viewport's own with the window centred.
+  assert.equal(g.screenCenterInViewportX(), 288);
+  // Depth applies only here.
+  g.settings.uiDepthSetting.value = '-48';
+  assert.equal(g.uiDepth(), -48);
+  // Full panel: windows fill the panel and the row overlays the bottom edge while focused.
+  g.settings.displayModeSetting.value = '640x480';
+  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+  assert.deepEqual({ ...g.switcherRect('max') }, { x: 0, y: 444, width: 640, height: 36 });
+  assert.equal(g.sidebarStripVisible('window'), false);
+  assert.equal(g.sidebarStripVisible('sidebar'), true);
 });
 
 // Exercise the real worker message handler with platform work stubbed out.

@@ -62,6 +62,27 @@ object DrawProtocol {
         write: DrawWriter.() -> Unit): ByteArray =
         call(op, encode(write), target, depth, clip)
 
+    /**
+     * [call] moved [extra] depth units further, as if played from a list called at that depth:
+     * adds to its depth field, or inserts one (after any target override) when it has none. The
+     * sum saturates at the field's range rather than failing the whole presentation.
+     */
+    fun withAddedDepth(call: ByteArray, extra: Int): ByteArray {
+        if (extra == 0) return call
+        val flags = call[1].toInt() and 255
+        val at = if (flags and DRAW_FLAG_RESOURCE_TARGET != 0) 4 else 2
+        val result = if (flags and DRAW_FLAG_DEPTH != 0) {
+            call.copyOf().also { it[at] = addDepth(call[at].toInt(), extra).toByte() }
+        } else {
+            call.copyOfRange(0, at) + byteArrayOf(addDepth(0, extra).toByte()) + call.copyOfRange(at, call.size)
+        }
+        result[1] = (flags or DRAW_FLAG_DEPTH).toByte()
+        return result
+    }
+
+    /** Two depths combined, saturated to the s8 depth field. */
+    fun addDepth(depth: Int, extra: Int): Int = (depth + extra).coerceIn(-128, 127)
+
     fun depthOffset(depth: Int, right: Boolean): Int =
         if (right) -floorHalf(depth + 1) else floorHalf(depth)
 

@@ -7,6 +7,7 @@ import { acceptInput } from "../input-monitor";
 import type { RawInputEvent } from "../../native/faceclaw-communicator";
 import {
   directionalFallback,
+  type DirectionalInputEvent,
   GESTURE_SHORT_THEN_LONG_PRESS,
   gestureHints,
   InputEvent,
@@ -44,19 +45,23 @@ import {
   wakeWordActionSetting,
 } from "../dashboard-settings";
 import { onAmbientCardsChanged } from "./ambient-cards";
-import { ShellChromeLayer, sidebarContentLeft, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
+import { ShellChromeLayer, sidebarContentSpan, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
 import { BrightnessPickerLayer } from "./brightness-picker-layer";
 import { toolRegistry } from "../../assistant/tool-registry";
 import {
+  appViewportRect,
   minWindowTop,
   sidebarWidth,
-  TOP_BAR_HEIGHT,
+  switcherPosition,
+  switcherRowHeight,
+  uiDepth,
   windowBandHeight,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
+import type { AppSwitcherPosition } from "../dashboard-settings";
 
 /**
  * The shell: owns the window registry, focus, screen on/off, and the shell
@@ -228,12 +233,14 @@ class ShellOverlayMenuLayer extends MenuLayer {
   constructor(items: MenuItem[], footer: string | undefined, private readonly onClosed: () => void) {
     // Aligned to the min-height window band (like the sidebar), wherever the
     // vertical position setting currently puts it; centered over the
-    // application area, i.e. the part of the screen past the sidebar strip
-    // (the whole screen in the full-panel mode, where the strip overlays).
+    // application area, i.e. the part of the screen beside a side strip
+    // (the whole width with a bottom row, or in the full-panel mode, where
+    // the strip overlays).
     const width = 272;
+    const area = appViewportRect("min");
     super("System", items, {
-      x: sidebarWidth() + (((G2_LENS_WIDTH - sidebarWidth() - width) / 2) | 0),
-      y: minWindowTop() + TOP_BAR_HEIGHT + 8,
+      x: area.x + (((area.width - width) / 2) | 0),
+      y: area.y + 8,
       width,
       minHeight: 150,
       squareCorners: true,
@@ -308,9 +315,28 @@ class ShellAlertLayer implements Layer {
   }
 }
 
-/** Every setting the top bar paints from, as one comparable string. */
-function topBarSettingsKey(): string {
-  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}`;
+/**
+ * What a watch swipe means while the app switcher has focus, as the ring
+ * gesture it stands for. Swipes are spatial: along the strip they move the
+ * selection, toward the app area they enter the selected window, and away
+ * from it there is nowhere further to go (ignored).
+ */
+const SWITCHER_SWIPES: Record<
+  AppSwitcherPosition,
+  Partial<Record<DirectionalInputEvent["type"], "scroll-up" | "scroll-down" | "click">>
+> = {
+  left: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-right": "click" },
+  right: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-left": "click" },
+  bottom: { "swipe-left": "scroll-up", "swipe-right": "scroll-down", "swipe-up": "click" },
+};
+
+/**
+ * Every setting the shell's paint depends on that nothing else repaints it
+ * for (the top bar's contents, the scene's stereo depth), as one comparable
+ * string.
+ */
+function chromeSettingsKey(): string {
+  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}`;
 }
 
 class Shell {
@@ -373,8 +399,8 @@ class Shell {
 
   // Top-bar settings we mirror into the chrome; a change to any of them
   // repaints the shell surface so the top bar reflects it immediately.
-  private topBarSettingsSubscribed = false;
-  private lastTopBarSettingsKey: string | null = null;
+  private chromeSettingsSubscribed = false;
+  private lastChromeSettingsKey: string | null = null;
 
   configure(config: ShellConfig): void {
     // Nearly every state change ends in a shell render request, so it is
@@ -387,7 +413,7 @@ class Shell {
       },
     };
     this.stack.setActions(config.actions);
-    this.subscribeToTopBarSettings();
+    this.subscribeToChromeSettings();
     this.subscribeToAmbientCards();
   }
 
@@ -405,14 +431,14 @@ class Shell {
     });
   }
 
-  private subscribeToTopBarSettings(): void {
-    if (this.topBarSettingsSubscribed) return;
-    this.topBarSettingsSubscribed = true;
-    this.lastTopBarSettingsKey = topBarSettingsKey();
+  private subscribeToChromeSettings(): void {
+    if (this.chromeSettingsSubscribed) return;
+    this.chromeSettingsSubscribed = true;
+    this.lastChromeSettingsKey = chromeSettingsKey();
     onAnySettingChanged(() => {
-      const key = topBarSettingsKey();
-      if (key === this.lastTopBarSettingsKey) return;
-      this.lastTopBarSettingsKey = key;
+      const key = chromeSettingsKey();
+      if (key === this.lastChromeSettingsKey) return;
+      this.lastChromeSettingsKey = key;
       this.config.requestShellRender();
     });
   }
@@ -701,8 +727,13 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  /** Paint the shell surface: transparent chrome, or all-transparent when asleep. */
-  paintScene(): Uint8Array { return encodeShellScene(this.screenOn ? this.stack.paintUndimmed() : []); }
+  /**
+   * Paint the shell surface: transparent chrome, or all-transparent when
+   * asleep. The scene also carries the whole display's stereo depth.
+   */
+  paintScene(): Uint8Array {
+    return this.screenOn ? encodeShellScene(this.stack.paintUndimmed(), uiDepth()) : encodeShellScene([]);
+  }
 
   paintSurface(): Plane[] {
     if (!this.screenOn) {
@@ -904,20 +935,24 @@ class Shell {
 
   /**
    * Screen rect actually occupied by content, for cropping screenshots: the
-   * foreground window's band (full screen for a max-height window, the
-   * vertical-position-dependent 288px band otherwise), minus the sidebar
-   * strip left of the icon columns when the one-column variant is active.
+   * foreground window's band (full height for a max-height window, the
+   * vertical-position-dependent 288px band otherwise) plus the switcher: a
+   * side strip's icon columns (minus the outer dead strip the one-column
+   * variant leaves), or the row under it.
    */
   screenshotCropRect(): { x: number; y: number; width: number; height: number } {
     const appId = this.foregroundWindow()?.appId;
     const heightMode = this.foregroundWindow()?.heightMode ?? "min";
-    const x = sidebarWidth(appId) === 0 ? 0 : sidebarContentLeft(this.windows.length);
-    return {
-      x,
-      y: windowTop(heightMode, appId),
-      width: G2_LENS_WIDTH - x,
-      height: windowBandHeight(heightMode, appId),
-    };
+    const viewport = appViewportRect(heightMode, appId);
+    let left = viewport.x, right = viewport.x + viewport.width;
+    if (sidebarWidth(appId) > 0) {
+      const strip = sidebarContentSpan(this.windows.length);
+      left = Math.min(left, strip.left);
+      right = Math.max(right, strip.right);
+    }
+    const y = windowTop(heightMode, appId);
+    const bottom = y + windowBandHeight(heightMode, appId) + switcherRowHeight(appId);
+    return { x: left, y, width: right - left, height: bottom - y };
   }
 
   /**
@@ -966,7 +1001,8 @@ class Shell {
   }
 
   private handleSidebarInput(event: InputEvent): ShellInputOutcome {
-    switch (event.type) {
+    const type = isDirectionalInput(event) ? SWITCHER_SWIPES[switcherPosition()][event.type] : event.type;
+    switch (type) {
       case "double-click":
         // A double-tap at the root (the app switcher selected) turns the
         // display off — from the ring and the watch scheme alike; watch-scheme
@@ -974,17 +1010,12 @@ class Shell {
         this.sleep();
         return { shell: true, window: false };
       case "scroll-up":
-      case "swipe-up":
         this.moveSelection(-1);
         return { shell: true, window: false };
       case "scroll-down":
-      case "swipe-down":
         this.moveSelection(1);
         return { shell: true, window: false };
       case "click":
-      case "swipe-right":
-        // Right: into the selected window (spatially, the window is to the
-        // sidebar's right). Left has nowhere further to go and is ignored.
         if (this.windows.length) {
           this.focus = "window";
           this.foregroundWindow()?.onFocus?.(this.lastInput);

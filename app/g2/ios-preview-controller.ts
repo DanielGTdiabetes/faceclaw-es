@@ -39,7 +39,7 @@ import { makeInputEvent, type InputEvent, type InputEventPayload } from '../ui/g
 import { noopLayerActions, type LayerActions } from '../ui/layers'
 import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
-import { appViewportRect, SIDEBAR_WIDTH, sidebarStripVisible } from '../ui/shell/geometry'
+import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible } from '../ui/shell/geometry'
 import { DISPLAY_MODE_VALUES, displayModeLabel, displayModeSetting, onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting } from '../ui/dashboard-settings'
@@ -531,7 +531,8 @@ export class IosPreviewController {
     const x = Math.max(0, Math.min(639, Math.floor(nx * 640)))
     const y = Math.max(0, Math.min(479, Math.floor(ny * 480)))
     const window = shell.foregroundWindow()
-    if (!shell.hasOverlay() && sidebarStripVisible(shell.getFocus(), window?.appId) && x < SIDEBAR_WIDTH) {
+    if (!shell.hasOverlay() && sidebarStripVisible(shell.getFocus(), window?.appId)
+      && isOnSwitcherEdge(x, y, window?.heightMode ?? 'min', window?.appId)) {
       const target = shell.windowAtSidebarPoint(x, y)
       if (target) { shell.focusWindow(target.windowId); target.requestRender(); this.requestShellRender() }
       return

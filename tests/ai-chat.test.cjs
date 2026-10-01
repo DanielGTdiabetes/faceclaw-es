@@ -261,7 +261,10 @@ function shellEnv({ wakeAction = 'voice-input', skipConfirmation = false } = {})
     '../notifications': {}, '../dashboard-settings': settings, './ambient-cards': {},
     './chrome-layer': { ShellChromeLayer: class {} }, './modal-layer': {}, './tool-debug-layer': {},
     './brightness-picker-layer': {},
-    '../../assistant/tool-registry': {}, './geometry': { sidebarWidth: () => 64, minWindowTop: () => 96, TOP_BAR_HEIGHT: 28 },
+    '../../assistant/tool-registry': {}, './geometry': {
+      sidebarWidth: () => 64, minWindowTop: () => 96, switcherPosition: () => 'left', uiDepth: () => 0,
+      appViewportRect: () => ({ x: 64, y: 124, width: 576, height: 260 }),
+    },
   });
   const { createInProcessWindow } = load('app/ui/shell/in-process-window.ts', {
     '../../graphics/image': images, '../../native/frame-timings': timings,

@@ -79,7 +79,8 @@ test('unselected sidebar icons retain -2 depth through shell cropping, including
     '../../native/notification-icons':{},'../../native/phone-battery':{},'../../util/render-freshness':{},
     '../../graphics/icons':{},'../dashboard-settings':{},'../clock-format':{},'../../graphics/bdffont':{},
     '../layers':{LayerStack},'../menu':{scrollToKeepSelectionVisible:()=>0},'../metrics':{},
-    './geometry':{MIN_WINDOW_HEIGHT:280,minWindowTop:()=>0,windowTop:()=>0,SHELL_OPAQUE_BLACK:1,SIDEBAR_WIDTH:64,TOP_BAR_HEIGHT:24},
+    './geometry':{MIN_WINDOW_HEIGHT:280,minWindowTop:()=>0,windowTop:()=>0,SHELL_OPAQUE_BLACK:1,SIDEBAR_WIDTH:64,TOP_BAR_HEIGHT:24,
+      SWITCHER_ROW_HEIGHT:36,switcherPosition:()=>'left',switcherRect:()=>({x:0,y:0,width:64,height:280})},
   });
   const state={selectedIndex:0,focus:'sidebar',windows:[0,1,2].map(n=>({attention:n===1,drawIcon:(image,x,y)=>image.fillRect(x,y,4,4,240)}))};
   const chrome=new ShellChromeLayer(()=>state),image=new graphics.GrayImage(640,480);

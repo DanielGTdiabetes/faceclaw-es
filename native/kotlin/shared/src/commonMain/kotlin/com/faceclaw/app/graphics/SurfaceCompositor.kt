@@ -316,10 +316,14 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     private var lastScene: ShellScene? = null
     private var previewKey: String? = null
 
+    /**
+     * The phone mirror's view of [scene]: without the whole-screen stereo shift, which would move
+     * it off centre by half the depth and put mirror touches that far from what they land on.
+     */
     private fun previewScene(scene: ShellScene, gray: ByteArray, key: String): ByteArray {
         if (previewKey != key) {
             animatedPreview?.player?.stop()
-            animatedPreview = scene.animatedPreview(gray, screenWidth, screenHeight,
+            animatedPreview = scene.unshifted().animatedPreview(gray, screenWidth, screenHeight,
                 schedule = { delay, action -> scheduleDrawRedraw(delay) { lock.withLock(action) } })
             previewKey = key
         }
@@ -480,12 +484,16 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         }
     }
 
-    /** The screen's stereo depth: see setSurfaceDepth. */
+    /**
+     * The screen's stereo depth: a covering surface's own (see setSurfaceDepth), else the shell
+     * scene's depth for the whole display (the regular UI's Depth setting).
+     */
     private fun screenDepthLocked(ordered: List<Surface>): Int {
-        val top = ordered.lastOrNull { it.visible } ?: return 0
+        val uiDepth = shellScene?.screenDepth ?: 0
+        val top = ordered.lastOrNull { it.visible } ?: return uiDepth
         val covers = top.transparency == TRANSPARENCY_OPAQUE && top.x <= 0 && top.y <= 0 &&
             top.x + top.width >= screenWidth && top.y + top.height >= screenHeight
-        return if (covers) top.depth else 0
+        return if (covers) top.depth else uiDepth
     }
 
     /**

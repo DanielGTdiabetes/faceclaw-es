@@ -68,10 +68,10 @@ import { ALL_APPS } from "../apps/all-apps";
 import { type AppContext, type AppDefinition, type AppLaunchParams, type TextEditorHost } from "../apps/app-definition";
 import { type InProcessAppOptions, type InProcessWindow } from "../ui/shell/in-process-window";
 import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-apps-persistence";
-import { appViewportRect, SIDEBAR_WIDTH, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
+import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -180,6 +180,19 @@ const EVEN_APP_DETECTED_MESSAGE =
 
 // The launcher grid's app list; also fixes the app ids apps.launch accepts.
 const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
+
+/**
+ * The global settings window viewport sizes depend on: the display mode, and
+ * whether the app switcher takes width beside windows or height below them.
+ */
+function viewportSizesKey(): string {
+  return `${displayModeSetting.get()}|${appSwitcherPositionSetting.get() === "bottom" ? "row" : "strip"}`;
+}
+
+/** The global settings that move window surfaces without resizing them. */
+function windowPlacementKey(): string {
+  return `${verticalPositionSetting.get()}|${appSwitcherPositionSetting.get()}`;
+}
 
 function createInitialDisplayPreview(): ImageSource | null {
   return grayImageToPreviewSource(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
@@ -427,8 +440,10 @@ class DashboardController {
       this.pushFirmwareDebugFlags();
       this.pushBrightness();
       this.syncEvenHubScreenOffSetting();
-      this.applyVerticalPositionIfChanged();
+      // Display mode first: a reflow repositions every surface too, so the
+      // vertical-position check after it then has nothing left to do.
       this.applyDisplayModeIfChanged();
+      this.applyVerticalPositionIfChanged();
       this.applyAppLayoutsIfChanged();
       this.syncAssistantBridgeIfChanged();
       this.syncLockScreenSettingIfChanged();
@@ -506,24 +521,28 @@ class DashboardController {
     });
   }
 
-  // Vertical-position changes move every window surface (and the chrome that
-  // aligns with them); the value is tracked so unrelated setting changes
-  // don't trigger a full reposition.
-  private lastVerticalPosition = verticalPositionSetting.get();
+  // Vertical-position changes (and moving the app switcher between the left
+  // and right edges) move every window surface and the chrome that aligns
+  // with them; the values are tracked so unrelated setting changes don't
+  // trigger a full reposition.
+  private lastWindowPlacement = windowPlacementKey();
 
-  private lastDisplayMode = displayModeSetting.get();
+  private lastViewportSizes = viewportSizesKey();
 
   /**
-   * Display mode changed (Settings > Display, or the phone page's picker):
-   * every window's viewport size changes. In-process windows re-measure in
-   * place; workers that support resizing receive the new viewport. Other
-   * worker windows are closed and launched again at the new size.
+   * Display mode changed (Settings > Display, or the phone page's picker),
+   * or the app switcher moved to or from the bottom edge: every window's
+   * viewport size changes. In-process windows re-measure in place; workers
+   * that support resizing receive the new viewport. Other worker windows are
+   * closed and launched again at the new size.
    */
   private applyDisplayModeIfChanged(): void {
-    const mode = displayModeSetting.get();
-    if (mode === this.lastDisplayMode) return;
-    this.lastDisplayMode = mode;
-    this.appendLog(`display mode: ${mode}`);
+    const sizes = viewportSizesKey();
+    if (sizes === this.lastViewportSizes) return;
+    this.lastViewportSizes = sizes;
+    // The reflow below reconfigures every surface, covering any move too.
+    this.lastWindowPlacement = windowPlacementKey();
+    this.appendLog(`display layout: ${sizes}`);
     const foregroundWindowId = shell.foregroundWindow()?.windowId;
     void (async () => {
       const relaunch: string[] = [];
@@ -579,9 +598,9 @@ class DashboardController {
   }
 
   private applyVerticalPositionIfChanged(): void {
-    const position = verticalPositionSetting.get();
-    if (position === this.lastVerticalPosition) return;
-    this.lastVerticalPosition = position;
+    const placement = windowPlacementKey();
+    if (placement === this.lastWindowPlacement) return;
+    this.lastWindowPlacement = placement;
     void (async () => {
       for (const window of shell.getWindows()) {
         await this.configureWindowSurface(
@@ -1925,9 +1944,10 @@ class DashboardController {
     }
     const x = Math.round(Math.min(1, Math.max(0, nx)) * G2_LENS_WIDTH);
     const y = Math.round(Math.min(1, Math.max(0, ny)) * G2_LENS_HEIGHT);
-    const stripShown = sidebarStripVisible(shell.getFocus(), shell.foregroundWindow()?.appId);
+    const foreground = shell.foregroundWindow();
+    const stripShown = sidebarStripVisible(shell.getFocus(), foreground?.appId);
     this.appendLog(`mirror tap at ${x},${y}`);
-    if (!shell.hasOverlay() && stripShown && x < SIDEBAR_WIDTH) {
+    if (!shell.hasOverlay() && stripShown && isOnSwitcherEdge(x, y, foreground?.heightMode ?? "min", foreground?.appId)) {
       const target = shell.windowAtSidebarPoint(x, y);
       if (target) {
         this.appendLog(`mirror tap: sidebar -> ${target.title}`);

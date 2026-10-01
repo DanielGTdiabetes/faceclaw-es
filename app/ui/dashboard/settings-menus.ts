@@ -28,6 +28,8 @@ import { drawRightValueMenuItem, openModalMenu, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
+  appSwitcherPositionSetting,
+  uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
   assistantBridgeHostSetting,
@@ -84,6 +86,7 @@ export function createSettingsPanelLayer(): SettingsPanelLayer {
 }
 
 function settingsSections(): SettingsSection[] {
+  const customizationItems = customizationRows();
   const sections: SettingsSection[] = [
     {
       label: "Display",
@@ -107,16 +110,11 @@ function settingsSections(): SettingsSection[] {
     },
     {
       label: "Customization",
-      items: [
-        // Submenu: top-bar battery indicator style plus per-device visibility.
-        batteryIndicatorsMenuItem(),
-        // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
-        animationsMenuItem(),
-        // Controls the top-bar clock (24-hour vs 12-hour).
-        enumSettingMenuItem(timeFormatSetting),
-        // Opens the modal font picker (face, weight, size) for UI text.
-        uiFontPickerMenuItem(),
-      ],
+      // Depth only applies (and only shows) with the app switcher at the
+      // bottom; the panel re-reads the rows each paint.
+      get items() {
+        return customizationItems();
+      },
     },
     {
       label: "Voice",
@@ -232,6 +230,31 @@ function settingsSections(): SettingsSection[] {
       item.label !== screenTimeoutSetting.label) };
     return section;
   });
+}
+
+/**
+ * The Customization rows, as a function of the current settings: the same
+ * array while the switcher position stays put, so the panel's menu sees a
+ * stable list between paints.
+ */
+function customizationRows(): () => MenuItem[] {
+  // Left / right / bottom edge; the dashboard controller moves (or, to and
+  // from the bottom, resizes) windows on change.
+  const position = enumSettingMenuItem(appSwitcherPositionSetting);
+  // The whole display's stereo depth; the shell sends it with its scene.
+  const depth = enumSettingMenuItem(uiDepthSetting);
+  const rest = [
+    // Submenu: top-bar battery indicator style plus per-device visibility.
+    batteryIndicatorsMenuItem(),
+    // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
+    animationsMenuItem(),
+    // Controls the top-bar clock (24-hour vs 12-hour).
+    enumSettingMenuItem(timeFormatSetting),
+    // Opens the modal font picker (face, weight, size) for UI text.
+    uiFontPickerMenuItem(),
+  ];
+  const withDepth = [position, depth, ...rest], withoutDepth = [position, ...rest];
+  return () => appSwitcherPositionSetting.get() === "bottom" ? withDepth : withoutDepth;
 }
 
 function autoBrightnessMenuItem(): MenuItem {

@@ -1,5 +1,7 @@
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../../graphics/image";
 import {
+  appSwitcherPositionSetting,
+  type AppSwitcherPosition,
   displayModeSetting,
   type DisplayModeSetting,
   verticalPositionSetting,
@@ -7,18 +9,35 @@ import {
   navigateVerticalPositionSetting,
   terminalDisplayModeSetting,
   terminalVerticalPositionSetting,
+  uiDepthSetting,
 } from "../dashboard-settings";
 
 /** Top bar: 24px notification icons plus a little padding. */
 export const TOP_BAR_HEIGHT = 28;
 /**
- * Width of the sidebar strip as painted. Leaves the app viewport exactly
- * 576px wide — the surface width EvenHub apps expect — except in the
- * full-panel display mode, where the strip overlays the app (see
- * sidebarWidth). Icon column layout within the strip (one wide column vs.
- * two narrow ones) is the chrome layer's business.
+ * Width of the sidebar strip as painted (the app switcher on the left or
+ * right edge). App windows get the other 576px — the surface width EvenHub
+ * apps expect — and keep that width with the switcher at the bottom too,
+ * except in the full-panel display mode, where the switcher overlays the
+ * app (see sidebarWidth). Icon column layout within the strip (one wide
+ * column vs. two narrow ones) is the chrome layer's business.
  */
 export const SIDEBAR_WIDTH = 64;
+
+/**
+ * Height of the app switcher as a row under the window: one tall tab, the
+ * same 36px (a 32px icon plus 2px either side) as a one-column sidebar slot.
+ * The row is wide enough that it never needs the sidebar's smaller
+ * two-column icons. It comes out of the height available to windows; their
+ * width stays 576, centred, leaving SIDEBAR_WIDTH / 2 at each side for the
+ * whole display's stereo shift (uiDepth).
+ */
+export const SWITCHER_ROW_HEIGHT = 36;
+
+/** Which edge the app switcher is on (Settings > Customization). */
+export function switcherPosition(): AppSwitcherPosition {
+  return appSwitcherPositionSetting.get();
+}
 
 /** The Display > Display mode setting (see dashboard-settings.ts). */
 function appDisplayMode(appId?: string) {
@@ -31,21 +50,110 @@ export function displayMode(appId?: string): DisplayModeSetting {
   return mode === "global" || mode === "default" ? displayModeSetting.get() : mode;
 }
 
-/**
- * How much of the screen's width the sidebar takes away from app windows:
- * the strip, or nothing in the full-panel mode (where the chrome paints the
- * strip over the window while the sidebar has focus).
- */
-export function sidebarWidth(appId?: string): number {
-  return displayMode(appId) === "640x480" ? 0 : SIDEBAR_WIDTH;
+/** The full-panel mode: windows fill the panel; the switcher overlays them only while it has focus. */
+function fullPanel(appId?: string): boolean {
+  return displayMode(appId) === "640x480";
 }
 
 /**
- * Whether the sidebar strip is on screen: always when it reserves width; in
+ * How much of the screen's width the sidebar takes away from app windows:
+ * the strip, or nothing when the switcher is a bottom row or in the
+ * full-panel mode (where the chrome paints the strip over the window while
+ * the sidebar has focus).
+ */
+export function sidebarWidth(appId?: string): number {
+  return fullPanel(appId) || switcherPosition() === "bottom" ? 0 : SIDEBAR_WIDTH;
+}
+
+/**
+ * How much of the screen's height a bottom switcher row takes away from app
+ * windows: the row, or nothing beside a side strip or in the full-panel mode
+ * (where the row overlays the window's bottom edge while it has focus).
+ */
+export function switcherRowHeight(appId?: string): number {
+  return !fullPanel(appId) && switcherPosition() === "bottom" ? SWITCHER_ROW_HEIGHT : 0;
+}
+
+/**
+ * Whether the switcher strip is on screen: always when it reserves room; in
  * the full-panel mode (where it overlays the window) only while it has focus.
  */
 export function sidebarStripVisible(focus: "sidebar" | "window", appId?: string): boolean {
-  return sidebarWidth(appId) > 0 || focus === "sidebar";
+  return !fullPanel(appId) || focus === "sidebar";
+}
+
+/**
+ * Screen rect of the switcher strip. A side strip aligns to the min-height
+ * band (like the shell overlays). A bottom row sits right under the given
+ * (foreground) window and spans its width, so a band shorter than the
+ * screen has no gap below it; it moves when the foreground switches to a
+ * window of another height, as the top bar does. In the full-panel mode the
+ * row overlays the bottom edge of the screen.
+ */
+export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x: number; y: number; width: number; height: number } {
+  switch (switcherPosition()) {
+    case "bottom":
+      return {
+        x: appViewportLeft(appId),
+        y: switcherRowHeight(appId) > 0
+          ? windowTop(heightMode, appId) + windowBandHeight(heightMode, appId)
+          : G2_LENS_HEIGHT - SWITCHER_ROW_HEIGHT,
+        width: appViewportWidth(appId),
+        height: SWITCHER_ROW_HEIGHT,
+      };
+    case "right":
+      return { x: G2_LENS_WIDTH - SIDEBAR_WIDTH, y: minWindowTop(appId), width: SIDEBAR_WIDTH, height: MIN_WINDOW_HEIGHT };
+    default:
+      return { x: 0, y: minWindowTop(appId), width: SIDEBAR_WIDTH, height: MIN_WINDOW_HEIGHT };
+  }
+}
+
+/**
+ * Whether a screen point lies on the switcher's side of the screen, for
+ * touches on the phone's mirror: anywhere in a side strip's column, or from
+ * the top of a bottom row (under the given foreground window) down.
+ */
+export function isOnSwitcherEdge(x: number, y: number, heightMode: WindowHeightMode, appId?: string): boolean {
+  switch (switcherPosition()) {
+    case "bottom":
+      return y >= switcherRect(heightMode, appId).y;
+    case "right":
+      return x >= G2_LENS_WIDTH - SIDEBAR_WIDTH;
+    default:
+      return x < SIDEBAR_WIDTH;
+  }
+}
+
+/** Width of app windows: the panel's in the full-panel mode, else 576 (see SIDEBAR_WIDTH). */
+function appViewportWidth(appId?: string): number {
+  return fullPanel(appId) ? G2_LENS_WIDTH : G2_LENS_WIDTH - SIDEBAR_WIDTH;
+}
+
+/**
+ * Left edge (x) of app windows: past a left strip, centred above a bottom
+ * row (see SWITCHER_ROW_HEIGHT), else the screen edge.
+ */
+export function appViewportLeft(appId?: string): number {
+  if (fullPanel(appId)) return 0;
+  switch (switcherPosition()) {
+    case "left":
+      return SIDEBAR_WIDTH;
+    case "bottom":
+      return SIDEBAR_WIDTH / 2;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Stereo depth of the whole display (Settings > Customization > Depth), in
+ * the firmware's depth units; the shell scene carries it to the compositor,
+ * which shifts the screen and everything drawn over it per lens. Only with
+ * the switcher at the bottom, where the windows' side margins leave room for
+ * the shift.
+ */
+export function uiDepth(): number {
+  return switcherPosition() === "bottom" ? Number(uiDepthSetting.get()) : 0;
 }
 
 /**
@@ -57,13 +165,13 @@ export function effectiveHeightMode(mode: WindowHeightMode, appId?: string): Win
 }
 
 /**
- * X of the display's true horizontal centre, in app-viewport coordinates. The
- * sidebar pushes the viewport to the right, so UI the wearer physically aims
- * with — a compass rose, a calibration crosshair — has to offset by it rather
- * than use the viewport's own centre.
+ * X of the display's true horizontal centre, in app-viewport coordinates. A
+ * side strip pushes the viewport off centre, so UI the wearer physically
+ * aims with — a compass rose, a calibration crosshair — has to offset by it
+ * rather than use the viewport's own centre.
  */
 export function screenCenterInViewportX(): number {
-  return Math.round(G2_LENS_WIDTH / 2) - sidebarWidth();
+  return Math.round(G2_LENS_WIDTH / 2) - appViewportLeft();
 }
 
 /**
@@ -78,20 +186,27 @@ export const SHELL_OPAQUE_BLACK = 1;
  * firmware uses, leaving most of the field of view clear; "medium" is one
  * top bar taller, so the content area below the bar is a full 288px (the
  * EvenHub app surface height); "max" uses the whole 480px screen (terminal
- * views). All include a top bar drawn by the shell at the window's top edge.
+ * views), less a bottom switcher row. All include a top bar drawn by the
+ * shell at the window's top edge.
  */
 export type WindowHeightMode = "min" | "medium" | "max";
 
 /** Total height (top bar + content) of a min-height window. */
 export const MIN_WINDOW_HEIGHT = 288;
-/** Farthest down a min-height window can start. */
-export const MIN_WINDOW_MAX_TOP = G2_LENS_HEIGHT - MIN_WINDOW_HEIGHT;
+
+/**
+ * Height of the screen area windows are placed in: the whole screen, less
+ * a bottom switcher row's height.
+ */
+function windowAreaHeight(appId?: string): number {
+  return G2_LENS_HEIGHT - switcherRowHeight(appId);
+}
 
 /** Total height (top bar + content) of a window's band in the given mode. */
 export function windowBandHeight(mode: WindowHeightMode, appId?: string): number {
   switch (effectiveHeightMode(mode, appId)) {
     case "max":
-      return G2_LENS_HEIGHT;
+      return windowAreaHeight(appId);
     case "medium":
       return MIN_WINDOW_HEIGHT + TOP_BAR_HEIGHT;
     default:
@@ -129,15 +244,19 @@ export function minWindowTop(appId?: string): number {
   return windowTop("min", appId);
 }
 
-/** Top edge (y) of a window's top bar; max-height windows pin to the screen top. */
+/**
+ * Top edge (y) of a window's top bar; max-height windows pin to the screen
+ * top. A bottom switcher row hangs under the band, so the band and row
+ * together distribute the screen's slack.
+ */
 export function windowTop(mode: WindowHeightMode, appId?: string): number {
-  return Math.round((G2_LENS_HEIGHT - windowBandHeight(mode, appId)) * verticalPositionFraction(appId));
+  return Math.round((windowAreaHeight(appId) - windowBandHeight(mode, appId)) * verticalPositionFraction(appId));
 }
 
 /** App-content viewport size for a height mode (independent of vertical position). */
 export function appViewportSize(mode: WindowHeightMode, appId?: string): { width: number; height: number } {
   return {
-    width: G2_LENS_WIDTH - sidebarWidth(appId),
+    width: appViewportWidth(appId),
     height: windowBandHeight(mode, appId) - TOP_BAR_HEIGHT,
   };
 }
@@ -150,7 +269,7 @@ export function appViewportRect(mode: WindowHeightMode, appId?: string): {
   height: number;
 } {
   return {
-    x: sidebarWidth(appId),
+    x: appViewportLeft(appId),
     y: windowTop(mode, appId) + TOP_BAR_HEIGHT,
     ...appViewportSize(mode, appId),
   };
