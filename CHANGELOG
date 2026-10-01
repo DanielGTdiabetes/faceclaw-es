@@ -2,13 +2,22 @@
 
 ## 0.8.1 - Future
 
+### Assorted Features and Bug Fixes
+
+* Improve connection reliability
+* Add a video player, launched by picking a video file in the Files app
+* Fix some bugs impacting the Microphones app
 * Add config settings to disable animation categories
-* EvenHub compatibility uses menu animations and is closer to style matched
 * Reduce phone CPU usage
-* Fix a crash on install of larger EvenHub apps
-* Fix line wrapping on EvenHub permissions dialog
 * Putting on the glasses auto-wakes the screen
 * Add a button to the phone screen top bar to open EvenHub app phone UI
+
+### EvenHub
+
+* EvenHub compatibility uses menu animations and is closer to style matched
+* EvenHub apps show an icon in the phone top bar to open their phone-side UI
+* Fix a crash on install of larger EvenHub apps
+* Fix line wrapping on EvenHub permissions dialog
 
 ## 0.8.0 - 2026-09-26
 
