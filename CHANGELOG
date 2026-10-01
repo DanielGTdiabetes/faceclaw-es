@@ -11,6 +11,8 @@
 * Reduce phone CPU usage
 * Putting on the glasses auto-wakes the screen
 * Add a button to the phone screen top bar to open EvenHub app phone UI
+* Glanceboard font can be configured separately from the main font 
+* Move Terminal and Navigate settings out of the Settings app and into their respective apps
 
 ### EvenHub
 
