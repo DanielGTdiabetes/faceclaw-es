@@ -23,7 +23,7 @@
  * Frames are painted here and submitted directly to the Java compositor from
  * this worker's thread.
  *
- * Auto-reconnect (Settings > Terminal, default on): while any terminal window
+ * Auto-reconnect (window menu > Settings, default on): while any terminal window
  * is open, a dropped control connection reconnects with exponential backoff;
  * the first session list after reconnect delivers bells that rang while
  * disconnected (attention + wake) via their advanced lastBellAt. A dropped
@@ -51,20 +51,31 @@ import { GESTURE_DOUBLE_CLICK, type InputEvent } from "../../ui/gestures";
 import { G2MirrorClient, type G2MirrorClientOptions, type G2MirrorSession, type G2MirrorState } from "../../native/g2mirror-client";
 import { onSettingsStoreChanged } from "../../native/settings-store";
 import { clamp } from "../../util/numeric-util";
-import { terminalAutoReconnectSetting, terminalLaunchPresetsSetting, terminalNewConnectionSetting, terminalWakeOnBellSetting } from "../../ui/dashboard-settings";
+import {
+  enumSettingMenuItem,
+  terminalAutoReconnectSetting,
+  terminalDisplayModeSetting,
+  terminalLaunchPresetsSetting,
+  terminalNewConnectionSetting,
+  terminalVerticalPositionSetting,
+  terminalWakeOnBellSetting,
+  textSettingMenuItem,
+  toggleSettingMenuItem,
+} from "../../ui/dashboard-settings";
+import { terminalFontPickerMenuItem } from "../../ui/font-picker";
 import { connectionDisplayName, loadConnections, parseConnectionString, saveConnections, TERMINAL_CONNECTIONS_KEY, updateConnection, type TerminalConnection } from "./connections";
 import { TerminalEmulator } from "./terminal-emulator";
-import { type MenuItem } from "../../ui/menu";
+import { drawSubmenuIndicator, type MenuItem } from "../../ui/menu";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
-import { lineStep, listRowHeight } from "../../ui/metrics";
-import { WindowMenu } from "../../ui/window-menu";
+import { LIST_ROW_TEXT_INSET, lineStep, listRowHeight } from "../../ui/metrics";
+import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import { appViewportSize } from "../../ui/shell/geometry";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
 import type { ToolResult, ToolSpec } from "../../assistant/tool-registry";
 
 declare const global: any;
 
-// Cell geometry comes from the terminal font setting (Settings > Terminal >
+// Cell geometry comes from the terminal font setting (window menu > Settings >
 // Font; the default is Terminus-12's 6x12). Each window derives its grid from
 // the viewport in its open-window message (the hub is min-height, session
 // views full-height). Grid dimensions are baked into each session's websocket
@@ -92,6 +103,8 @@ const RECONNECT_MAX_DELAY_MS = 60_000;
 // Storage key of terminalNewConnectionSetting (the Add-connection draft the
 // phone text editor types into); its changes just repaint the add screen.
 const NEW_CONNECTION_DRAFT_KEY = "terminal.newConnectionDraft";
+// Storage key of terminalLaunchPresetsSetting, edited from the window menu.
+const LAUNCH_PRESETS_KEY = "terminal.launchPresets";
 
 type BaseWindow = {
   windowId: string;
@@ -434,8 +447,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
 };
 
 // React to setting changes (connections edited here or in another isolate,
-// toggles edited in the Settings app, the Add-connection draft typed on the
-// phone).
+// the window menu's settings, the Add-connection draft typed on the phone).
 onSettingsStoreChanged((key) => {
   if (key.startsWith("glanceboard.")) {
     reportIdle();
@@ -462,8 +474,17 @@ onSettingsStoreChanged((key) => {
         }
       }
       return;
+    case LAUNCH_PRESETS_KEY:
+      // Live keystrokes from the phone editor (Settings > Launch presets in
+      // the window menu): repaint its edit page, and the hub, whose host
+      // headings launch presets.
+      for (const window of windows.values()) {
+        if (window.menu?.isOpen()) scheduleRender(window);
+      }
+      renderHubWindows();
+      return;
     default:
-      // launchPresets, wakeOnBell: no connection impact.
+      // wakeOnBell: no connection impact.
       return;
   }
 });
@@ -539,6 +560,8 @@ function closeWindow(windowId: string): void {
     // Window closed mid-add: shut the phone editor down.
     endAddConnection(window);
   }
+  // Likewise for a setting being edited from the window menu.
+  window.menu?.close();
   windows.delete(windowId);
   windowIconActivity.delete(windowId);
   updateHubAnimation();
@@ -1032,8 +1055,12 @@ function windowMenuItems(window: TerminalWindow): MenuItem[] {
     {
       label: "Settings",
       onSelect: (ctx) => {
-        ctx.stack.pop();
-        post({ type: "open-settings", section: "Terminal" });
+        ctx.stack.push(new WindowMenuLayer("Terminal settings", settingsMenuItems()));
+      },
+      render: ({ image, x, y, width, height, text }) => {
+        const font = chromeFont();
+        image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, 200);
+        drawSubmenuIndicator(image, font, x - 10, y, width + 20, height, 150);
       },
     },
   ];
@@ -1087,6 +1114,22 @@ function windowMenuItems(window: TerminalWindow): MenuItem[] {
     );
   }
   return items;
+}
+
+/**
+ * The app's settings (the window menu's Settings submenu). Connections are
+ * managed in the hub's Manage Connections section instead.
+ */
+function settingsMenuItems(): MenuItem[] {
+  return [
+    enumSettingMenuItem(terminalDisplayModeSetting),
+    enumSettingMenuItem(terminalVerticalPositionSetting),
+    terminalFontPickerMenuItem(),
+    // Opens the phone text editor; the settings listener repaints its page.
+    textSettingMenuItem(terminalLaunchPresetsSetting),
+    toggleSettingMenuItem(terminalAutoReconnectSetting),
+    toggleSettingMenuItem(terminalWakeOnBellSetting),
+  ];
 }
 
 function handleInput(window: TerminalWindow, event: InputEvent, frameId: number): void {
@@ -1565,7 +1608,7 @@ function openViewWindow(control: ControlConnection, socket: string, label: strin
   });
 }
 
-/** Preset names the user listed in Settings > Terminal (the wire protocol has no way to enumerate the server's). */
+/** Preset names the user listed in the app's settings (the wire protocol has no way to enumerate the server's). */
 function launchPresetNames(): string[] {
   const names: string[] = [];
   for (const piece of terminalLaunchPresetsSetting.get().split(",")) {
@@ -1874,7 +1917,7 @@ function handleTerminalTool(name: string, args: any): ToolResult | Promise<ToolR
 function toolListLaunchPresets(): ToolResult {
   const presets = launchPresetNames();
   if (!presets.length) {
-    return { ok: true, content: "No launch presets configured (Settings > Terminal > Launch presets)." };
+    return { ok: true, content: "No launch presets configured (Terminal window menu > Settings > Launch presets)." };
   }
   return { ok: true, content: presets.map((preset) => `- ${preset}`).join("\n") };
 }

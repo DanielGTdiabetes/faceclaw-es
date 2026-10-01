@@ -262,8 +262,8 @@ function post(message: WorkerAppReply): void {
   global.postMessage(message);
 }
 
-// Destinations edited on the phone (the text editor, or the Settings app's
-// Home/Work rows) repaint the idle list / the edit screen live.
+// Destinations edited on the phone (the text editor) repaint the idle list /
+// the edit screen live.
 onSettingsStoreChanged((key) => {
   // The token key repaints too: the phone editor writes it live during
   // Edit token, and the idle page changes shape once one is set.

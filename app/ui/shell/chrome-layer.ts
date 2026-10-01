@@ -377,7 +377,7 @@ export class ShellChromeLayer implements Layer {
    * Labelled battery indicators for the phone, Wear OS watch, G2, and R1,
    * right-aligned in the top bar. The watch one exists only while a watch
    * running the Faceclaw watch app is reachable (no placeholder otherwise).
-   * The Settings > Display > Battery indicators submenu picks the style (label beside a gauge icon or percentage, or stacked above
+   * The Settings > Customization > Battery indicators submenu picks the style (label beside a gauge icon or percentage, or stacked above
    * either) and, per device, whether the indicator shows always, only below
    * 50%, or never. Returns the left edge of the battery block.
    */

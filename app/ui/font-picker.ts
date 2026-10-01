@@ -1,12 +1,13 @@
 /**
- * Modal font picker for the Settings app: choose a face (bitmap Terminus
+ * Modal font picker for font settings: choose a face (bitmap Terminus
  * variants or any installed TTF family), a weight (the family's installed
  * styles), and a pixel size, with a live preview line rendered in the draft
  * font. Selections only persist on Save; double-click cancels.
  *
- * Used for the UI font (Display section), the terminal font (Terminal
- * section, filtered to monospace faces), and per-app overrides of the UI font
- * (UiFontOverride, which add an "inherit" face ahead of the others).
+ * Used for the UI font (Settings > Customization), the terminal font (the
+ * Terminal app's settings, filtered to monospace faces), and per-app
+ * overrides of the UI font (UiFontOverride, which add an "inherit" face
+ * ahead of the others).
  */
 import { getFont } from "../graphics/bdffont";
 import { GrayImage, type UiFont } from "../graphics/image";

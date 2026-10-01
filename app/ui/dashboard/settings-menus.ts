@@ -45,16 +45,9 @@ import {
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
   displayModeSetting,
-  navigateDisplayModeSetting,
-  navigateVerticalPositionSetting,
-  terminalDisplayModeSetting,
-  terminalVerticalPositionSetting,
   elevenLabsApiKeySetting,
   mapboxApiKeySetting,
   mirrorTouchSetting,
-  navigateHomeAddressSetting,
-  navigateRememberRecentSetting,
-  navigateWorkAddressSetting,
   openAiApiKeySetting,
   previewColorSetting,
   phoneRotationSetting,
@@ -68,9 +61,6 @@ import {
   saveVoiceRecordingsSetting,
   showBleBandwidthSetting,
   suspendEvenHubWhenScreenOffSetting,
-  terminalAutoReconnectSetting,
-  terminalLaunchPresetsSetting,
-  terminalWakeOnBellSetting,
   textSettingMenuItem,
   timeFormatSetting,
   toggleSettingMenuItem,
@@ -84,10 +74,9 @@ import {
   watchMirrorAssistantSetting,
   watchRemoteEnabledSetting,
 } from "../dashboard-settings";
-import { clearRecentDestinations } from "../../apps/navigate/destinations";
 import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";
-import { terminalFontPickerMenuItem, uiFontPickerMenuItem } from "../font-picker";
+import { uiFontPickerMenuItem } from "../font-picker";
 
 /** The Settings app's master-detail panel (sections on the left, contents on the right). */
 export function createSettingsPanelLayer(): SettingsPanelLayer {
@@ -114,6 +103,11 @@ function settingsSections(): SettingsSection[] {
         enumSettingMenuItem(verticalPositionSetting),
         // Band / tall / full-panel; the dashboard controller reflows windows.
         enumSettingMenuItem(displayModeSetting),
+      ],
+    },
+    {
+      label: "Customization",
+      items: [
         // Submenu: top-bar battery indicator style plus per-device visibility.
         batteryIndicatorsMenuItem(),
         // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
@@ -159,35 +153,6 @@ function settingsSections(): SettingsSection[] {
         textSettingMenuItem(sonioxApiKeySetting),
         textSettingMenuItem(anthropicApiKeySetting),
         textSettingMenuItem(mapboxApiKeySetting),
-      ],
-    },
-    {
-      label: "Terminal",
-      // Connections (g2mirror:// strings) are managed inside the Terminal
-      // app's Manage Connections section, not here.
-      items: [
-        enumSettingMenuItem(terminalDisplayModeSetting),
-        enumSettingMenuItem(terminalVerticalPositionSetting),
-        terminalFontPickerMenuItem(),
-        textSettingMenuItem(terminalLaunchPresetsSetting),
-        toggleSettingMenuItem(terminalAutoReconnectSetting),
-        toggleSettingMenuItem(terminalWakeOnBellSetting),
-      ],
-    },
-    {
-      label: "Navigate",
-      // Home/Work are plain addresses; other named destinations (and the
-      // recent list) are managed inside the Navigate app's context menu.
-      items: [
-        enumSettingMenuItem(navigateDisplayModeSetting),
-        enumSettingMenuItem(navigateVerticalPositionSetting),
-        textSettingMenuItem(navigateHomeAddressSetting),
-        textSettingMenuItem(navigateWorkAddressSetting),
-        toggleSettingMenuItem(navigateRememberRecentSetting, {
-          onChange: (_ctx, enabled) => {
-            if (!enabled) clearRecentDestinations();
-          },
-        }),
       ],
     },
     {
@@ -284,7 +249,7 @@ function autoBrightnessMenuItem(): MenuItem {
 }
 
 /**
- * The Display section's "Battery indicators" row: opens a modal submenu with
+ * The Customization section's "Battery indicators" row: opens a modal submenu with
  * the style (icon / percentage / stacked) and, per device, when its
  * indicator is visible. The row itself shows the current style.
  */
@@ -316,7 +281,7 @@ function batteryIndicatorsMenuItem(): MenuItem {
   };
 }
 
-/** The Display section's "Animations" row: opens a modal submenu of animation toggles. */
+/** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
 function animationsMenuItem(): MenuItem {
   return {
     label: "Animations",

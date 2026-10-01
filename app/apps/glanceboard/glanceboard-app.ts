@@ -311,7 +311,7 @@ function openGlanceSettings(ctx: LayerContext): void {
     uiFontOverridePickerMenuItem(glanceFont, {
       title: "Glanceboard font",
       description:
-        "Typeface for the Glanceboard's widgets. Same as UI font follows the Font setting in Settings > Display.",
+        "Typeface for the Glanceboard's widgets. Same as UI font follows the Font setting in Settings > Customization.",
     }),
     enumSettingMenuItem(glanceDepthSetting),
   ];

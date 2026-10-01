@@ -1,5 +1,5 @@
 /**
- * Whether menus and icon grids animate on the glasses (Settings > Display >
+ * Whether menus and icon grids animate on the glasses (Settings > Customization >
  * Animations > Menu animation). The motion classes can't read the settings
  * store themselves (it is native, and they load under Node in unit tests),
  * so ui/menu.ts installs a reader in each isolate that paints menus. Without

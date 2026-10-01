@@ -35,7 +35,7 @@ type BatteryItem = { label: string; percent: number; charging: boolean };
  * battery indicators (the Wear OS watch's only while one is reachable), and
  * the Timers app's countdowns: the top bar's contents plus timers, laid out
  * for a card. Battery style and per-device visibility
- * follow Settings > Display > Battery indicators, so the card agrees with
+ * follow Settings > Customization > Battery indicators, so the card agrees with
  * the bar. Countdowns tick once a second only while one is running.
  */
 export class SystemCardWidget implements GlanceWidget {
