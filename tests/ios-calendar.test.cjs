@@ -166,6 +166,7 @@ function screenFixture() {
   const calendar = load('app/apps/calendar/calendar.ts', modules('../../'));
   const widget = load('app/apps/glanceboard/widgets/calendar-widget.ts', {
     ...modules('../../../'), '../../calendar/calendar': calendar,
+    '../glance-font': { glanceFont: { small: () => font, medium: () => font } },
   }, { ...f.clock, setInterval: fn => { timers.set(++nextTimer, fn); return nextTimer; }, clearInterval: id => timers.delete(id) });
   return { ...f, ...calendar, ...widget, timers, Image };
 }

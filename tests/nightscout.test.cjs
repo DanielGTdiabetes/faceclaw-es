@@ -73,7 +73,7 @@ function paintWidget(smallHeight, largeHeight, height = 144, measurements = {}) 
   };
   const { NightscoutWidget } = load('app/apps/glanceboard/widgets/nightscout-widget.ts', {
     '../../../graphics/image': { GrayImage },
-    '../../../graphics/ui-fonts': { getDefaultSmallFont: () => small, getDefaultLargeFont: () => ({ ...small, lineHeight: largeHeight }) },
+    '../glance-font': { glanceFont: { small: () => small, large: () => ({ ...small, lineHeight: largeHeight }) } },
     '../../../graphics/textwrap': require('../.test-build/app/graphics/textwrap.js'),
     '../../../native/nightscout-bridge': { nightscoutBridge: { snapshot: () => state } },
     '../../../ui/dashboard-settings': { isNightscoutSettingsConfigured: () => true, loadNightscoutThresholds: () => limits },

@@ -1,6 +1,5 @@
 import { type GrayImage } from "../../../graphics/image";
 import { truncateText } from "../../../graphics/textwrap";
-import { getDefaultSmallFont } from "../../../graphics/ui-fonts";
 import { lineStep } from "../../../ui/metrics";
 import { onWorkerStateChanged, readWorkerState } from "../../../ui/shell/worker-state";
 import {
@@ -10,6 +9,7 @@ import {
   TERMINAL_SESSIONS_STATE_KEY,
   type TerminalSessionsSnapshot,
 } from "../../terminal/session-list";
+import { glanceFont } from "../glance-font";
 import { type GlanceWidget } from "../widget";
 
 const PAD = 8;
@@ -72,7 +72,7 @@ export class TerminalWidget implements GlanceWidget {
   }
 
   paint(image: GrayImage): void {
-    const font = getDefaultSmallFont();
+    const font = glanceFont.small();
     const step = lineStep(font);
     const textWidth = image.width - 2 * PAD;
     const snapshot = this.snapshot;

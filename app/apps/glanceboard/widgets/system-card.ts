@@ -1,6 +1,5 @@
 import { BATTERY_ICON_WIDTH, drawBattery } from "../../../graphics/battery";
 import { type GrayImage, type UiFont } from "../../../graphics/image";
-import { getDefaultLargeFont, getDefaultMediumFont, getDefaultSmallFont } from "../../../graphics/ui-fonts";
 import { onAndroidNotificationPosted, readActiveNotificationIcons } from "../../../native/notification-icons";
 import { readPhoneBatteryState } from "../../../native/phone-battery";
 import { formatClockDate, formatClockTime } from "../../../ui/clock-format";
@@ -20,6 +19,7 @@ import { truncateText } from "../../../graphics/textwrap";
 import { timerEngine } from "../../timer/timer-engine";
 import { formatCountdown, sortTimers, timerDisplayName, timerPhase, timerRemainingMs } from "../../timer/timer-model";
 import { lineStep } from "../../../ui/metrics";
+import { glanceFont } from "../glance-font";
 import { type GlanceWidget } from "../widget";
 
 const PAD = 8;
@@ -97,9 +97,9 @@ export class SystemCardWidget implements GlanceWidget {
   }
 
   paint(image: GrayImage): void {
-    const large = getDefaultLargeFont();
-    const medium = getDefaultMediumFont();
-    const small = getDefaultSmallFont();
+    const large = glanceFont.large();
+    const medium = glanceFont.medium();
+    const small = glanceFont.small();
     const now = new Date();
 
     // Clock and date down the left; batteries take the right edge.
