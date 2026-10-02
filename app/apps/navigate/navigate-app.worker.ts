@@ -19,6 +19,7 @@ import {
   drawRightValueMenuItem,
   drawSubmenuIndicator,
   drawToggleMenuItem,
+  submenuItem,
   type MenuItem,
 } from "../../ui/menu";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
@@ -938,16 +939,9 @@ function windowMenuItems(): MenuItem[] {
     enumSettingMenuItem(navigateDisplayModeSetting),
     enumSettingMenuItem(navigateVerticalPositionSetting),
   );
-  items.push({
-    label: "Saved destinations",
-    onSelect: (ctx) => {
-      ctx.stack.push(new WindowMenuLayer("Saved destinations", savedDestinationMenuItems()));
-    },
-    render: ({ image, x, y, width, height, text }) => {
-      image.drawText(smallFont, x, y + LIST_ROW_TEXT_INSET, text, 200);
-      drawSubmenuIndicator(image, smallFont, x - 10, y, width + 20, height, 150);
-    },
-  });
+  items.push(submenuItem("Saved destinations", (ctx) => {
+    ctx.stack.push(new WindowMenuLayer("Saved destinations", savedDestinationMenuItems()));
+  }));
   items.push({
     label: navigateRememberRecentSetting.label,
     onSelect: () => {

@@ -140,7 +140,7 @@ export function drawListScrollbar(
 }
 
 /**
- * Draw a ">" submenu indicator inset at the right edge of a row's selection
+ * Draw a "▶>" submenu indicator inset at the right edge of a row's selection
  * highlight box, vertically centered within it. Pass the same rect as the
  * row's drawSelectionHighlight call (the row need not actually be selected).
  */
@@ -153,10 +153,29 @@ export function drawSubmenuIndicator(
   highlightHeight: number,
   value: number,
 ): void {
-  const arrow = ">";
+  const arrow = "▶";
   const x = highlightX + highlightWidth - font.measureText(arrow) - 4;
   const y = centeredTextY(font, highlightY, highlightHeight);
   image.drawText(font, x, y, arrow, value);
+}
+
+/** A row that opens a nested menu: the label plus a right-edge ">". */
+export function submenuItem(
+  label: string,
+  onSelect: MenuItem["onSelect"],
+  options: Pick<MenuItem, "description" | "disabled"> = {},
+): MenuItem {
+  return {
+    ...options,
+    label,
+    onSelect,
+    render: ({ image, x, y, width, height, selected, disabled, text }) => {
+      const font = getDefaultSmallFont();
+      const value = disabled ? 70 : selected ? 255 : 200;
+      image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, value);
+      drawSubmenuIndicator(image, font, x, y, width, height, value);
+    },
+  };
 }
 
 export function drawToggleMenuItem(

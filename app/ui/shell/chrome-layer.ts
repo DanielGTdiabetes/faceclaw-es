@@ -71,9 +71,8 @@ const ROW_STEP = ROW_ICON_SIZE + ICON_SPACING;
 // (whose last is the divider, which the row has no use for) centred in the
 // row below its separator line.
 const ROW_STATUS_TOP = 1 + ((SWITCHER_ROW_HEIGHT - TOP_BAR_HEIGHT) >> 1);
-// Its clock ends this far from the row's right end, as the top bar's starts
-// from its left; batteries keep the top bar's clock-to-icons gap from it.
-const ROW_STATUS_EDGE_MARGIN = 10;
+// Its clock ends flush with the row's right end, which is the window's
+// right edge; batteries keep the top bar's clock-to-icons gap from it.
 const ROW_CLOCK_GAP = 16;
 // Between the windows' end of the row (its scroll chevron) and the status.
 const ROW_STATUS_GAP = 8;
@@ -501,7 +500,7 @@ export class ShellChromeLayer implements Layer {
     const top = row.y + ROW_STATUS_TOP;
     const font = getDefaultMediumFont();
     const clock = clockText();
-    const clockX = row.x + row.width - ROW_STATUS_EDGE_MARGIN - font.measureText(clock);
+    const clockX = row.x + row.width - font.measureText(clock);
     image.drawText(font, clockX, top + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0), clock, 210);
     // The battery block keeps its usual right margin inside the edge it's given.
     const batteryLeft = this.drawTopBarBatteries(image, state, top, clockX - ROW_CLOCK_GAP + BATTERY_BLOCK_RIGHT_MARGIN);

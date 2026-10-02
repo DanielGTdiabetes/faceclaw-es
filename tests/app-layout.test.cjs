@@ -302,10 +302,10 @@ test('the switcher row lays out windows, free space, notifications, widgets, bat
   assert.deepEqual(Array.from(parts, (p) => [p.shellKey, p.depth ?? 0]), [[1, 0], [2, -2]]);
   const [row, status] = parts;
   // Right to left from the row's end (x=608), centred under its separator
-  // line (y=366): "Thu Oct 2 9:41" (56px) 10px in; the battery block (label
+  // line (y=366): "Thu Oct 2 9:41" (56px) flush with it; the battery block (label
   // 20 + gap 5 + gauge 21) 16px before it; the 30px widget 10px before that;
   // then the two notification icons, 8px clear of the widget.
-  const clockX = 608 - 10 - 56, batteryLeft = clockX - 16 - 46, trayLeft = batteryLeft - 40, iconsLeft = trayLeft - 8 - 56 + 4;
+  const clockX = 608 - 56, batteryLeft = clockX - 16 - 46, trayLeft = batteryLeft - 40, iconsLeft = trayLeft - 8 - 56 + 4;
   assert.deepEqual([status.x, status.y, status.image.width, status.image.height], [iconsLeft, 367, 608 - iconsLeft, 35]);
   const at = (p, x, y) => p.image.withDrawsBaked().pixels[(y - p.y) * p.image.width + x - p.x];
   // The clock's text runs 8 rows down the top bar's layout, which sits 5 rows into the row.
@@ -332,7 +332,7 @@ test('many windows scroll in what the notification icons leave them', () => {
   const [row, status] = chrome.paintParts();
   // Clock only (no batteries or widgets): notifications end 8px before its
   // 8px lead-in, and stop where three window slots plus margins remain.
-  const trayLeft = 608 - 10 - 56 - 8, floor = 32 + 20 + 3 * 40 - 8 + 8;
+  const trayLeft = 608 - 56 - 8, floor = 32 + 20 + 3 * 40 - 8 + 8;
   const max = Math.floor((trayLeft - 8 - floor + 4) / 28);
   assert.equal(requested.at(-1), max);
   const iconsLeft = trayLeft - 8 - max * 28 + 4;

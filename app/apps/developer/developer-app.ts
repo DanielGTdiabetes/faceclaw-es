@@ -1,4 +1,4 @@
-import { MenuLayer, drawSubmenuIndicator, type MenuItem } from "../../ui/menu";
+import { MenuLayer, submenuItem, type MenuItem } from "../../ui/menu";
 import { ScreenTestLayer } from "./screen-test";
 import { InputEventsLayer } from "./input-events";
 import { shell } from "../../ui/shell/shell";
@@ -11,9 +11,7 @@ import { ResourceUsageLayer } from "./resource-usage";
 import { LoadAppFromQrLayer, LoadAppFromUrlLayer } from "./load-app";
 import { unicodeTestMenu } from "./unicode-test";
 import { type AppContext } from "../app-definition";
-import { getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { appViewportSize } from "../../ui/shell/geometry";
-import { LIST_ROW_TEXT_INSET } from "../../ui/metrics";
 import {
   createInProcessWindow,
   YieldAtRootLayer,
@@ -35,20 +33,6 @@ const MENU_LAYOUT = {
   // visually instead of letting the taller root show through beneath it.
   opaque: true,
 };
-
-/** A row that opens a nested page: the label plus a right-edge ">". */
-function submenuItem(label: string, onSelect: MenuItem["onSelect"]): MenuItem {
-  return {
-    label,
-    onSelect,
-    render: ({ image, x, y, width, height, selected, disabled, text }) => {
-      const font = getDefaultSmallFont();
-      const value = disabled ? 70 : selected ? 255 : 200;
-      image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, value);
-      drawSubmenuIndicator(image, font, x, y, width, height, value);
-    },
-  };
-}
 
 type OpenPage = (ctx: Parameters<MenuItem["onSelect"]>[0]) => void;
 

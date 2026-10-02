@@ -38,7 +38,7 @@ import { GrayImage, type UiFont } from "../../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../../graphics/plane";
 import { prepareFrameDraws } from "../../graphics/glyph-wire";
 import { getDefaultSmallFont, getTerminalFontConfig } from "../../graphics/ui-fonts";
-import { layoutHubHeader } from "./hub-header";
+import { HUB_TITLE_X, layoutHubHeader } from "./hub-header";
 import { TERMINAL_ICON_GLYPHS, type IconActivity } from "../../graphics/icons";
 import {
   drawSessionRow,
@@ -65,9 +65,9 @@ import {
 import { terminalFontPickerMenuItem } from "../../ui/font-picker";
 import { connectionDisplayName, loadConnections, parseConnectionString, saveConnections, TERMINAL_CONNECTIONS_KEY, updateConnection, type TerminalConnection } from "./connections";
 import { TerminalEmulator } from "./terminal-emulator";
-import { drawSubmenuIndicator, type MenuItem } from "../../ui/menu";
+import { drawSubmenuIndicator, submenuItem, type MenuItem } from "../../ui/menu";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
-import { LIST_ROW_TEXT_INSET, lineStep, listRowHeight } from "../../ui/metrics";
+import { lineStep, listRowHeight } from "../../ui/metrics";
 import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import { appViewportSize } from "../../ui/shell/geometry";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
@@ -1052,17 +1052,9 @@ function connectedControls(): ControlConnection[] {
 
 function windowMenuItems(window: TerminalWindow): MenuItem[] {
   const items: MenuItem[] = [
-    {
-      label: "Settings",
-      onSelect: (ctx) => {
-        ctx.stack.push(new WindowMenuLayer("Terminal settings", settingsMenuItems()));
-      },
-      render: ({ image, x, y, width, height, text }) => {
-        const font = chromeFont();
-        image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, 200);
-        drawSubmenuIndicator(image, font, x - 10, y, width + 20, height, 150);
-      },
-    },
+    submenuItem("Settings", (ctx) => {
+      ctx.stack.push(new WindowMenuLayer("Terminal settings", settingsMenuItems()));
+    }),
   ];
   if (window.kind === "hub") {
     const connected = connectedControls();
@@ -1227,6 +1219,14 @@ type HubItem = {
    * when it has an onSelect (launch a shell on that host).
    */
   heading?: boolean;
+  /**
+   * Top-level action (Manage Connections, Settings, Connect <host>): drawn
+   * unindented like a heading but at full brightness, rather than as an
+   * indented session row.
+   */
+  topLevel?: boolean;
+  /** Opens a nested menu: a right-edge ">" marks the row. */
+  submenu?: boolean;
   /** Session with recent output: an animated indicator marks the row. */
   active?: boolean;
   /** Glyph of the view window showing this session (the number column). */
@@ -1236,8 +1236,12 @@ type HubItem = {
 
 /** Vertical offset of a row's text line from the top of its selection box. */
 const HUB_ROW_TEXT_INSET = 4;
-/** Horizontal inset of the list's selection boxes from the viewport edges. */
-const HUB_LIST_X = 20;
+/** Left edge of the list's selection boxes. */
+const HUB_LIST_LEFT = 12;
+/** Right inset of the selection boxes, clear of the scrollbar. */
+const HUB_LIST_RIGHT = 20;
+/** Left padding of unindented (heading and top-level) row text inside its selection box. */
+const HUB_TOP_LEVEL_TEXT_X = 6;
 
 /** The hub window's list, created on first use so openWindow stays free of paint dependencies. */
 function hubMenu(window: HubWindow): Menu<HubItem> {
@@ -1252,10 +1256,12 @@ function hubMenu(window: HubWindow): Menu<HubItem> {
   return window.list;
 }
 
-function drawHubRow({ image, item, x, y, width, selected }: MenuDrawArgs<HubItem>): void {
+function drawHubRow({ image, item, x, y, width, height, selected }: MenuDrawArgs<HubItem>): void {
   const font = chromeFont();
-  if (item.heading) {
-    image.drawText(font, x, y + HUB_ROW_TEXT_INSET, item.label, selected ? 255 : 140);
+  if (item.heading || item.topLevel) {
+    const value = selected ? 255 : item.heading ? 140 : 200;
+    image.drawText(font, x + HUB_TOP_LEVEL_TEXT_X, y + HUB_ROW_TEXT_INSET, item.label, value);
+    if (item.submenu) drawSubmenuIndicator(image, font, x, y, width, height, value);
     return;
   }
   // Activity gutter, open-window number column, then the label, truncated
@@ -1322,7 +1328,14 @@ function hubSessionItems(window: HubWindow): HubItem[] {
   const items: HubItem[] = [
     {
       label: "Manage Connections",
+      topLevel: true,
       onSelect: () => setHubMode(window, "connections"),
+    },
+    {
+      label: "Settings",
+      topLevel: true,
+      submenu: true,
+      onSelect: () => windowMenu(window).open(settingsMenuItems(), "Terminal settings"),
     },
   ];
   const connected = connectedControls();
@@ -1366,6 +1379,7 @@ function hubSessionItems(window: HubWindow): HubItem[] {
     if (control.config.enabled && control.state?.phase === "connecting") continue;
     items.push({
       label: `Connect ${connectionDisplayName(control.config)}`,
+      topLevel: true,
       onSelect: () => connectControl(control),
     });
   }
@@ -1675,14 +1689,14 @@ function paintHub(window: HubWindow): GrayImage {
   // No border box: the shell chrome (top bar + sidebar) already frames the app.
   // Long statuses get a wrapped block and move the list below it.
   const title = window.mode === "connections" ? "Terminal - Connections" : "Terminal";
-  image.drawText(font, 18, 10, title, 220);
+  image.drawText(font, HUB_TITLE_X, 10, title, 220);
   const header = layoutHubHeader(font, title, hubStatusLine(window), window.viewportWidth, step);
   header.lines.forEach((line, index) => image.drawText(font, header.x, header.y + index * step, line, 170));
 
   let listTop = header.listTop;
   if (window.mode === "sessions" && controls.size === 0) {
-    image.drawText(font, 24, listTop, "Add a g2mirror:// connection to get started, see:", 150);
-    image.drawText(font, 24, listTop + step, "https://github.com/jimrandomh/g2mirror", 190);
+    image.drawText(font, HUB_TITLE_X + 6, listTop, "Add a g2mirror:// connection to get started, see:", 150);
+    image.drawText(font, HUB_TITLE_X + 6, listTop + step, "https://github.com/jimrandomh/g2mirror", 190);
     listTop += 2 * step + 6;
   }
 
@@ -1694,7 +1708,7 @@ function paintHub(window: HubWindow): GrayImage {
   const listHeight = window.viewportHeight - 6 - listTop;
   list.paint(
     image,
-    { x: HUB_LIST_X, y: listTop - 2, width: window.viewportWidth - 2 * HUB_LIST_X, height: listHeight },
+    { x: HUB_LIST_LEFT, y: listTop - 2, width: window.viewportWidth - HUB_LIST_LEFT - HUB_LIST_RIGHT, height: listHeight },
     window.focused,
   );
   list.drawScrollbar(image, window.viewportWidth - 10, listTop, listHeight - 4);

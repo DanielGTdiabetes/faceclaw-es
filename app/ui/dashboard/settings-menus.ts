@@ -24,7 +24,7 @@ import {
 } from "../../native/asr-model";
 import { TextViewerLayer } from "../../apps/files/text-viewer";
 import type { LayerContext } from "../layers";
-import { drawRightValueMenuItem, openModalMenu, type MenuItem } from "../menu";
+import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
@@ -262,17 +262,17 @@ function customizationRows(): () => MenuItem[] {
 }
 
 function autoBrightnessMenuItem(): MenuItem {
-  return {
-    label: "Auto-brightness",
-    description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness.",
-    onSelect: (ctx) => {
+  return submenuItem(
+    "Auto-brightness",
+    (ctx) => {
       openSettingsSubMenu(ctx, "Auto-brightness", [
         enumSettingMenuItem(autoBrightnessMinSetting),
         enumSettingMenuItem(autoBrightnessMaxSetting),
         textSettingMenuItem(autoBrightnessCurveSetting),
       ]);
     },
-  };
+    { description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness." },
+  );
 }
 
 /**
@@ -310,16 +310,16 @@ function batteryIndicatorsMenuItem(): MenuItem {
 
 /** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
 function animationsMenuItem(): MenuItem {
-  return {
-    label: "Animations",
-    description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off.",
-    onSelect: (ctx) => {
+  return submenuItem(
+    "Animations",
+    (ctx) => {
       openSettingsSubMenu(ctx, "Animations", [
         toggleSettingMenuItem(menuAnimationSetting),
         toggleSettingMenuItem(screenFadeSetting),
       ]);
     },
-  };
+    { description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off." },
+  );
 }
 
 const LOCAL_MODEL_GB = `${(LOCAL_MODEL.sizeBytes / 1e9).toFixed(1)}GB`;
