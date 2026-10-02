@@ -1,4 +1,4 @@
-import { BATTERY_ICON_WIDTH, drawBattery } from "../../../graphics/battery";
+import { BATTERY_ICON_WIDTH, drawBattery, drawDenseBatteries, type BatteryDevice } from "../../../graphics/battery";
 import { type GrayImage, type UiFont } from "../../../graphics/image";
 import { onAndroidNotificationPosted, readActiveNotificationIcons } from "../../../native/notification-icons";
 import { readPhoneBatteryState } from "../../../native/phone-battery";
@@ -28,7 +28,7 @@ const NOTIFICATION_ICON_GAP = 4;
 const BATTERY_ITEM_GAP = 12;
 const BATTERY_LABEL_VALUE = 150;
 
-type BatteryItem = { label: string; percent: number; charging: boolean };
+type BatteryItem = { label: string; device: BatteryDevice; percent: number; charging: boolean };
 
 /**
  * Date and time, the phone's notification icons, the phone/watch/G2/R1
@@ -130,19 +130,25 @@ export class SystemCardWidget implements GlanceWidget {
 
 function collectBatteryItems(): BatteryItem[] {
   const items: BatteryItem[] = [];
-  const push = (visibility: BatteryIndicatorVisibility, label: string, percent: number | null, charging: boolean | null) => {
+  const push = (
+    visibility: BatteryIndicatorVisibility,
+    label: string,
+    device: BatteryDevice,
+    percent: number | null,
+    charging: boolean | null,
+  ) => {
     if (percent === null || !Number.isFinite(percent)) return;
     const clamped = Math.max(0, Math.min(100, Math.round(percent)));
     if (!batteryIndicatorVisible(visibility, clamped)) return;
-    items.push({ label, percent: clamped, charging: Boolean(charging) });
+    items.push({ label, device, percent: clamped, charging: Boolean(charging) });
   };
   const phone = readPhoneBatteryState();
-  push(phoneBatteryVisibilitySetting.get(), "Phone", phone.battery, phone.charging);
+  push(phoneBatteryVisibilitySetting.get(), "Phone", "phone", phone.battery, phone.charging);
   const levels = shell.getBatteryLevels();
-  push(watchBatteryVisibilitySetting.get(), "Watch", levels.watch, levels.watchCharging);
-  push(glassesBatteryVisibilitySetting.get(), "G2", levels.headset, levels.headsetCharging);
+  push(watchBatteryVisibilitySetting.get(), "Watch", "watch", levels.watch, levels.watchCharging);
+  push(glassesBatteryVisibilitySetting.get(), "G2", "glasses", levels.headset, levels.headsetCharging);
   if (levels.ring !== null && Number.isInteger(levels.ring) && levels.ring >= 0 && levels.ring <= 100) {
-    push(ringBatteryVisibilitySetting.get(), "R1", levels.ring, levels.ringCharging);
+    push(ringBatteryVisibilitySetting.get(), "R1", "ring", levels.ring, levels.ringCharging);
   }
   return items;
 }
@@ -150,13 +156,15 @@ function collectBatteryItems(): BatteryItem[] {
 /**
  * The battery indicators right-aligned at `right`, in the configured style.
  * Side-by-side styles put the label beside the gauge (or percentage) on one
- * line; stacked styles centre the label above it. Returns the block's left
- * edge (or `right` when nothing is shown).
+ * line; stacked styles centre the label above it; the dense style swaps
+ * labels for device icons and stacks two indicators per column, as in the
+ * top bar. Returns the block's left edge (or `right` when nothing is shown).
  */
 function drawBatteryBlock(image: GrayImage, font: UiFont, right: number, top: number): number {
   const items = collectBatteryItems();
   if (!items.length) return right;
   const mode = batteryDisplayModeSetting.get();
+  if (mode === "dense") return drawDenseBatteries(image, items, right, top);
   const percentage = mode === "percentage" || mode === "stacked-percentage";
   const stacked = mode === "stacked" || mode === "stacked-percentage";
   const gaugeHeight = drawBattery(0, false).height;
