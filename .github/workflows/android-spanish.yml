@@ -46,6 +46,10 @@ jobs:
       - name: Pruebas Kotlin
         run: npm run test:kotlin
       - name: Preparar y compilar APK sin firma
+        env:
+          # NativeScript 9 comprueba el paquete obsoleto SDK tools incluso con
+          # cmdline-tools y SDK compatibles; Gradle valida el SDK al compilar.
+          NS_SKIP_ENV_CHECK: '1'
         run: |
           ns prepare android --release
           cd platforms/android
