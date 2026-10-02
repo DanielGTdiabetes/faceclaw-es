@@ -5,11 +5,13 @@ on:
   push:
     branches: [main, spanish-0.8.1]
     paths: ['app/**', 'App_Resources/**', 'native/**', 'scripts/**', 'package*.json', 'webpack.config.js', '.github/workflows/android-spanish.yml']
-  pull_request:
-    paths: ['app/**', 'App_Resources/**', 'native/**', 'scripts/**', 'package*.json', 'webpack.config.js', '.github/workflows/android-spanish.yml']
 
 permissions:
   contents: read
+
+concurrency:
+  group: apk-es-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -26,6 +28,10 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '13114758'
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@v4
       - name: Instalar SDK y herramientas nativas
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'

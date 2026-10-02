@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Force (Split-Path -Parent $output) | Out-Null
 $aligned = $output + '.aligned'
 & "$buildTools/zipalign.exe" -f -P 16 4 $InputApk $aligned
 if ($LASTEXITCODE -ne 0) { throw 'Falló zipalign.' }
-& "$buildTools/apksigner.bat" sign --ks $keystore --ks-key-alias faceclaw-es --ks-pass "file:$passwordFile" --key-pass "file:$passwordFile" --out $output $aligned
+& "$buildTools/apksigner.bat" sign --ks $keystore --ks-key-alias faceclaw-es --ks-pass "file:$passwordFile" --out $output $aligned
 if ($LASTEXITCODE -ne 0) { throw 'Falló la firma de la APK.' }
 & "$buildTools/apksigner.bat" verify --verbose --print-certs $output
 if ($LASTEXITCODE -ne 0) { throw 'La firma de la APK no es válida.' }
