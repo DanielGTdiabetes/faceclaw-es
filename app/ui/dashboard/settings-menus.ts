@@ -29,6 +29,7 @@ import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
   appSwitcherPositionSetting,
+  statusBarPositionSetting,
   uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
@@ -243,6 +244,9 @@ function customizationRows(): () => MenuItem[] {
   const position = enumSettingMenuItem(appSwitcherPositionSetting);
   // The whole display's stereo depth; the shell sends it with its scene.
   const depth = enumSettingMenuItem(uiDepthSetting);
+  // Top bar, or the right end of the switcher row; the dashboard controller
+  // resizes windows on change.
+  const statusBar = enumSettingMenuItem(statusBarPositionSetting);
   const rest = [
     // Submenu: top-bar battery indicator style plus per-device visibility.
     batteryIndicatorsMenuItem(),
@@ -253,7 +257,7 @@ function customizationRows(): () => MenuItem[] {
     // Opens the modal font picker (face, weight, size) for UI text.
     uiFontPickerMenuItem(),
   ];
-  const withDepth = [position, depth, ...rest], withoutDepth = [position, ...rest];
+  const withDepth = [position, depth, statusBar, ...rest], withoutDepth = [position, ...rest];
   return () => appSwitcherPositionSetting.get() === "bottom" ? withDepth : withoutDepth;
 }
 

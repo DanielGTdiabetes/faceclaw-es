@@ -487,16 +487,21 @@ class DisplayListRenderer(
         val radius = reader.readU16()
         val fill = reader.readU8()
         val border = reader.readU8()
+        // Revision 36: an optional trailing color for the corners outside the shape.
+        val outside = if (reader.remaining == 1) reader.readU8().also { require(it <= 15) } else DRAW_ROUNDED_RECT_NO_OUTSIDE
         reader.requireDone()
         require(width in 1..640 && height in 1..480 && fill <= 15 && border <= DRAW_ROUNDED_RECT_NO_BORDER)
         if (!walk.apply) return
         if (x < -width - target.shiftX || x >= target.width - target.shiftX ||
             y < -height || y >= target.height) return
         for (yy in 0 until height) for (xx in 0 until width) {
-            if (!roundedContains(xx, yy, width, height, radius)) continue
             val tx = x + xx + target.shiftX
             val ty = y + yy
             if (tx !in 0 until target.width || ty !in 0 until target.height) continue
+            if (!roundedContains(xx, yy, width, height, radius)) {
+                if (outside != DRAW_ROUNDED_RECT_NO_OUTSIDE) target.put(x + xx, ty, outside)
+                continue
+            }
             val edge = !roundedContains(xx - 1, yy - 1, width - 2, height - 2, maxOf(0, radius - 1))
             val value = if (edge && border < DRAW_ROUNDED_RECT_NO_BORDER) border else maxOf(fill, target.get(tx, ty))
             target.put(x + xx, ty, value)

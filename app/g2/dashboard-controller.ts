@@ -71,7 +71,7 @@ import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-a
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -182,11 +182,14 @@ const EVEN_APP_DETECTED_MESSAGE =
 const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
 
 /**
- * The global settings window viewport sizes depend on: the display mode, and
- * whether the app switcher takes width beside windows or height below them.
+ * The global settings window viewport sizes depend on: the display mode,
+ * whether the app switcher takes width beside windows or height below them,
+ * and, below them, whether the status bar joins it (dropping the top bar).
  */
 function viewportSizesKey(): string {
-  return `${displayModeSetting.get()}|${appSwitcherPositionSetting.get() === "bottom" ? "row" : "strip"}`;
+  const switcher = appSwitcherPositionSetting.get() !== "bottom" ? "strip"
+    : statusBarPositionSetting.get() === "switcher" ? "row+status" : "row";
+  return `${displayModeSetting.get()}|${switcher}`;
 }
 
 /** The global settings that move window surfaces without resizing them. */

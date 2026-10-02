@@ -73,7 +73,7 @@ test('system menu bridge shifts its surface and selected row together by +4',()=
 test('unselected sidebar icons retain -2 depth through shell cropping, including attention badges',()=>{
   const shellScene=require('../.test-build/app/graphics/shell-scene.js');
   const {ShellChromeLayer}=load('app/ui/shell/chrome-layer.ts',{
-    '../../graphics/shell-scene':shellScene,'../../graphics/image':graphics,
+    '../../graphics/shell-scene':shellScene,'../../graphics/image':graphics,'../../graphics/display-list':require('../.test-build/app/graphics/display-list.js'),
     '../../graphics/ui-fonts':{getDefaultSmallFont:()=>font,getDefaultMediumFont:()=>font},
     '../../graphics/textwrap':{},'./ambient-cards':{},'../../graphics/battery':{},
     '../../native/notification-icons':{},'../../native/phone-battery':{},'../../util/render-freshness':{},

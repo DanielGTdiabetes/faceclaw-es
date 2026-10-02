@@ -41,6 +41,7 @@ import {
   brightnessSetting,
   onAnySettingChanged,
   openAiApiKeySetting,
+  statusBarPositionSetting,
   timeFormatSetting,
   wakeWordActionSetting,
 } from "../dashboard-settings";
@@ -337,7 +338,7 @@ const SWITCHER_SWIPES: Record<
  * string.
  */
 function chromeSettingsKey(): string {
-  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}`;
+  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}|${statusBarPositionSetting.get()}`;
 }
 
 class Shell {

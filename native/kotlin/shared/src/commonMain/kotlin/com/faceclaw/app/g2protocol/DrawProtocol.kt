@@ -13,7 +13,7 @@ class DrawClip(val x: Int, val y: Int, val width: Int, val height: Int) {
     fun translated(dx: Int, dy: Int) = DrawClip(x + dx, y + dy, width, height)
 }
 
-/** Revision 35 wire grammar, shared by scene planning and the local renderer. */
+/** Revision 36 wire grammar, shared by scene planning and the local renderer. */
 object DrawProtocol {
     /** Mirrors g2flash/patches/zlib_glue.c. */
     const val DRAW = CFW_MSG_DRAW_CALLS
@@ -93,12 +93,17 @@ object DrawProtocol {
         border: Int = DRAW_ROUNDED_RECT_NO_BORDER, depth: Int? = null,
     ): ByteArray = roundedRect(DrawValue.Integer(x), DrawValue.Integer(y), width, height, radius, background, border, depth)
 
+    /**
+     * The background is max-blended, so 0 leaves the interior as it is. [outside] (revision 36),
+     * when given, is the color for the bounding box's pixels outside the rounded shape.
+     */
     fun roundedRect(
         x: DrawValue, y: DrawValue, width: Int, height: Int, radius: Int, background: Int,
         border: Int = DRAW_ROUNDED_RECT_NO_BORDER, depth: Int? = null, clip: DrawClip? = null,
+        outside: Int? = null,
     ): ByteArray {
         require(width in 1..640 && height in 1..480 && radius in 0..65535)
-        require(background in 0..15 && border in 0..DRAW_ROUNDED_RECT_NO_BORDER)
+        require(background in 0..15 && border in 0..DRAW_ROUNDED_RECT_NO_BORDER && (outside == null || outside in 0..15))
         return call(DRAW_OP_ROUNDED_RECT, depth = depth, clip = clip) {
             writeExtended(x)
             writeExtended(y)
@@ -107,6 +112,7 @@ object DrawProtocol {
             writeU16(radius)
             writeU8(background)
             writeU8(border)
+            if (outside != null) writeU8(outside)
         }
     }
 

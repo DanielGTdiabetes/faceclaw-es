@@ -9,6 +9,7 @@ import {
   navigateVerticalPositionSetting,
   terminalDisplayModeSetting,
   terminalVerticalPositionSetting,
+  statusBarPositionSetting,
   uiDepthSetting,
 } from "../dashboard-settings";
 
@@ -112,12 +113,30 @@ export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x:
 /**
  * Whether the foreground window's content gets a rounded frame (drawn by
  * the chrome layer): with a reserved bottom switcher row, whose top edge is
- * the frame's bottom side, as the top bar's divider is its top. Its left and right sides take the pixel just outside
- * the 576-wide window; there's no room in the full-panel mode, nor need
- * beside a side strip.
+ * the frame's bottom side, as the window header's last row is its top. Its
+ * left and right sides take the pixel just outside the 576-wide window;
+ * there's no room in the full-panel mode, nor need beside a side strip.
  */
 export function windowFramed(appId?: string): boolean {
   return switcherRowHeight(appId) > 0;
+}
+
+/**
+ * Whether the status bar shares the bottom switcher row instead of topping
+ * each window (Settings > Customization > Status bar): only beside a
+ * reserved row, as the full-panel mode's row shows just while it has focus.
+ */
+export function statusInSwitcherRow(appId?: string): boolean {
+  return windowFramed(appId) && statusBarPositionSetting.get() === "switcher";
+}
+
+/**
+ * Height of the header the shell draws over each window's content: the top
+ * bar, or, with the status bar in the switcher row, just the row the
+ * window frame's top runs along.
+ */
+export function windowHeaderHeight(appId?: string): number {
+  return statusInSwitcherRow(appId) ? 1 : TOP_BAR_HEIGHT;
 }
 
 /**
@@ -196,14 +215,14 @@ export const SHELL_OPAQUE_BLACK = 1;
 /**
  * Windows come in three heights. "min" covers the same 288px band the stock
  * firmware uses, leaving most of the field of view clear; "medium" is one
- * top bar taller, so the content area below the bar is a full 288px (the
+ * header taller, so the content area below the header is a full 288px (the
  * EvenHub app surface height); "max" uses the whole 480px screen (terminal
- * views), less a bottom switcher row. All include a top bar drawn by the
- * shell at the window's top edge.
+ * views), less a bottom switcher row. All include a header drawn by the
+ * shell at the window's top edge (windowHeaderHeight).
  */
 export type WindowHeightMode = "min" | "medium" | "max";
 
-/** Total height (top bar + content) of a min-height window. */
+/** Total height (header + content) of a min-height window. */
 export const MIN_WINDOW_HEIGHT = 288;
 
 /**
@@ -214,13 +233,13 @@ function windowAreaHeight(appId?: string): number {
   return G2_LENS_HEIGHT - switcherRowHeight(appId);
 }
 
-/** Total height (top bar + content) of a window's band in the given mode. */
+/** Total height (header + content) of a window's band in the given mode. */
 export function windowBandHeight(mode: WindowHeightMode, appId?: string): number {
   switch (effectiveHeightMode(mode, appId)) {
     case "max":
       return windowAreaHeight(appId);
     case "medium":
-      return MIN_WINDOW_HEIGHT + TOP_BAR_HEIGHT;
+      return MIN_WINDOW_HEIGHT + windowHeaderHeight(appId);
     default:
       return MIN_WINDOW_HEIGHT;
   }
@@ -257,7 +276,7 @@ export function minWindowTop(appId?: string): number {
 }
 
 /**
- * Top edge (y) of a window's top bar; max-height windows pin to the screen
+ * Top edge (y) of a window's header; max-height windows pin to the screen
  * top. A bottom switcher row hangs under the band, so the band and row
  * together distribute the screen's slack.
  */
@@ -269,11 +288,11 @@ export function windowTop(mode: WindowHeightMode, appId?: string): number {
 export function appViewportSize(mode: WindowHeightMode, appId?: string): { width: number; height: number } {
   return {
     width: appViewportWidth(appId),
-    height: windowBandHeight(mode, appId) - TOP_BAR_HEIGHT,
+    height: windowBandHeight(mode, appId) - windowHeaderHeight(appId),
   };
 }
 
-/** Screen rect of a window's app-content viewport (below its top bar). */
+/** Screen rect of a window's app-content viewport (below its header). */
 export function appViewportRect(mode: WindowHeightMode, appId?: string): {
   x: number;
   y: number;
@@ -282,7 +301,7 @@ export function appViewportRect(mode: WindowHeightMode, appId?: string): {
 } {
   return {
     x: appViewportLeft(appId),
-    y: windowTop(mode, appId) + TOP_BAR_HEIGHT,
+    y: windowTop(mode, appId) + windowHeaderHeight(appId),
     ...appViewportSize(mode, appId),
   };
 }

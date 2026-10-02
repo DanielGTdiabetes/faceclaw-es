@@ -393,6 +393,25 @@ export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({
     "Moves the whole display nearer (positive) or farther away (negative) by shifting it in opposite directions on the two lenses. Available with the app switcher at the bottom. Full-panel windows lose a sliver at the edges.",
 });
 
+/**
+ * Where the status bar (clock, notification icons, app widgets, batteries)
+ * goes: the top bar over each window, or the right end of a bottom app
+ * switcher's row (geometry.ts statusInSwitcherRow), where windows grow into
+ * the top bar's height.
+ */
+export type StatusBarPosition = "top" | "switcher";
+
+export const statusBarPositionSetting = new ConfigSettingEnum<StatusBarPosition>({
+  id: "status-bar-position",
+  label: "Status bar",
+  storageKey: "display.statusBarPosition",
+  defaultValue: "top",
+  values: ["top", "switcher"],
+  formatValue: (value) => value === "switcher" ? "With app switcher" : "Top",
+  description:
+    "Where the clock, notification icons, app widgets and battery indicators go. With app switcher puts them at the right end of the app switcher's row, and windows grow into the top bar's space. Available with the app switcher at the bottom; the full-panel display mode keeps the top bar. Changing it reopens open apps in the new size.",
+});
+
 export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
   id: "brightness",
   label: "Brightness",

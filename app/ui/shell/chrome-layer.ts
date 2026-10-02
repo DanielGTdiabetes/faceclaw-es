@@ -1,6 +1,7 @@
 import { shellCrop } from "../../graphics/shell-scene";
 import type { Plane } from "../../graphics/plane";
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../../graphics/image";
+import { DrawOp } from "../../graphics/display-list";
+import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage, grayToNibble } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText } from "../../graphics/textwrap";
 import { activeAmbientCards } from "./ambient-cards";
@@ -31,11 +32,13 @@ import {
   SHELL_OPAQUE_BLACK,
   SIDEBAR_WIDTH,
   sidebarStripVisible,
+  statusInSwitcherRow,
   SWITCHER_ROW_HEIGHT,
   switcherPosition,
   switcherRect,
   TOP_BAR_HEIGHT,
   windowFramed,
+  windowHeaderHeight,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
@@ -62,6 +65,21 @@ const LIST_HEIGHT = MIN_WINDOW_HEIGHT - TOP_BAR_HEIGHT - 2 * LIST_MARGIN;
 /** Bottom-row icons: one tall tab's worth of row, the icon inset 2px all round. */
 const ROW_ICON_SIZE = SWITCHER_ROW_HEIGHT - 4;
 const ROW_STEP = ROW_ICON_SIZE + ICON_SPACING;
+
+// The status bar in the switcher row (geometry.ts statusInSwitcherRow) keeps
+// the top bar's layout, so every element sits as it does there: its 28 rows
+// (whose last is the divider, which the row has no use for) centred in the
+// row below its separator line.
+const ROW_STATUS_TOP = 1 + ((SWITCHER_ROW_HEIGHT - TOP_BAR_HEIGHT) >> 1);
+// Its clock ends this far from the row's right end, as the top bar's starts
+// from its left; batteries keep the top bar's clock-to-icons gap from it.
+const ROW_STATUS_EDGE_MARGIN = 10;
+const ROW_CLOCK_GAP = 16;
+// Between the windows' end of the row (its scroll chevron) and the status.
+const ROW_STATUS_GAP = 8;
+// Notification icons stop short of room for this many windows' slots (or
+// all of them, when there are fewer); the windows take whatever is left.
+const ROW_MIN_WINDOW_SLOTS = 3;
 
 /** Icon rows that fit in one sidebar column. */
 function rowsPerColumn(variant: SidebarVariant): number {
@@ -107,15 +125,20 @@ type SwitcherLayout = {
   cell: (slot: number) => SwitcherCell;
 };
 
-/** Switcher geometry for the foreground window (a bottom row sits under it). */
-function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId?: string): SwitcherLayout {
+/**
+ * Switcher geometry for the foreground window (a bottom row sits under it).
+ * `windowsRight` is where a bottom row's window icons must end: short of
+ * the status bar when it shares the row.
+ */
+function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId?: string, windowsRight?: number): SwitcherLayout {
   const position = switcherPosition();
   if (position === "bottom") {
     const row = switcherRect(heightMode, appId);
+    const width = (windowsRight ?? row.x + row.width) - row.x;
     return {
       position,
       iconSize: ROW_ICON_SIZE,
-      visibleCount: Math.max(1, ((row.width - 2 * LIST_MARGIN + ICON_SPACING) / ROW_STEP) | 0),
+      visibleCount: Math.max(1, ((width - 2 * LIST_MARGIN + ICON_SPACING) / ROW_STEP) | 0),
       cell: (slot) => ({
         x: row.x + LIST_MARGIN - 2 + slot * ROW_STEP, y: row.y, width: ROW_ICON_SIZE + 4, height: SWITCHER_ROW_HEIGHT,
         atSeparator: true,
@@ -280,18 +303,21 @@ export function makeImageWindowIcon(
 export class ShellChromeLayer implements Layer {
   // First switcher icon shown; adjusted each paint to keep the selection visible.
   private scrollRow = 0;
+  // Where the last paint ended a bottom row's window icons, for hit testing.
+  private rowWindowsRight: number | undefined;
 
   constructor(private readonly getState: () => ShellChromeState) {}
 
   paint(): GrayImage {
     const image = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
     const state = this.getState();
+    const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     // Full-panel mode: the strip is an overlay, present only while the user
     // is in it (the window underneath keeps its full width the rest of the time).
     if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
-      this.drawSidebar(image, state);
+      this.drawSidebar(image, state, statusInRow ? image : undefined);
     }
-    this.drawTopBar(image, state);
+    if (!statusInRow) this.drawTopBar(image, state);
     const frame = windowFrameRect(state);
     if (frame) drawWindowFrame(image, frame);
     drawAmbientCards(image, topBarSpan(state).right);
@@ -300,29 +326,32 @@ export class ShellChromeLayer implements Layer {
 
   paintParts(): Plane[] {
     const state = this.getState(), parts: Plane[] = [];
-    if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
-      const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
-      this.drawSidebar(canvas, state);
-      const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
-      parts.push(shellCrop(canvas, strip.x, strip.y, strip.width, strip.height, 1));
-    }
+    const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
-    this.drawTopBar(canvas, state);
     const bar = topBarSpan(state);
-    parts.push({ ...shellCrop(canvas, bar.left, windowTop(state.foregroundHeightMode, state.foregroundAppId), bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
-    const frame = windowFrameRect(state);
-    if (frame) {
-      // Over the top bar, whose bottom row it shares, but at the screen's
-      // own depth rather than the bar's -2, which on top of a -62 screen
-      // depth would shift a side off the screen. Split into its two sides
-      // (corners included) and the top between them, as one surface would
-      // be almost all transparent.
-      const frameCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
-      drawWindowFrame(frameCanvas, frame);
-      const [leftKey, rightKey, topKey] = windowFrameKeys(), sideHeight = frame.height - 1;
-      parts.push(shellCrop(frameCanvas, frame.x, frame.y, FRAME_RADIUS, sideHeight, leftKey));
-      parts.push(shellCrop(frameCanvas, frame.x + frame.width - FRAME_RADIUS, frame.y, FRAME_RADIUS, sideHeight, rightKey));
-      parts.push(shellCrop(frameCanvas, frame.x + FRAME_RADIUS, frame.y, frame.width - 2 * FRAME_RADIUS, 1, topKey));
+    if (!statusInRow) {
+      this.drawTopBar(canvas, state);
+      parts.push({ ...shellCrop(canvas, bar.left, windowTop(state.foregroundHeightMode, state.foregroundAppId), bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
+    }
+    if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
+      const stripCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+      const statusLeft = this.drawSidebar(stripCanvas, state, statusInRow ? canvas : undefined);
+      // The window frame rides on the switcher row, whose top edge is its
+      // bottom side, and so replays after any top bar, whose bottom row is
+      // its top. It plays at the screen's own depth rather than the bar's
+      // -2, which on top of a -62 screen depth would shift a side off the
+      // screen. (A framed window always has the row on screen.)
+      const frame = windowFrameRect(state);
+      if (frame) drawWindowFrame(stripCanvas, frame);
+      const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
+      parts.push(shellCrop(stripCanvas, strip.x, strip.y, strip.width, strip.height, 1));
+      if (statusLeft !== null) {
+        // The status bar keeps the top bar's surface and its depth, -2, over
+        // the row's right end below its separator line, so the clock ticking
+        // doesn't resend the window icons.
+        const right = strip.x + strip.width;
+        parts.push({ ...shellCrop(canvas, statusLeft, strip.y + 1, right - statusLeft, strip.height - 1, 2), depth: -2 });
+      }
     }
     drawAmbientCards(canvas, bar.right, parts);
     return parts;
@@ -341,7 +370,7 @@ export class ShellChromeLayer implements Layer {
   windowIndexAt(x: number, y: number, windowCount: number): number | null {
     if (windowCount === 0) return null;
     const state = this.getState();
-    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId);
+    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId, this.rowWindowsRight);
     const lastVisible = Math.min(windowCount, this.scrollRow + layout.visibleCount);
     for (let index = this.scrollRow; index < lastVisible; index++) {
       const cell = layout.cell(index - this.scrollRow);
@@ -352,7 +381,13 @@ export class ShellChromeLayer implements Layer {
     return null;
   }
 
-  private drawSidebar(image: GrayImage, state: ShellChromeState): void {
+  /**
+   * Draw the switcher strip or row. Given `statusImage`, a bottom row shares
+   * its right end with the status bar, drawn there (into that image, which
+   * may be this one) first, and the window icons take what it leaves.
+   * Returns the status bar's left edge, or null without one.
+   */
+  private drawSidebar(image: GrayImage, state: ShellChromeState, statusImage?: GrayImage): number | null {
     // A side strip aligns with the app's preferred band (legacy tall
     // terminal sessions keep it at the global band position); a bottom row
     // sits under the foreground window.
@@ -365,7 +400,11 @@ export class ShellChromeLayer implements Layer {
     // visible slot's column is decided by its position within the scrolled
     // window.
     const count = state.windows.length;
-    const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId);
+    const statusLeft = statusImage && switcherPosition() === "bottom"
+      ? this.drawRowStatus(statusImage, state, strip, count) : null;
+    const windowsRight = statusLeft === null ? strip.x + strip.width : statusLeft - ROW_STATUS_GAP;
+    this.rowWindowsRight = windowsRight;
+    const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight);
     const { iconSize, position } = layout;
     this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, layout.visibleCount, count);
     const lastVisible = Math.min(count, this.scrollRow + layout.visibleCount);
@@ -410,15 +449,15 @@ export class ShellChromeLayer implements Layer {
     }
 
     if (position === "bottom") {
-      // Chevrons sit in the row's end margins, pointing off either end.
+      // Chevrons sit in the margins at either end of the icons, pointing off them.
       const chevronY = strip.y + ((strip.height / 2) | 0);
       if (this.scrollRow > 0) {
         drawChevron(image, strip.x + 6, chevronY, "left");
       }
       if (lastVisible < count) {
-        drawChevron(image, strip.x + strip.width - 6, chevronY, "right");
+        drawChevron(image, windowsRight - 6, chevronY, "right");
       }
-      return;
+      return statusLeft;
     }
     // Chevrons center over the icon area, which in the one-column variant is
     // narrower than the sidebar strip.
@@ -430,6 +469,45 @@ export class ShellChromeLayer implements Layer {
     if (lastVisible < count) {
       drawChevron(image, chevronX, strip.y + strip.height - 6, "down");
     }
+    return null;
+  }
+
+  /**
+   * The status bar at the right end of the switcher row, right to left:
+   * date and time, batteries, app widgets, then notification icons, each as
+   * it sits in the top bar (see ROW_STATUS_TOP). Notification icons stop
+   * short of room for a few window slots; the windows get the rest, and
+   * whatever they leave over is free space between the two. Returns the
+   * left edge of what it drew.
+   */
+  private drawRowStatus(image: GrayImage, state: ShellChromeState, row: Rect, windowCount: number): number {
+    image.fillRect(row.x, row.y + 1, row.width, row.height - 1, SHELL_OPAQUE_BLACK);
+    const top = row.y + ROW_STATUS_TOP;
+    const font = getDefaultMediumFont();
+    const clock = clockText();
+    const clockX = row.x + row.width - ROW_STATUS_EDGE_MARGIN - font.measureText(clock);
+    image.drawText(font, clockX, top + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0), clock, 210);
+    // The battery block keeps its usual right margin inside the edge it's given.
+    const batteryLeft = this.drawTopBarBatteries(image, state, top, clockX - ROW_CLOCK_GAP + BATTERY_BLOCK_RIGHT_MARGIN);
+    const trayLeft = drawTrayIcons(image, state.trayIcons, batteryLeft, top);
+
+    // Right-aligned against the widgets, with the top bar's spacing.
+    const slots = Math.min(windowCount, ROW_MIN_WINDOW_SLOTS);
+    const windowsFloor = row.x + 2 * LIST_MARGIN + Math.max(0, slots * ROW_STEP - ICON_SPACING) + ROW_STATUS_GAP;
+    const iconsRight = trayLeft - 8, step = NOTIFICATION_ICON_SIZE + 4;
+    const maxIcons = Math.max(0, ((iconsRight - windowsFloor + 4) / step) | 0);
+    if (maxIcons === 0) return trayLeft;
+    const { icons, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
+    if (stale) {
+      noteStaleDataUsed();
+    }
+    if (!icons.length) return trayLeft;
+    const iconsLeft = iconsRight - icons.length * step + 4;
+    const iconY = top + (((TOP_BAR_HEIGHT - NOTIFICATION_ICON_SIZE) / 2) | 0);
+    for (let index = 0; index < icons.length; index++) {
+      image.drawImage(icons[index]!, iconsLeft + index * step, iconY);
+    }
+    return iconsLeft;
   }
 
   private drawTopBar(image: GrayImage, state: ShellChromeState): void {
@@ -447,8 +525,7 @@ export class ShellChromeLayer implements Layer {
       image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, barRight - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
     }
 
-    const now = new Date();
-    const clock = `${formatClockDate(now)} ${formatClockTime(now)}`;
+    const clock = clockText();
     const clockX = barLeft + 10;
     const textY = barTop + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0);
     image.drawText(font, clockX, textY, clock, 210);
@@ -545,6 +622,12 @@ export class ShellChromeLayer implements Layer {
 
 type BatteryItem = { label: string; device: BatteryDevice; percent: number; charging: boolean };
 
+/** The status bar's date and time. */
+function clockText(): string {
+  const now = new Date();
+  return `${formatClockDate(now)} ${formatClockTime(now)}`;
+}
+
 const BATTERY_BLOCK_RIGHT_MARGIN = 8;
 const BATTERY_LABEL_VALUE = 150;
 
@@ -629,7 +712,7 @@ const AMBIENT_MAX_LINES_PER_CARD = 3;
 /**
  * Paint the active ambient cards bottom-up: the oldest card sits at the very
  * bottom of the window band and newer ones stack above it. Cards that would
- * cross into the top bar are dropped rather than clipped. `right` is the
+ * cross into the window header are dropped rather than clipped. `right` is the
  * top bar's right edge, which the cards align to.
  */
 const ambientKeys = new Map<string, number>();
@@ -647,7 +730,7 @@ function drawAmbientCards(image: GrayImage, right: number, parts?: Plane[]): voi
     const lines = [card.title, ...card.lines].slice(0, 1 + AMBIENT_MAX_LINES_PER_CARD);
     const height = 2 * AMBIENT_CARD_PADDING_Y + lines.length * lineStep(font);
     const y = bottom - height;
-    if (y < bandTop + TOP_BAR_HEIGHT) break;
+    if (y < bandTop + windowHeaderHeight()) break;
     const target = parts ? new GrayImage(image.width, image.height, 0) : image;
     target.fillRect(x, y, AMBIENT_CARD_WIDTH, height, SHELL_OPAQUE_BLACK);
     target.drawRect(x, y, AMBIENT_CARD_WIDTH, height, 90);
@@ -701,12 +784,13 @@ type Rect = { x: number; y: number; width: number; height: number };
 const FRAME_RADIUS = 8;
 
 /**
- * The rounded frame around the foreground window's content (below its top
- * bar), when it has one (geometry.ts windowFramed): one pixel all round.
+ * The rounded frame around the foreground window's content (below its
+ * header), when it has one (geometry.ts windowFramed): one pixel all round.
  * Its sides run down the pixel just outside each side of the window, and
- * its top is the top bar's bottom row, in place of the bar's divider. Its
- * bottom is the switcher row's top edge, where drawSeparator draws it so
- * the selection tab can divert it.
+ * its top is the header's last row: the top bar's, in place of the bar's
+ * divider, or the whole one-row header with the status bar in the switcher
+ * row. Its bottom is the switcher row's top edge, where drawSeparator draws
+ * it so the selection tab can divert it.
  */
 function windowFrameRect(state: ShellChromeState): Rect | null {
   if (!windowFramed(state.foregroundAppId)) return null;
@@ -714,34 +798,31 @@ function windowFrameRect(state: ShellChromeState): Rect | null {
   return { x: viewport.x - 1, y: viewport.y - 1, width: viewport.width + 2, height: viewport.height + 2 };
 }
 
-/** Shell surface keys of the window frame's left side, right side and top. */
-let frameKeys: [number, number, number] | undefined;
-function windowFrameKeys(): [number, number, number] {
-  if (!frameKeys) frameKeys = [LayerStack.allocateShellKey(), LayerStack.allocateShellKey(), LayerStack.allocateShellKey()];
-  return frameKeys;
+/**
+ * Draw the window frame (see windowFrameRect) as one retained firmware
+ * rounded rect over whatever lies beneath it: no fill, so the window's
+ * content shows through, and black outside the curve, cutting the content's
+ * square corners to it. It is clipped short of its bottom row, which
+ * drawSeparator draws with the selection tab's gap.
+ */
+function drawWindowFrame(image: GrayImage, frame: Rect): void {
+  image.drawDisplayList({ resources: [], calls: [{
+    op: DrawOp.ROUNDED_RECT, x: 0, y: 0, width: frame.width, height: frame.height, radius: FRAME_RADIUS,
+    background: 0, border: grayToNibble(BORDER_VALUE), outside: 0,
+    clip: { x: 0, y: 0, width: frame.width, height: frame.height - 1 },
+  }] }, frame.x, frame.y, frame.width, frame.height);
 }
 
 /**
- * Draw the window frame (see windowFrameRect) but for its bottom row,
- * stroked line by line like the selection tab's outline. Outside each
- * rounded corner it paints opaque black, so the window's square corners
- * don't show past the curve. Everything but the top's straight run lies
- * within FRAME_RADIUS of the sides.
+ * How far in from the frame's sides its top and bottom rows start: the
+ * first pixel whose centre passes the firmware's rounded-rect test, which
+ * the separator must match to join the corners.
  */
-function drawWindowFrame(image: GrayImage, frame: Rect): void {
-  const { x, y, width, height } = frame;
-  for (let i = 0; i < height - 1; i++) {
-    const outer = tabInset(i, 0, height, FRAME_RADIUS);
-    image.fillRect(x, y + i, outer, 1, SHELL_OPAQUE_BLACK);
-    image.fillRect(x + width - outer, y + i, outer, 1, SHELL_OPAQUE_BLACK);
-    if (i === 0) {
-      image.fillRect(x + outer, y, width - 2 * outer, 1, BORDER_VALUE);
-      continue;
-    }
-    const stroke = Math.max(1, 1 + tabInset(i, 1, height - 1, FRAME_RADIUS - 1) - outer);
-    image.fillRect(x + outer, y + i, stroke, 1, BORDER_VALUE);
-    image.fillRect(x + width - outer - stroke, y + i, stroke, 1, BORDER_VALUE);
-  }
+function frameEdgeInset(): number {
+  const r = FRAME_RADIUS, dy = 2 * r - 1;
+  let inset = 0;
+  while (inset < r && (2 * (r - inset) - 1) ** 2 + dy * dy > 4 * r * r) inset++;
+  return inset;
 }
 
 const TAB_RADIUS = 6;
@@ -763,9 +844,8 @@ function drawSeparator(
     // Along the row's top edge: the full width of the row, or between the
     // corners of the window frame, whose bottom side this is.
     const frame = windowFrameRect(state);
-    const inset = frame ? tabInset(frame.height - 1, 0, frame.height, FRAME_RADIUS) : 0;
-    const left = frame ? frame.x + inset : strip.x;
-    const right = frame ? frame.x + frame.width - 1 - inset : strip.x + strip.width - 1;
+    const left = frame ? frame.x + frameEdgeInset() : strip.x;
+    const right = frame ? frame.x + frame.width - 1 - frameEdgeInset() : strip.x + strip.width - 1;
     const y = strip.y;
     if (gap) {
       image.drawLine(left, y, gap.x, y, BORDER_VALUE);
