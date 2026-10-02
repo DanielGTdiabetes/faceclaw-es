@@ -32,16 +32,16 @@ class FaceclawVoiceController(context: Context) {
             "decoder_model_merged.ort",
             "tokens.txt"
         )
-        // Second on-device model: sherpa-onnx's offline Whisper backend (base.en,
+        // Second on-device model: multilingual Whisper base, transcribing Spanish.
         // int8-quantized -- see the model-choice note in asr-model.ts). Directory
         // shared with the TS-side download flow, same convention as ASR_MODEL_DIR.
         // Whisper re-encodes the whole buffer on every call, so the shared session
         // skips live partials for it; see VoiceCaptureSession.processRecognizer.
-        private const val ASR_WHISPER_MODEL_DIR = "sherpa-onnx-whisper-base-en-int8"
+        private const val ASR_WHISPER_MODEL_DIR = "sherpa-onnx-whisper-base-es-int8"
         private val ASR_WHISPER_MODEL_FILES = arrayOf(
-            "base.en-encoder.int8.onnx",
-            "base.en-decoder.int8.onnx",
-            "base.en-tokens.txt"
+            "base-encoder.int8.onnx",
+            "base-decoder.int8.onnx",
+            "base-tokens.txt"
         )
         // 50 ms chunks match the G2 packet cadence the rest of the pipeline
         // (endpointing, transcript pacing) is tuned for.

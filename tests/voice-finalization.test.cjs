@@ -117,7 +117,7 @@ test('Continue refines the complete late result instead of appending an editing 
 test('Send and Continue cannot consume partial text while native recognition is pending', async () => {
   const env = dialog();
   env.transcript('Set a timer'); env.layer.endCapture();
-  assert.equal(env.frame().status, 'Finishing transcription...');
+  assert.equal(env.frame().status, 'Finalizando transcripción...');
   env.input('click'); env.input('scroll-down'); env.input('click');
   assert.deepEqual(env.sent, []);
   assert.equal(env.starts(), 1);
@@ -146,7 +146,7 @@ test('failed or empty native captures return to the menu without sending', async
   const env = dialog({ autoSend: true });
   env.layer.endCapture(); await env.complete(); env.timeout();
   assert.deepEqual(env.sent, []);
-  assert.equal(env.frame().status, 'Send, continue, or discard?');
+  assert.equal(env.frame().status, '¿Enviar, continuar o descartar?');
 });
 
 test('cloud fallback and a synchronous final still send exactly once', () => {

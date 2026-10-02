@@ -31,12 +31,12 @@ internal object AndroidSpeechEngines {
         if (kind == VoiceModelKind.WHISPER) {
             modelConfig
                 .setWhisper(OfflineWhisperModelConfig.builder()
-                    .setEncoder(File(modelDir, "base.en-encoder.int8.onnx").absolutePath)
-                    .setDecoder(File(modelDir, "base.en-decoder.int8.onnx").absolutePath)
-                    .setLanguage("en")
+                    .setEncoder(File(modelDir, "base-encoder.int8.onnx").absolutePath)
+                    .setDecoder(File(modelDir, "base-decoder.int8.onnx").absolutePath)
+                    .setLanguage("es")
                     .setTask("transcribe")
                     .build())
-                .setTokens(File(modelDir, "base.en-tokens.txt").absolutePath)
+                .setTokens(File(modelDir, "base-tokens.txt").absolutePath)
         } else {
             modelConfig
                 .setMoonshine(OfflineMoonshineModelConfig.builder()

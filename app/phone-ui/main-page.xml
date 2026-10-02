@@ -10,12 +10,12 @@
             <Label col="4" text="&#x26A0;&#xFE0F;" tap="{{ onWarningIconTap }}" visibility="{{ warningIconVisibility }}" class="action-bar-warning" />
         </GridLayout>
         <ActionItem text="{{ buttonLabel }}" tap="{{ onTap }}" isEnabled="{{ connectItemEnabled }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
-        <ActionItem text="Pair glasses" tap="{{ onPairGlassesTap }}" isEnabled="{{ canRun }}" android.position="popup" />
-        <ActionItem text="Permissions" tap="{{ onPermissionsTap }}" android.position="popup" />
-        <ActionItem text="Conversations" tap="{{ onConversationsTap }}" android.position="popup" />
-        <ActionItem text="Take screenshot" tap="{{ onTakeScreenshotTap }}" android.position="popup" />
-        <ActionItem text="Record screen" tap="{{ onRecordScreenTap }}" android.position="popup" />
-        <ActionItem text="Uninstall custom firmware" tap="{{ onUninstallFirmwareTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
+        <ActionItem text="Emparejar gafas" tap="{{ onPairGlassesTap }}" isEnabled="{{ canRun }}" android.position="popup" />
+        <ActionItem text="Permisos" tap="{{ onPermissionsTap }}" android.position="popup" />
+        <ActionItem text="Conversaciones" tap="{{ onConversationsTap }}" android.position="popup" />
+        <ActionItem text="Capturar pantalla" tap="{{ onTakeScreenshotTap }}" android.position="popup" />
+        <ActionItem text="Grabar pantalla" tap="{{ onRecordScreenTap }}" android.position="popup" />
+        <ActionItem text="Desinstalar firmware modificado" tap="{{ onUninstallFirmwareTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
     </ActionBar>
 
     <GridLayout>
@@ -35,7 +35,7 @@
                  content can center in the leftover height. -->
             <GridLayout row="1" rows="*,auto" class="p-20">
                 <rc:remote-controls row="0" visibility="{{ controlsVisibility }}" />
-                <Button row="1" text="Stop recording" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
+                <Button row="1" text="Detener grabación" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
             </GridLayout>
         </GridLayout>
 
@@ -62,7 +62,7 @@
                 </GridLayout>
                 <GridLayout col="1" rows="*,auto">
                     <rc:remote-controls row="0" visibility="{{ controlsVisibility }}" />
-                    <Button row="1" text="Stop recording" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
+                    <Button row="1" text="Detener grabación" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
                 </GridLayout>
             </GridLayout>
         </GridLayout>
@@ -81,28 +81,28 @@
             horizontalAlignment="center"
             verticalAlignment="center">
             <StackLayout class="warnings-modal-content">
-                <Label text="Attention needed" class="h2" />
+                <Label text="Atención necesaria" class="h2" />
                 <StackLayout visibility="{{ evenAppConflictWarningVisibility }}" class="warnings-modal-item">
                     <Label text="{{ evenAppConflictMessage }}" textWrap="true" />
-                    <Button text="Open Even app settings" tap="{{ onOpenEvenAppSettingsTap }}" class="-primary" />
+                    <Button text="Abrir ajustes de la app Even" tap="{{ onOpenEvenAppSettingsTap }}" class="-primary" />
                 </StackLayout>
                 <StackLayout visibility="{{ firmwareWarningVisibility }}" class="warnings-modal-item">
                     <Label text="{{ firmwareWarningMessage }}" textWrap="true" />
-                    <Button text="Install custom firmware" tap="{{ onInstallFirmwareTap }}" class="-primary" />
+                    <Button text="Instalar firmware modificado" tap="{{ onInstallFirmwareTap }}" class="-primary" />
                 </StackLayout>
                 <StackLayout visibility="{{ batteryOptimizationWarningVisibility }}" class="warnings-modal-item">
-                    <Label text="Android will slow Faceclaw to a crawl when the phone screen is off unless it is exempt from battery optimization." textWrap="true" />
-                    <Button text="Allow unrestricted background usage" tap="{{ onAllowBackgroundUsageTap }}" class="-primary" />
+                    <Label text="Permite el uso de batería sin restricciones para que Faceclaw funcione con la pantalla del móvil apagada." textWrap="true" />
+                    <Button text="Permitir uso sin restricciones en segundo plano" tap="{{ onAllowBackgroundUsageTap }}" class="-primary" />
                 </StackLayout>
                 <StackLayout visibility="{{ fontsMissingWarningVisibility }}" class="warnings-modal-item">
-                    <Label text="The G2 fonts have not been extracted, so EvenHub apps will render with fallback fonts. Preparing them downloads the official firmware to extract its fonts; your glasses are not reflashed." textWrap="true" />
-                    <Button text="Prepare G2 fonts" tap="{{ onPrepareFontsTap }}" class="-primary" />
+                    <Label text="Faltan las fuentes G2. Se descargará el firmware oficial para extraerlas; esto no instala firmware en las gafas." textWrap="true" />
+                    <Button text="Preparar fuentes G2" tap="{{ onPrepareFontsTap }}" class="-primary" />
                 </StackLayout>
                 <StackLayout visibility="{{ alarmReliabilityWarningVisibility }}" class="warnings-modal-item">
                     <Label text="{{ alarmReliabilityMessage }}" textWrap="true" />
-                    <Button text="Open phone settings" tap="{{ onFixAlarmReliabilityTap }}" class="-primary" />
+                    <Button text="Abrir ajustes del móvil" tap="{{ onFixAlarmReliabilityTap }}" class="-primary" />
                 </StackLayout>
-                <Button text="Close" tap="{{ onWarningsModalCloseTap }}" />
+                <Button text="Cerrar" tap="{{ onWarningsModalCloseTap }}" />
             </StackLayout>
         </ScrollView>
         <!-- Keyboard-input mode: anchored to the bottom of the (keyboard-
@@ -132,8 +132,8 @@
                 verticalAlignment="bottom">
                 <Label dock="top" text="{{ activeTextEditorTitle }}" class="h2" />
                 <GridLayout dock="bottom" columns="*,*" rows="auto" class="m-t-8">
-                    <Button col="0" text="Cancel" tap="{{ onTextSettingCancelTap }}" />
-                    <Button col="1" text="Submit" tap="{{ onTextSettingSubmitTap }}" class="-primary" />
+                    <Button col="0" text="Cancelar" tap="{{ onTextSettingCancelTap }}" />
+                    <Button col="1" text="Guardar" tap="{{ onTextSettingSubmitTap }}" class="-primary" />
                 </GridLayout>
                 <ScrollView>
                     <StackLayout>

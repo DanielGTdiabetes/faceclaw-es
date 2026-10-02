@@ -279,13 +279,18 @@ android {
 
     // Version Information (derived from app/version.ts above)
     versionCode faceclawVersionCode
-    versionName faceclawVersionName
+    versionName "${faceclawVersionName}-es"
     
     generatedDensities = []
   }
 
   aaptOptions {
     additionalParameters "--no-version-vectors"
+  }
+
+  // Sign CI artifacts locally using the owner's persistent private key.
+  if (project.hasProperty("faceclawUnsigned")) {
+    buildTypes.release.signingConfig = null
   }
 }
 

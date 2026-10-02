@@ -33,7 +33,7 @@ async function buildKotlin(platform, configuration = 'debug') {
   const wrapper = path.join(root, 'wear', process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
   console.log(`[kotlin] Building ${platform} (${configuration})`);
   await new Promise((resolve, reject) => {
-    const child = spawn(wrapper, [task, '--console=plain'], { cwd: kotlin, stdio: 'inherit' });
+    const child = spawn(wrapper, [task, '--console=plain'], { cwd: kotlin, stdio: 'inherit', shell: process.platform === 'win32' });
     child.on('error', reject);
     child.on('exit', (code, signal) => {
       if (code === 0) resolve();

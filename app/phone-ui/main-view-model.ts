@@ -153,20 +153,20 @@ export class MainViewModel extends RemoteControlsViewModel {
   get connectionStatusLabel(): string {
     switch (this._phase) {
       case "connected":
-        return "Connected";
+        return "Conectado";
       case "charging":
-        return "Charging";
+        return "Cargando";
       case "disconnecting":
-        return "Disconnecting";
+        return "Desconectando";
       case "connecting":
         // The transport reports retry loops as "Reconnecting..." with the
         // phase still "connecting"; keep that distinction visible.
-        return this._status.startsWith("Reconnecting") ? "Reconnecting" : "Connecting";
+        return this._status.startsWith("Reconnecting") ? "Reconectando" : "Conectando";
       default:
-        if (this._status.startsWith("Failed")) return "Failed";
+        if (this._status.startsWith("Failed")) return "Error";
         // The headless preview display is live; "Disconnected" would suggest
         // the interactive mirror below it is broken.
-        return this._previewMode ? "Preview" : "Disconnected";
+        return this._previewMode ? "Vista previa" : "Desconectado";
     }
   }
 
@@ -183,7 +183,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   onConnectionStatusTap(): void {
-    void Dialogs.alert({ title: "Connection status", message: this._status, okButtonText: "OK" });
+    void Dialogs.alert({ title: "Estado de conexión", message: this._status, okButtonText: "OK" });
   }
 
   get displayPreview(): ImageSource | null {
@@ -841,11 +841,11 @@ export class MainViewModel extends RemoteControlsViewModel {
       case "connecting":
       case "connected":
       case "charging":
-        return "Disconnect";
+        return "Desconectar";
       case "disconnecting":
-        return "Disconnecting...";
+        return "Desconectando...";
       default:
-        return "Connect";
+        return "Conectar";
     }
   }
 

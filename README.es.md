@@ -1,0 +1,47 @@
+# Faceclaw Español
+
+Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), basada en la versión 0.8.1. Licencia GPLv3, conservando la licencia y los avisos originales.
+
+- Whisper **base multilingüe**, cuantizado a int8, con idioma `es` y tarea `transcribe`: conserva el texto en español.
+- Modelo independiente de `base.en`, con tamaños y SHA-256 verificados. Descarga de unos 161 MB desde el espejo del mantenedor de sherpa-onnx.
+- Whisper local como proveedor predeterminado. Moonshine sigue disponible para inglés.
+- Controles principales del móvil, menús de ajustes y flujo de entrada de voz traducidos. La traducción de todas las apps secundarias y textos de ayuda aún no está completa.
+- Mantiene la integración con OpenClaw y las mismas claves de configuración. Esta adaptación no cambia el firmware de las gafas. La activación «Hey Even» pertenece al firmware y sigue siendo la misma.
+- Los subtítulos continuos de la app Micrófonos aún usan Moonshine en inglés; este cambio se aplica a la entrada de voz del asistente y al dictado.
+
+## Estado
+
+La prueba de voz real y la conexión con OpenClaw deben verificarse en el teléfono y las gafas antes de considerar una versión validada para uso diario.
+
+## Instalación desde la APK oficial
+
+La firma propia impide instalar esta APK encima de la oficial. Antes de desinstalar, exportar los ajustes con `scripts/pull_config.sh` y guardar la APK original. Después de instalar la española, restaurarlos con `scripts/push_config.sh`.
+
+El exportador original copia `faceclaw_settings.xml`: incluye servidor, puerto, token, proveedor e historial del asistente. No exporta todos los datos privados de la app: las direcciones de las gafas y el estado de bienvenida de NativeScript se guardan aparte en `prefs.db.xml`. Puede ser necesario volver a emparejar en la app; el firmware ya instalado debe detectarse y conservarse. No instalar firmware si las gafas ya usan el compatible.
+
+En Ajustes → Voz, seleccionar **Local (Whisper, español)** y descargar **Whisper (español, base multilingüe)**. Los modelos se descargan al móvil y no están incluidos en la APK.
+
+Nunca subir copias de ajustes, historiales, tokens ni claves privadas a GitHub. `backups/`, `.tools/`, `signing/` y keystores están excluidos de Git.
+
+## Compilación en GitHub
+
+El workflow **APK española** ejecuta las pruebas y compila una APK de publicación sin firmar en Linux. Se puede lanzar desde Actions y también se ejecuta al subir cambios en la rama española. Descargar el artifact `faceclaw-es-unsigned-…` y descomprimirlo.
+
+Firmar esa APK en Windows con la clave local persistente:
+
+```powershell
+./scripts/sign-spanish.ps1 -InputApk ./app-release-unsigned.apk -OutputApk ./dist/faceclaw-es.apk
+```
+
+El script crea una clave la primera vez y la reutiliza. Guardar una copia privada de `.tools/signing/faceclaw-es.jks` y `store.password`. Si se pierde esa clave, una nueva firma volverá a exigir reinstalar. No compartirla ni incluirla en el repositorio.
+
+## Mantener las actualizaciones
+
+La rama `spanish-0.8.1` conserva los cambios de español. El remoto `upstream` debe apuntar a jimrandomh/faceclaw y `origin` al fork. Para una nueva versión:
+
+1. Obtener la nueva etiqueta de upstream y fusionarla en una rama de actualización española. Resolver los conflictos conservando el modelo multilingüe, `es` y las traducciones.
+2. Revisar la compatibilidad del firmware y del puente con OpenClaw, ejecutar pruebas y compilar en Actions.
+3. Firmar con **la misma clave local** y mantener `com.faceclaw.app` como identificador. El `versionCode` debe ser igual o superior al ya instalado.
+4. Instalar como actualización (`adb install -r …`), sin desinstalar ni borrar los datos. Comprobar la voz y la conexión con OpenClaw.
+
+Sincronizar el fork no adapta automáticamente los cambios que haga upstream: requiere revisar conflictos y probar cada nueva versión. Las APK oficiales usan otra firma y no son actualizaciones de esta variante.
