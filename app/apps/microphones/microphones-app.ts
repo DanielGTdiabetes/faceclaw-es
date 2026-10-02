@@ -60,7 +60,7 @@ const TRAY_ICON = imageFromAsciiArt(
     "  #       #   ",
     "  ###     ### ",
   ],
-  220,
+  { "#": 220 },
 );
 
 const MENU_LAYOUT = {

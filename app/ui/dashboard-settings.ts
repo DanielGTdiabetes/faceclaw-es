@@ -27,7 +27,7 @@ export type NightscoutSettings = {
   siteUrl: string;
   apiToken: string;
 };
-export type BatteryDisplayMode = "icon" | "percentage" | "stacked" | "stacked-percentage";
+export type BatteryDisplayMode = "icon" | "percentage" | "stacked" | "stacked-percentage" | "dense";
 /** When a top-bar battery indicator is shown: always, only below 50%, or never. */
 export type BatteryIndicatorVisibility = "always" | "low" | "never";
 export type TimeFormat = "24h" | "12h";
@@ -235,9 +235,9 @@ export const batteryDisplayModeSetting = new ConfigSettingEnum<BatteryDisplayMod
   label: "Style",
   storageKey: "dashboard.systemCard.batteryDisplayMode",
   defaultValue: "stacked",
-  values: ["icon", "percentage", "stacked", "stacked-percentage"],
+  values: ["icon", "percentage", "stacked", "stacked-percentage", "dense"],
   formatValue: batteryDisplayModeLabel,
-  description: "How the top bar shows battery levels: a gauge icon or exact percentage beside the label, or a compact gauge or percentage with the label stacked above it.",
+  description: "How the top bar shows battery levels: a gauge icon or exact percentage beside the label, a compact gauge or percentage with the label stacked above it, or (dense) a device icon beside each gauge with two indicators stacked per column.",
 });
 
 /** Below this charge level a "Below 50%" indicator becomes visible. */
@@ -1062,6 +1062,7 @@ export function batteryDisplayModeLabel(value: BatteryDisplayMode): string {
   if (value === "percentage") return "Percentage";
   if (value === "stacked") return "Stacked";
   if (value === "stacked-percentage") return "Stacked percentage";
+  if (value === "dense") return "Dense";
   return "Icon";
 }
 

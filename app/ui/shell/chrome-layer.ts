@@ -4,7 +4,7 @@ import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText } from "../../graphics/textwrap";
 import { activeAmbientCards } from "./ambient-cards";
-import { BATTERY_ICON_WIDTH, drawBattery } from "../../graphics/battery";
+import { BATTERY_ICON_WIDTH, DENSE_BATTERY_BLOCK_HEIGHT, drawBattery, drawDenseBatteries, type BatteryDevice } from "../../graphics/battery";
 import { readActiveNotificationIcons } from "../../native/notification-icons";
 import { readPhoneBatteryState } from "../../native/phone-battery";
 import { noteStaleDataUsed, renderPassAllowsStaleData } from "../../util/render-freshness";
@@ -377,33 +377,38 @@ export class ShellChromeLayer implements Layer {
    * Labelled battery indicators for the phone, Wear OS watch, G2, and R1,
    * right-aligned in the top bar. The watch one exists only while a watch
    * running the Faceclaw watch app is reachable (no placeholder otherwise).
-   * The Settings > Customization > Battery indicators submenu picks the style (label beside a gauge icon or percentage, or stacked above
-   * either) and, per device, whether the indicator shows always, only below
-   * 50%, or never. Returns the left edge of the battery block.
+   * The Settings > Customization > Battery indicators submenu picks the
+   * style (label beside a gauge icon or percentage, stacked above either, or
+   * dense: device icons beside gauges, two per column) and, per device,
+   * whether the indicator shows always, only below 50%, or never. Returns
+   * the left edge of the battery block.
    */
   private drawTopBarBatteries(image: GrayImage, state: ShellChromeState, barTop: number): number {
     const mode = batteryDisplayModeSetting.get();
     const items: BatteryItem[] = [];
     const phone = readPhoneBatteryState();
     if (phone.battery !== null && Number.isFinite(phone.battery)) {
-      pushBatteryItem(items, phoneBatteryVisibilitySetting.get(), "Phone", phone.battery, Boolean(phone.charging));
+      pushBatteryItem(items, phoneBatteryVisibilitySetting.get(), "Phone", "phone", phone.battery, Boolean(phone.charging));
     }
     if (state.battery.watch !== null && Number.isFinite(state.battery.watch)) {
-      pushBatteryItem(items, watchBatteryVisibilitySetting.get(), "Watch", state.battery.watch,
+      pushBatteryItem(items, watchBatteryVisibilitySetting.get(), "Watch", "watch", state.battery.watch,
         Boolean(state.battery.watchCharging));
     }
     if (state.battery.headset !== null && Number.isFinite(state.battery.headset)) {
-      pushBatteryItem(items, glassesBatteryVisibilitySetting.get(), "G2", state.battery.headset,
+      pushBatteryItem(items, glassesBatteryVisibilitySetting.get(), "G2", "glasses", state.battery.headset,
         Boolean(state.battery.headsetCharging));
     }
     if (state.battery.ring !== null && Number.isInteger(state.battery.ring)
         && state.battery.ring >= 0 && state.battery.ring <= 100) {
-      pushBatteryItem(items, ringBatteryVisibilitySetting.get(), "R1", state.battery.ring,
+      pushBatteryItem(items, ringBatteryVisibilitySetting.get(), "R1", "ring", state.battery.ring,
         Boolean(state.battery.ringCharging));
     }
     if (!items.length) return G2_LENS_WIDTH;
     if (mode === "stacked" || mode === "stacked-percentage") {
       return drawStackedBatteries(image, items, barTop, mode === "stacked-percentage");
+    }
+    if (mode === "dense") {
+      return drawDenseBatteries(image, items, G2_LENS_WIDTH - BATTERY_BLOCK_RIGHT_MARGIN, barTop + DENSE_TOP);
     }
 
     const font = getDefaultSmallFont();
@@ -440,7 +445,7 @@ export class ShellChromeLayer implements Layer {
   }
 }
 
-type BatteryItem = { label: string; percent: number; charging: boolean };
+type BatteryItem = { label: string; device: BatteryDevice; percent: number; charging: boolean };
 
 const BATTERY_BLOCK_RIGHT_MARGIN = 8;
 const BATTERY_LABEL_VALUE = 150;
@@ -450,12 +455,13 @@ function pushBatteryItem(
   items: BatteryItem[],
   visibility: BatteryIndicatorVisibility,
   label: string,
+  device: BatteryDevice,
   percent: number,
   charging: boolean,
 ): void {
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
   if (!batteryIndicatorVisible(visibility, clamped)) return;
-  items.push({ label, percent: clamped, charging });
+  items.push({ label, device, percent: clamped, charging });
 }
 
 // Stacked style geometry, in rows below the bar's top edge. The bar has 27
@@ -471,6 +477,10 @@ const STACKED_LABEL_BASELINE = 11;
 const STACKED_ICON_TOP = 13;
 const STACKED_PERCENT_BASELINE = 21;
 const STACKED_ITEM_GAP = 10;
+
+// Dense style: two 10px indicator rows with a 2px gap span rows 2..23, the
+// same vertical center as the stacked styles' ink.
+const DENSE_TOP = (((TOP_BAR_HEIGHT - 1 - DENSE_BATTERY_BLOCK_HEIGHT) / 2) | 0);
 
 /**
  * Stacked styles: each label centered above its gauge icon (or percentage
