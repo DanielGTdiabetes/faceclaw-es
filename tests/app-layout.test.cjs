@@ -171,7 +171,9 @@ function chromeLayer(g, { notifications = 0, phoneBattery = null, windows = 1, t
       batteryIndicatorVisible: () => true },
     '../clock-format': { formatClockDate: () => 'Thu Oct 2', formatClockTime: () => '9:41' },
     '../layers': { LayerStack: { allocateShellKey: () => nextKey++ } },
-    '../menu': { scrollToKeepSelectionVisible: () => 0 },
+    // As in menu.ts.
+    '../menu': { scrollToKeepSelectionVisible: (scroll, selected, visible, count) => Math.min(Math.max(0, count - visible),
+      Math.max(0, selected < scroll ? selected : selected >= scroll + visible ? selected - visible + 1 : scroll)) },
     './geometry': g,
   };
   const context = { exports: {}, require: (name) => modules[name] ?? {} };
@@ -188,7 +190,10 @@ test('a bottom app switcher frames the foreground window\'s content in a rounded
   const g = geometry();
   g.settings.appSwitcherPositionSetting.value = 'bottom';
   g.settings.uiDepthSetting.value = '62';
-  const { chrome } = chromeLayer(g);
+  // The second window is selected: the first's (see the launcher test below)
+  // would square the bottom-left corner.
+  const { chrome, state } = chromeLayer(g, { windows: 2 });
+  state.selectedIndex = 1;
   const parts = chrome.paintParts();
   // Just the top bar and then the row: the frame is no surface of its own.
   const part = (key) => parts.find((p) => p.shellKey === key);
@@ -224,6 +229,46 @@ test('a bottom app switcher frames the foreground window\'s content in a rounded
   // No frame in the full-panel mode.
   g.settings.displayModeSetting.value = '640x480';
   assert.equal(chrome.paintParts().flatMap((p) => frames(p.image)).length, 0);
+});
+
+test('the launcher\'s tab lines up with the window frame, whose corner squares to meet it', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  const paint = (chrome) => {
+    const [, strip] = chrome.paintParts();
+    const [frame] = strip.image.draws.filter((d) => d.presentation?.displayList);
+    const lit = new Uint8Array(640 * 480).fill(255);
+    displayList.paintDisplayList(lit, lit.slice(), 640, 480, { displayList: frame.presentation.displayList,
+      x: strip.x + frame.x, y: strip.y + frame.y, width: frame.source.width, height: frame.source.height, depth: 0 });
+    return { strip, px: (x, y) => lit[y * 640 + x], at: (x, y) => strip.image.pixels[(y - strip.y) * strip.image.width + x - strip.x] };
+  };
+  const { chrome, state } = chromeLayer(g, { windows: 3 });
+  // The first cell starts at the frame's left side (x=31), one pixel outside
+  // the window, so the row's surface spans the frame.
+  let { strip, px, at } = paint(chrome);
+  assert.deepEqual([strip.x, strip.image.width], [31, 578]);
+  assert.deepEqual([chrome.windowIndexAt(31, 380, 3), chrome.windowIndexAt(30, 380, 3), chrome.windowIndexAt(71, 380, 3)], [0, null, 1]);
+  // Selected, its tab's outline continues the frame's left side straight
+  // down: the corner is square and the content's corner whole.
+  assert.deepEqual([px(31, 360), px(31, 365), px(32, 365)], [48, 48, 255]);
+  assert.deepEqual([at(31, 366), at(31, 370)], [150, 150]);
+  // Focused, the tab fills from the side.
+  state.focus = 'sidebar';
+  ({ at } = paint(chrome));
+  assert.equal(at(31, 370), 255);
+  // With another window selected the corner rounds again, and the separator
+  // starts where its curve ends; the launcher's cell stays at the side.
+  state.focus = 'window'; state.selectedIndex = 1;
+  ({ px, at } = paint(chrome));
+  assert.deepEqual([px(31, 365), px(32, 365), at(35, 366), at(36, 366)], [0, 0, 1, 40]);
+  assert.equal(chrome.windowIndexAt(31, 380, 3), 0);
+  // Scrolled past the launcher, the cells keep the left chevron's margin.
+  const scrolled = chromeLayer(g, { windows: 20 });
+  scrolled.state.selectedIndex = 19;
+  ({ px } = paint(scrolled.chrome));
+  assert.equal(scrolled.chrome.windowIndexAt(35, 380, 20), null);
+  assert.notEqual(scrolled.chrome.windowIndexAt(41, 380, 20), null);
+  assert.equal(px(31, 365), 0);
 });
 
 test('the status bar can join a bottom app switcher, and windows grow into the top bar', () => {

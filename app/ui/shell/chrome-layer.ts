@@ -1,6 +1,6 @@
 import { shellCrop } from "../../graphics/shell-scene";
 import type { Plane } from "../../graphics/plane";
-import { DrawOp } from "../../graphics/display-list";
+import { DrawOp, type ListCall, type ListClip } from "../../graphics/display-list";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage, grayToNibble } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText } from "../../graphics/textwrap";
@@ -128,19 +128,26 @@ type SwitcherLayout = {
 /**
  * Switcher geometry for the foreground window (a bottom row sits under it).
  * `windowsRight` is where a bottom row's window icons must end: short of
- * the status bar when it shares the row.
+ * the status bar when it shares the row. `scrollRow` is the first visible
+ * window's index.
  */
-function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId?: string, windowsRight?: number): SwitcherLayout {
+function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId?: string, windowsRight?: number, scrollRow = 0): SwitcherLayout {
   const position = switcherPosition();
   if (position === "bottom") {
     const row = switcherRect(heightMode, appId);
     const width = (windowsRight ?? row.x + row.width) - row.x;
+    // Under a framed window the first window's cell (the launcher's) starts
+    // at the frame's left side, one pixel outside the window, so a selection
+    // tab there carries the side straight down (drawWindowFrame squares that
+    // corner for it). Scrolled past it, the cells keep the margin the left
+    // chevron needs. The count of slots stays the same either way.
+    const first = windowFramed(appId) && scrollRow === 0 ? row.x - 1 : row.x + LIST_MARGIN - 2;
     return {
       position,
       iconSize: ROW_ICON_SIZE,
       visibleCount: Math.max(1, ((width - 2 * LIST_MARGIN + ICON_SPACING) / ROW_STEP) | 0),
       cell: (slot) => ({
-        x: row.x + LIST_MARGIN - 2 + slot * ROW_STEP, y: row.y, width: ROW_ICON_SIZE + 4, height: SWITCHER_ROW_HEIGHT,
+        x: first + slot * ROW_STEP, y: row.y, width: ROW_ICON_SIZE + 4, height: SWITCHER_ROW_HEIGHT,
         atSeparator: true,
       }),
     };
@@ -305,6 +312,9 @@ export class ShellChromeLayer implements Layer {
   private scrollRow = 0;
   // Where the last paint ended a bottom row's window icons, for hit testing.
   private rowWindowsRight: number | undefined;
+  // Whether the last paint's selection tab carries the window frame's left
+  // side down, so the frame's bottom-left corner is square.
+  private frameCornerSquare = false;
 
   constructor(private readonly getState: () => ShellChromeState) {}
 
@@ -319,7 +329,7 @@ export class ShellChromeLayer implements Layer {
     }
     if (!statusInRow) this.drawTopBar(image, state);
     const frame = windowFrameRect(state);
-    if (frame) drawWindowFrame(image, frame);
+    if (frame) drawWindowFrame(image, frame, this.frameCornerSquare);
     drawAmbientCards(image, topBarSpan(state).right);
     return image;
   }
@@ -342,9 +352,12 @@ export class ShellChromeLayer implements Layer {
       // -2, which on top of a -62 screen depth would shift a side off the
       // screen. (A framed window always has the row on screen.)
       const frame = windowFrameRect(state);
-      if (frame) drawWindowFrame(stripCanvas, frame);
+      if (frame) drawWindowFrame(stripCanvas, frame, this.frameCornerSquare);
+      // Under a framed window the row's surface spans the frame, whose left
+      // side the first selection tab continues.
       const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
-      parts.push(shellCrop(stripCanvas, strip.x, strip.y, strip.width, strip.height, 1));
+      const span = frame ?? strip;
+      parts.push(shellCrop(stripCanvas, span.x, strip.y, span.width, strip.height, 1));
       if (statusLeft !== null) {
         // The status bar keeps the top bar's surface and its depth, -2, over
         // the row's right end below its separator line, so the clock ticking
@@ -370,7 +383,7 @@ export class ShellChromeLayer implements Layer {
   windowIndexAt(x: number, y: number, windowCount: number): number | null {
     if (windowCount === 0) return null;
     const state = this.getState();
-    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId, this.rowWindowsRight);
+    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId, this.rowWindowsRight, this.scrollRow);
     const lastVisible = Math.min(windowCount, this.scrollRow + layout.visibleCount);
     for (let index = this.scrollRow; index < lastVisible; index++) {
       const cell = layout.cell(index - this.scrollRow);
@@ -404,9 +417,10 @@ export class ShellChromeLayer implements Layer {
       ? this.drawRowStatus(statusImage, state, strip, count) : null;
     const windowsRight = statusLeft === null ? strip.x + strip.width : statusLeft - ROW_STATUS_GAP;
     this.rowWindowsRight = windowsRight;
-    const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight);
+    const visibleCount = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight).visibleCount;
+    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, visibleCount, count);
+    const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight, this.scrollRow);
     const { iconSize, position } = layout;
-    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, layout.visibleCount, count);
     const lastVisible = Math.min(count, this.scrollRow + layout.visibleCount);
     const cellOf = (index: number) => layout.cell(index - this.scrollRow);
 
@@ -420,6 +434,8 @@ export class ShellChromeLayer implements Layer {
     const selVisible = state.selectedIndex >= this.scrollRow && state.selectedIndex < lastVisible;
     const selCell = selVisible ? cellOf(state.selectedIndex) : null;
     drawSeparator(image, state, strip, selCell?.atSeparator ? selCell : null);
+    const frame = position === "bottom" ? windowFrameRect(state) : null;
+    this.frameCornerSquare = !!frame && selCell?.x === frame.x;
 
     for (let index = this.scrollRow; index < lastVisible; index++) {
       const window = state.windows[index]!;
@@ -799,18 +815,27 @@ function windowFrameRect(state: ShellChromeState): Rect | null {
 }
 
 /**
- * Draw the window frame (see windowFrameRect) as one retained firmware
- * rounded rect over whatever lies beneath it: no fill, so the window's
- * content shows through, and black outside the curve, cutting the content's
- * square corners to it. It is clipped short of its bottom row, which
- * drawSeparator draws with the selection tab's gap.
+ * Draw the window frame (see windowFrameRect) as a retained firmware rounded
+ * rect over whatever lies beneath it: no fill, so the window's content shows
+ * through, and black outside the curve, cutting the content's square
+ * corners to it. It is clipped short of its bottom row, which drawSeparator
+ * draws with the selection tab's gap. With `squareBottomLeft` (a selection
+ * tab continuing its left side down), the rect is clipped away from that
+ * corner's box too, and the side runs straight through it as a one-pixel
+ * clipped clear, leaving the content's corner whole.
  */
-function drawWindowFrame(image: GrayImage, frame: Rect): void {
-  image.drawDisplayList({ resources: [], calls: [{
+function drawWindowFrame(image: GrayImage, frame: Rect, squareBottomLeft: boolean): void {
+  const border = grayToNibble(BORDER_VALUE), above = frame.height - 1;
+  const rounded = (clip: ListClip): ListCall => ({
     op: DrawOp.ROUNDED_RECT, x: 0, y: 0, width: frame.width, height: frame.height, radius: FRAME_RADIUS,
-    background: 0, border: grayToNibble(BORDER_VALUE), outside: 0,
-    clip: { x: 0, y: 0, width: frame.width, height: frame.height - 1 },
-  }] }, frame.x, frame.y, frame.width, frame.height);
+    background: 0, border, outside: 0, clip,
+  });
+  const calls = squareBottomLeft ? [
+    rounded({ x: FRAME_RADIUS, y: 0, width: frame.width - FRAME_RADIUS, height: above }),
+    rounded({ x: 0, y: 0, width: FRAME_RADIUS, height: above - FRAME_RADIUS }),
+    { op: DrawOp.CLEAR, color: border, clip: { x: 0, y: above - FRAME_RADIUS, width: 1, height: FRAME_RADIUS } },
+  ] : [rounded({ x: 0, y: 0, width: frame.width, height: above })];
+  image.drawDisplayList({ resources: [], calls }, frame.x, frame.y, frame.width, frame.height);
 }
 
 /**
@@ -843,8 +868,10 @@ function drawSeparator(
   if (switcherPosition() === "bottom") {
     // Along the row's top edge: the full width of the row, or between the
     // corners of the window frame, whose bottom side this is.
+    // A selection tab at the frame's left side squares that corner (see
+    // drawWindowFrame), so the line starts right at the side.
     const frame = windowFrameRect(state);
-    const left = frame ? frame.x + frameEdgeInset() : strip.x;
+    const left = frame ? frame.x + (gap?.x === frame.x ? 0 : frameEdgeInset()) : strip.x;
     const right = frame ? frame.x + frame.width - 1 - frameEdgeInset() : strip.x + strip.width - 1;
     const y = strip.y;
     if (gap) {
