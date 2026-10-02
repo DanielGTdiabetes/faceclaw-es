@@ -48,10 +48,10 @@ class AiChatLayer implements Layer {
     const transcript = record.session?.transcript ?? record.history?.transcript ?? [];
     const title = this.conversations.title();
     image.drawText(font, left, 6, truncateText(font, title, width), 180);
-    const label = assistantBackendSetting.get() === "external" ? "External agent" :
+    const label = assistantBackendSetting.get() === "external" ? "OpenClaw / agente externo" :
       `${assistantModelLabel(record.model)} · ${record.reasoning === "default" ? "default reasoning" : record.reasoning}`;
     const footer = wrapText(font, `${label}   ${gestureHints([
-      [GESTURE_CLICK, "menu"], [GESTURE_DOUBLE_CLICK, "back"], [GESTURE_LONG_PRESS, "hold to talk"],
+      [GESTURE_CLICK, "menú"], [GESTURE_DOUBLE_CLICK, "volver"], [GESTURE_LONG_PRESS, "mantén para hablar"],
     ])}`, width);
     const footerY = size.height - step * footer.length;
     const footerTop = footerY - step * 3 - 12;
@@ -63,7 +63,7 @@ class AiChatLayer implements Layer {
       let wrapped = this.wrappedEntries.get(entry);
       if (!wrapped || wrapped.font !== font || wrapped.width !== width || wrapped.text !== entry.text) {
         wrapped = { font, width, text: entry.text,
-          lines: wrapText(font, `${entry.role === "user" ? "You" : "AI"}: ${entry.text}`, width - 8) };
+          lines: wrapText(font, `${entry.role === "user" ? "Tú" : "IA"}: ${entry.text}`, width - 8) };
         this.wrappedEntries.set(entry, wrapped);
       }
       for (const text of wrapped.lines) {
@@ -71,8 +71,8 @@ class AiChatLayer implements Layer {
       }
       lines.push({ text: "", color: 0 });
     }
-    if (!lines.length) lines.push({ text: "Hold to talk to your assistant.", color: 175 },
-      { text: "Voice and chat share this conversation.", color: 150 });
+    if (!lines.length) lines.push({ text: "Mantén pulsado y espera a «Escuchando» para hablar.", color: 175 },
+      { text: "Suelta al terminar para enviar tu mensaje.", color: 150 });
     this.maxFirstLine = Math.max(0, lines.length - visible);
     const first = this.firstLine === null ? this.maxFirstLine : Math.min(this.firstLine, this.maxFirstLine);
     for (let row = 0; row < visible; row++) {
@@ -85,9 +85,9 @@ class AiChatLayer implements Layer {
       image.fillRect(size.width - 5, historyTop + Math.floor((track - thumb) * first / this.maxFirstLine), 2, thumb, 110);
     }
     image.fillRect(left, footerTop, width, 1, 65);
-    const state = this.draft.active ? this.draft.status : record.session?.status || this.draft.status;
+    const state = this.draft.status || record.session?.status;
     if (state) image.drawText(font, left, footerTop + 5, truncateText(font, state, width), 160);
-    const pending = wrapText(font, this.draft.text || (this.draft.active ? "Listening..." : "Hold to speak; release to send"), width);
+    const pending = wrapText(font, this.draft.text || (this.draft.active ? this.draft.status : "Mantén, espera a «Escuchando», habla y suelta"), width);
     pending.slice(-2).forEach((text, i) => image.drawText(font, left, footerTop + step * (i + 1) + 5, text, 220));
     footer.forEach((text, i) => image.drawText(font, left + width - font.measureText(text), footerY + i * step, text, 120));
     return image;
@@ -148,6 +148,7 @@ class AiChatLayer implements Layer {
 
 export function createAiChatWindow(options: InProcessAppOptions): InProcessWindow {
   const layer = new AiChatLayer(shell.getAssistantConversations(), options);
+  layer.draft.keepModelLoaded(true);
   let unsubscribe = () => {};
   const app = createInProcessWindow({
     ...options,
@@ -160,7 +161,7 @@ export function createAiChatWindow(options: InProcessAppOptions): InProcessWindo
     setSurfaceVisible: (visible) => { if (!visible) layer.draft.cancel(); options.setSurfaceVisible(visible); },
     menuItems: () => layer.menuItems(),
     receiveTextInput: (text) => { if (!layer.draft.active) layer.send(text); },
-    onClosed: () => { unsubscribe(); layer.draft.cancel(); options.onClosed(); },
+    onClosed: () => { unsubscribe(); layer.draft.keepModelLoaded(false); layer.draft.cancel(); options.onClosed(); },
   });
   unsubscribe = layer.start(app.requestRender);
   return app;

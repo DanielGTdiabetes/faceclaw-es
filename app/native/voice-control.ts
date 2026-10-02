@@ -186,6 +186,13 @@ export class FaceclawVoiceControlBridge {
     );
   }
 
+  /** Keep the local model between utterances for the lifetime of an open Chat window. */
+  setKeepTranscriberLoaded(enabled: boolean): void {
+    if (!global.isAndroid) return;
+    if (enabled) this.ensureController();
+    this.controller?.setKeepTranscriberLoaded(enabled);
+  }
+
   /** Begin push-to-talk capture (momentary; released with stopPushToTalk). */
   startPushToTalk(options: PushToTalkOptions): void {
     this.acquireCapture("ptt", options);

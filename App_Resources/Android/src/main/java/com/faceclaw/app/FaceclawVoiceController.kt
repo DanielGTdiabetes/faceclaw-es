@@ -91,6 +91,12 @@ class FaceclawVoiceController(context: Context) {
     @Volatile
     private var communicator: FaceclawBleCommunicator? = null
 
+    private val transcriberCache = VoiceTranscriberCache(load = { kind ->
+        val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
+        Log.i(TAG, "Loading voice model " + kind)
+        AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(modelDir, kind))
+    })
+
     private val host = object : VoiceCaptureHost {
         override val dispatcher = CallbackDispatcher { action -> mainHandler.post { action() } }
 
@@ -127,8 +133,7 @@ class FaceclawVoiceController(context: Context) {
         override fun hasTranscriberModel(kind: VoiceModelKind): Boolean = findAsrModelDir(kind) != null
 
         override fun loadTranscriber(kind: VoiceModelKind): OfflineTranscriber {
-            val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
-            return AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(modelDir, kind))
+            return transcriberCache.acquire(kind)
         }
 
         override fun speakerEmbedder(modelPath: String): SpeakerEmbedder {
@@ -172,6 +177,11 @@ class FaceclawVoiceController(context: Context) {
      */
     fun setOnboardModelKind(kind: String?) {
         session.setOnboardModelKind(kind)
+    }
+
+    /** Retain the model between utterances only while the Chat window is open. */
+    fun setKeepTranscriberLoaded(enabled: Boolean) {
+        transcriberCache.setRetain(enabled)
     }
 
     /**
@@ -234,6 +244,7 @@ class FaceclawVoiceController(context: Context) {
     }
 
     fun close() {
+        transcriberCache.setRetain(false)
         stop()
     }
 

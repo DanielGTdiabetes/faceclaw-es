@@ -25,19 +25,23 @@ export class VoiceDraft {
 
   get active(): boolean { return this.phase !== "idle" || this.starting; }
 
+  keepModelLoaded(enabled: boolean): void {
+    voiceControlBridge.setKeepTranscriberLoaded(enabled);
+  }
+
   async start(): Promise<void> {
     if (this.active) return;
     const generation = ++this.generation;
     this.text = this.committed = this.live = "";
     this.phase = "preparing";
-    this.status = "Preparing microphone...";
+    this.status = "Preparando micrófono... espera";
     this.changed();
     try {
       const ready = await this.prepare();
       if (generation !== this.generation) return;
-      if (!ready) { this.cancel("Microphone unavailable"); return; }
-      this.phase = "listening";
-      this.status = "Listening... release to send";
+      if (!ready) { this.cancel("Micrófono no disponible"); return; }
+      // Starting capture schedules native model loading. Only the bridge's
+      // listening event means the microphone is actually ready for speech.
       this.ownsVoiceActivity = true;
       voiceActivity.setActive(true);
       this.unsubscribe.push(voiceControlBridge.onTranscript((event) => {
@@ -53,10 +57,23 @@ export class VoiceDraft {
       }));
       // onStatus immediately replays the previous capture's status.
       let subscribed = false;
-      this.unsubscribe.push(voiceControlBridge.onStatus(({ status }) => {
+      this.unsubscribe.push(voiceControlBridge.onStatus(({ status, listening }) => {
         if (!subscribed) return;
         if (generation !== this.generation || !this.active) return;
-        if (/ignored|failed|error|denied/i.test(status)) this.cancel(status);
+        if (/ignored|failed|error|denied|could not|not downloaded|needs an active/i.test(status)) {
+          this.cancel(status);
+          return;
+        }
+        if (this.phase === "finishing") return;
+        if (listening) {
+          this.phase = "listening";
+          this.status = "Escuchando... suelta para enviar";
+        } else {
+          this.status = /loading.*model/i.test(status)
+            ? "Cargando modelo de voz... espera"
+            : "Preparando micrófono... espera";
+        }
+        this.changed();
       }));
       subscribed = true;
       if (generation !== this.generation) return;
@@ -73,17 +90,20 @@ export class VoiceDraft {
       if (this.isFinishing()) this.stopAndFinalize();
     } catch (error) {
       this.starting = false;
-      if (generation === this.generation) this.cancel(`Microphone: ${String(error)}`);
+      if (generation === this.generation) this.cancel(`Micrófono: ${String(error)}`);
     }
   }
 
   private isFinishing(): boolean { return this.phase === "finishing"; }
 
   release(): void {
-    if (this.phase === "preparing") { this.cancel(); return; }
+    if (this.phase === "preparing") {
+      this.cancel("Espera a «Escuchando» antes de hablar y soltar");
+      return;
+    }
     if (this.phase !== "listening") return;
     this.phase = "finishing";
-    this.status = "Finishing transcription...";
+    this.status = "Transcribiendo... espera";
     this.changed();
     if (!this.starting) this.stopAndFinalize();
   }
@@ -111,7 +131,7 @@ export class VoiceDraft {
   private finish(): void {
     if (this.phase !== "finishing") return;
     const text = this.text.trim();
-    this.cancel(text ? "" : "No speech detected");
+    this.cancel(text ? "" : "No se detectó voz. Mantén pulsado y habla al ver «Escuchando»");
     if (text) this.send(text);
   }
 
