@@ -14,11 +14,15 @@ Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), ba
 
 La prueba de voz real y la conexión con OpenClaw deben verificarse en el teléfono y las gafas antes de considerar una versión validada para uso diario.
 
+La compilación conjunta de móvil y reloj pasa en GitHub. La prueba con las gafas ha mostrado errores de reconocimiento con small; su mayor tamaño no garantiza una mejora para este audio. La comparación con base usando la misma grabación sigue pendiente.
+
 ## Instalación desde la APK oficial
 
 La firma propia impide instalar esta APK encima de la oficial. Antes de desinstalar, exportar los ajustes con `scripts/pull_config.sh` y guardar la APK original. Después de instalar la española, restaurarlos con `scripts/push_config.sh`.
 
 El exportador original copia `faceclaw_settings.xml`: incluye servidor, puerto, token, proveedor e historial del asistente. No exporta todos los datos privados de la app: las direcciones de las gafas y el estado de bienvenida de NativeScript se guardan aparte en `prefs.db.xml`. Puede ser necesario volver a emparejar en la app; el firmware ya instalado debe detectarse y conservarse. No instalar firmware si las gafas ya usan el compatible.
+
+Desde `0.8.1-es.3`, la restauración guarda la copia anterior como `.import-backup`. La extensión `.bak` está reservada por Android y hacía que se recuperaran los valores anteriores al reiniciar. Verificar siempre los ajustes exportados después de una importación.
 
 En Ajustes → Voz, descargar **Whisper base (español, rápido)** o **Whisper small (español, mayor precisión)** y seleccionar el proveedor correspondiente. Los modelos se descargan al móvil y no están incluidos en la APK. La actualización conserva la selección anterior: cambiar a small cuando termine su descarga.
 
