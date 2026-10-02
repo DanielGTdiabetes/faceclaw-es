@@ -31,6 +31,14 @@ En Ajustes → Voz, descargar **Whisper base (español, rápido)** o **Whisper s
 
 Nunca subir copias de ajustes, historiales, tokens ni claves privadas a GitHub. `backups/`, `.tools/`, `signing/` y keystores están excluidos de Git.
 
+## Ubicación del asistente
+
+El asistente dispone de `location.get_current` tanto en modo directo como a través del puente de OpenClaw. Consulta la ubicación del móvil durante una conversación sin abrir Tiempo ni Navegar. Requiere el permiso de ubicación de Faceclaw y la ubicación del teléfono activada; admite el permiso aproximado y devuelve la precisión disponible.
+
+La respuesta incluye coordenadas, precisión en metros, fecha de la posición y antigüedad. Android puede devolver una posición guardada; `is_stale` indica que supera los dos minutos o que no se conoce su antigüedad. El asistente debe comprobar esos datos antes de usarla como posición actual. Esta herramienta no permite consultas proactivas ni mantiene un seguimiento continuo.
+
+Tras instalar una versión con esta herramienta, volver a conectar el puente para que OpenClaw actualice la lista de herramientas del móvil. Para comprobarlo, preguntar «¿Dónde estoy? Consulta la ubicación de mi móvil».
+
 ## Compilación en GitHub
 
 El workflow **APK española** ejecuta las pruebas y compila las APK de publicación del móvil y del reloj sin firmar en Linux. Se puede lanzar desde Actions y también se ejecuta al subir cambios en la rama española. Descargar el artifact `faceclaw-es-unsigned-…` y descomprimirlo; incluye las APK en sus carpetas originales.
