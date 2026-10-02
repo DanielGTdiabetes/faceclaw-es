@@ -7,14 +7,15 @@ Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), ba
 - Modelo independiente de `base.en`, con tamaños y SHA-256 verificados. Descarga de unos 161 MB desde el espejo del mantenedor de sherpa-onnx.
 - Whisper local como proveedor predeterminado. Moonshine sigue disponible para inglés.
 - Controles principales del móvil, menús de ajustes y flujo de entrada de voz traducidos. La traducción de todas las apps secundarias y textos de ayuda aún no está completa.
+- App **Tiempo** en español con cobertura mundial mediante [Open-Meteo](https://open-meteo.com/en/docs), temperatura en °C, viento en km/h y pronóstico de las próximas 14 horas. Sustituye NWS, que rechazaba ubicaciones fuera de su cobertura. Envía coordenadas redondeadas a dos decimales y consulta solo mientras la app está abierta; las condiciones actuales son estimaciones meteorológicas.
 - Mantiene la integración con OpenClaw y las mismas claves de configuración. Esta adaptación no cambia el firmware de las gafas. La activación «Hey Even» pertenece al firmware y sigue siendo la misma.
 - Los subtítulos continuos de la app Micrófonos aún usan Moonshine en inglés; este cambio se aplica a la entrada de voz del asistente y al dictado.
 
 ## Estado
 
-La prueba de voz real y la conexión con OpenClaw deben verificarse en el teléfono y las gafas antes de considerar una versión validada para uso diario.
+La conexión con OpenClaw y una pregunta de voz sobre el tiempo han funcionado en las gafas. Los avisos creados directamente también se han mostrado; sigue pendiente comprobar que el agente programa correctamente los avisos solicitados por voz.
 
-La compilación conjunta de móvil y reloj pasa en GitHub. La prueba con las gafas ha mostrado errores de reconocimiento con small; su mayor tamaño no garantiza una mejora para este audio. La comparación con base usando la misma grabación sigue pendiente.
+La compilación conjunta de móvil y reloj pasa en GitHub. Las gafas han mostrado errores de reconocimiento con small; su mayor tamaño no garantiza una mejora. En una comparación local de la misma frase meteorológica, base y small acertaron. Una sola frase no valida la precisión general; la grabación temporal se eliminó y su guardado quedó desactivado.
 
 ## Instalación desde la APK oficial
 

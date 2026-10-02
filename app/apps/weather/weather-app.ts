@@ -11,7 +11,7 @@ import {
 export const WEATHER_WINDOW_ID = "weather";
 export const WEATHER_SURFACE_ID = "window:weather";
 
-/** Local current conditions and forecast from the National Weather Service. */
+/** Local current conditions and forecast from Open-Meteo. */
 export function createWeatherAppWindow(options: InProcessAppOptions): InProcessWindow {
   let closed = false;
   let requestingPermission = false;
@@ -35,13 +35,13 @@ export function createWeatherAppWindow(options: InProcessAppOptions): InProcessW
   const app = createInProcessWindow({
     appId: "weather",
     windowId: WEATHER_WINDOW_ID,
-    title: "Weather",
-    iconLetter: "W",
+    title: "Tiempo",
+    iconLetter: "T",
     icon: "cloud-sun",
     closeable: true,
     menuItems: () => [
       {
-        label: "Refresh",
+        label: "Actualizar",
         onSelect: (ctx) => {
           ctx.stack.pop();
           requestUpdate();

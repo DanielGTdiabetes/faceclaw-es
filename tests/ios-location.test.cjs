@@ -90,21 +90,21 @@ test('Navigate host releases GPS and compass together and ignores an old stream 
   assert.deepEqual(h.holds.at(-1), [false, 'worker:navigate']);
 });
 
-test('Weather uses the portable location provider and preserves NWS parsing', async () => {
+test('Weather uses the portable location provider with global forecasts', async () => {
   const requests = [], timers = new Set(); let permission = true;
-  const period = { name: 'Today', temperature: 70, temperatureUnit: 'F', shortForecast: 'Sunny', windSpeed: '5 mph', windDirection: 'W' };
+  const weather = { current: { temperature_2m: 21, weather_code: 0 }, hourly: { time: [1790935200], temperature_2m: [22], weather_code: [0] } };
   const api = loader({ setTimeout, clearTimeout, setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn) }, {
     './location-permissions': { hasLocationPermission: () => permission },
     './location': { getCurrentLocation: async () => fix },
     '../version': { USER_AGENT: 'test' },
     '../util/http': { fetchWithUserAgent: async url => { requests.push(url); return { ok: true, json: async () =>
-      url.includes('/points/') ? { properties: { forecast: 'https://fixture/forecast', relativeLocation: { properties: { city: 'San Francisco', state: 'CA' } } } }
-        : { properties: { periods: [period] } } }; } },
+      weather }; } },
   })('app/native/weather.ts');
   const bridge = new api.WeatherBridge(); bridge.start(); await bridge.refreshNow();
-  assert.equal(bridge.snapshot().phase, 'ready'); assert.equal(bridge.snapshot().current.temperatureF, 70);
-  assert.equal(bridge.snapshot().locationName, 'San Francisco, CA');
-  assert.match(requests[0], /37\.7000,-122\.4000/);
+  assert.equal(bridge.snapshot().phase, 'ready'); assert.equal(bridge.snapshot().current.temperatureC, 21);
+  assert.equal(bridge.snapshot().locationName, 'Zona local');
+  assert.match(requests[0], /latitude=37\.70&longitude=-122\.40/);
+  assert.equal(requests.length, 1);
   bridge.stop(); assert.equal(timers.size, 0);
   permission = false; await bridge.refreshNow(); assert.equal(bridge.snapshot().phase, 'permission-required');
 });

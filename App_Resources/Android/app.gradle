@@ -278,8 +278,8 @@ android {
     }
 
     // Version Information (derived from app/version.ts above)
-    versionCode faceclawVersionCode + 2
-    versionName "${faceclawVersionName}-es.3"
+    versionCode faceclawVersionCode + 3
+    versionName "${faceclawVersionName}-es.4"
     
     generatedDensities = []
   }

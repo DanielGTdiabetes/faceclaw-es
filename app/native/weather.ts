@@ -1,15 +1,14 @@
 import { hasLocationPermission } from "./location-permissions";
 import { getCurrentLocation, type CurrentLocation } from "./location";
 import { fetchWithUserAgent } from "../util/http";
-import { USER_AGENT } from "../version";
 
 export type WeatherPhase = "permission-required" | "locating" | "loading" | "ready" | "error";
 
 export type CurrentWeather = {
-  temperatureF: number | null;
+  temperatureC: number | null;
   description: string;
   humidityPercent: number | null;
-  windSpeedMph: number | null;
+  windSpeedKmh: number | null;
   windDirection: string;
   timestampMs: number | null;
   observed: boolean;
@@ -18,7 +17,7 @@ export type CurrentWeather = {
 export type ForecastPeriod = {
   name: string;
   startTimeMs: number;
-  temperatureF: number | null;
+  temperatureC: number | null;
   shortForecast: string;
   detailedForecast: string;
   precipitationPercent: number | null;
@@ -36,69 +35,19 @@ export type WeatherState = {
   lastUpdatedMs: number | null;
 };
 
-type NwsPointResponse = {
-  properties?: {
-    forecast?: unknown;
-    forecastHourly?: unknown;
-    observationStations?: unknown;
-    relativeLocation?: {
-      properties?: { city?: unknown; state?: unknown };
-    };
-  };
+type OpenMeteoResponse = {
+  utc_offset_seconds?: unknown;
+  current?: Record<string, unknown>;
+  hourly?: Record<string, unknown[]>;
 };
-
-type NwsForecastResponse = {
-  properties?: {
-    periods?: NwsForecastPeriodResponse[];
-  };
-};
-
-type NwsForecastPeriodResponse = {
-  name?: unknown;
-  startTime?: unknown;
-  temperature?: unknown;
-  temperatureUnit?: unknown;
-  shortForecast?: unknown;
-  detailedForecast?: unknown;
-  probabilityOfPrecipitation?: { value?: unknown };
-  windSpeed?: unknown;
-  windDirection?: unknown;
-  isDaytime?: unknown;
-};
-
-type NwsStationsResponse = {
-  features?: Array<{ id?: unknown }>;
-};
-
-type NwsObservationResponse = {
-  properties?: {
-    timestamp?: unknown;
-    textDescription?: unknown;
-    temperature?: NwsMeasure;
-    relativeHumidity?: NwsMeasure;
-    windSpeed?: NwsMeasure;
-    windDirection?: NwsMeasure;
-  };
-};
-
-type NwsMeasure = {
-  value?: unknown;
-  unitCode?: unknown;
-};
-
-const NWS_API_ROOT = "https://api.weather.gov";
-const NWS_HEADERS = {
-  Accept: "application/geo+json",
-  // NWS asks callers to identify themselves with a contact address.
-  "User-Agent": `${USER_AGENT} (https://github.com/jimrandomh/faceclaw)`,
-};
+const WEATHER_API_ROOT = "https://api.open-meteo.com/v1/forecast";
 const WEATHER_REFRESH_MS = 30 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_FORECAST_PERIODS = 14;
 
 const DEFAULT_STATE: WeatherState = {
   phase: "permission-required",
-  status: "Location permission is required for local weather.",
+  status: "Permite la ubicación para consultar el tiempo local.",
   locationName: "",
   current: null,
   forecast: [],
@@ -154,16 +103,16 @@ export class WeatherBridge {
 
   private async refresh(): Promise<void> {
     try {
-      this.state = { ...this.state, phase: "locating", status: "Getting current location..." };
+      this.state = { ...this.state, phase: "locating", status: "Buscando tu ubicación..." };
       this.emit();
       const location = await getCurrentLocation();
 
-      this.state = { ...this.state, phase: "loading", status: "Loading National Weather Service data..." };
+      this.state = { ...this.state, phase: "loading", status: "Consultando el tiempo..." };
       this.emit();
-      const weather = await loadNwsWeather(location);
+      const weather = normalizeOpenMeteo(await fetchWeatherJson(buildWeatherUrl(location)));
       this.state = {
         phase: "ready",
-        status: "Weather updated.",
+        status: "Tiempo actualizado.",
         locationName: weather.locationName,
         current: weather.current,
         forecast: weather.forecast,
@@ -188,175 +137,112 @@ export class WeatherBridge {
   }
 }
 
-async function loadNwsWeather(location: CurrentLocation): Promise<{
-  locationName: string;
-  current: CurrentWeather;
-  forecast: ForecastPeriod[];
-}> {
-  // NWS recommends no more than four decimals for its point lookup.
-  const latitude = location.latitude.toFixed(4);
-  const longitude = location.longitude.toFixed(4);
-  const point = await fetchNwsJson<NwsPointResponse>(`${NWS_API_ROOT}/points/${latitude},${longitude}`);
-  const properties = point.properties;
-  const forecastUrl = stringValue(properties?.forecast);
-  const hourlyUrl = stringValue(properties?.forecastHourly);
-  const stationsUrl = stringValue(properties?.observationStations);
-  if (!forecastUrl) throw new Error("NWS did not provide a forecast for this location.");
-
-  const [forecastResponse, hourlyResponse, observation] = await Promise.all([
-    fetchNwsJson<NwsForecastResponse>(forecastUrl),
-    hourlyUrl ? fetchNwsJson<NwsForecastResponse>(hourlyUrl).catch(() => null) : Promise.resolve(null),
-    stationsUrl ? loadLatestObservation(stationsUrl).catch(() => null) : Promise.resolve(null),
-  ]);
-  const forecast = (forecastResponse.properties?.periods ?? [])
-    .map(normalizeForecastPeriod)
-    .filter((period): period is ForecastPeriod => period !== null)
-    .slice(0, MAX_FORECAST_PERIODS);
-  if (!forecast.length) throw new Error("NWS returned an empty forecast.");
-
-  const hourly = (hourlyResponse?.properties?.periods ?? [])
-    .map(normalizeForecastPeriod)
-    .find((period): period is ForecastPeriod => period !== null);
-
-  return {
-    locationName: pointLocationName(point, latitude, longitude),
-    current: observation ? normalizeObservation(observation, hourly) : currentFromHourly(hourly, forecast[0]!),
-    forecast,
-  };
+/** Round before transmission: weather needs the local area, not an exact GPS fix. */
+export function buildWeatherUrl(location: Pick<CurrentLocation, "latitude" | "longitude">): string {
+  if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)
+    || Math.abs(location.latitude) > 90 || Math.abs(location.longitude) > 180) {
+    throw new Error("No se ha obtenido una ubicación válida.");
+  }
+  return WEATHER_API_ROOT + "?latitude=" + location.latitude.toFixed(2)
+    + "&longitude=" + location.longitude.toFixed(2)
+    + "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m"
+    + "&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,is_day"
+    + "&temperature_unit=celsius&wind_speed_unit=kmh&timeformat=unixtime&timezone=auto&forecast_hours=14";
 }
 
-async function loadLatestObservation(stationsUrl: string): Promise<NwsObservationResponse | null> {
-  const stations = await fetchNwsJson<NwsStationsResponse>(stationsUrl);
-  const stationUrl = stringValue(stations.features?.[0]?.id);
-  if (!stationUrl) return null;
-  return fetchNwsJson<NwsObservationResponse>(`${stationUrl}/observations/latest`);
-}
-
-async function fetchNwsJson<T>(url: string): Promise<T> {
-  const request = fetchWithUserAgent(url, { headers: NWS_HEADERS });
+async function fetchWeatherJson(url: string): Promise<OpenMeteoResponse> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error("Weather request timed out.")), FETCH_TIMEOUT_MS);
+    timeoutHandle = setTimeout(() => reject(new Error("La consulta del tiempo ha tardado demasiado. Reintenta.")), FETCH_TIMEOUT_MS);
   });
   try {
-    const response = await Promise.race([request, timeout]);
-    if (!response.ok) {
-      if (response.status === 404 && url.includes("/points/")) {
-        throw new Error("This location is outside National Weather Service coverage.");
-      }
-      throw new Error(`National Weather Service request failed (HTTP ${response.status}).`);
-    }
-    return (await response.json()) as T;
+    // Cover both response headers and JSON body with the timeout.
+    return await Promise.race([(async () => {
+      const response = await fetchWithUserAgent(url);
+      if (!response.ok) throw new Error("No se pudo consultar Open-Meteo (HTTP " + response.status + "). Reintenta.");
+      return await response.json() as OpenMeteoResponse;
+    })(), timeout]);
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 }
 
-function normalizeObservation(
-  response: NwsObservationResponse,
-  hourly: ForecastPeriod | undefined,
-): CurrentWeather {
-  const properties = response.properties;
-  const temperatureF = convertTemperatureToF(properties?.temperature);
-  const windSpeedMph = convertSpeedToMph(properties?.windSpeed);
-  const windDegrees = finiteNumber(properties?.windDirection?.value);
+/** Unix timestamps remain UTC; the provider's offset is only for displayed local hours. */
+export function normalizeOpenMeteo(response: OpenMeteoResponse): {
+  locationName: string; current: CurrentWeather; forecast: ForecastPeriod[];
+} {
+  const hourly = response?.hourly;
+  const offset = finiteNumber(response?.utc_offset_seconds) ?? 0;
+  const forecast: ForecastPeriod[] = [];
+  for (let i = 0; i < (hourly?.time?.length ?? 0) && forecast.length < MAX_FORECAST_PERIODS; i++) {
+    const seconds = finiteNumber(hourly?.time?.[i]);
+    if (seconds === null) continue;
+    const date = new Date((seconds + offset) * 1000);
+    if (!Number.isFinite(date.getTime())) continue;
+    const description = weatherDescription(hourly?.weather_code?.[i]);
+    const wind = finiteNumber(hourly?.wind_speed_10m?.[i]);
+    forecast.push({
+      name: String(date.getUTCHours()).padStart(2, "0") + ":" + String(date.getUTCMinutes()).padStart(2, "0"),
+      startTimeMs: seconds * 1000,
+      temperatureC: finiteNumber(hourly?.temperature_2m?.[i]),
+      shortForecast: description, detailedForecast: description,
+      precipitationPercent: finiteNumber(hourly?.precipitation_probability?.[i]),
+      windSpeed: wind === null ? "" : String(Math.round(wind)) + " km/h",
+      windDirection: compass(hourly?.wind_direction_10m?.[i]),
+      isDaytime: hourly?.is_day?.[i] === 1,
+    });
+  }
+  if (!forecast.length) throw new Error("Open-Meteo no ha devuelto un pronóstico válido. Reintenta.");
+  const value = response.current;
+  const seconds = finiteNumber(value?.time);
   return {
-    temperatureF: temperatureF ?? hourly?.temperatureF ?? null,
-    description: stringValue(properties?.textDescription) || hourly?.shortForecast || "Current conditions",
-    humidityPercent: finiteNumber(properties?.relativeHumidity?.value),
-    windSpeedMph,
-    windDirection: windDegrees === null ? hourly?.windDirection ?? "" : degreesToCompass(windDegrees),
-    timestampMs: timestampValue(properties?.timestamp),
-    observed: true,
+    locationName: "Zona local",
+    current: {
+      temperatureC: finiteNumber(value?.temperature_2m) ?? forecast[0]!.temperatureC,
+      description: value ? weatherDescription(value.weather_code) : forecast[0]!.shortForecast,
+      humidityPercent: finiteNumber(value?.relative_humidity_2m),
+      windSpeedKmh: finiteNumber(value?.wind_speed_10m),
+      windDirection: compass(value?.wind_direction_10m),
+      timestampMs: seconds === null ? forecast[0]!.startTimeMs : seconds * 1000,
+      // Current conditions are model estimates, not station observations.
+      observed: false,
+    },
+    forecast,
   };
 }
 
-function currentFromHourly(hourly: ForecastPeriod | undefined, fallback: ForecastPeriod): CurrentWeather {
-  const source = hourly ?? fallback;
-  return {
-    temperatureF: source.temperatureF,
-    description: source.shortForecast || "Current forecast",
-    humidityPercent: null,
-    windSpeedMph: firstNumberInText(source.windSpeed),
-    windDirection: source.windDirection,
-    timestampMs: source.startTimeMs || null,
-    observed: false,
-  };
+const WEATHER_DESCRIPTIONS: Record<number, string> = {
+  0: "Despejado", 1: "Casi despejado", 2: "Parcialmente nublado", 3: "Cubierto",
+  45: "Niebla", 48: "Niebla helada",
+  51: "Llovizna ligera", 53: "Llovizna", 55: "Llovizna intensa",
+  56: "Llovizna helada ligera", 57: "Llovizna helada intensa",
+  61: "Lluvia ligera", 63: "Lluvia", 65: "Lluvia intensa",
+  66: "Lluvia helada ligera", 67: "Lluvia helada intensa",
+  71: "Nieve ligera", 73: "Nieve", 75: "Nieve intensa", 77: "Nieve granulada",
+  80: "Chubascos ligeros", 81: "Chubascos", 82: "Chubascos intensos",
+  85: "Chubascos de nieve", 86: "Chubascos de nieve intensos",
+  95: "Tormenta", 96: "Tormenta con granizo", 97: "Tormenta intensa", 99: "Tormenta con granizo intenso",
+};
+function weatherDescription(value: unknown): string {
+  const code = finiteNumber(value);
+  return code === null ? "Sin descripción" : WEATHER_DESCRIPTIONS[code] ?? "Sin descripción";
 }
-
-function normalizeForecastPeriod(value: NwsForecastPeriodResponse): ForecastPeriod | null {
-  if (!value || typeof value !== "object") return null;
-  const name = stringValue(value.name);
-  const temperature = finiteNumber(value.temperature);
-  const unit = stringValue(value.temperatureUnit).toUpperCase();
-  return {
-    name: name || "Forecast",
-    startTimeMs: timestampValue(value.startTime) ?? 0,
-    temperatureF: temperature === null ? null : unit === "C" ? temperature * 9 / 5 + 32 : temperature,
-    shortForecast: stringValue(value.shortForecast),
-    detailedForecast: stringValue(value.detailedForecast),
-    precipitationPercent: finiteNumber(value.probabilityOfPrecipitation?.value),
-    windSpeed: stringValue(value.windSpeed),
-    windDirection: stringValue(value.windDirection),
-    isDaytime: Boolean(value.isDaytime),
-  };
+function compass(value: unknown): string {
+  const degrees = finiteNumber(value);
+  if (degrees === null) return "";
+  const directions = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+  return directions[Math.round((((degrees % 360) + 360) % 360) / 45) % directions.length]!;
 }
-
-function convertTemperatureToF(measure: NwsMeasure | undefined): number | null {
-  const value = finiteNumber(measure?.value);
-  if (value === null) return null;
-  const unit = stringValue(measure?.unitCode).toLowerCase();
-  if (unit.includes("degc")) return value * 9 / 5 + 32;
-  return value;
-}
-
-function convertSpeedToMph(measure: NwsMeasure | undefined): number | null {
-  const value = finiteNumber(measure?.value);
-  if (value === null) return null;
-  const unit = stringValue(measure?.unitCode).toLowerCase();
-  if (unit.includes("km_h")) return value * 0.621371;
-  if (unit.includes("m_s")) return value * 2.23694;
-  return value;
-}
-
-function pointLocationName(point: NwsPointResponse, latitude: string, longitude: string): string {
-  const relative = point.properties?.relativeLocation?.properties;
-  const city = stringValue(relative?.city);
-  const state = stringValue(relative?.state);
-  return [city, state].filter(Boolean).join(", ") || `${latitude}, ${longitude}`;
-}
-
-function degreesToCompass(value: number): string {
-  const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  return directions[Math.round((((value % 360) + 360) % 360) / 45) % directions.length]!;
-}
-
-function firstNumberInText(value: string): number | null {
-  const match = value.match(/\d+(?:\.\d+)?/);
-  return match ? Number(match[0]) : null;
-}
-
 function finiteNumber(value: unknown): number | null {
-  if (value === null || value === undefined || typeof value === "boolean") return null;
-  if (typeof value === "string" && !value.trim()) return null;
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) ? number : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
-
-function timestampValue(value: unknown): number | null {
-  if (typeof value !== "string") return null;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
 function friendlyWeatherError(error: unknown): string {
   const message = (error as Error)?.message || String(error);
   if (/network request failed|failed to fetch|unable to resolve host/i.test(message)) {
-    return "Couldn't reach the National Weather Service. Check the phone's connection and retry.";
+    return "No se pudo conectar con Open-Meteo. Comprueba la conexión del móvil y reintenta.";
+  }
+  if (/location disabled|location services|location.*timeout/i.test(message)) {
+    return "No se pudo obtener la ubicación. Actívala en el móvil y reintenta.";
   }
   return message;
 }
