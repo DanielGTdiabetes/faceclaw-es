@@ -32,16 +32,22 @@ class FaceclawVoiceController(context: Context) {
             "decoder_model_merged.ort",
             "tokens.txt"
         )
-        // Second on-device model: sherpa-onnx's offline Whisper backend (base.en,
+        // Second on-device model: multilingual Whisper base, transcribing Spanish.
         // int8-quantized -- see the model-choice note in asr-model.ts). Directory
         // shared with the TS-side download flow, same convention as ASR_MODEL_DIR.
         // Whisper re-encodes the whole buffer on every call, so the shared session
         // skips live partials for it; see VoiceCaptureSession.processRecognizer.
-        private const val ASR_WHISPER_MODEL_DIR = "sherpa-onnx-whisper-base-en-int8"
+        private const val ASR_WHISPER_MODEL_DIR = "sherpa-onnx-whisper-base-es-int8"
         private val ASR_WHISPER_MODEL_FILES = arrayOf(
-            "base.en-encoder.int8.onnx",
-            "base.en-decoder.int8.onnx",
-            "base.en-tokens.txt"
+            "base-encoder.int8.onnx",
+            "base-decoder.int8.onnx",
+            "base-tokens.txt"
+        )
+        private const val ASR_WHISPER_SMALL_MODEL_DIR = "sherpa-onnx-whisper-small-es-int8"
+        private val ASR_WHISPER_SMALL_MODEL_FILES = arrayOf(
+            "small-encoder.int8.onnx",
+            "small-decoder.int8.onnx",
+            "small-tokens.txt"
         )
         // 50 ms chunks match the G2 packet cadence the rest of the pipeline
         // (endpointing, transcript pacing) is tuned for.
@@ -85,6 +91,12 @@ class FaceclawVoiceController(context: Context) {
     @Volatile
     private var communicator: FaceclawBleCommunicator? = null
 
+    private val transcriberCache = VoiceTranscriberCache(load = { kind ->
+        val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
+        Log.i(TAG, "Loading voice model " + kind)
+        AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(modelDir, kind))
+    })
+
     private val host = object : VoiceCaptureHost {
         override val dispatcher = CallbackDispatcher { action -> mainHandler.post { action() } }
 
@@ -121,8 +133,7 @@ class FaceclawVoiceController(context: Context) {
         override fun hasTranscriberModel(kind: VoiceModelKind): Boolean = findAsrModelDir(kind) != null
 
         override fun loadTranscriber(kind: VoiceModelKind): OfflineTranscriber {
-            val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
-            return AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(modelDir, kind))
+            return transcriberCache.acquire(kind)
         }
 
         override fun speakerEmbedder(modelPath: String): SpeakerEmbedder {
@@ -166,6 +177,11 @@ class FaceclawVoiceController(context: Context) {
      */
     fun setOnboardModelKind(kind: String?) {
         session.setOnboardModelKind(kind)
+    }
+
+    /** Retain the model between utterances only while the Chat window is open. */
+    fun setKeepTranscriberLoaded(enabled: Boolean) {
+        transcriberCache.setRetain(enabled)
     }
 
     /**
@@ -228,6 +244,7 @@ class FaceclawVoiceController(context: Context) {
     }
 
     fun close() {
+        transcriberCache.setRetain(false)
         stop()
     }
 
@@ -262,9 +279,16 @@ class FaceclawVoiceController(context: Context) {
      * missing, i.e. the model still needs to be downloaded.
      */
     private fun findAsrModelDir(kind: VoiceModelKind): File? {
-        val whisper = kind == VoiceModelKind.WHISPER
-        val dirName = if (whisper) ASR_WHISPER_MODEL_DIR else ASR_MODEL_DIR
-        val fileNames = if (whisper) ASR_WHISPER_MODEL_FILES else ASR_MODEL_FILES
+        val dirName = when (kind) {
+            VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_DIR
+            VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_DIR
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_DIR
+        }
+        val fileNames = when (kind) {
+            VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_FILES
+            VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_FILES
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_FILES
+        }
         val modelDir = File(appContext.filesDir, ASR_ROOT + File.separator + dirName)
         for (fileName in fileNames) {
             val file = File(modelDir, fileName)

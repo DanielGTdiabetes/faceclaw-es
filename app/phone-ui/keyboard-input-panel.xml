@@ -3,7 +3,7 @@
     visibility="{{ keyboardInputVisibility }}"
     horizontalAlignment="stretch"
     verticalAlignment="bottom">
-    <Label row="0" text="Keyboard input" class="h2" />
+    <Label row="0" text="Entrada de teclado" class="h2" />
     <TextView row="1"
         id="keyboardInputField"
         text="{{ keyboardInputText }}"
@@ -13,6 +13,6 @@
     <FlexboxLayout row="2" flexWrap="wrap" class="m-t-8">
         <Button text="{{ keyboardInputPrimaryTargetLabel }}" tap="{{ onKeyboardInputPrimarySendTap }}" visibility="{{ keyboardInputPrimaryTargetVisibility }}" flexGrow="1" class="-primary" />
         <Button text="{{ keyboardInputSecondaryTargetLabel }}" tap="{{ onKeyboardInputSecondarySendTap }}" visibility="{{ keyboardInputSecondaryTargetVisibility }}" flexGrow="1" />
-        <Button text="Discard" tap="{{ onKeyboardInputDiscardTap }}" flexGrow="1" />
+        <Button text="Descartar" tap="{{ onKeyboardInputDiscardTap }}" flexGrow="1" />
     </FlexboxLayout>
 </GridLayout>

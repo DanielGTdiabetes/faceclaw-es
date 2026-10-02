@@ -117,7 +117,7 @@ test('Continue refines the complete late result instead of appending an editing 
 test('Send and Continue cannot consume partial text while native recognition is pending', async () => {
   const env = dialog();
   env.transcript('Set a timer'); env.layer.endCapture();
-  assert.equal(env.frame().status, 'Finishing transcription...');
+  assert.equal(env.frame().status, 'Finalizando transcripción...');
   env.input('click'); env.input('scroll-down'); env.input('click');
   assert.deepEqual(env.sent, []);
   assert.equal(env.starts(), 1);
@@ -146,7 +146,7 @@ test('failed or empty native captures return to the menu without sending', async
   const env = dialog({ autoSend: true });
   env.layer.endCapture(); await env.complete(); env.timeout();
   assert.deepEqual(env.sent, []);
-  assert.equal(env.frame().status, 'Send, continue, or discard?');
+  assert.equal(env.frame().status, '¿Enviar, continuar o descartar?');
 });
 
 test('cloud fallback and a synchronous final still send exactly once', () => {
@@ -157,13 +157,15 @@ test('cloud fallback and a synchronous final still send exactly once', () => {
   }
 });
 
-test('native completion is capture-specific, follows the final, and does not wait for shared capture', async () => {
+for (const [provider, modelKind] of [['onboard-whisper', 'whisper'], ['onboard-whisper-small', 'whisper-small']]) {
+test(`${provider}: native completion follows the final and is capture-specific`, async () => {
   let controller;
   class Controller {
     constructor() { controller = this; }
     setListener(listener) { this.listener = listener; }
     setCommunicator() {} setUsePhoneMic() {} setSaveRecordings() {} setEndpointing() {}
-    setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {} setOnboardModelKind() {}
+    setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {}
+    setOnboardModelKind(kind) { this.modelKind = kind; }
     start(_mode, id) { this.captureId = id; this.active = true; }
     stop() { this.active = false; }
     isCapturing() { return this.active; }
@@ -176,10 +178,11 @@ test('native completion is capture-specific, follows the final, and does not wai
     FaceclawVoiceControllerListener: function (listener) { return listener; },
   } } } });
   const bridge = new FaceclawVoiceControlBridge();
-  const options = { provider: 'onboard-whisper' };
+  const options = { provider };
   const events = [];
   bridge.onTranscript(event => events.push(event.text));
   bridge.startPushToTalk(options);
+  assert.equal(controller.modelKind, modelKind);
   const stopped = bridge.stopPushToTalk().then(() => events.push('stopped'));
   controller.listener.onStopped(0); // an older raw/cloud capture's callback
   await Promise.resolve(); assert.deepEqual(events, []);
@@ -192,3 +195,4 @@ test('native completion is capture-specific, follows the final, and does not wai
   assert.equal(controller.active, true);
   bridge.stopContinuousCapture(); controller.listener.onStopped(controller.captureId);
 });
+}

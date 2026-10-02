@@ -125,7 +125,7 @@ test('synchronous provider errors do not leave a permanently active turn', () =>
   assert.equal(session.status, 'failed');
 });
 
-function draftEnv({ prepare = async () => true, start = async () => {}, stop = () => {}, initialStatus = 'Ready' } = {}) {
+function draftEnv({ prepare = async () => true, start = async () => {}, stop = () => {}, initialStatus = 'Ready', readyOnStart = true } = {}) {
   const transcripts = new Set(), statuses = new Set(), timers = new Map();
   const sent = [];
   let starts = 0, stops = 0, mic = false, timerId = 0;
@@ -139,10 +139,13 @@ function draftEnv({ prepare = async () => true, start = async () => {}, stop = (
     setTimeout(cb) { timers.set(++timerId, cb); return timerId; },
     clearTimeout(id) { timers.delete(id); },
   });
-  const draft = new VoiceDraft({ startVoiceCapture: async () => { starts++; await start(); }, stopVoiceCapture: () => { stops++; return stop(); } }, prepare, () => {}, (text) => sent.push(text));
+  const draft = new VoiceDraft({ startVoiceCapture: async () => {
+    starts++; await start();
+    if (readyOnStart) for (const cb of [...statuses]) cb({ status: 'Listening...', listening: true });
+  }, stopVoiceCapture: () => { stops++; return stop(); } }, prepare, () => {}, (text) => sent.push(text));
   return { draft, sent, starts: () => starts, stops: () => stops, mic: () => mic,
     transcript(text, isFinal = false) { for (const cb of [...transcripts]) cb({ text, isFinal }); },
-    status(status) { for (const cb of [...statuses]) cb({ status }); },
+    status(status) { for (const cb of [...statuses]) cb({ status, listening: status.startsWith('Listening') }); },
     timeout() { for (const cb of [...timers.values()]) cb(); },
     subscriptions: () => transcripts.size + statuses.size,
   };
@@ -207,11 +210,52 @@ test('release during async mic startup stops capture after it starts', async () 
   const env = draftEnv({ start: () => new Promise((resolve) => { started = resolve; }) });
   const pending = env.draft.start();
   await new Promise(setImmediate);
+  env.status('Listening...');
   env.transcript('quick message');
   env.draft.release(); started(); await pending;
   assert.equal(env.stops(), 1);
   env.timeout();
   assert.deepEqual(env.sent, ['quick message']);
+});
+
+test('chat shows preparation throughout native model loading until the microphone is actually listening', async () => {
+  const env = draftEnv({ readyOnStart: false, initialStatus: 'Listening...' });
+  await env.draft.start();
+  assert.equal(env.draft.phase, 'preparing');
+  assert.match(env.draft.status, /Preparando/);
+  env.status('Loading transcription model...');
+  assert.equal(env.draft.phase, 'preparing'); assert.match(env.draft.status, /Cargando modelo/);
+  env.status('Listening...');
+  assert.equal(env.draft.phase, 'listening'); assert.match(env.draft.status, /Escuchando/);
+  env.draft.release(); env.status('Loading transcription model...'); env.status('Listening...');
+  assert.equal(env.draft.phase, 'finishing'); assert.match(env.draft.status, /Transcribiendo/);
+  env.transcript('Hola, ¿me escuchas?', true);
+  assert.deepEqual(env.sent, ['Hola, ¿me escuchas?']);
+});
+
+test('release during native model loading stops the microphone and explains readiness without sending stale speech', async () => {
+  const env = draftEnv({ readyOnStart: false }); await env.draft.start();
+  env.status('Loading transcription model...'); env.draft.release();
+  assert.equal(env.stops(), 1); assert.equal(env.mic(), false); assert.equal(env.subscriptions(), 0);
+  assert.match(env.draft.status, /Espera a «Escuchando»/);
+  env.status('Listening...'); env.transcript('stale', true); env.timeout();
+  assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
+});
+
+test('release before an asynchronous start becomes ready stops the eventual capture without submitting speech', async () => {
+  let ready;
+  const env = draftEnv({ start: () => new Promise(resolve => { ready = resolve; }) });
+  const pending = env.draft.start(); await new Promise(setImmediate);
+  env.draft.release(); ready(); await pending;
+  assert.equal(env.stops(), 1); assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
+  assert.equal(env.subscriptions(), 0); assert.equal(env.mic(), false);
+});
+
+test('native startup errors remain visible instead of later becoming an empty-speech error', async () => {
+  const env = draftEnv({ readyOnStart: false }); await env.draft.start();
+  env.status('Could not start G2 microphone input.'); env.draft.release(); env.timeout();
+  assert.equal(env.draft.status, 'Could not start G2 microphone input.');
+  assert.equal(env.stops(), 1); assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
 });
 
 test('empty capture, rejection and closing never submit stale speech', async () => {
@@ -353,6 +397,7 @@ test('ordinary apps retain long-press system menu and games retain the escape ti
 
 function chatLayerEnv() {
   const env = conversations();
+  const retention = [];
   const textwrap = load('app/graphics/textwrap.ts', {});
   const { BdfFont } = load('app/graphics/bdffont.ts', { '@nativescript/core': {} });
   const graphics = require('../.test-build/app/graphics/image.js');
@@ -367,12 +412,20 @@ function chatLayerEnv() {
       windowOptions = options; return { requestRender() {} };
     } },
     '../../ui/shell/shell': { shell: { getAssistantConversations: () => env.store } },
-    './voice-draft': { VoiceDraft: class { active = false; text = ''; status = ''; cancel() {} } },
+    './voice-draft': { VoiceDraft: class { active = false; text = ''; status = ''; cancel() {} keepModelLoaded(value) { retention.push(value); } } },
   });
   createAiChatWindow({ actions: {}, setSurfaceVisible() {}, onClosed() {} });
   const layer = windowOptions.baseLayer;
-  return { ...env, layer, paint: (width = 576, height = 260) => layer.paint({ stack: { getBaseSize: () => ({ width, height }) } }) };
+  return { ...env, layer, retention, close: () => windowOptions.onClosed(),
+    paint: (width = 576, height = 260) => layer.paint({ stack: { getBaseSize: () => ({ width, height }) } }) };
 }
+
+test('Chat retains the model while open and releases it on close', () => {
+  const env = chatLayerEnv();
+  assert.deepEqual(env.retention, [true]);
+  env.close();
+  assert.deepEqual(env.retention, [true, false]);
+});
 
 test('scrollback stays anchored during streaming, follows at the bottom and resets on session switch', () => {
   const env = chatLayerEnv();

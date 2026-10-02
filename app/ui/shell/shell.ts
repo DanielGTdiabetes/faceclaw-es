@@ -277,7 +277,7 @@ class ShellAlertLayer implements Layer {
     const alertY = minWindowTop() + ALERT_Y;
     image.fillRect(ALERT_X, alertY, ALERT_W, ALERT_H, 1);
     image.drawRect(ALERT_X, alertY, ALERT_W, ALERT_H, 90);
-    image.drawText(font, ALERT_X + 16, alertY + 12, "Assistant", 200);
+    image.drawText(font, ALERT_X + 16, alertY + 12, "Asistente", 200);
     image.drawTextWrapped({
       font,
       x: ALERT_X + 16,
@@ -1096,14 +1096,14 @@ class Shell {
     if (this.isAssistantAvailable()) {
       targets.push({
         id: "assistant",
-        label: "Send to Assistant",
+        label: "Enviar al asistente",
         onSend: (text) => this.sendToAssistant(text),
       });
     }
     if (this.foregroundWindow()?.receiveTextInput) {
       targets.push({
         id: "app",
-        label: "Type Into App",
+        label: "Escribir en la app",
         onSend: (text) => this.sendTextToForegroundWindow(text),
       });
     }
@@ -1111,7 +1111,7 @@ class Shell {
     if (targets.length === 0) {
       targets.push({
         id: "app",
-        label: "Type Into App",
+        label: "Escribir en la app",
         onSend: (text) => this.sendTextToForegroundWindow(text),
       });
     }
@@ -1160,7 +1160,7 @@ class Shell {
       targets = [
         {
           id: "assistant",
-          label: "Send",
+          label: "Enviar",
           onSend: (text) => this.runAssistantTurn(assistantSession, assistantLayer, text),
         },
       ];
@@ -1360,7 +1360,7 @@ class Shell {
         this.stack.popIfTop((top) => top === voice);
       },
       sendTargets: [
-        { id: "assistant", label: "Send", onSend: (text) => this.runAssistantTurn(session, layer, text) },
+        { id: "assistant", label: "Enviar", onSend: (text) => this.runAssistantTurn(session, layer, text) },
       ],
       finishOnClick: !handsFree,
       handsFree,
@@ -1443,7 +1443,7 @@ class Shell {
     const items: MenuItem[] = [];
     if (foreground.closeable) {
       items.push({
-        label: "Close window",
+        label: "Cerrar ventana",
         onSelect: (ctx) => {
           // Pop the menu first (its onRemoved returns focus to the sidebar),
           // then close the window the menu was opened over.
@@ -1460,13 +1460,13 @@ class Shell {
         // Defocus the app (hand focus to the sidebar) without closing it: the
         // reliable way out of an app that consumes double-click. Closing the
         // menu is what yields focus, so popping is the whole action.
-        label: "Focus app switcher",
+        label: "Ir al selector de apps",
         onSelect: (ctx) => {
           ctx.stack.pop();
         },
       },
       ...(this.config.voiceInputEnabled === false ? [] : [{
-        label: "Voice input",
+        label: "Entrada de voz",
         onSelect: (ctx) => {
           // The transcript is aimed at the foreground window, so keep focus
           // there through the pop instead of yielding to the sidebar.
@@ -1478,7 +1478,7 @@ class Shell {
     );
     if (brightnessSetting.get() !== "auto") {
       items.push({
-        label: "Brightness",
+        label: "Brillo",
         onSelect: (ctx) => {
           ctx.stack.pop();
           ctx.stack.push(new BrightnessPickerLayer(() => this.yieldFocusToSidebar()));

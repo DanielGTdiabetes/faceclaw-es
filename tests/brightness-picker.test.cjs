@@ -119,13 +119,13 @@ test('system menu hides brightness in Auto and opens its picker between Voice in
   shell.openSystemMenu('test');
   let opened = shell.stack.layers.at(-1);
   assert.deepEqual(Array.from(opened.items, (item) => item.label),
-    ['Close window', 'Focus app switcher', 'Voice input', 'Debug']);
+    ['Cerrar ventana', 'Ir al selector de apps', 'Entrada de voz', 'Debug']);
   shell.stack.clearToBase();
   f.settings.brightnessSetting.set('40');
   shell.openSystemMenu('test');
   opened = shell.stack.layers.at(-1);
   assert.deepEqual(Array.from(opened.items, (item) => item.label),
-    ['Close window', 'Focus app switcher', 'Voice input', 'Brightness', 'Debug']);
+    ['Cerrar ventana', 'Ir al selector de apps', 'Entrada de voz', 'Brillo', 'Debug']);
   await shell.stack.handleInput(gestures.makeInputEvent({ type: 'scroll-down' }));
   await shell.stack.handleInput(gestures.makeInputEvent({ type: 'scroll-down' }));
   await shell.stack.handleInput(gestures.makeInputEvent({ type: 'click', source: 'ring' }));

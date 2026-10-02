@@ -9,32 +9,26 @@ declare const java: any;
  * than bundled in the APK; FaceclawVoiceController reads the files from the
  * directory each model's `dirName` names.
  *
- * Two models, same shape:
+ * Three models, same download layout:
  *  - "moonshine": the original on-device option (three files). The model is
  *    no longer bundled in the APK; it is fetched into the same filesDir
  *    location that earlier releases copied the bundled files to, so
  *    upgraded installs that already used on-device transcription need no
  *    download.
- *  - "whisper-base-en": sherpa-onnx's offline Whisper backend, base.en,
- *    int8-quantized. Picked over tiny.en for materially better accuracy
- *    (Whisper's own tiny/base WER gap is real and well documented) on the
- *    reasoning that FaceclawVoiceController.kt no longer re-decodes a
- *    Whisper segment on every live-partial tick — see its ASR_WHISPER_*
- *    comment — so base.en's extra compute is a one-time cost per utterance,
- *    not a cost paid ~1.4x/second while the user is speaking. tiny.en is an
- *    easy swap (this file's numbers only) if base.en proves too slow on a
- *    real phone; nobody has measured that yet. Files are csukuangfj's own
- *    (the sherpa-onnx maintainer's) HF mirror of the upstream sherpa-onnx
- *    release asset, matching the mirror-not-the-GH-tarball approach already
- *    used for Moonshine below. Every hash here was computed locally from a
- *    freshly downloaded copy of the file, not copied from a doc page.
+ *  - "whisper-base-es": multilingual Whisper base, int8-quantized, with
+ *    Spanish transcription configured in AndroidSpeechEngines.kt. The .en
+ *    models cannot recognize Spanish. A separate directory prevents reuse of
+ *    English-only files from an earlier install. Hashes and sizes below were
+ *    computed from freshly downloaded files from the maintainer's HF mirror.
+ *  - "whisper-small-es": larger multilingual Whisper for Spanish accuracy,
+ *    at the cost of memory and decode time; base remains selectable.
  *
  * Mirrors the on-phone assistant model flow in llama.ts, except each model
  * here is multiple files rather than one; they download sequentially through
  * FaceclawModelDownloader (resume + pinned sha256 per file).
  */
 
-export type AsrModelId = "moonshine" | "whisper-base-en";
+export type AsrModelId = "moonshine" | "whisper-base-es" | "whisper-small-es";
 
 type AsrModelFile = {
   name: string;
@@ -52,7 +46,7 @@ type AsrModelDef = {
 
 export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
   moonshine: {
-    label: "Moonshine (English)",
+    label: "Moonshine (solo inglés)",
     dirName: "sherpa-onnx-moonshine-base-en-quantized-2026-02-27",
     // Hugging Face mirror of the sherpa-onnx release asset of the same name.
     // The GitHub release only offers a tar.bz2, which the phone can't unpack;
@@ -78,32 +72,51 @@ export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
     ],
     totalBytes: 141300566,
   },
-  "whisper-base-en": {
-    label: "Whisper (English, base)",
-    dirName: "sherpa-onnx-whisper-base-en-int8",
-    // csukuangfj/sherpa-onnx-whisper-base.en on Hugging Face: the sherpa-onnx
-    // maintainer's own mirror of the project's whisper export, individual
-    // files (no tar.bz2-unpack problem to begin with, but kept as the same
-    // per-file-with-pinned-hash shape as Moonshine above for consistency).
-    baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base.en/resolve/main/",
+  "whisper-base-es": {
+    label: "Whisper base (español, rápido)",
+    dirName: "sherpa-onnx-whisper-base-es-int8",
+    baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/",
     files: [
       {
-        name: "base.en-encoder.int8.onnx",
-        sha256: "ef6b936f4c9b1d90a3b68634b60c4ed8576b26172b33c2535ec0e933c9edb823",
+        name: "base-encoder.int8.onnx",
+        sha256: "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11",
         sizeBytes: 29120534,
       },
       {
-        name: "base.en-decoder.int8.onnx",
-        sha256: "f7162ad6db2dbef16cfaeaa7f945b9d7dd9c1b8d472f6aca82f2273d185e4d41",
-        sizeBytes: 130669978,
+        name: "base-decoder.int8.onnx",
+        sha256: "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d",
+        sizeBytes: 130672026,
       },
       {
-        name: "base.en-tokens.txt",
-        sha256: "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
-        sizeBytes: 835554,
+        name: "base-tokens.txt",
+        sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+        sizeBytes: 816730,
       },
     ],
-    totalBytes: 160626066,
+    totalBytes: 160609290,
+  },
+  "whisper-small-es": {
+    label: "Whisper small (español, mayor precisión)",
+    dirName: "sherpa-onnx-whisper-small-es-int8",
+    baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/",
+    files: [
+      {
+        name: "small-encoder.int8.onnx",
+        sha256: "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9",
+        sizeBytes: 112442483,
+      },
+      {
+        name: "small-decoder.int8.onnx",
+        sha256: "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee",
+        sizeBytes: 262226114,
+      },
+      {
+        name: "small-tokens.txt",
+        sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+        sizeBytes: 816730,
+      },
+    ],
+    totalBytes: 375485327,
   },
 };
 
@@ -128,7 +141,8 @@ function freshRuntime(): ModelRuntime {
 
 const runtimes: Record<AsrModelId, ModelRuntime> = {
   moonshine: freshRuntime(),
-  "whisper-base-en": freshRuntime(),
+  "whisper-base-es": freshRuntime(),
+  "whisper-small-es": freshRuntime(),
 };
 
 function modelDirPath(id: AsrModelId): string {

@@ -86,7 +86,7 @@ export function createSettingsPanelLayer(): SettingsPanelLayer {
 function settingsSections(): SettingsSection[] {
   const sections: SettingsSection[] = [
     {
-      label: "Display",
+      label: "Pantalla",
       items: [
         // Auto (ambient sensor) or an exact level; pushed to the glasses by
         // the dashboard controller when changed and on each connect.
@@ -106,7 +106,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "Customization",
+      label: "Personalización",
       items: [
         // Submenu: top-bar battery indicator style plus per-device visibility.
         batteryIndicatorsMenuItem(),
@@ -119,16 +119,17 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "Voice",
+      label: "Voz",
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
         enumSettingMenuItem(voiceProviderSetting),
         asrModelMenuItem("moonshine"),
-        asrModelMenuItem("whisper-base-en"),
+        asrModelMenuItem("whisper-base-es"),
+        asrModelMenuItem("whisper-small-es"),
       ],
     },
     {
-      label: "Assistant",
+      label: "Asistente",
       items: [
         // iOS offers cloud APIs; Android also supports local models and the bridge.
         enumSettingMenuItem(assistantBackendSetting),
@@ -145,7 +146,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "API Keys",
+      label: "Claves API",
       items: [
         remoteInputMenuItem(),
         textSettingMenuItem(elevenLabsApiKeySetting),
@@ -156,7 +157,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "Phone display",
+      label: "Pantalla del móvil",
       // The phone app's mirror of the glasses screen and its controls
       // (app/phone-ui/): all read live by the main page.
       items: [
@@ -166,7 +167,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "Watch",
+      label: "Reloj",
       // Wear OS remote (wear/); the status line above the items says whether
       // a watch running the companion app is currently reachable.
       items: [
@@ -178,7 +179,7 @@ function settingsSections(): SettingsSection[] {
       renderDetail: renderWatchStatus,
     },
     {
-      label: "Developer",
+      label: "Desarrollador",
       items: [
         // Whether the phone opens its own BLE link to the R1 ring; the
         // glasses relay ring gestures either way. Applied at connect time.
@@ -191,23 +192,23 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "About",
+      label: "Acerca de",
       // The version/license blurb (renderDetail) draws above the bundled
       // project docs, in both the preview and the focused states.
       items: [
         bundledDocMenuItem("README.md", "README"),
-        bundledDocMenuItem("LICENSE", "License"),
-        bundledDocMenuItem("PRIVACY", "Privacy policy"),
-        bundledDocMenuItem("ACKNOWLEDGEMENTS.md", "Acknowledgements"),
+        bundledDocMenuItem("LICENSE", "Licencia"),
+        bundledDocMenuItem("PRIVACY", "Política de privacidad"),
+        bundledDocMenuItem("ACKNOWLEDGEMENTS.md", "Agradecimientos"),
       ],
       renderDetail: renderAbout,
     },
     {
-      label: "Quit",
+      label: "Salir",
       items: [
         {
-          label: "Disconnect from glasses",
-          description: "Close the Bluetooth connection to the glasses and return them to standby.",
+          label: "Desconectar las gafas",
+          description: "Cierra la conexión Bluetooth y deja las gafas en espera.",
           onSelect: async (ctx) => {
             ctx.stack.clearToBase();
             await ctx.actions.disconnect();
@@ -217,10 +218,10 @@ function settingsSections(): SettingsSection[] {
     },
   ];
   if (!global.isIOS) return sections;
-  const deferred = new Set(["Watch"]);
+  const deferred = new Set(["Reloj"]);
   return sections.map(section => {
-    if (section.label === "Developer") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
-    if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting), {
+    if (section.label === "Desarrollador") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
+    if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting), {
       label: "On-device dictation (Apple)", disabled: true, onSelect: () => {},
       description: "Uses the glasses microphone and your iPhone's speech language. No transcription API key needed. Say Hey Even for hands-free input, or open Voice from the menu and click when finished.",
     }] };
@@ -228,7 +229,7 @@ function settingsSections(): SettingsSection[] {
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,
     }] };
-    if (section.label === "Display") return { ...section, items: section.items.filter(item =>
+    if (section.label === "Pantalla") return { ...section, items: section.items.filter(item =>
       item.label !== screenTimeoutSetting.label) };
     return section;
   });
@@ -236,10 +237,10 @@ function settingsSections(): SettingsSection[] {
 
 function autoBrightnessMenuItem(): MenuItem {
   return {
-    label: "Auto-brightness",
+    label: "Brillo automático",
     description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness.",
     onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Auto-brightness", [
+      openSettingsSubMenu(ctx, "Brillo automático", [
         enumSettingMenuItem(autoBrightnessMinSetting),
         enumSettingMenuItem(autoBrightnessMaxSetting),
         textSettingMenuItem(autoBrightnessCurveSetting),
@@ -255,11 +256,11 @@ function autoBrightnessMenuItem(): MenuItem {
  */
 function batteryIndicatorsMenuItem(): MenuItem {
   return {
-    label: "Battery indicators",
+    label: "Indicadores de batería",
     description:
       "Top-bar battery indicators for the phone, Wear OS watch, glasses, and ring: their style, and whether each shows always, only when low, or never.",
     onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Battery indicators", [
+      openSettingsSubMenu(ctx, "Indicadores de batería", [
         enumSettingMenuItem(batteryDisplayModeSetting),
         enumSettingMenuItem(phoneBatteryVisibilitySetting),
         enumSettingMenuItem(watchBatteryVisibilitySetting),
@@ -274,7 +275,7 @@ function batteryIndicatorsMenuItem(): MenuItem {
         x,
         y,
         width,
-        "Battery indicators",
+        "Indicadores de batería",
         batteryDisplayModeSetting.displayValue(),
       );
     },
@@ -284,10 +285,10 @@ function batteryIndicatorsMenuItem(): MenuItem {
 /** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
 function animationsMenuItem(): MenuItem {
   return {
-    label: "Animations",
+    label: "Animaciones",
     description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off.",
     onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Animations", [
+      openSettingsSubMenu(ctx, "Animaciones", [
         toggleSettingMenuItem(menuAnimationSetting),
         toggleSettingMenuItem(screenFadeSetting),
       ]);
@@ -314,7 +315,7 @@ function watchLocalModelDownload(ctx: LayerContext): void {
 
 function localModelStatusText(): string {
   const state = localModelState();
-  if (state.status === "ready") return "downloaded";
+  if (state.status === "ready") return "descargado";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
     return `${pct}% of ${LOCAL_MODEL_GB}`;
@@ -336,7 +337,7 @@ function localModelMenuItem(): MenuItem {
       const action: MenuItem =
         state.status === "downloading"
           ? {
-              label: "Cancel download",
+              label: "Cancelar descarga",
               onSelect: (innerCtx) => {
                 cancelLocalModelDownload();
                 innerCtx.stack.pop();
@@ -385,31 +386,30 @@ function watchAsrModelDownload(id: AsrModelId, ctx: LayerContext): void {
 
 function asrModelStatusText(id: AsrModelId): string {
   const state = asrModelState(id);
-  if (state.status === "ready") return "downloaded";
+  if (state.status === "ready") return "descargado";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
-    return `${pct}% of ${asrModelMb(id)}`;
+    return `${pct}% de ${asrModelMb(id)}`;
   }
-  return "not downloaded";
+  return "sin descargar";
 }
 
 /** Download/cancel/delete management for one on-device transcription model. */
 function asrModelMenuItem(id: AsrModelId): MenuItem {
   const def = ASR_MODELS[id];
-  const rowLabel = `On-device model: ${def.label}`;
+  const rowLabel = `Modelo local: ${def.label}`;
   return {
     label: rowLabel,
     description:
-      `${def.label} (${asrModelMb(id)} download). ` +
-      "Transcribes voice input on the phone itself, with no API key or cloud service. " +
-      "Required for its matching Transcription Provider option; the other providers work without it. " +
-      "An interrupted download resumes where it left off.",
+      `${def.label} (${asrModelMb(id)} de descarga). ` +
+      "Reconoce la voz en el móvil sin clave API. Selecciona el proveedor correspondiente arriba. " +
+      "Las descargas interrumpidas se reanudan automáticamente. Moonshine solo reconoce inglés.",
     onSelect: (ctx) => {
       const state = asrModelState(id);
       const action: MenuItem =
         state.status === "downloading"
           ? {
-              label: "Cancel download",
+              label: "Cancelar descarga",
               onSelect: (innerCtx) => {
                 cancelAsrModelDownload(id);
                 innerCtx.stack.pop();
@@ -417,14 +417,14 @@ function asrModelMenuItem(id: AsrModelId): MenuItem {
             }
           : state.status === "ready"
             ? {
-                label: "Delete model",
+                label: "Eliminar modelo",
                 onSelect: (innerCtx) => {
                   deleteAsrModel(id);
                   innerCtx.stack.pop();
                 },
               }
             : {
-                label: `Download (${asrModelMb(id)})`,
+                label: `Descargar (${asrModelMb(id)})`,
                 onSelect: (innerCtx) => {
                   startAsrModelDownload(id);
                   watchAsrModelDownload(id, innerCtx);

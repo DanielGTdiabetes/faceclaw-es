@@ -1,5 +1,7 @@
 import { readUpcomingEventsAsync, type CalendarEvent } from "../native/calendar";
 import { hasCalendarPermission } from "../native/calendar-permissions";
+import { getCurrentLocation } from "../native/location";
+import { hasLocationPermission } from "../native/location-permissions";
 import { mediaControllerBridge } from "../native/media-controller";
 import { dismissNotification, readActiveNotifications } from "../native/notification-icons";
 import { shell } from "../ui/shell/shell";
@@ -8,7 +10,7 @@ import { toolRegistry, type ToolRegistry, type ToolResult } from "./tool-registr
 /**
  * Registers the always-available system tools into the registry. Called once at
  * startup. These wrap shell state and the existing native bridges (calendar,
- * media, notifications); nothing here needs an app window to be open.
+ * location, media, notifications); nothing here needs an app window to be open.
  */
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -52,6 +54,47 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       if (!text) return err("show_alert requires non-empty text");
       shell.showAlert(text);
       return ok("Displayed.");
+    },
+  );
+
+  registry.registerSystemTool(
+    {
+      name: "location.get_current",
+      description:
+        "Get the phone's current or last-known location for questions about where the user is, nearby places, or local weather. Returns latitude, longitude, accuracy_meters, timestamp_ms, age_seconds and is_stale. Check age_seconds and is_stale before treating the position as current; a cached fix may be old. Uses the phone's granted location permission. Only available during a conversation; does not continuously track location.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      // The native one-shot lookup can wait 15 s, longer than the registry's
+      // default 10 s. Leave room for the main-thread callback to arrive.
+      timeoutMs: 20_000,
+    },
+    async () => {
+      if (!hasLocationPermission()) {
+        return err("El acceso a la ubicación no está concedido. Activa el permiso de ubicación de Faceclaw en los ajustes del móvil y vuelve a preguntar.");
+      }
+      try {
+        const location = await getCurrentLocation();
+        // Permissions may have been revoked while the native lookup was pending.
+        if (!hasLocationPermission()) return err("El permiso de ubicación de Faceclaw se ha revocado.");
+        if (!Number.isFinite(location.latitude) || Math.abs(location.latitude) > 90
+          || !Number.isFinite(location.longitude) || Math.abs(location.longitude) > 180) {
+          return err("El móvil no ha devuelto una ubicación válida.");
+        }
+        const timestampMs = Number.isFinite(location.timestampMs) && location.timestampMs > 0
+          ? location.timestampMs : null;
+        const ageSeconds = timestampMs === null || timestampMs > Date.now()
+          ? null : Math.floor((Date.now() - timestampMs) / 1000);
+        return ok(JSON.stringify({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy_meters: Number.isFinite(location.accuracyMeters) && location.accuracyMeters >= 0
+            ? location.accuracyMeters : null,
+          timestamp_ms: timestampMs,
+          age_seconds: ageSeconds,
+          is_stale: ageSeconds === null || ageSeconds > 120,
+        }));
+      } catch (error) {
+        return err(`No se ha podido obtener la ubicación del móvil: ${String((error as Error)?.message ?? error)}. Comprueba que la ubicación del teléfono esté activada y vuelve a intentarlo.`);
+      }
     },
   );
 

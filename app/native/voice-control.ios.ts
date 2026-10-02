@@ -33,6 +33,8 @@ export class IosVoiceControlBridge {
   }
   onSpeechEnd(listener: () => void): () => void { this.ends.add(listener); return () => { this.ends.delete(listener) } }
   onSpeechPause(_listener: () => void): () => void { return () => {} }
+  // iOS manages its speech recognizer lifecycle natively; Chat retention is Android-only.
+  setKeepTranscriberLoaded(_enabled: boolean): void {}
   private setStatus(status: string): void { this.status = status; for (const fn of [...this.statuses]) fn({ status, listening: this.capturing, detail: '' }) }
   private ensureNative(): any {
     if (!this.native) {

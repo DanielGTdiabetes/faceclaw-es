@@ -1,5 +1,7 @@
 # Faceclaw - An unofficial user interface for the Even Realities G2 smart glasses
 
+**Spanish adaptation:** see [README.es.md](README.es.md) for Spanish voice recognition, installation, private signing, and updates. Based on Faceclaw 0.8.1; real-device validation is pending.
+
 This is an unofficial user interface for the Even Realities G2 smart glasses.
 It is entirely unofficial, and comes with no support or warranty from Even
 Realities or from anyone.

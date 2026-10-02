@@ -67,7 +67,7 @@ export type VoiceInputLayerOptions = {
  */
 export class VoiceInputLayer implements Layer {
   private phase: VoicePhase = "capturing";
-  private status = "Starting microphone...";
+  private status = "Iniciando micrófono...";
   /** Mirrors the bridge: only true while audio is actually being transcribed. */
   private listening = false;
   /** Bridge guidance shown in place of the empty transcript (e.g. "check your phone"). */
@@ -167,11 +167,11 @@ export class VoiceInputLayer implements Layer {
       // Skip-confirmation (wakeword): send to the default target as soon as the
       // transcript finalizes, or after a short wait for the trailing final.
       this.pendingAutoSend = true;
-      this.status = "Sending...";
+      this.status = "Enviando...";
     } else if (this.status.endsWith("...")) {
       // A progress status ("Starting microphone...", "Listening...") gives
       // way to the menu prompt; an error (ending in ".") stays visible.
-      this.status = "Send, continue, or discard?";
+      this.status = "¿Enviar, continuar o descartar?";
     }
     this.stopCapture(() => {
       if (this.pendingAutoSend) {
@@ -220,7 +220,7 @@ export class VoiceInputLayer implements Layer {
       target.onSend(text);
     } else {
       // Nothing heard; fall back to the menu so the user can retry or discard.
-      this.status = "Send, continue, or discard?";
+      this.status = "¿Enviar, continuar o descartar?";
       this.actions.requestRender();
     }
   }
@@ -243,13 +243,13 @@ export class VoiceInputLayer implements Layer {
       });
     }
     rows.push({
-      label: hasLlmKey ? "Continue" : "Continue (Needs LLM API key)",
+      label: hasLlmKey ? "Continuar" : "Continuar (requiere clave API)",
       dim: !hasLlmKey || this.stoppingCapture,
       onSelect: () => {
         if (hasLlmKey && !this.stoppingCapture) this.startContinuation();
       },
     });
-    rows.push({ label: "Discard", dim: false, onSelect: () => this.dismiss() });
+    rows.push({ label: "Descartar", dim: false, onSelect: () => this.dismiss() });
     return rows;
   }
 
@@ -258,8 +258,8 @@ export class VoiceInputLayer implements Layer {
     const inMenu = this.phase === "menu";
     if (inMenu) this.menu.setItems(this.menuRows());
     paintInputDialog(image, {
-      title: this.capturing && this.listening ? "Voice ●" : "Voice",
-      status: this.stoppingCapture ? "Finishing transcription..." : this.status,
+      title: this.capturing && this.listening ? "Voz ●" : "Voz",
+      status: this.stoppingCapture ? "Finalizando transcripción..." : this.status,
       text: this.displayText() || this.placeholderText(),
       menu: inMenu ? this.menu : null,
       hint: inMenu ? undefined : this.hintText(),
@@ -280,12 +280,12 @@ export class VoiceInputLayer implements Layer {
         if (event.type === "click") {
           this.endContinuationCapture();
         } else if (event.type === "double-click") {
-          this.cancelContinuation("Continuation cancelled");
+          this.cancelContinuation("Continuación cancelada");
         }
         return;
       case "refining":
         if (event.type === "double-click") {
-          this.cancelContinuation("Refinement cancelled");
+          this.cancelContinuation("Edición cancelada");
         }
         return;
       case "menu":
@@ -320,7 +320,7 @@ export class VoiceInputLayer implements Layer {
     this.finalizedText = "";
     this.liveText = "";
     this.phase = "continuing";
-    this.status = "Listening...";
+    this.status = "Escuchando...";
     this.capturing = true;
     void this.actions.startVoiceCapture();
     this.actions.requestRender();
@@ -331,7 +331,7 @@ export class VoiceInputLayer implements Layer {
     if (!this.capturing) return;
     this.capturing = false;
     this.pendingFollowup = true;
-    this.status = "Finishing transcription...";
+    this.status = "Finalizando transcripción...";
     this.stopCapture(() => {
       if (this.pendingFollowup) {
         this.followupFinalizeTimer = setTimeout(() => this.beginRefine(), FOLLOWUP_FINALIZE_TIMEOUT_MS);
@@ -349,13 +349,13 @@ export class VoiceInputLayer implements Layer {
     if (this.phase !== "continuing") return;
     const followup = this.displayText().trim();
     if (!followup) {
-      this.backToMenu(this.baseText, "No follow-up heard");
+      this.backToMenu(this.baseText, "No se ha detectado más voz");
       return;
     }
     this.phase = "refining";
     this.finalizedText = "";
     this.liveText = "";
-    this.status = "Refining...";
+    this.status = "Editando...";
     this.actions.requestRender();
     this.refineHandle = refineDictation({
       apiKey: anthropicApiKeySetting.get(),
@@ -367,7 +367,7 @@ export class VoiceInputLayer implements Layer {
       },
       onDone: (text) => {
         this.refineHandle = null;
-        this.backToMenu(text, "Send, continue, or discard?");
+        this.backToMenu(text, "¿Enviar, continuar o descartar?");
       },
       onError: (message) => {
         this.refineHandle = null;
@@ -442,13 +442,13 @@ export class VoiceInputLayer implements Layer {
       case "capturing":
         // Only claim to listen when the mic is actually running; otherwise
         // the bridge's guidance (permission prompt on the phone, etc.), if any.
-        return this.listening ? "Listening..." : this.detail;
+        return this.listening ? "Escuchando..." : this.detail;
       case "continuing":
-        return "Say more, or describe an edit...";
+        return "Continúa hablando o indica una corrección...";
       case "refining":
-        return "Refining...";
+        return "Editando...";
       case "menu":
-        return "(no speech detected)";
+        return "(no se ha detectado voz)";
     }
   }
 
@@ -456,10 +456,10 @@ export class VoiceInputLayer implements Layer {
     switch (this.phase) {
       case "capturing":
         return this.clickEndsCapture
-          ? gestureHints([[GESTURE_CLICK, "done"], [GESTURE_DOUBLE_CLICK, "close"]])
+          ? gestureHints([[GESTURE_CLICK, "terminar"], [GESTURE_DOUBLE_CLICK, "cerrar"]])
           : `${GESTURE_DOUBLE_CLICK} close`;
       case "continuing":
-        return gestureHints([[GESTURE_CLICK, "done"], [GESTURE_DOUBLE_CLICK, "cancel"]]);
+        return gestureHints([[GESTURE_CLICK, "terminar"], [GESTURE_DOUBLE_CLICK, "cancelar"]]);
       case "refining":
       default:
         return `${GESTURE_DOUBLE_CLICK} cancel`;

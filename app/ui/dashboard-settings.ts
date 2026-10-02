@@ -232,7 +232,7 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
 
 export const batteryDisplayModeSetting = new ConfigSettingEnum<BatteryDisplayMode>({
   id: "batteryDisplayMode",
-  label: "Style",
+  label: "Estilo",
   storageKey: "dashboard.systemCard.batteryDisplayMode",
   defaultValue: "stacked",
   values: ["icon", "percentage", "stacked", "stacked-percentage"],
@@ -270,7 +270,7 @@ export const ringBatteryVisibilitySetting = batteryVisibilitySetting(
 );
 /** The Wear OS watch; the indicator only exists while a watch is reachable. */
 export const watchBatteryVisibilitySetting = batteryVisibilitySetting(
-  "watchBatteryVisibility", "Watch", "display.battery.watchVisibility",
+  "watchBatteryVisibility", "Reloj", "display.battery.watchVisibility",
 );
 
 /** Whether an indicator with this visibility setting shows at the given charge. */
@@ -296,7 +296,7 @@ export function batteryIndicatorSettingsKey(): string {
 
 export const timeFormatSetting = new ConfigSettingEnum<TimeFormat>({
   id: "timeFormat",
-  label: "Time format",
+  label: "Formato de hora",
   storageKey: "display.timeFormat",
   defaultValue: "24h",
   values: ["24h", "12h"],
@@ -325,7 +325,7 @@ export function displayModeLabel(value: DisplayModeSetting): string {
 
 export const displayModeSetting = new ConfigSettingEnum<DisplayModeSetting>({
   id: "display-mode",
-  label: "Display mode",
+  label: "Modo de pantalla",
   storageKey: "display.mode",
   defaultValue: "576x288",
   values: DISPLAY_MODE_VALUES,
@@ -336,7 +336,7 @@ export const displayModeSetting = new ConfigSettingEnum<DisplayModeSetting>({
 
 export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
   id: "brightness",
-  label: "Brightness",
+  label: "Brillo",
   storageKey: "display.brightness",
   defaultValue: "auto",
   values: BRIGHTNESS_VALUES,
@@ -347,17 +347,17 @@ export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
 
 const AUTO_BRIGHTNESS_LEVELS = ["2", "5", "10", "20", "25", "30", "40", "50", "60", "70", "80", "90", "100"] as const;
 export const autoBrightnessMinSetting = new ConfigSettingEnum({
-  id: "autoBrightnessMin", label: "Auto minimum", storageKey: "display.autoBrightnessMin",
+  id: "autoBrightnessMin", label: "Mínimo automático", storageKey: "display.autoBrightnessMin",
   defaultValue: "20", values: AUTO_BRIGHTNESS_LEVELS,
   description: "Lowest brightness Auto will select. Screen fades can still reach 2.",
 });
 export const autoBrightnessMaxSetting = new ConfigSettingEnum({
-  id: "autoBrightnessMax", label: "Auto maximum", storageKey: "display.autoBrightnessMax",
+  id: "autoBrightnessMax", label: "Máximo automático", storageKey: "display.autoBrightnessMax",
   defaultValue: "100", values: AUTO_BRIGHTNESS_LEVELS,
   description: "Highest brightness Auto will select. A value below the minimum uses the minimum.",
 });
 export const autoBrightnessCurveSetting = new ConfigSettingString({
-  id: "autoBrightnessCurve", label: "Auto light curve", storageKey: "display.autoBrightnessCurve",
+  id: "autoBrightnessCurve", label: "Curva de luz automática", storageKey: "display.autoBrightnessCurve",
   defaultValue: DEFAULT_BRIGHTNESS_CURVE, normalize: normalizeBrightnessCurve, validate: brightnessCurveError,
   description: "2–16 lux:percent pairs, separated by commas. Percent is within your minimum–maximum range. Start at 0:0, end at 100%, and increase lux without decreasing percent. Incomplete edits stay in the preview; brightness keeps using the last valid curve.",
 });
@@ -365,7 +365,7 @@ const SCREEN_FADE_MS = 280;
 
 export const menuAnimationSetting = new ConfigSettingBoolean({
   id: "menu-animation",
-  label: "Menu animation",
+  label: "Animación de menús",
   storageKey: MENU_ANIMATION_KEY,
   defaultValue: true,
   description: "Slide the highlight, scroll, and bounce at the ends in menus, lists, and the launcher and Files icon grids. When off, they move instantly.",
@@ -373,7 +373,7 @@ export const menuAnimationSetting = new ConfigSettingBoolean({
 
 export const screenFadeSetting = new ConfigSettingBoolean({
   id: "screen-fade",
-  label: "Screen fade",
+  label: "Transición de pantalla",
   storageKey: "display.screenFade",
   defaultValue: true,
   description: "Fade the display in and out when the screen turns on or off. When off, it switches instantly.",
@@ -388,7 +388,7 @@ export function getBrightnessPreferences() {
 
 export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>({
   id: "screen-timeout",
-  label: "Screen timeout",
+  label: "Apagar pantalla tras",
   storageKey: "display.screenTimeout",
   defaultValue: "30s",
   values: ["15s", "30s", "1m", "3m", "never"],
@@ -398,7 +398,7 @@ export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>(
 
 export const lockScreenEnabledSetting = new ConfigSettingBoolean({
   id: "lock-screen-enabled",
-  label: "Enable lock screen",
+  label: "Activar bloqueo",
   storageKey: "display.lockScreenEnabled",
   defaultValue: true,
   description:
@@ -413,28 +413,28 @@ export type PhoneRotation = "auto" | "portrait" | "landscape";
 
 export const phoneRotationSetting = new ConfigSettingEnum<PhoneRotation>({
   id: "phone-rotation",
-  label: "Rotation",
+  label: "Rotación",
   storageKey: "phone.rotation",
   defaultValue: "auto",
   values: ["auto", "portrait", "landscape"],
-  formatValue: (value) => ({ auto: "Auto-Rotate", portrait: "Always Portrait", landscape: "Always Landscape" })[value],
+  formatValue: (value) => ({ auto: "Rotación automática", portrait: "Siempre vertical", landscape: "Siempre horizontal" })[value],
   description: "Automatically rotate with the phone, or keep the phone app in portrait or landscape. Auto-Rotate follows the phone's system rotation preference.",
 });
 
 export const previewColorSetting = new ConfigSettingEnum<PreviewColor>({
   id: "preview-color",
-  label: "Preview color",
+  label: "Color de vista previa",
   storageKey: "phone.previewColor",
   defaultValue: "white",
   values: ["white", "green"],
-  formatValue: (value) => (value === "green" ? "Green" : "White"),
+  formatValue: (value) => (value === "green" ? "Verde" : "Blanco"),
   description:
     "How the phone's mirror of the glasses display renders: white/grayscale (clearest), or green to match the physical glasses.",
 });
 
 export const mirrorTouchSetting = new ConfigSettingBoolean({
   id: "mirror-touch",
-  label: "Touch mirror",
+  label: "Control táctil de la vista previa",
   // Key predates this setting object (the toggle used to live on the phone's
   // main screen); keeping it preserves the user's choice.
   storageKey: "phone.mirrorTouch",
@@ -447,7 +447,7 @@ export const mirrorTouchSetting = new ConfigSettingBoolean({
 // every watch message, so a change applies immediately.
 export const watchRemoteEnabledSetting = new ConfigSettingBoolean({
   id: "watch-remote-enabled",
-  label: "Watch remote control",
+  label: "Control desde el reloj",
   storageKey: "watch.remoteEnabled",
   defaultValue: true,
   description:
@@ -456,7 +456,7 @@ export const watchRemoteEnabledSetting = new ConfigSettingBoolean({
 
 export const watchCanUnlockSetting = new ConfigSettingBoolean({
   id: "watch-can-unlock",
-  label: "Watch can unlock glasses",
+  label: "Permitir desbloqueo desde el reloj",
   storageKey: "watch.canUnlock",
   defaultValue: true,
   description:
@@ -465,7 +465,7 @@ export const watchCanUnlockSetting = new ConfigSettingBoolean({
 
 export const watchCrownClockwiseNextSetting = new ConfigSettingBoolean({
   id: "watch-crown-clockwise-next",
-  label: "Clockwise crown = next",
+  label: "Corona en sentido horario = siguiente",
   storageKey: "watch.crownClockwiseNext",
   defaultValue: false,
   description:
@@ -474,7 +474,7 @@ export const watchCrownClockwiseNextSetting = new ConfigSettingBoolean({
 
 export const watchMirrorAssistantSetting = new ConfigSettingBoolean({
   id: "watch-mirror-assistant",
-  label: "Mirror assistant to watch",
+  label: "Mostrar asistente en el reloj",
   storageKey: "watch.mirrorAssistant",
   defaultValue: true,
   description: "Stream assistant replies and on-glasses alerts to the watch so they can be read from the wrist.",
@@ -492,7 +492,7 @@ const VERTICAL_POSITION_LABELS: Record<VerticalPosition, string> = {
 
 export const verticalPositionSetting = new ConfigSettingEnum<VerticalPosition>({
   id: "vertical-position",
-  label: "Vertical position",
+  label: "Posición vertical",
   storageKey: "display.verticalPosition",
   defaultValue: "middle",
   values: ["top", "upper", "middle", "lower", "bottom"],
@@ -507,7 +507,7 @@ export type AppDisplayMode = "default" | "global" | DisplayModeSetting;
 function appDisplayModeSetting(appId: string, defaultValue: AppDisplayMode): ConfigSettingEnum<AppDisplayMode> {
   return new ConfigSettingEnum<AppDisplayMode>({
     id: `${appId}-display-mode`,
-    label: "Display mode",
+    label: "Modo de pantalla",
     storageKey: `${appId}.displayMode`,
     defaultValue,
     values: appId === "terminal" ? ["default", "global", ...DISPLAY_MODE_VALUES] : ["global", ...DISPLAY_MODE_VALUES],
@@ -521,7 +521,7 @@ function appDisplayModeSetting(appId: string, defaultValue: AppDisplayMode): Con
 function appVerticalPositionSetting(appId: string): ConfigSettingEnum<"global" | VerticalPosition> {
   return new ConfigSettingEnum<"global" | VerticalPosition>({
     id: `${appId}-vertical-position`,
-    label: "Vertical position",
+    label: "Posición vertical",
     storageKey: `${appId}.verticalPosition`,
     defaultValue: "global",
     values: ["global", "top", "upper", "middle", "lower", "bottom"],
@@ -537,7 +537,7 @@ export const terminalVerticalPositionSetting = appVerticalPositionSetting("termi
 
 export const voiceControlEnabledSetting = new ConfigSettingBoolean({
   id: "voice-control-enabled",
-  label: "Enable",
+  label: "Activar",
   storageKey: "voice.enabled",
   defaultValue: true,
   description: "Master switch for voice features, including wakeword detection and voice input.",
@@ -545,7 +545,7 @@ export const voiceControlEnabledSetting = new ConfigSettingBoolean({
 
 export const firmwareDebugFlagsSetting = new ConfigSettingBoolean({
   id: "firmware-debug-flags",
-  label: "Firmware debug flags",
+  label: "Depuración del firmware",
   storageKey: "developer.firmwareDebugFlags",
   defaultValue: false,
   description: "Overlay debug information provided by custom firmware that shows draw timings and dirty rects. Only useful for firmware development.",
@@ -553,7 +553,7 @@ export const firmwareDebugFlagsSetting = new ConfigSettingBoolean({
 
 export const suspendEvenHubWhenScreenOffSetting = new ConfigSettingBoolean({
   id: "suspend-evenhub-screen-off",
-  label: "Suspend EvenHub when screen off",
+  label: "Suspender EvenHub al apagar pantalla",
   storageKey: "developer.suspendEvenHubWhenScreenOff",
   defaultValue: true,
   description: "Suspend the EvenHub session while the display is off. This significantly improves battery life, but increases the latency of waking the screen.",
@@ -561,7 +561,7 @@ export const suspendEvenHubWhenScreenOffSetting = new ConfigSettingBoolean({
 
 export const useMicControlSetting = new ConfigSettingBoolean({
   id: "use-mic-control",
-  label: "Use microphone control",
+  label: "Control del micrófono",
   storageKey: "developer.useMicControl",
   defaultValue: true,
   description:
@@ -570,7 +570,7 @@ export const useMicControlSetting = new ConfigSettingBoolean({
 
 export const showBleBandwidthSetting = new ConfigSettingBoolean({
   id: "show-ble-bandwidth",
-  label: "Show BLE bandwidth usage",
+  label: "Mostrar uso de ancho de banda BLE",
   storageKey: "developer.showBleBandwidth",
   defaultValue: false,
   description:
@@ -581,11 +581,11 @@ export type RingConnectionMode = "glasses" | "direct";
 
 export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMode>({
   id: "ring-connection-mode",
-  label: "Ring connection",
+  label: "Conexión del anillo",
   storageKey: "developer.ringConnectionMode",
   defaultValue: "glasses",
   values: ["glasses", "direct"],
-  formatValue: (value) => (value === "direct" ? "Direct" : "Only via glasses"),
+  formatValue: (value) => (value === "direct" ? "Directa" : "Solo a través de las gafas"),
   description:
     "How R1 ring input reaches the phone. Only via glasses: the ring's own link to the glasses carries its gestures, and the phone never opens a Bluetooth connection to the ring. Direct: also connect to the ring from the phone (currently unreliable). Takes effect on the next connection to the glasses.",
 });
@@ -596,11 +596,12 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // runs -- see the same note in native/voice-control.ts. The "whisper" value
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
-export type VoiceProvider = "onboard" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "elevenlabs" | "whisper" | "soniox";
 
 const voiceProviderLabels: Record<VoiceProvider, string> = {
-  onboard: "On-device (Moonshine)",
-  "onboard-whisper": "On-device (Whisper)",
+  onboard: "Local (Moonshine, solo inglés)",
+  "onboard-whisper": "Local (Whisper base, español, rápido)",
+  "onboard-whisper-small": "Local (Whisper small, español, mayor precisión)",
   elevenlabs: "ElevenLabs",
   whisper: "OpenAI (Whisper)",
   soniox: "Soniox",
@@ -608,10 +609,10 @@ const voiceProviderLabels: Record<VoiceProvider, string> = {
 
 export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   id: "voice-provider",
-  label: "Transcription Provider",
+  label: "Reconocimiento de voz",
   storageKey: "voice.provider",
-  defaultValue: "onboard",
-  values: ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
+  defaultValue: "onboard-whisper",
+  values: ["onboard", "onboard-whisper", "onboard-whisper-small", "elevenlabs", "whisper", "soniox"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
     if (value === "elevenlabs") return elevenLabsApiKeySetting.get().trim().length === 0;
@@ -619,51 +620,51 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
     if (value === "soniox") return sonioxApiKeySetting.get().trim().length === 0;
     return false;
   },
-  description: "Speech-to-text engine for voice input. ElevenLabs, OpenAI, and Soniox are cloud services that need an API key, with significantly better accuracy than on-device transcription. The two On-device options need their voice model downloaded (below) and never leave the phone.",
+  description: "Para español, descarga Whisper base (rápido) o Whisper small (mayor precisión, más espera) y selecciona el proveedor correspondiente. El audio se transcribe en el móvil. Moonshine solo reconoce inglés. Los proveedores en la nube necesitan una clave API.",
 });
 
 const wakeWordActionLabels: Record<WakeWordAction, string> = {
-  "voice-input": "Voice Input",
-  off: "Ignore",
-  "turn-screen-on": "Turn Screen On",
+  "voice-input": "Entrada de voz",
+  off: "Ignorar",
+  "turn-screen-on": "Encender pantalla",
 };
 
 export const wakeWordActionSetting = new ConfigSettingEnum<WakeWordAction>({
   id: "wake-word-action",
-  label: "Wakeword Action (\"Hey Even\")",
+  label: "Acción al decir \"Hey Even\"",
   storageKey: "voice.wakeWordAction",
   defaultValue: "voice-input",
   values: ["voice-input", "off", "turn-screen-on"],
   formatValue: (value) => wakeWordActionLabels[value] ?? value,
-  description: "What saying \"Hey Even\" does: start voice input, just turn the screen on, or nothing.",
+  description: "Elige qué sucede al decir \"Hey Even\": iniciar la entrada de voz, encender la pantalla o no hacer nada.",
 });
 
 export const saveVoiceRecordingsSetting = new ConfigSettingBoolean({
   id: "save-voice-recordings",
-  label: "Save voice recordings",
+  label: "Guardar grabaciones de voz",
   storageKey: "developer.saveVoiceRecordings",
   defaultValue: false,
-  description: "Keep a copy of captured voice audio on the phone, for debugging transcription problems.",
+  description: "Guarda una copia del audio en el móvil para investigar problemas de transcripción.",
 });
 
 export const assistantSkipConfirmationSetting = new ConfigSettingBoolean({
   id: "assistant-skip-confirmation",
-  label: "Send to assistant without confirming",
+  label: "Enviar al asistente sin confirmar",
   storageKey: "assistant.skipConfirmationAfterWakeword",
   defaultValue: false,
-  description: "After a wakeword utterance, send the transcript straight to the assistant instead of stopping at the Send/Type confirmation menu.",
+  description: "Envía la transcripción al asistente directamente tras la activación por voz, sin pedir confirmación.",
 });
 
 export type AssistantBackendKind = "direct" | "external";
 
 const assistantBackendLabels: Record<AssistantBackendKind, string> = {
-  direct: global.isIOS ? "Cloud API" : "On-phone",
-  external: "My own agent (bridge)",
+  direct: global.isIOS ? "API en la nube" : "Desde el móvil",
+  external: "OpenClaw (agente externo)",
 };
 
 export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKind>({
   id: "assistant-backend",
-  label: "Assistant backend",
+  label: "Proveedor del asistente",
   storageKey: "assistant.backend",
   defaultValue: "direct",
   values: global.isIOS ? ["direct"] : ["direct", "external"],
@@ -674,39 +675,39 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
 
 export const assistantBridgeHostSetting = new ConfigSettingString({
   id: "assistant-bridge-host",
-  label: "Bridge host",
+  label: "Servidor de OpenClaw",
   storageKey: "assistant.bridgeHost",
   defaultValue: "",
-  editorTitle: "Agent bridge host (tailscale IP)",
-  glassesEditTitle: "Edit bridge host",
+  editorTitle: "Servidor de OpenClaw (IP de Tailscale)",
+  glassesEditTitle: "Editar servidor",
   description:
-    "Hostname or IP address (e.g. a Tailscale address) of the machine running the agent bridge.",
+    "Nombre o dirección IP del servidor que ejecuta el puente de OpenClaw (por ejemplo, una IP de Tailscale).",
 });
 
 export const assistantBridgePortSetting = new ConfigSettingString({
   id: "assistant-bridge-port",
-  label: "Bridge port",
+  label: "Puerto de OpenClaw",
   storageKey: "assistant.bridgePort",
   defaultValue: "8790",
-  editorTitle: "Agent bridge port",
-  glassesEditTitle: "Edit bridge port",
-  description: "TCP port the agent bridge listens on. The default is 8790.",
+  editorTitle: "Puerto de OpenClaw",
+  glassesEditTitle: "Editar puerto",
+  description: "Puerto TCP del puente de OpenClaw. El valor predeterminado es 8790.",
 });
 
 export const assistantBridgeTokenSetting = new ConfigSettingString({
   id: "assistant-bridge-token",
-  label: "Bridge token",
+  label: "Token de OpenClaw",
   storageKey: "assistant.bridgeToken",
   defaultValue: "",
-  editorTitle: "Agent bridge auth token",
-  glassesEditTitle: "Edit bridge token",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
-  description: "Shared secret that must match the bridge's configured token.",
+  editorTitle: "Token de OpenClaw",
+  glassesEditTitle: "Editar token",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
+  description: "Token secreto que debe coincidir con el configurado en el puente de OpenClaw.",
 });
 
 export const assistantAllowProactiveSetting = new ConfigSettingBoolean({
   id: "assistant-allow-proactive",
-  label: "Allow proactive agent actions",
+  label: "Permitir acciones proactivas del agente",
   storageKey: "assistant.allowProactive",
   defaultValue: true,
   description:
@@ -720,7 +721,7 @@ export const elevenLabsApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "ElevenLabs API key",
   glassesEditTitle: "Edit ElevenLabs key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "ElevenLabs API key, used when ElevenLabs is the transcription provider. The key needs the speech-to-text permission.",
 });
 
@@ -731,7 +732,7 @@ export const openAiApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "OpenAI API key",
   glassesEditTitle: "Edit OpenAI key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "OpenAI API key, used when Whisper is the transcription provider or an OpenAI model is selected for the voice assistant.",
 });
 
@@ -742,7 +743,7 @@ export const sonioxApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Soniox API key",
   glassesEditTitle: "Edit Soniox key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "Soniox API key, used when Soniox is the transcription provider.",
 });
 
@@ -753,13 +754,13 @@ export const anthropicApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Anthropic API key",
   glassesEditTitle: "Edit Anthropic key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "Anthropic API key, used when an Anthropic model is selected for the voice assistant.",
 });
 
 export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
   id: "assistant-model",
-  label: "Assistant model",
+  label: "Modelo del asistente",
   storageKey: "assistant.model",
   defaultValue: "auto",
   values: ASSISTANT_MODEL_CHOICES,
@@ -782,7 +783,7 @@ export const mapboxApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Mapbox public token (pk.…)",
   glassesEditTitle: "Edit Mapbox token",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "Mapbox public token (pk. prefix), used by the Navigate app for maps, geocoding, and directions.",
 });
 
@@ -795,7 +796,7 @@ export const mapboxApiKeySetting = new ConfigSettingString({
  */
 export const terminalNewConnectionSetting = new ConfigSettingString({
   id: "terminal-new-connection",
-  label: "New connection",
+  label: "Nueva conexión",
   storageKey: "terminal.newConnectionDraft",
   defaultValue: "",
   editorTitle: "g2mirror connection string (g2mirror://token@host)",
@@ -812,7 +813,7 @@ export const terminalNewConnectionSetting = new ConfigSettingString({
  */
 export const developerAppUrlSetting = new ConfigSettingString({
   id: "developer-app-url",
-  label: "App URL",
+  label: "URL de la app",
   storageKey: "developer.appUrl",
   defaultValue: "",
   editorTitle: "EvenHub app URL (http:// or https://)",
@@ -822,7 +823,7 @@ export const developerAppUrlSetting = new ConfigSettingString({
 
 export const terminalLaunchPresetsSetting = new ConfigSettingString({
   id: "terminal-launch-presets",
-  label: "Launch presets",
+  label: "Opciones de inicio",
   storageKey: "terminal.launchPresets",
   defaultValue: "shell",
   editorTitle: "g2mirror launch presets (comma-separated)",
@@ -833,7 +834,7 @@ export const terminalLaunchPresetsSetting = new ConfigSettingString({
 
 export const terminalAutoReconnectSetting = new ConfigSettingBoolean({
   id: "terminal-auto-reconnect",
-  label: "Auto-reconnect",
+  label: "Reconectar automáticamente",
   storageKey: "terminal.autoReconnect",
   defaultValue: true,
   description:
@@ -842,7 +843,7 @@ export const terminalAutoReconnectSetting = new ConfigSettingBoolean({
 
 export const terminalWakeOnBellSetting = new ConfigSettingBoolean({
   id: "terminal-wake-on-bell",
-  label: "Wake glasses on terminal bell",
+  label: "Encender gafas con aviso del terminal",
   storageKey: "terminal.wakeOnBell",
   defaultValue: false,
   description:
@@ -851,10 +852,10 @@ export const terminalWakeOnBellSetting = new ConfigSettingBoolean({
 
 export const roamGraphNameSetting = new ConfigSettingString({
   id: "roam-graph-name",
-  label: "Roam graph name",
+  label: "Nombre del grafo de Roam",
   storageKey: "integrations.roam.graphName",
   defaultValue: "",
-  editorTitle: "Roam graph name",
+  editorTitle: "Nombre del grafo de Roam",
   glassesEditTitle: "Edit Roam graph",
   normalize: (value) => (value ?? "").replace(/[\x00-\x1f]+/g, "").trim(),
   formatValue: emptySettingDisplay,
@@ -863,7 +864,7 @@ export const roamGraphNameSetting = new ConfigSettingString({
 
 export const roamApiTokenSetting = new ConfigSettingString({
   id: "roam-api-token",
-  label: "Roam API token",
+  label: "Token API de Roam",
   storageKey: "integrations.roam.apiToken",
   defaultValue: "",
   editorTitle: "Roam API token (roam-graph-token-...)",
@@ -875,10 +876,10 @@ export const roamApiTokenSetting = new ConfigSettingString({
 
 export const nightscoutSiteUrlSetting = new ConfigSettingString({
   id: "nightscout-site-url",
-  label: "Nightscout site URL",
+  label: "URL de Nightscout",
   storageKey: "integrations.nightscout.siteUrl",
   defaultValue: "",
-  editorTitle: "Nightscout site URL",
+  editorTitle: "URL de Nightscout",
   glassesEditTitle: "Edit Nightscout URL",
   normalize: normalizeNightscoutSiteUrl,
   formatValue: emptySettingDisplay,
@@ -887,10 +888,10 @@ export const nightscoutSiteUrlSetting = new ConfigSettingString({
 
 export const nightscoutApiTokenSetting = new ConfigSettingString({
   id: "nightscout-api-token",
-  label: "Nightscout API token",
+  label: "Token API de Nightscout",
   storageKey: "integrations.nightscout.apiToken",
   defaultValue: "",
-  editorTitle: "Nightscout API token",
+  editorTitle: "Token API de Nightscout",
   glassesEditTitle: "Edit API token",
   normalize: normalizeNightscoutApiToken,
   formatValue: maskToken,
@@ -924,7 +925,7 @@ export const nightscoutMaxLoopAgeSetting = nightscoutThresholdSetting(
 );
 export const nightscoutAlwaysShowInTopBarSetting = new ConfigSettingBoolean({
   id: "nightscout-always-show-in-top-bar",
-  label: "Always show in top bar",
+  label: "Mostrar siempre en la barra superior",
   storageKey: "integrations.nightscout.alwaysShowInTopBar",
   defaultValue: false,
   description: "Keep the Nightscout glucose graph and warnings in the top bar even when all Nightscout windows are closed.",
@@ -947,10 +948,10 @@ const stripControlChars = (value: string | null | undefined): string =>
 
 export const navigateHomeAddressSetting = new ConfigSettingString({
   id: "navigate-home-address",
-  label: "Home address",
+  label: "Dirección de casa",
   storageKey: "navigate.homeAddress",
   defaultValue: "",
-  editorTitle: "Home address",
+  editorTitle: "Dirección de casa",
   glassesEditTitle: "Set Home address",
   normalize: stripControlChars,
   formatValue: emptySettingDisplay,
@@ -959,10 +960,10 @@ export const navigateHomeAddressSetting = new ConfigSettingString({
 
 export const navigateWorkAddressSetting = new ConfigSettingString({
   id: "navigate-work-address",
-  label: "Work address",
+  label: "Dirección del trabajo",
   storageKey: "navigate.workAddress",
   defaultValue: "",
-  editorTitle: "Work address",
+  editorTitle: "Dirección del trabajo",
   glassesEditTitle: "Set Work address",
   normalize: stripControlChars,
   formatValue: emptySettingDisplay,
@@ -971,7 +972,7 @@ export const navigateWorkAddressSetting = new ConfigSettingString({
 
 export const navigateRememberRecentSetting = new ConfigSettingBoolean({
   id: "navigate-remember-recent",
-  label: "Remember recent destinations",
+  label: "Recordar destinos recientes",
   storageKey: "navigate.rememberRecent",
   defaultValue: true,
   description:
@@ -985,7 +986,7 @@ export const navigateRememberRecentSetting = new ConfigSettingBoolean({
  */
 export const navigateSavedDestinationsSetting = new ConfigSettingString({
   id: "navigate-saved-destinations",
-  label: "Saved destinations",
+  label: "Destinos guardados",
   storageKey: "navigate.savedDestinations",
   defaultValue: "[]",
 });
@@ -997,7 +998,7 @@ export const navigateSavedDestinationsSetting = new ConfigSettingString({
  */
 export const navigateRecentDestinationsSetting = new ConfigSettingString({
   id: "navigate-recent-destinations",
-  label: "Recent destinations",
+  label: "Destinos recientes",
   storageKey: "navigate.recentDestinations",
   defaultValue: "[]",
 });
@@ -1011,21 +1012,21 @@ export const navigateRecentDestinationsSetting = new ConfigSettingString({
  */
 export const navigateDestinationNameDraftSetting = new ConfigSettingString({
   id: "navigate-destination-name-draft",
-  label: "Destination name",
+  label: "Nombre del destino",
   storageKey: "navigate.destinationNameDraft",
   defaultValue: "",
   editorTitle: "Destination name (e.g. Gym)",
-  glassesEditTitle: "Destination name",
+  glassesEditTitle: "Nombre del destino",
   normalize: stripControlChars,
 });
 
 export const navigateDestinationAddressDraftSetting = new ConfigSettingString({
   id: "navigate-destination-address-draft",
-  label: "Destination address",
+  label: "Dirección del destino",
   storageKey: "navigate.destinationAddressDraft",
   defaultValue: "",
   editorTitle: "Destination address or place name",
-  glassesEditTitle: "Destination address",
+  glassesEditTitle: "Dirección del destino",
   normalize: stripControlChars,
 });
 
@@ -1046,7 +1047,7 @@ export function screenTimeoutSettingToMs(value: ScreenTimeoutSetting): number | 
 }
 
 export function brightnessLabel(value: BrightnessSetting): string {
-  return value === "auto" ? "Auto" : value;
+  return value === "auto" ? "Automático" : value;
 }
 
 /** The exact level for the wire, or null when the ambient sensor drives it. */

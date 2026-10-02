@@ -2,6 +2,6 @@
 <resources>
     <!-- Overrides the CLI-generated app_name (derived from package.json's
          lowercase "faceclaw") so the launcher shows a capitalized label. -->
-    <string name="app_name">Faceclaw</string>
-    <string name="title_activity_kimera">Faceclaw</string>
+    <string name="app_name">Faceclaw Español</string>
+    <string name="title_activity_kimera">Faceclaw Español</string>
 </resources>

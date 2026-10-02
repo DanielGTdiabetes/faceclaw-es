@@ -31,7 +31,7 @@ export type VoiceControlState = {
 // family, not with "onboard-whisper" below, which is the on-device sherpa-onnx
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "elevenlabs" | "whisper" | "soniox";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
@@ -186,6 +186,13 @@ export class FaceclawVoiceControlBridge {
     );
   }
 
+  /** Keep the local model between utterances for the lifetime of an open Chat window. */
+  setKeepTranscriberLoaded(enabled: boolean): void {
+    if (!global.isAndroid) return;
+    if (enabled) this.ensureController();
+    this.controller?.setKeepTranscriberLoaded(enabled);
+  }
+
   /** Begin push-to-talk capture (momentary; released with stopPushToTalk). */
   startPushToTalk(options: PushToTalkOptions): void {
     this.acquireCapture("ptt", options);
@@ -329,7 +336,10 @@ export class FaceclawVoiceControlBridge {
     this.started = true;
     // Which on-device model to load; a no-op setter for every provider except
     // "onboard-whisper" (FaceclawVoiceController defaults to Moonshine).
-    this.controller?.setOnboardModelKind(options.provider === "onboard-whisper" ? "whisper" : "moonshine");
+    this.controller?.setOnboardModelKind(
+      options.provider === "onboard-whisper-small" ? "whisper-small" :
+      options.provider === "onboard-whisper" ? "whisper" : "moonshine",
+    );
     const captureId = this.nextNativeCaptureId++;
     this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     this.controller?.start("onboard", captureId);
@@ -341,7 +351,7 @@ export class FaceclawVoiceControlBridge {
    * than failing the capture outright.
    */
   private createCloudClient(options: PushToTalkOptions): CloudSttClient | null {
-    if (options.provider === "onboard" || options.provider === "onboard-whisper") return null;
+    if (options.provider === "onboard" || options.provider === "onboard-whisper" || options.provider === "onboard-whisper-small") return null;
     const sttOptions = {
       apiKey: "",
       onTranscript: (event: CloudSttTranscriptEvent) =>

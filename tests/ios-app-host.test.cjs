@@ -111,17 +111,17 @@ for (const isIOS of [true, false]) {
       if (id === '../dashboard-settings') return settings;
       if (id === './remote-input-menu') return { remoteInputMenuItem: () => ({ label: 'Input tokens' }) };
       if (id === './settings-panel') return { SettingsPanelLayer: class { constructor(sections) { this.sections = sections; } } };
-      return { LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-en': {} },
+      return { LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-es': {}, 'whisper-small-es': {} },
         uiFontPickerMenuItem: () => ({ label: 'Font' }), terminalFontPickerMenuItem: () => ({ label: 'Terminal font' }) };
     } });
     const sections = menus.createSettingsPanelLayer().sections;
-    assert.ok(sections.find(section => section.label === 'Display').items.some(item => item.label === settings.lockScreenEnabledSetting.label));
-    const assistant = sections.find(section => section.label === 'Assistant');
+    assert.ok(sections.find(section => section.label === 'Pantalla').items.some(item => item.label === settings.lockScreenEnabledSetting.label));
+    const assistant = sections.find(section => section.label === 'Asistente');
     assert.equal(assistant.items.some(item => item.disabled === true), false);
     const ctx = { stack: { pop() {} }, actions: { requestRender() {} } };
     const row = setting => assistant.items.find(item => item.label === setting.label);
     row(settings.assistantBackendSetting).onSelect(ctx);
-    assert.deepEqual(Array.from(picker, item => item.label), isIOS ? ['Cloud API'] : ['On-phone', 'My own agent (bridge)']);
+    assert.deepEqual(Array.from(picker, item => item.label), isIOS ? ['API en la nube'] : ['Desde el móvil', 'OpenClaw (agente externo)']);
     assert.equal(assistant.items.some(item => item.label === 'On-phone model'), !isIOS);
     assert.equal(!!row(settings.assistantBridgeHostSetting), !isIOS);
     assert.equal(!!row(settings.assistantAllowProactiveSetting), !isIOS);
@@ -129,7 +129,7 @@ for (const isIOS of [true, false]) {
     assert.equal(picker.some(item => item.label.includes('Qwen')), !isIOS);
     const terra = picker.find(item => item.label === 'Terra');
     assert.equal(terra.disabled(), true);
-    const keys = sections.find(section => section.label === 'API Keys').items;
+    const keys = sections.find(section => section.label === 'Claves API').items;
     assert.ok(keys.some(item => item.label === settings.openAiApiKeySetting.label));
     assert.ok(keys.some(item => item.label === settings.anthropicApiKeySetting.label));
     settings.openAiApiKeySetting.set('fixture-key');
@@ -141,7 +141,7 @@ for (const isIOS of [true, false]) {
     }).provider, 'openai');
     row(settings.assistantSkipConfirmationSetting).onSelect(ctx);
     assert.equal(settings.assistantSkipConfirmationSetting.get(), true);
-    assert.ok(sections.find(section => section.label === 'Voice').items.some(item => item.label === settings.wakeWordActionSetting.label));
+    assert.ok(sections.find(section => section.label === 'Voz').items.some(item => item.label === settings.wakeWordActionSetting.label));
   });
 }
 
