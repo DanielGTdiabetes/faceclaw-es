@@ -29,7 +29,8 @@ export const SIDEBAR_WIDTH = 64;
  * same 36px (a 32px icon plus 2px either side) as a one-column sidebar slot.
  * The row is wide enough that it never needs the sidebar's smaller
  * two-column icons. It comes out of the height available to windows; their
- * width stays 576, centred, leaving SIDEBAR_WIDTH / 2 at each side for the
+ * width stays 576, centred, leaving SIDEBAR_WIDTH / 2 at each side: one
+ * pixel for the side of the window's frame (windowFramed), the rest for the
  * whole display's stereo shift (uiDepth).
  */
 export const SWITCHER_ROW_HEIGHT = 36;
@@ -109,6 +110,17 @@ export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x:
 }
 
 /**
+ * Whether the foreground window's content gets a rounded frame (drawn by
+ * the chrome layer): with a reserved bottom switcher row, whose top edge is
+ * the frame's bottom side, as the top bar's divider is its top. Its left and right sides take the pixel just outside
+ * the 576-wide window; there's no room in the full-panel mode, nor need
+ * beside a side strip.
+ */
+export function windowFramed(appId?: string): boolean {
+  return switcherRowHeight(appId) > 0;
+}
+
+/**
  * Whether a screen point lies on the switcher's side of the screen, for
  * touches on the phone's mirror: anywhere in a side strip's column, or from
  * the top of a bottom row (under the given foreground window) down.
@@ -149,8 +161,8 @@ export function appViewportLeft(appId?: string): number {
  * Stereo depth of the whole display (Settings > Customization > Depth), in
  * the firmware's depth units; the shell scene carries it to the compositor,
  * which shifts the screen and everything drawn over it per lens. Only with
- * the switcher at the bottom, where the windows' side margins leave room for
- * the shift.
+ * the switcher at the bottom, where the windows' side margins, less the
+ * window frame's pixel, leave room for the shift.
  */
 export function uiDepth(): number {
   return switcherPosition() === "bottom" ? Number(uiDepthSetting.get()) : 0;

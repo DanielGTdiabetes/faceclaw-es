@@ -367,15 +367,16 @@ export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosit
     "Which edge of the display the strip of open-app icons sits on. Left and right take a column beside windows; bottom puts a row beneath the window, which leaves room at the sides to set the display's depth, and makes full-height windows a little shorter. Moving it to or from the bottom reopens open apps in the new size.",
 });
 
-const UI_DEPTH_VALUES = ["-64", "-48", "-32", "-16", "0", "16", "32", "48", "64"] as const;
+const UI_DEPTH_VALUES = ["-62", "-48", "-32", "-16", "0", "16", "32", "48", "62"] as const;
 export type UiDepth = (typeof UI_DEPTH_VALUES)[number];
 
 /**
  * Stereo depth of the whole display, in the firmware's depth units: the
  * lenses shift everything by half this many pixels each, in opposite
  * directions. Only applies with the app switcher at the bottom, where the
- * windows' 576px width leaves 32px at each side to shift into (see
- * geometry.ts uiDepth); values stay even so the per-lens halves of nested
+ * windows' 576px width leaves 32px at each side: one for the side of the
+ * window's frame and 31 to shift into, hence ±62 (see geometry.ts uiDepth
+ * and windowFramed); values stay even so the per-lens halves of nested
  * depths add exactly.
  */
 export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({

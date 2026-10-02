@@ -85,6 +85,9 @@ test('all explicit size/position combinations stay within the display and align 
               assert.ok(row.y + row.height <= 480);
               // A reserved bottom row hangs right under the window, as wide as it.
               if (g.switcherRowHeight(appId)) assert.deepEqual([row.x, row.y, row.width], [rect.x, rect.y + rect.height, rect.width]);
+              // The frame's sides, just outside the window, survive the
+              // deepest shift (±62 moves each lens 31px).
+              if (g.windowFramed(appId)) assert.ok(rect.x - 1 - 31 >= 0 && rect.x + rect.width + 31 < 640);
             }
           }
         }
@@ -101,6 +104,7 @@ test('the app switcher can sit on the right edge', () => {
   assert.equal(g.screenCenterInViewportX(), 320);
   assert.equal(g.isOnSwitcherEdge(600, 10, 'min'), true);
   assert.equal(g.isOnSwitcherEdge(10, 200, 'min'), false);
+  assert.equal(g.windowFramed(), false);
   // Depth needs the bottom row's side margins.
   g.settings.uiDepthSetting.value = '32';
   assert.equal(g.uiDepth(), 0);
@@ -123,15 +127,88 @@ test('a bottom app switcher centres 576-wide windows and hangs one tall tab unde
   assert.equal(g.switcherRect('min').y, 444);
   // The true centre is the viewport's own with the window centred.
   assert.equal(g.screenCenterInViewportX(), 288);
-  // Depth applies only here.
+  // Depth applies only here, as does the window frame.
   g.settings.uiDepthSetting.value = '-48';
   assert.equal(g.uiDepth(), -48);
+  assert.equal(g.windowFramed(), true);
   // Full panel: windows fill the panel and the row overlays the bottom edge while focused.
   g.settings.displayModeSetting.value = '640x480';
   assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
   assert.deepEqual({ ...g.switcherRect('max') }, { x: 0, y: 444, width: 640, height: 36 });
   assert.equal(g.sidebarStripVisible('window'), false);
   assert.equal(g.sidebarStripVisible('sidebar'), true);
+  assert.equal(g.windowFramed(), false);
+});
+
+test('a bottom app switcher frames the foreground window\'s content in a rounded border', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  g.settings.uiDepthSetting.value = '62';
+  const graphics = require('../.test-build/app/graphics/image.js');
+  const shellScene = require('../.test-build/app/graphics/shell-scene.js');
+  const font = { lineHeight: 12, ascent: 10, measureText: (text) => text.length * 4, drawText() {} };
+  let nextKey = 100;
+  const modules = {
+    '../../graphics/shell-scene': shellScene, '../../graphics/image': graphics,
+    '../../graphics/ui-fonts': { getDefaultSmallFont: () => font, getDefaultMediumFont: () => font },
+    './ambient-cards': { activeAmbientCards: () => [] },
+    '../../native/notification-icons': { readActiveNotificationIcons: () => ({ icons: [], stale: false }) },
+    '../../native/phone-battery': { readPhoneBatteryState: () => ({ battery: null }) },
+    '../../util/render-freshness': { renderPassAllowsStaleData: () => false },
+    '../dashboard-settings': { batteryDisplayModeSetting: { get: () => 'icon' } },
+    '../clock-format': { formatClockDate: () => '', formatClockTime: () => '' },
+    '../layers': { LayerStack: { allocateShellKey: () => nextKey++ } },
+    '../menu': { scrollToKeepSelectionVisible: () => 0 },
+    './geometry': g,
+  };
+  const context = { exports: {}, require: (name) => modules[name] ?? {} };
+  vm.runInNewContext(js(read('app/ui/shell/chrome-layer.ts')), context);
+  const state = {
+    windows: [{ attention: false, drawIcon() {} }], selectedIndex: 0, focus: 'window', foregroundHeightMode: 'min',
+    battery: { headset: null, ring: null, watch: null }, trayIcons: [],
+  };
+  const chrome = new context.exports.ShellChromeLayer(() => state);
+  const parts = chrome.paintParts();
+  // The min band's content spans y=106..365, between the bar's bottom row
+  // (the frame's top) at 105 and the row's top edge (its bottom) at 366.
+  const part = (key) => parts.find((p) => p.shellKey === key);
+  const [left, right, top, strip] = [part(100), part(101), part(102), part(1)];
+  assert.deepEqual([left.x, left.y, left.image.width, left.image.height], [31, 105, 8, 261]);
+  assert.deepEqual([right.x, right.image.width], [601, 8]);
+  assert.deepEqual([top.x, top.y, top.image.width, top.image.height], [39, 105, 562, 1]);
+  assert.ok(!left.depth && !right.depth && !top.depth);
+  const at = (p, x, y) => p.image.pixels[(y - p.y) * p.image.width + x - p.x];
+  // Straight sides just outside the window; the top along the bar's bottom row.
+  assert.equal(at(left, 31, 200), 40);
+  assert.equal(at(right, 608, 200), 40);
+  assert.equal(at(top, 300, 105), 40);
+  // Rounded corners: black outside the curve, the window's own corner masked.
+  assert.equal(at(left, 31, 105), 1);
+  assert.equal(at(left, 36, 105), 40);
+  assert.equal(at(left, 32, 106), 1);
+  assert.equal(at(left, 32, 365), 1);
+  assert.equal(at(right, 607, 365), 1);
+  // The separator is the bottom side, starting where the corner's curve ends.
+  assert.equal(at(strip, 35, 366), 1);
+  assert.equal(at(strip, 36, 366), 40);
+  assert.equal(at(strip, 603, 366), 40);
+  assert.equal(at(strip, 604, 366), 1);
+  // Parts after the -2 top bar, so the frame draws over it.
+  assert.ok(parts.indexOf(part(2)) < parts.indexOf(left));
+  shellScene.encodeShellScene(parts, g.uiDepth());
+  // The flat paint matches. The bar's own divider gives way to the frame's
+  // top, and the frame stops short of the bar.
+  const image = chrome.paint();
+  assert.equal(image.pixels[200 * 640 + 31], 40);
+  assert.equal(image.pixels[200 * 640 + 608], 40);
+  assert.equal(image.pixels[105 * 640 + 33], 1);
+  assert.equal(image.pixels[105 * 640 + 300], 40);
+  assert.equal(image.pixels[90 * 640 + 31], 0);
+  const bar = part(2);
+  assert.equal(bar.image.pixels[(105 - bar.y) * bar.image.width + 300 - bar.x], 1);
+  // No frame in the full-panel mode.
+  g.settings.displayModeSetting.value = '640x480';
+  assert.equal(chrome.paintParts().filter((p) => p.shellKey >= 100).length, 0);
 });
 
 // Exercise the real worker message handler with platform work stubbed out.

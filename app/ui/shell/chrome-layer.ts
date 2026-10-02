@@ -35,6 +35,7 @@ import {
   switcherPosition,
   switcherRect,
   TOP_BAR_HEIGHT,
+  windowFramed,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
@@ -291,6 +292,8 @@ export class ShellChromeLayer implements Layer {
       this.drawSidebar(image, state);
     }
     this.drawTopBar(image, state);
+    const frame = windowFrameRect(state);
+    if (frame) drawWindowFrame(image, frame);
     drawAmbientCards(image, topBarSpan(state).right);
     return image;
   }
@@ -307,6 +310,20 @@ export class ShellChromeLayer implements Layer {
     this.drawTopBar(canvas, state);
     const bar = topBarSpan(state);
     parts.push({ ...shellCrop(canvas, bar.left, windowTop(state.foregroundHeightMode, state.foregroundAppId), bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
+    const frame = windowFrameRect(state);
+    if (frame) {
+      // Over the top bar, whose bottom row it shares, but at the screen's
+      // own depth rather than the bar's -2, which on top of a -62 screen
+      // depth would shift a side off the screen. Split into its two sides
+      // (corners included) and the top between them, as one surface would
+      // be almost all transparent.
+      const frameCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+      drawWindowFrame(frameCanvas, frame);
+      const [leftKey, rightKey, topKey] = windowFrameKeys(), sideHeight = frame.height - 1;
+      parts.push(shellCrop(frameCanvas, frame.x, frame.y, FRAME_RADIUS, sideHeight, leftKey));
+      parts.push(shellCrop(frameCanvas, frame.x + frame.width - FRAME_RADIUS, frame.y, FRAME_RADIUS, sideHeight, rightKey));
+      parts.push(shellCrop(frameCanvas, frame.x + FRAME_RADIUS, frame.y, frame.width - 2 * FRAME_RADIUS, 1, topKey));
+    }
     drawAmbientCards(canvas, bar.right, parts);
     return parts;
   }
@@ -425,7 +442,10 @@ export class ShellChromeLayer implements Layer {
     // mode, sidebar focused) it still stops at the strip.
     const { left: barLeft, right: barRight } = topBarSpan(state);
     image.fillRect(barLeft, barTop, barRight - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);
-    image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, barRight - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
+    // A framed window's frame draws this line as its top (drawWindowFrame).
+    if (!windowFramed(state.foregroundAppId)) {
+      image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, barRight - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
+    }
 
     const now = new Date();
     const clock = `${formatClockDate(now)} ${formatClockTime(now)}`;
@@ -665,6 +685,55 @@ function attentionDot(value: number): GrayImage {
   return dot;
 }
 
+type Rect = { x: number; y: number; width: number; height: number };
+
+/** Corner radius of the foreground window's frame. */
+const FRAME_RADIUS = 8;
+
+/**
+ * The rounded frame around the foreground window's content (below its top
+ * bar), when it has one (geometry.ts windowFramed): one pixel all round.
+ * Its sides run down the pixel just outside each side of the window, and
+ * its top is the top bar's bottom row, in place of the bar's divider. Its
+ * bottom is the switcher row's top edge, where drawSeparator draws it so
+ * the selection tab can divert it.
+ */
+function windowFrameRect(state: ShellChromeState): Rect | null {
+  if (!windowFramed(state.foregroundAppId)) return null;
+  const viewport = appViewportRect(state.foregroundHeightMode, state.foregroundAppId);
+  return { x: viewport.x - 1, y: viewport.y - 1, width: viewport.width + 2, height: viewport.height + 2 };
+}
+
+/** Shell surface keys of the window frame's left side, right side and top. */
+let frameKeys: [number, number, number] | undefined;
+function windowFrameKeys(): [number, number, number] {
+  if (!frameKeys) frameKeys = [LayerStack.allocateShellKey(), LayerStack.allocateShellKey(), LayerStack.allocateShellKey()];
+  return frameKeys;
+}
+
+/**
+ * Draw the window frame (see windowFrameRect) but for its bottom row,
+ * stroked line by line like the selection tab's outline. Outside each
+ * rounded corner it paints opaque black, so the window's square corners
+ * don't show past the curve. Everything but the top's straight run lies
+ * within FRAME_RADIUS of the sides.
+ */
+function drawWindowFrame(image: GrayImage, frame: Rect): void {
+  const { x, y, width, height } = frame;
+  for (let i = 0; i < height - 1; i++) {
+    const outer = tabInset(i, 0, height, FRAME_RADIUS);
+    image.fillRect(x, y + i, outer, 1, SHELL_OPAQUE_BLACK);
+    image.fillRect(x + width - outer, y + i, outer, 1, SHELL_OPAQUE_BLACK);
+    if (i === 0) {
+      image.fillRect(x + outer, y, width - 2 * outer, 1, BORDER_VALUE);
+      continue;
+    }
+    const stroke = Math.max(1, 1 + tabInset(i, 1, height - 1, FRAME_RADIUS - 1) - outer);
+    image.fillRect(x + outer, y + i, stroke, 1, BORDER_VALUE);
+    image.fillRect(x + width - outer - stroke, y + i, stroke, 1, BORDER_VALUE);
+  }
+}
+
 const TAB_RADIUS = 6;
 // How far the diversion pokes past the separator into the main area.
 const TAB_EXTEND = 0;
@@ -681,13 +750,18 @@ function drawSeparator(
   gap: SwitcherCell | null,
 ): void {
   if (switcherPosition() === "bottom") {
-    // Along the row's top edge, the full width of the row.
-    const y = strip.y, right = strip.x + strip.width - 1;
+    // Along the row's top edge: the full width of the row, or between the
+    // corners of the window frame, whose bottom side this is.
+    const frame = windowFrameRect(state);
+    const inset = frame ? tabInset(frame.height - 1, 0, frame.height, FRAME_RADIUS) : 0;
+    const left = frame ? frame.x + inset : strip.x;
+    const right = frame ? frame.x + frame.width - 1 - inset : strip.x + strip.width - 1;
+    const y = strip.y;
     if (gap) {
-      image.drawLine(strip.x, y, gap.x, y, BORDER_VALUE);
+      image.drawLine(left, y, gap.x, y, BORDER_VALUE);
       image.drawLine(gap.x + gap.width, y, right, y, BORDER_VALUE);
     } else {
-      image.drawLine(strip.x, y, right, y, BORDER_VALUE);
+      image.drawLine(left, y, right, y, BORDER_VALUE);
     }
     return;
   }

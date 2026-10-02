@@ -58,6 +58,7 @@ import {
   switcherRowHeight,
   uiDepth,
   windowBandHeight,
+  windowFramed,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
@@ -938,7 +939,7 @@ class Shell {
    * foreground window's band (full height for a max-height window, the
    * vertical-position-dependent 288px band otherwise) plus the switcher: a
    * side strip's icon columns (minus the outer dead strip the one-column
-   * variant leaves), or the row under it.
+   * variant leaves), or the row under it and the window frame's sides.
    */
   screenshotCropRect(): { x: number; y: number; width: number; height: number } {
     const appId = this.foregroundWindow()?.appId;
@@ -949,6 +950,10 @@ class Shell {
       const strip = sidebarContentSpan(this.windows.length);
       left = Math.min(left, strip.left);
       right = Math.max(right, strip.right);
+    }
+    if (windowFramed(appId)) {
+      left -= 1;
+      right += 1;
     }
     const y = windowTop(heightMode, appId);
     const bottom = y + windowBandHeight(heightMode, appId) + switcherRowHeight(appId);
