@@ -125,6 +125,7 @@ function settingsSections(): SettingsSection[] {
         enumSettingMenuItem(voiceProviderSetting),
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-es"),
+        asrModelMenuItem("whisper-small-es"),
       ],
     },
     {
@@ -385,7 +386,7 @@ function watchAsrModelDownload(id: AsrModelId, ctx: LayerContext): void {
 
 function asrModelStatusText(id: AsrModelId): string {
   const state = asrModelState(id);
-  if (state.status === "ready") return "downloaded";
+  if (state.status === "ready") return "descargado";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
     return `${pct}% de ${asrModelMb(id)}`;

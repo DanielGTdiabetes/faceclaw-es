@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, spanish-0.8.1]
-    paths: ['app/**', 'App_Resources/**', 'native/**', 'scripts/**', 'package*.json', 'webpack.config.js', '.github/workflows/android-spanish.yml']
+    paths: ['app/**', 'App_Resources/**', 'native/**', 'wear/**', 'scripts/**', 'package*.json', 'webpack.config.js', '.github/workflows/android-spanish.yml']
 
 permissions:
   contents: read
@@ -54,10 +54,14 @@ jobs:
           ns prepare android --release
           cd platforms/android
           ./gradlew assembleRelease -Prelease -PfaceclawUnsigned -Dorg.gradle.jvmargs=-Xmx4g --console=plain
+      - name: Compilar app del reloj sin firma
+        run: ./wear/gradlew -p wear :app:assembleRelease --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: faceclaw-es-unsigned-${{ github.sha }}
-          path: platforms/android/app/build/outputs/apk/release/*unsigned.apk
+          path: |
+            platforms/android/app/build/outputs/apk/release/*unsigned.apk
+            wear/app/build/outputs/apk/release/*unsigned.apk
           if-no-files-found: error
           retention-days: 30
 

@@ -28,15 +28,16 @@ internal object AndroidSpeechEngines {
     fun recognizerConfig(modelDir: File, kind: VoiceModelKind): OfflineRecognizerConfig {
         val modelConfig = OfflineModelConfig.builder()
             .setNumThreads(1)
-        if (kind == VoiceModelKind.WHISPER) {
+        if (kind.isWhisper) {
+            val prefix = if (kind == VoiceModelKind.WHISPER_SMALL) "small" else "base"
             modelConfig
                 .setWhisper(OfflineWhisperModelConfig.builder()
-                    .setEncoder(File(modelDir, "base-encoder.int8.onnx").absolutePath)
-                    .setDecoder(File(modelDir, "base-decoder.int8.onnx").absolutePath)
+                    .setEncoder(File(modelDir, "$prefix-encoder.int8.onnx").absolutePath)
+                    .setDecoder(File(modelDir, "$prefix-decoder.int8.onnx").absolutePath)
                     .setLanguage("es")
                     .setTask("transcribe")
                     .build())
-                .setTokens(File(modelDir, "base-tokens.txt").absolutePath)
+                .setTokens(File(modelDir, "$prefix-tokens.txt").absolutePath)
         } else {
             modelConfig
                 .setMoonshine(OfflineMoonshineModelConfig.builder()

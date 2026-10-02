@@ -115,7 +115,11 @@ class VoiceCaptureSession(
 
         @JvmStatic
         fun parseModelKind(kind: String?): VoiceModelKind =
-            if ("whisper" == kind) VoiceModelKind.WHISPER else VoiceModelKind.MOONSHINE
+            when (kind) {
+                "whisper" -> VoiceModelKind.WHISPER
+                "whisper-small" -> VoiceModelKind.WHISPER_SMALL
+                else -> VoiceModelKind.MOONSHINE
+            }
     }
 
     enum class Mode {
@@ -539,7 +543,7 @@ class VoiceCaptureSession(
         // only decodes when a segment commits (8s buffer fill) or the utterance ends
         // (decodeTranscript(true) in runLoop()). No live preview text in Whisper
         // mode -- status stays "Listening..." until release. Deliberate tradeoff.
-        if (onboardModelKind == VoiceModelKind.WHISPER) {
+        if (onboardModelKind.isWhisper) {
             return
         }
         val now = platform.elapsedRealtimeMs()
@@ -627,7 +631,7 @@ class VoiceCaptureSession(
         // PRE-normalization peak, since normalizePeak() below would otherwise
         // amplify true silence right up to the target level. Moonshine does not
         // share this failure mode in practice, so it is left unchanged.
-        if (onboardModelKind == VoiceModelKind.WHISPER &&
+        if (onboardModelKind.isWhisper &&
             AudioSegmentation.peakAmplitude(segment) < WHISPER_SILENCE_PEAK_THRESHOLD
         ) {
             return ""
@@ -641,7 +645,7 @@ class VoiceCaptureSession(
         val preview = if (text.length <= TRANSCRIPT_LOG_PREVIEW_CHARS) text
         else text.substring(0, TRANSCRIPT_LOG_PREVIEW_CHARS) + "..."
         logInfo(
-            (if (onboardModelKind == VoiceModelKind.WHISPER) "Whisper" else "Moonshine") + " decode final=" + isFinal +
+            (if (onboardModelKind.isWhisper) "Whisper" else "Moonshine") + " decode final=" + isFinal +
                 " audioSec=" + formatFixed(totalAudioSec, 2) +
                 " segmentAudioSec=" + formatFixed(segmentSampleCount / SAMPLE_RATE.toDouble(), 2) +
                 " textLen=" + text.length + " text=\"" + preview + "\"",

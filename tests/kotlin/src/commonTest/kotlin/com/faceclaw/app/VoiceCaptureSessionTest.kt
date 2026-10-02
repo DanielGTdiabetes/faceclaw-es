@@ -219,6 +219,32 @@ class VoiceCaptureSessionTest {
     }
 
     @Test
+    fun bothWhisperModelsDecodeOnceAtEndAndSkipSilence() {
+        for (model in listOf("whisper", "whisper-small")) {
+            for (amplitude in listOf(0, 3000)) {
+                val platform = ShiftedPlatform(testPlatform())
+                val mic = ScriptedMic(List(40) { amplitude }) { platform.offsetMs += 1000 }
+                val transcriber = FakeTranscriber { "avísame a las diez" }
+                val host = FakeHost(platform, mic = mic, transcriber = transcriber)
+                val events = Events()
+                val session = session(host, platform, "voice-test-$model-$amplitude")
+                session.setListener(events)
+                session.setUsePhoneMic(true)
+                session.setOnboardModelKind(model)
+                session.start("onboard", 10)
+                assertTrue(events.stoppedLatch.await(10000))
+                assertEquals(if (amplitude == 0) 0 else 1, transcriber.calls.size)
+                if (amplitude != 0) {
+                    assertEquals<List<Pair<String?, Boolean>>>(listOf("avísame a las diez" to true), events.transcripts)
+                } else {
+                    assertTrue(events.transcripts.all { it.first.isNullOrEmpty() })
+                }
+                assertTrue(transcriber.released)
+            }
+        }
+    }
+
+    @Test
     fun endpointingFiresOnceAfterSpeechThenSilence() {
         val platform = ShiftedPlatform(testPlatform())
         val script = List(8) { 0 } + List(10) { 3000 } + List(24) { 0 }

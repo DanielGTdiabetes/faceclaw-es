@@ -3,6 +3,7 @@
 Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), basada en la versión 0.8.1. Licencia GPLv3, conservando la licencia y los avisos originales.
 
 - Whisper **base multilingüe**, cuantizado a int8, con idioma `es` y tarea `transcribe`: conserva el texto en español.
+- Whisper **small multilingüe** como segunda opción para priorizar precisión, con mayor uso de memoria y tiempo de respuesta. Descarga verificada de unos 375 MB; base sigue disponible como alternativa rápida.
 - Modelo independiente de `base.en`, con tamaños y SHA-256 verificados. Descarga de unos 161 MB desde el espejo del mantenedor de sherpa-onnx.
 - Whisper local como proveedor predeterminado. Moonshine sigue disponible para inglés.
 - Controles principales del móvil, menús de ajustes y flujo de entrada de voz traducidos. La traducción de todas las apps secundarias y textos de ayuda aún no está completa.
@@ -19,13 +20,13 @@ La firma propia impide instalar esta APK encima de la oficial. Antes de desinsta
 
 El exportador original copia `faceclaw_settings.xml`: incluye servidor, puerto, token, proveedor e historial del asistente. No exporta todos los datos privados de la app: las direcciones de las gafas y el estado de bienvenida de NativeScript se guardan aparte en `prefs.db.xml`. Puede ser necesario volver a emparejar en la app; el firmware ya instalado debe detectarse y conservarse. No instalar firmware si las gafas ya usan el compatible.
 
-En Ajustes → Voz, seleccionar **Local (Whisper, español)** y descargar **Whisper (español, base multilingüe)**. Los modelos se descargan al móvil y no están incluidos en la APK.
+En Ajustes → Voz, descargar **Whisper base (español, rápido)** o **Whisper small (español, mayor precisión)** y seleccionar el proveedor correspondiente. Los modelos se descargan al móvil y no están incluidos en la APK. La actualización conserva la selección anterior: cambiar a small cuando termine su descarga.
 
 Nunca subir copias de ajustes, historiales, tokens ni claves privadas a GitHub. `backups/`, `.tools/`, `signing/` y keystores están excluidos de Git.
 
 ## Compilación en GitHub
 
-El workflow **APK española** ejecuta las pruebas y compila una APK de publicación sin firmar en Linux. Se puede lanzar desde Actions y también se ejecuta al subir cambios en la rama española. Descargar el artifact `faceclaw-es-unsigned-…` y descomprimirlo.
+El workflow **APK española** ejecuta las pruebas y compila las APK de publicación del móvil y del reloj sin firmar en Linux. Se puede lanzar desde Actions y también se ejecuta al subir cambios en la rama española. Descargar el artifact `faceclaw-es-unsigned-…` y descomprimirlo; incluye las APK en sus carpetas originales.
 
 Firmar esa APK en Windows con la clave local persistente:
 
@@ -34,6 +35,12 @@ Firmar esa APK en Windows con la clave local persistente:
 ```
 
 El script crea una clave la primera vez y la reutiliza. Guardar una copia privada de `.tools/signing/faceclaw-es.jks` y `store.password`. Si se pierde esa clave, una nueva firma volverá a exigir reinstalar. No compartirla ni incluirla en el repositorio.
+
+## App del reloj
+
+Wear OS Data Layer exige el mismo identificador `com.faceclaw.app` y la misma clave de firma en móvil y reloj. El complemento oficial, firmado con otra clave, puede indicar que Faceclaw no está instalada aunque la variante española esté funcionando.
+
+Compilar `wear/` en release y firmar también su APK con `scripts/sign-spanish.ps1`, indicando otra ruta de salida, por ejemplo `dist/faceclaw-watch-es.apk`. Al migrar del complemento oficial hay que guardar su APK y sustituirlo en el reloj por el firmado con la clave española. Sus preferencias locales del mando vuelven a los valores iniciales. Las siguientes versiones, con la misma firma, se instalan con `adb install -r`.
 
 ## Mantener las actualizaciones
 

@@ -111,7 +111,7 @@ for (const isIOS of [true, false]) {
       if (id === '../dashboard-settings') return settings;
       if (id === './remote-input-menu') return { remoteInputMenuItem: () => ({ label: 'Input tokens' }) };
       if (id === './settings-panel') return { SettingsPanelLayer: class { constructor(sections) { this.sections = sections; } } };
-      return { LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-es': {} },
+      return { LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-es': {}, 'whisper-small-es': {} },
         uiFontPickerMenuItem: () => ({ label: 'Font' }), terminalFontPickerMenuItem: () => ({ label: 'Terminal font' }) };
     } });
     const sections = menus.createSettingsPanelLayer().sections;

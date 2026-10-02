@@ -43,6 +43,12 @@ class FaceclawVoiceController(context: Context) {
             "base-decoder.int8.onnx",
             "base-tokens.txt"
         )
+        private const val ASR_WHISPER_SMALL_MODEL_DIR = "sherpa-onnx-whisper-small-es-int8"
+        private val ASR_WHISPER_SMALL_MODEL_FILES = arrayOf(
+            "small-encoder.int8.onnx",
+            "small-decoder.int8.onnx",
+            "small-tokens.txt"
+        )
         // 50 ms chunks match the G2 packet cadence the rest of the pipeline
         // (endpointing, transcript pacing) is tuned for.
         private const val PHONE_MIC_CHUNK_SAMPLES = SAMPLE_RATE / 20
@@ -262,9 +268,16 @@ class FaceclawVoiceController(context: Context) {
      * missing, i.e. the model still needs to be downloaded.
      */
     private fun findAsrModelDir(kind: VoiceModelKind): File? {
-        val whisper = kind == VoiceModelKind.WHISPER
-        val dirName = if (whisper) ASR_WHISPER_MODEL_DIR else ASR_MODEL_DIR
-        val fileNames = if (whisper) ASR_WHISPER_MODEL_FILES else ASR_MODEL_FILES
+        val dirName = when (kind) {
+            VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_DIR
+            VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_DIR
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_DIR
+        }
+        val fileNames = when (kind) {
+            VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_FILES
+            VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_FILES
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_FILES
+        }
         val modelDir = File(appContext.filesDir, ASR_ROOT + File.separator + dirName)
         for (fileName in fileNames) {
             val file = File(modelDir, fileName)

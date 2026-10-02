@@ -9,7 +9,7 @@ declare const java: any;
  * than bundled in the APK; FaceclawVoiceController reads the files from the
  * directory each model's `dirName` names.
  *
- * Two models, same shape:
+ * Three models, same download layout:
  *  - "moonshine": the original on-device option (three files). The model is
  *    no longer bundled in the APK; it is fetched into the same filesDir
  *    location that earlier releases copied the bundled files to, so
@@ -20,13 +20,15 @@ declare const java: any;
  *    models cannot recognize Spanish. A separate directory prevents reuse of
  *    English-only files from an earlier install. Hashes and sizes below were
  *    computed from freshly downloaded files from the maintainer's HF mirror.
+ *  - "whisper-small-es": larger multilingual Whisper for Spanish accuracy,
+ *    at the cost of memory and decode time; base remains selectable.
  *
  * Mirrors the on-phone assistant model flow in llama.ts, except each model
  * here is multiple files rather than one; they download sequentially through
  * FaceclawModelDownloader (resume + pinned sha256 per file).
  */
 
-export type AsrModelId = "moonshine" | "whisper-base-es";
+export type AsrModelId = "moonshine" | "whisper-base-es" | "whisper-small-es";
 
 type AsrModelFile = {
   name: string;
@@ -71,7 +73,7 @@ export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
     totalBytes: 141300566,
   },
   "whisper-base-es": {
-    label: "Whisper (español, base multilingüe)",
+    label: "Whisper base (español, rápido)",
     dirName: "sherpa-onnx-whisper-base-es-int8",
     baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-base/resolve/main/",
     files: [
@@ -92,6 +94,29 @@ export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
       },
     ],
     totalBytes: 160609290,
+  },
+  "whisper-small-es": {
+    label: "Whisper small (español, mayor precisión)",
+    dirName: "sherpa-onnx-whisper-small-es-int8",
+    baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-small/resolve/8f3c18b358db4d1f2fc1eae49d75cd20989e4309/",
+    files: [
+      {
+        name: "small-encoder.int8.onnx",
+        sha256: "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9",
+        sizeBytes: 112442483,
+      },
+      {
+        name: "small-decoder.int8.onnx",
+        sha256: "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee",
+        sizeBytes: 262226114,
+      },
+      {
+        name: "small-tokens.txt",
+        sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+        sizeBytes: 816730,
+      },
+    ],
+    totalBytes: 375485327,
   },
 };
 
@@ -117,6 +142,7 @@ function freshRuntime(): ModelRuntime {
 const runtimes: Record<AsrModelId, ModelRuntime> = {
   moonshine: freshRuntime(),
   "whisper-base-es": freshRuntime(),
+  "whisper-small-es": freshRuntime(),
 };
 
 function modelDirPath(id: AsrModelId): string {

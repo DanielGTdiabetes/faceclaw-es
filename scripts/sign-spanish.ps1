@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)][string]$InputApk,
-    [string]$OutputApk = 'dist/faceclaw-0.8.1-es.apk',
+    [string]$OutputApk = 'dist/faceclaw-0.8.1-es.2.apk',
     [string]$SigningDirectory = '.tools/signing'
 )
 $ErrorActionPreference = 'Stop'
