@@ -241,6 +241,8 @@ function settingsSections(): SettingsSection[] {
  * stable list between paints.
  */
 function customizationRows(): () => MenuItem[] {
+  // Opens the modal font picker (face, weight, size) for UI text.
+  const font = uiFontPickerMenuItem();
   // Left / right / bottom edge, or popup; the dashboard controller moves or
   // resizes windows on change.
   const position = enumSettingMenuItem(appSwitcherPositionSetting);
@@ -261,12 +263,10 @@ function customizationRows(): () => MenuItem[] {
     animationsMenuItem(),
     // Controls the top-bar clock (24-hour vs 12-hour).
     enumSettingMenuItem(timeFormatSetting),
-    // Opens the modal font picker (face, weight, size) for UI text.
-    uiFontPickerMenuItem(),
   ];
-  const bottomRows = [position, depth, statusBar, ...rest];
-  const popupRows = [position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
-  const sideRows = [position, ...rest];
+  const bottomRows = [font, position, depth, statusBar, ...rest];
+  const popupRows = [font, position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
+  const sideRows = [font, position, ...rest];
   return () => {
     switch (appSwitcherPositionSetting.get()) {
       case "bottom":
