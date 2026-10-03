@@ -21,7 +21,7 @@ Se conservan el proveedor de red/GPS existente, los controles de permisos y el l
 - Firma original comprobada; el usuario confirmó captura experimental OFF antes de actualizar. Instalación con `adb install -r`, sin borrar datos.
 - Los 33 ajustes son idénticos antes/después, incluidos Hermes y bloqueo. Permisos fino/aproximado siguen concedidos. Móvil reconectado a Hermes con 34 herramientas y `location=True`.
 - Permanece la versión `0.8.1-es.5-conversation.g2.2`, código805. Distinguir este build GPS por nombre/hash; no confundirlo con la G2.2 original del trabajo de transcripción.
-- La renovación física posterior está pendiente de la nueva consulta del usuario; no afirmar que Android siempre consigue una posición fresca.
+- Renovación física posterior comprobada: el usuario repitió «Consulta mi ubicación GPS ahora» y confirmó «ha funcionado». Esta prueba acredita esa consulta concreta; no garantiza que Android obtenga siempre una posición fresca.
 
 ## Artefactos y reversión
 
