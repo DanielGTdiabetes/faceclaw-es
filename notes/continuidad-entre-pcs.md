@@ -10,6 +10,8 @@ UI nueva **OFF/inactivo, 0 episodios/0chunks**, modelo base detectado por el ges
 
 APK firmada/unsigned NAS en `/volume1/home/Dani/Faceclaw/apk-builds/conversation-g2.2/`; respaldo fresco G2.1 en `/volume1/home/Dani/Faceclaw/apk-backups/faceclaw-g2.1-before-g2.2-20261003-170144.apk`, hashes/permisos verificados y detalle en informe. Copias privadas de los33 ajustes en `/volume1/home/Dani/Faceclaw/connection-backups/2026-10-03-g2.2/` (700/600, hashes coincidentes), no mostrar/exportar a Git. Firma original sigue en `.tools/signing` y NAS. Reversión conserva datos mediante `adb install -r` del respaldo tras OFF; no regenerar firma/desinstalar.
 
+Observación espontánea posterior: el usuario informa omisiones frecuentes y palabras mal transcritas; precisión ASR pendiente, sin causa atribuida ni audio/frases almacenados. Tras OFF confirmado, 825 chunks/41,25 s PCM, 4 episodios VAD completados, ASR3 aceptados por filtros/1 abstención/0 descartes por saturación. Cierre completo nuevo: enabled/lease/timer false, buffers0, trabajador ASR/busy false y entrada0; 0 wakelocks experimentales activos. Detalle en informe G2.2; los contadores no equivalen a texto correcto. No repetir ni ajustar modelo/umbrales por defecto.
+
 ## Cierre previo: G2.1/VAD local provisional (03-10-2026)
 
 Rama `codex/conversation-detection-g0`. APK instalada `0.8.1-es.5-conversation.g2.1`, código805 y firma original; 33 ajustes conservados, Hermes `100.65.212.74:8791` y `display.lockScreenEnabled=false` intactos. No reinstalar ni repetir G0/G1 o ensayos completados por defecto. Parámetros, artefactos NAS, resultados y límites en [informe G2](conversation-detection-g2-results.md).
