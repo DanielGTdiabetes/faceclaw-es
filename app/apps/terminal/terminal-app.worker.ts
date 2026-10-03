@@ -68,7 +68,7 @@ import { connectionDisplayName, loadConnections, parseConnectionString, saveConn
 import { TerminalEmulator } from "./terminal-emulator";
 import { drawSubmenuIndicator, submenuItem, type MenuItem } from "../../ui/menu";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
-import { lineStep, listRowHeight } from "../../ui/metrics";
+import { centeredTextY, lineStep, listRowHeight, textInkHeight } from "../../ui/metrics";
 import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import { appViewportSize } from "../../ui/shell/geometry";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
@@ -1815,11 +1815,14 @@ function paintView(window: ViewWindow): GrayImage {
   }
 
   // Stale content stays visible across a disconnect, so flag it: a status
-  // line over the bottom row whenever the session isn't actually attached.
-  // Text is deferred glyphs (always on top of raster), so the covered rows
-  // must be suppressed rather than painted over.
+  // line over the bottom row(s) whenever the session isn't actually attached.
+  // It's in the UI font, which can be taller than a terminal cell, so it's
+  // sized to that font's ink. Text is deferred glyphs (always on top of
+  // raster), so the covered rows must be suppressed rather than painted over.
+  const statusFont = chromeFont();
+  const statusBannerHeight = Math.max(window.cellHeight, textInkHeight(statusFont));
   const statusBannerY = window.client.state().phase !== "attached"
-    ? window.viewportHeight - window.cellHeight
+    ? window.viewportHeight - statusBannerHeight
     : null;
 
   for (let row = 0; row < rows; row++) {
@@ -1840,8 +1843,8 @@ function paintView(window: ViewWindow): GrayImage {
     drawScrollIndicator(image, top, window.archiveStart, bottomTop);
   }
   if (statusBannerY !== null) {
-    image.fillRect(0, statusBannerY, window.viewportWidth, window.cellHeight, 0);
-    image.drawText(chromeFont(), 0, statusBannerY, window.status, 170);
+    image.fillRect(0, statusBannerY, window.viewportWidth, statusBannerHeight, 0);
+    image.drawText(statusFont, 0, centeredTextY(statusFont, statusBannerY, statusBannerHeight), window.status, 170);
   }
   return image;
 }
