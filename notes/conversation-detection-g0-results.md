@@ -1,5 +1,7 @@
 # Prototipo conversacional G2: resultados de G0/G1
 
+**Continuación posterior al cierre:** G2.1/VAD por energía local ya está implementado; desarrollo y validación separados en [conversation-detection-g2-results.md](conversation-detection-g2-results.md). La instalación G0.2 y las pruebas físicas de este informe siguen vigentes. Las menciones inferiores a VAD pendiente describen el cierre previo, no una nueva orden de repetir G0/G1.
+
 Fecha: **03-10-2026**, Europe/Madrid. Proyecto `E:\projects\faceclaw-es`, repositorio [DanielGTdiabetes/faceclaw-es](https://github.com/DanielGTdiabetes/faceclaw-es), rama **`codex/conversation-detection-g0`**, base `5c5e6e60d39c7603a47ea8c52006d5e97331a259` de `spanish-0.8.1`.
 
 ## Continuación en casa: G0.2 (03-10-2026)

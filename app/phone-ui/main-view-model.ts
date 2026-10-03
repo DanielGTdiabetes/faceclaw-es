@@ -132,13 +132,13 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   get conversationDetectorLabel(): string {
-    return `Captura de conversaciones · experimental · ${dashboardController.conversationDetector.snapshot().state}`;
+    return `VAD local · experimental · ${dashboardController.conversationDetector.snapshot().state}`;
   }
 
   get conversationDetectorDetail(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
     const metrics = snapshot.metrics;
-    return `${snapshot.reason}\n${metrics.chunks} chunks · ${(metrics.samples / 16000).toFixed(1)} s PCM · hueco máx. ${metrics.maxGapMs} ms · ${metrics.preemptions} cesiones`;
+    return `${snapshot.reason}\nActividad: ${snapshot.vad.state} · ${snapshot.vad.episodes} episodios provisionales\n${metrics.chunks} chunks · ${(metrics.samples / 16000).toFixed(1)} s PCM · hueco máx. ${metrics.maxGapMs} ms · ${metrics.preemptions} cesiones`;
   }
 
   get conversationDetectorButton(): string {
@@ -152,7 +152,7 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   onConversationDetectorMetricsTap(): void {
     const detector = dashboardController.conversationDetector;
-    void Dialogs.alert({ title: "Métricas técnicas G0/G1", message: JSON.stringify(detector.snapshot(), null, 2)
+    void Dialogs.alert({ title: "Métricas técnicas G2/VAD", message: JSON.stringify(detector.snapshot(), null, 2)
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 

@@ -1,4 +1,6 @@
-/** G0/G1 only: no ASR, VAD, voice identity, storage, network or audio history. */
+import { LocalEnergyVad, type LocalVadSnapshot } from "./local-vad";
+
+/** Local capture + provisional G2 energy VAD; no ASR, identity, storage or network. */
 export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
 export type DetectorMetrics = {
   chunks: number; samples: number; bytes: number; maxGapMs: number;
@@ -6,7 +8,8 @@ export type DetectorMetrics = {
 };
 export type DetectorSnapshot = {
   enabled: boolean; state: DetectorState; reason: string; epoch: number;
-  metrics: DetectorMetrics; resources: { lease: boolean; timer: boolean; bufferedBytes: number };
+  metrics: DetectorMetrics; vad: LocalVadSnapshot;
+  resources: { lease: boolean; timer: boolean; bufferedBytes: number };
 };
 export type DetectorLease = { stop(): void; diagnostics(): string };
 export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
@@ -25,9 +28,10 @@ const emptyMetrics = (): DetectorMetrics => ({
 export class ConversationCaptureCoordinator {
   private enabled = false;
   private state: DetectorState = "desactivado";
-  private reason = "Prototipo G0/G1: captura local, sin detección de participación.";
+  private reason = "G2: VAD local provisional, sin detección de participación.";
   private epoch = 0;
   private metrics = emptyMetrics();
+  private vad = new LocalEnergyVad();
   private lease: DetectorLease | null = null;
   private cancelTimer: (() => void) | null = null;
   private preparing = false;
@@ -42,7 +46,8 @@ export class ConversationCaptureCoordinator {
 
   snapshot(): DetectorSnapshot {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
-      metrics: { ...this.metrics }, resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 } };
+      metrics: { ...this.metrics }, vad: this.vad.snapshot(),
+      resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 } };
   }
 
   subscribe(listener: (snapshot: DetectorSnapshot) => void): () => void {
@@ -65,6 +70,7 @@ export class ConversationCaptureCoordinator {
       return;
     }
     this.metrics = emptyMetrics();
+    this.vad = new LocalEnergyVad();
     this.lastDiagnostics = "";
     this.enabledAt = this.host.now();
     this.state = "suspendido";
@@ -88,6 +94,7 @@ export class ConversationCaptureCoordinator {
     }
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
+      if (this.lastPcm && now - this.lastPcm > 250) this.vad.resetStream();
       if (now - (this.lastPcm || this.startedAt) > 2_000) {
         this.fail("No llega PCM válido desde hace 2 s. Recursos liberados; usa OFF/ON para reintentar.");
       } else {
@@ -104,6 +111,7 @@ export class ConversationCaptureCoordinator {
     this.emit();
     void this.host.prepare().then((ready) => {
       if (epoch !== this.epoch || !this.enabled) return;
+      if (this.host.now() - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
       this.preparing = false;
       const current = this.host.environment();
       if (!current.available || current.session !== this.session) { this.refresh(); return; }
@@ -131,7 +139,10 @@ export class ConversationCaptureCoordinator {
     // Existing LC3 decoder: 5 x 10 ms, 800 samples, mono 16 kHz signed PCM16 LE.
     if (pcm.length !== 1600) { this.fail("Formato PCM inesperado: se requieren 800 muestras / 1600 B por chunk."); return; }
     const now = this.host.now();
+    if (now - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
+    // Never join acoustic candidates across missing delivery or an old stream.
+    if (this.lastPcm && now - this.lastPcm > 250) this.vad.resetStream();
     this.lastPcm = now;
     let sum = 0;
     for (let i = 0; i < pcm.length; i += 2) {
@@ -144,8 +155,9 @@ export class ConversationCaptureCoordinator {
     this.metrics.chunks++;
     this.metrics.samples += 800;
     this.metrics.bytes += pcm.length;
+    this.vad.accept(pcm);
     this.state = "escuchando";
-    this.reason = "PCM válido: mono · 16 kHz · S16LE · 800 muestras / 50 ms. Sin VAD ni confirmación de conversación.";
+    this.reason = "VAD local por energía; posible voz no confirma participación. Sin grabación ni envío de audio.";
     // No PCM is retained. UI notification is coalesced by the 500 ms lifecycle tick.
   }
 
@@ -170,6 +182,7 @@ export class ConversationCaptureCoordinator {
     this.preparing = false;
     this.session = null;
     this.lastPcm = 0;
+    this.vad.resetStream();
     const lease = this.lease;
     this.lease = null;
     if (lease) {

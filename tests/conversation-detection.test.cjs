@@ -124,6 +124,64 @@ test('two-minute limit leaves OFF even if all time was spent suspended', async (
   assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
 });
 
+function energyChunk() {
+  const pcm = new Uint8Array(1600), view = new DataView(pcm.buffer);
+  for (let i = 0; i < 800; i++) view.setInt16(i * 2, Math.round(1000 * Math.sin(2 * Math.PI * 300 * i / 16000)), true);
+  return pcm;
+}
+
+test('VAD is cleared on preemption/OFF and late experimental PCM cannot update it', async () => {
+  const h = harness(); await h.on(); const old = h.leases[0], pcm = energyChunk();
+  for (let i = 0; i < 3; i++) { h.tick(50); old.pcm(pcm); }
+  assert.equal(h.detector.snapshot().vad.state, 'posible voz');
+  old.revoked(); h.env({ available: false });
+  const stopped = h.detector.snapshot().vad;
+  assert.equal(stopped.state, 'inactivo');
+  assert.equal(stopped.interrupted, 1);
+  old.pcm(pcm); assert.deepEqual(h.detector.snapshot().vad, stopped);
+  h.detector.setEnabled(false); await h.on();
+  assert.equal(h.detector.snapshot().vad.episodes, 0);
+  assert.equal(h.detector.snapshot().vad.frames, 0);
+});
+
+test('VAD never joins candidates across a 251 ms delivery gap', async () => {
+  const h = harness(); await h.on(); const pcm = energyChunk();
+  h.leases[0].pcm(pcm); h.tick(50); h.leases[0].pcm(pcm);
+  h.tick(251); h.leases[0].pcm(pcm);
+  assert.equal(h.detector.snapshot().vad.episodes, 0);
+  assert.equal(h.detector.snapshot().vad.state, 'candidato');
+});
+
+test('delivery outage removes stale possible voice before the existing watchdog error', async () => {
+  const h = harness(); await h.on();
+  for (let i = 0; i < 3; i++) { h.tick(50); h.leases[0].pcm(energyChunk()); }
+  h.tick(500);
+  assert.equal(h.detector.snapshot().vad.state, 'inactivo');
+  assert.equal(h.detector.snapshot().vad.interrupted, 1);
+  assert.equal(h.detector.snapshot().resources.lease, true);
+  h.tick(2000);
+  assert.equal(h.detector.snapshot().state, 'error');
+  assert.equal(h.detector.snapshot().resources.lease, false);
+});
+
+test('PCM delivery and delayed prepare both honor deadline even before timer runs', async () => {
+  for (const preparing of [false, true]) {
+    let now = 0, receive, resolve, starts = 0, stops = 0;
+    const d = new ConversationCaptureCoordinator({ environment: () => ({ available: true, reason: '', session: 1 }),
+      now: () => now, every: () => () => {},
+      prepare: () => preparing ? new Promise(r => { resolve = r; }) : Promise.resolve(true),
+      acquire(pcm) { starts++; receive = pcm; return { stop() { stops++; }, diagnostics: () => '' }; },
+    });
+    d.setEnabled(true); await Promise.resolve(); now = 120000;
+    if (preparing) { resolve(true); await Promise.resolve(); }
+    else receive(energyChunk());
+    assert.equal(d.snapshot().state, 'desactivado');
+    assert.equal(d.snapshot().vad.frames, 0);
+    assert.equal(starts, preparing ? 0 : 1);
+    assert.equal(stops, preparing ? 0 : 1);
+  }
+});
+
 test('preparation failure releases every resource and does not retry', async () => {
   for (const prepare of [() => Promise.resolve(false), () => Promise.reject(new Error('BLE'))]) {
     const h = harness({ prepare }); await h.on(); await Promise.resolve();
