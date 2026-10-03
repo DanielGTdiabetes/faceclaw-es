@@ -764,6 +764,7 @@ export class IosPreviewController {
         if (this.active) this.onConnectionState({ ...this.state })
         this.schedulePreviewUpdate()
       }),
+      communicator.onPreviewAnimationFrame(() => { if (this.communicator === communicator) this.schedulePreviewUpdate() }),
       communicator.onWearState(wearing => { if (this.communicator === communicator) this.handleWearState(wearing) }),
       communicator.addCompassListener(receiveCompassEvent),
       communicator.onAncsRelayFrame(frame => { if (this.communicator === communicator) notifications.receive(frame) }),

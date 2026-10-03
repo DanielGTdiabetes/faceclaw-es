@@ -159,6 +159,7 @@ export class FaceclawCommunicatorBridge {
   private readonly evenAppConflictListeners = new Set<(message: string) => void>();
   private readonly frameMetricsListeners = new Set<(metrics: FrameMetrics) => void>();
   private readonly firmwareInfoListeners = new Set<(info: FirmwareInfo) => void>();
+  private readonly previewAnimationListeners = new Set<() => void>();
 
   constructor(addresses: { right: string; left: string; ring?: string }) {
     const context = Utils.android.getApplicationContext();
@@ -251,6 +252,14 @@ export class FaceclawCommunicatorBridge {
       },
     });
     this.communicator.setListener(this.listenerProxy);
+    // Already posted to the main looper by the Java side.
+    this.communicator.setPreviewAnimationListener(
+      new java.lang.Runnable({
+        run: () => {
+          for (const listener of Array.from(this.previewAnimationListeners)) listener();
+        },
+      }),
+    );
   }
 
   private emitAsync<T>(listeners: Set<(value: T) => void>, value: T): void {
@@ -362,6 +371,15 @@ export class FaceclawCommunicatorBridge {
   onFrameMetrics(listener: (metrics: FrameMetrics) => void): () => void {
     this.frameMetricsListeners.add(listener);
     return () => this.frameMetricsListeners.delete(listener);
+  }
+
+  /**
+   * Each step of an animation the phone preview is replaying (a menu slide
+   * reaches the glasses as one frame, so frame metrics fire only at its start).
+   */
+  onPreviewAnimationFrame(listener: () => void): () => void {
+    this.previewAnimationListeners.add(listener);
+    return () => this.previewAnimationListeners.delete(listener);
   }
 
   onFirmwareInfo(listener: (info: FirmwareInfo) => void): () => void {
@@ -720,6 +738,10 @@ export class FaceclawCommunicatorBridge {
   }
 
   async close(): Promise<void> {
-    await this.enqueueJavaCall(() => this.communicator.close());
+    this.previewAnimationListeners.clear();
+    await this.enqueueJavaCall(() => {
+      this.communicator.setPreviewAnimationListener(null);
+      this.communicator.close();
+    });
   }
 }

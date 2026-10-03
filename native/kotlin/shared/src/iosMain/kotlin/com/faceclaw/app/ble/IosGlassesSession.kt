@@ -243,6 +243,9 @@ class IosGlassesSession internal constructor(
     /** The current composited screen (gray, 8bpp) or null before any surface was configured. */
     fun previewComposite(): IosTextureFrame? = core.previewComposite()?.let { IosTextureFrame(it) }
 
+    /** Called on the main queue after each step of an animation the preview is replaying (see SurfaceCompositor). */
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) = core.setPreviewAnimationListener(listener)
+
     fun compositeWidth(): Int = core.previewComposite()?.width ?: 0
 
     fun compositeHeight(): Int = core.previewComposite()?.height ?: 0

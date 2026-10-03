@@ -1,5 +1,6 @@
 package com.faceclaw.app
 
+import kotlin.concurrent.Volatile
 import kotlin.jvm.JvmField
 import kotlin.jvm.JvmStatic
 import kotlin.jvm.JvmOverloads
@@ -315,6 +316,17 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     /** The last composite's scene; reused while its inputs are unchanged (see compositeLocked). */
     private var lastScene: ShellScene? = null
     private var previewKey: String? = null
+    @Volatile private var previewAnimationListener: (() -> Unit)? = null
+
+    /**
+     * Called after each timer redraw of an animated preview (including the one where it settles),
+     * outside the lock and on the redraw scheduler's thread. The mirror pulls previews on new
+     * frames only, and the animation advances between them, so without this the mirror keeps
+     * whichever mid-motion frame it last pulled.
+     */
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) {
+        previewAnimationListener = listener
+    }
 
     /**
      * The phone mirror's view of [scene]: without the whole-screen stereo shift, which would move
@@ -324,7 +336,12 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         if (previewKey != key) {
             animatedPreview?.player?.stop()
             animatedPreview = scene.unshifted().animatedPreview(gray, screenWidth, screenHeight,
-                schedule = { delay, action -> scheduleDrawRedraw(delay) { lock.withLock(action) } })
+                schedule = { delay, action ->
+                    scheduleDrawRedraw(delay) {
+                        lock.withLock(action)
+                        previewAnimationListener?.invoke()
+                    }
+                })
             previewKey = key
         }
         return animatedPreview!!.pixels

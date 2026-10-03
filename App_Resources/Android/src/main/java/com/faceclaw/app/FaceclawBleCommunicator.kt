@@ -242,6 +242,14 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
                 java.nio.ByteBuffer.wrap(composite.gray), composite.width, composite.height, brightenGamma, green)
     }
 
+    /**
+     * Posted to the main looper after each step of an animation the preview is replaying (menu
+     * highlight slides, scrolls), so the mirror can pull the new frame; frame metrics only cover
+     * frames sent to the glasses, which carry the whole animation in one display list.
+     */
+    fun setPreviewAnimationListener(listener: Runnable?) =
+        core.setPreviewAnimationListener(listener?.let { { mainHandler.post(it); Unit } })
+
     /** Save the current composite as a 4-bit grayscale PNG; returns the path or "". */
     @Throws(java.io.IOException::class)
     fun saveCompositePngScreenshot(): String {

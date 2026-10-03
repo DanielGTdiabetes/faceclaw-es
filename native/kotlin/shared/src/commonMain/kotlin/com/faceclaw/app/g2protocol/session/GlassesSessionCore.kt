@@ -971,6 +971,9 @@ class GlassesSessionCore(
     /** The current composite for previews/screenshots, or null before any surface exists. */
     fun previewComposite(): SurfaceCompositor.Composite? = compositor.previewComposite()
 
+    /** See SurfaceCompositor.setPreviewAnimationListener; runs on the redraw scheduler's thread. */
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) = compositor.setPreviewAnimationListener(listener)
+
     /**
      * Show or hide a compositor surface, immediately submitting the resulting
      * frame. Recompositing here (rather than waiting for the next surface

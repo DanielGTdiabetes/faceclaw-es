@@ -331,6 +331,7 @@ class DashboardController {
   private offPhoneLockState: (() => void) | null = null;
   private offEvenAppConflict: (() => void) | null = null;
   private offFrameMetrics: (() => void) | null = null;
+  private offPreviewAnimation: (() => void) | null = null;
   private offFirmwareInfo: (() => void) | null = null;
   private offVoiceStatus: (() => void) | null = null;
   private offAndroidNotification: (() => void) | null = null;
@@ -1586,6 +1587,10 @@ class DashboardController {
           }
         }
       });
+      // A menu slide reaches the glasses as one frame whose display list
+      // animates on-device; the mirror replays it in the compositor and needs
+      // a pull per step, or it keeps whichever mid-motion frame it last got.
+      this.offPreviewAnimation = communicator.onPreviewAnimationFrame(() => this.schedulePreviewUpdate());
       this.offFirmwareInfo = communicator.onFirmwareInfo((info) => {
         this.appendLog(
           `firmware: L=${info.leftVersion || "?"} R=${info.rightVersion || "?"}` +
@@ -1680,6 +1685,8 @@ class DashboardController {
       this.offEvenAppConflict = null;
       this.offFrameMetrics?.();
       this.offFrameMetrics = null;
+      this.offPreviewAnimation?.();
+      this.offPreviewAnimation = null;
       this.offFirmwareInfo?.();
       this.offFirmwareInfo = null;
       this.offVoiceStatus?.();
@@ -1785,6 +1792,8 @@ class DashboardController {
     this.offEvenAppConflict = null;
     this.offFrameMetrics?.();
     this.offFrameMetrics = null;
+    this.offPreviewAnimation?.();
+    this.offPreviewAnimation = null;
     this.offFirmwareInfo?.();
     this.offFirmwareInfo = null;
     this.offVoiceStatus?.();
@@ -2847,7 +2856,10 @@ class DashboardController {
     }
     this.previewTrailingTimer = setTimeout(() => {
       this.previewTrailingTimer = null;
-      this.updateCompositePreview();
+      // Re-check rather than pull directly: a timer that fires a millisecond
+      // early would fail the floor in updateCompositePreview and drop the
+      // burst's last frame (an animation's settled frame) until the 1s poll.
+      this.schedulePreviewUpdate();
     }, wait);
   }
 
