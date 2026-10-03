@@ -1,4 +1,4 @@
-# Prototipo conversacional G2: resultados y continuación desde el trabajo
+# Prototipo conversacional G2: resultados de G0/G1
 
 Fecha: **03-10-2026**, Europe/Madrid. Proyecto `E:\projects\faceclaw-es`, repositorio [DanielGTdiabetes/faceclaw-es](https://github.com/DanielGTdiabetes/faceclaw-es), rama **`codex/conversation-detection-g0`**, base `5c5e6e60d39c7603a47ea8c52006d5e97331a259` de `spanish-0.8.1`.
 
@@ -10,7 +10,7 @@ Repositorio sincronizado con `405686b` del trabajo, conservando la comprobación
 
 **Corrección G0.2:** ON y cada sesión lista durante el ensayo solicitan presencia aunque el bloqueo esté desactivado. Una consulta nativa espera un informe real del firmware y entrega ese informe aunque el valor coincida con el anterior; no emite presencia positiva desde la caché. Se conserva la invalidación al perder sesión, el requisito de presencia positiva, prioridad del asistente, OFF por defecto y límite de dos minutos. No se añaden consultas al tick de 500 ms ni VAD.
 
-30 pruebas Node específicas, TypeScript, oxlint y 210 pruebas Kotlin pasan; preparación y compilación Android correctas. G0.2 instalada mediante `adb install -r`, certificado original verificado. Los **33 ajustes actuales** son idénticos antes/después (incluidos bloqueo desactivado y Hermes); esto se compara con el respaldo actual de casa, no con los 32 de la sesión del trabajo. Hermes reconectó. El usuario confirmó que ON pasa a `escuchando` sin otra retirada/puesta; los primeros 900 paquetes / 45 s no tuvieron pérdidas, duplicados ni errores de decodificación, un paquete tardío y hueco nativo máximo 91 ms. Los ensayos pendientes continúan; no se dan G0/G1 por superadas todavía.
+30 pruebas Node específicas, TypeScript, oxlint y 210 pruebas Kotlin pasan; preparación y compilación Android correctas. G0.2 instalada mediante `adb install -r`, certificado original verificado. Los **33 ajustes actuales** son idénticos antes/después (incluidos bloqueo desactivado y Hermes); esto se compara con el respaldo actual de casa, no con los 32 de la sesión del trabajo. Hermes reconectó. El usuario confirmó que ON pasa a `escuchando` sin otra retirada/puesta; los primeros 900 paquetes / 45 s no tuvieron pérdidas, duplicados ni errores de decodificación, un paquete tardío y hueco nativo máximo 91 ms. **La batería breve pendiente de G0/G1 está completada**, con las observaciones y límites siguientes; no acredita VAD, autonomía ni Doze profundo.
 
 | Artefacto de casa | SHA-256 | Ruta NAS |
 | --- | --- | --- |
@@ -23,6 +23,14 @@ Todos los artefactos se copiaron al NAS y sus hashes se verificaron; archivos 60
 **Pantallas G2 apagadas, Pixel encendido (G0.2):** el usuario confirmó que ambas pantallas no mostraban nada y que el estado seguía `escuchando`. Una captura del móvil durante ese ensayo mostró `Display off` y 975 chunks / 48,8 s. Los registros del mismo flujo crecieron hasta 2.380 paquetes / 119,0 s PCM, con cero pérdidas, duplicados, queue drops o errores de decodificación; un paquete tardío y hueco nativo máximo 91 ms. Se observó STOP al límite temporal. No se mantuvieron las pantallas encendidas como solución. Esto valida el ensayo breve con G2 apagadas y Pixel encendido; no equivale a ambas pantallas apagadas ni a autonomía.
 
 **Segundo plano (G0.2):** ensayo nuevo de 14:00:58 a 14:02:58. Se observó otra app en primer plano y después el launcher, mientras el mismo flujo pasó de 1.600 paquetes / 80,0 s a 2.200 / 110,0 s durante 30,1 s. Cero pérdidas, duplicados, paquetes tardíos, queue drops o errores de decodificación; hueco nativo máximo 87 ms. Al volver a Faceclaw estaba OFF con 2.378 chunks / 118,9 s (hueco UI 90 ms, cero cesiones). El usuario interpretó el apagado como efecto de pasar al segundo plano, pero el STOP registrado fue exactamente al límite de dos minutos; la captura sí continuó en segundo plano. No se presupone que OFF fuese inmediato al salir ni se omite la observación del usuario.
+
+**G2 apagadas y Pixel bloqueado a la vez (G0.2):** el usuario confirmó mantener ambas pantallas apagadas/bloqueadas más de 20 s y observar `escuchando` al volver a Faceclaw. El mismo ensayo terminó al límite con 2.389 paquetes / 119,4 s PCM, cero pérdidas, duplicados, queue drops o errores de decodificación; dos paquetes tardíos y hueco nativo máximo 102 ms. Se observó STOP y después ausencia del wakelock experimental activo. La lectura de `dumpsys power` se hizo después de volver al móvil (`Awake`); no se muestreó Dozing durante este tramo ni se valida Doze profundo o autonomía. El ensayo breve con ambas pantallas apagadas queda comprobado con la intervención física del usuario y la continuidad del flujo.
+
+**Estuche y vuelta a ponerse las G2 (G0.2):** el usuario confirmó suspensión al guardarlas y retorno a `escuchando` al ponérselas, sin otro ON/OFF. Consulta e informe ON_HEAD a las 14:09:11; OFF_HEAD a las 14:09:20 detuvo el micrófono tras 171 paquetes / 8,6 s. ON_HEAD a las 14:09:31 abrió una captura nueva, con contadores nuevos: 500 paquetes / 25 s y después 1.981 / 99 s, sin pérdidas, duplicados ni errores; hueco máximo final 81 ms. STOP al límite global a las 14:11:11. Se comprueba retirada/presencia nueva/reanudación; este ciclo corto no mostró una reconstrucción completa del transporte BLE y no demuestra una caída de radio.
+
+**OFF durante PTT del asistente (G0.2):** el usuario inició otro ensayo y, mientras mantenía PTT en Chat capturando voz, pulsó OFF del detector en el Pixel antes de terminar la frase. Confirmó que el asistente recibió la frase completa y respondió normalmente. Registro técnico: final del primer flujo a las 14:13:21 con 71 paquetes / 3,6 s; otro flujo activo desde 14:13:21,553 hasta 14:13:27,673, 121 paquetes / 6,0 s, cero pérdidas, duplicados, tardíos, queue drops o errores de decodificación, hueco máximo 69 ms. Último STOP a las 14:13:29. Los tiempos nativos no identifican por sí solos el instante exacto del toque OFF: la acción física y la respuesta completa las confirmó el usuario. No se guardó audio ni contenido de la frase.
+
+**Cierre y próxima etapa:** el último ensayo terminó mediante OFF confirmado por el usuario. La comprobación posterior de la lista activa de `dumpsys power` no mostró `Faceclaw:ConversationG0`. El Pixel estaba bloqueado; no se obtuvo una instantánea UI final nueva de lease/timer. Las pruebas de liberación y OFF durante audio ajeno pasan y los registros muestran STOP. La continuación temporal se ha retirado tras incorporar sus resultados aquí. Para otra sesión, leer AGENTS.md, este informe y la continuidad permanente; no reinstalar ni repetir la batería breve por defecto. El siguiente incremento pendiente es G2/VAD local y provisional, antes de ASR/semántica; español/valenciano y alternancia siguen como requisito futuro. Autonomía y Doze profundo requieren ensayos específicos.
 
 ## Historial del PC del trabajo y de la implementación inicial
 
@@ -45,7 +53,7 @@ El usuario es bilingüe español/valenciano. La captura G0 no interpreta idiomas
 - PTT: el intento produjo audio de Chat (88 paquetes / 4,4 s, sin pérdidas/errores), pero el estado de ON/OFF al comprobar la reanudación no quedó controlado. El usuario aclaró que había pulsado OFF previamente; no registrar el intento como fallo demostrado de reanudación. En una observación posterior el ensayo mostraba espera de gafas puestas y el log informó OFF_HEAD aunque el usuario indicó llevarlas puestas. Falta aislar esa observación; no eliminar el requisito de presencia ni atribuirlo sin evidencia a Chat. Se solicitó repetir empezando por confirmar `escuchando` con ON antes de abrir Chat.
 - PTT repetido con ON confirmado antes de Chat: el usuario confirmó reanudación. Log: 64 paquetes / 3,2 s de voz de Chat sin pérdidas/errores, evento long-press-release y una nueva captura posterior creciendo de 100 a 300 paquetes. Captura de pantalla posterior: `escuchando`, 1.332 chunks / 66,6 s acumulados, una cesión, hueco máximo UI 314 ms. No se conservó la instantánea final del ensayo porque el usuario pulsó ON/OFF varias veces al ver suspensión; cada nuevo ON reinicia métricas. La evidencia guardada sí prueba la reanudación, pero no permite afirmar los descartes del tramo completo ni un cierre medido de sus recursos. No repetir el intento anterior como un fallo de PTT demostrado.
 - Pixel bloqueado: usuario confirmó bloqueo físico. Una medida de 20 s mostró `mWakefulness=Dozing` al inicio/final y el mismo flujo creciendo de 1.200 a 1.600 paquetes, sin pérdidas/errores. Continuó hasta 2.391 paquetes / 119,6 s PCM, sin pérdidas/errores ni queue drops, 2 tardíos y hueco nativo máximo 200 ms. Se observó STOP al límite de dos minutos y cero wakelocks experimentales activos. No se valida Doze profundo ni autonomía con USB conectado.
-- Al cerrar esta sesión, el usuario pidió continuar desde casa y actualizar GitHub. Leer [continuacion-pc-casa-2026-10-03.md](continuacion-pc-casa-2026-10-03.md). Siguen pendientes apagado físico de las G2/ambas pantallas, segundo plano, reconexión y OFF durante audio normal ajeno. No dar G0/G1 por superadas por estas primeras pruebas.
+- Al cerrar la sesión del trabajo quedaron cuatro ensayos para casa. Sus resultados y la corrección G0.2 están ahora en el registro permanente superior; la transferencia temporal ya se completó.
 
 ## Lo implementado
 
@@ -118,7 +126,9 @@ scp Dani@100.64.237.87:/volume1/home/Dani/Faceclaw/signing/store.password .tools
 
 La firma privada queda fuera de Git mediante `.gitignore`. Cada PC requiere acceso de red y autenticación propia al NAS; no asumir la del PC de casa.
 
-## Continuar en el PC del trabajo
+## Procedimiento histórico de traslado al PC del trabajo
+
+Este procedimiento corresponde al primer traslado de G0.1, ya completado. No ejecutarlo de nuevo por defecto; la versión vigente y su respaldo están al principio del informe.
 
 1. Leer AGENTS.md, este informe y las notas de continuidad/Hermes. Comprobar `git status` y conservar sus cambios locales antes de cambiar de rama. Con árbol limpio: `git fetch origin`, `git switch --track origin/codex/conversation-detection-g0` (si no existe localmente), o `git switch codex/conversation-detection-g0` y `git pull --ff-only` si ya existe. No mezclar/resetear cambios del trabajo ni volver por defecto a spanish para este incremento.
 2. Comprobar originales de firma y respaldarlos en el NAS como arriba. **La identidad esperada pública** es SHA-256 `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`, CN Faceclaw Espanol.
@@ -135,20 +145,20 @@ Get-FileHash dist/conversation-g0/faceclaw-before-g0.apk
 4. Firma/instalación segura: `scripts/install-conversation-g0.ps1` nunca genera una clave, valida paquete/versión, comprueba la huella, extrae un respaldo fresco del teléfono y usa únicamente instalación de actualización. Sin `-Install` solo firma. Con el Pixel conectado y autorizado:
 
 ```powershell
-powershell -NoProfile -File scripts/install-conversation-g0.ps1 -InputApk dist/conversation-g0/faceclaw-0.8.1-es.5-conversation.g0.1-unsigned.apk -Install -Serial 61161FDCG0013L
+powershell -NoProfile -File scripts/install-conversation-g0.ps1 -InputApk dist/conversation-g0/faceclaw-0.8.1-es.5-conversation.g0.1-unsigned.apk -ExpectedVersion 0.8.1-es.5-conversation.g0.1 -Install -Serial 61161FDCG0013L
 ```
 
 Usar `-AndroidSdk <ruta-sdk>` y `-JavaDirectory <ruta-jdk-21>` si ANDROID_HOME/JAVA_HOME no están configurados. En el PC del trabajo podrían estar dentro de `.tools`; comprobar rutas. No desinstalar ni usar `pm clear`, firma de debug u otra clave si la actualización falla. Verificar APK instalada y que los ajustes/conexión Hermes sigan iguales sin exportar secretos. El script completo con firma no pudo ensayarse aquí: confirmar salida de apksigner y de ADB allí.
 
 5. Si se recompila: JDK 21, SDK/build-tools 35, NDK 27.2.12479018 y CMake 3.22.1. `npx nativescript@9.1.2 prepare android --release`; después `platforms/android/gradlew.bat -p platforms/android assembleRelease -Prelease -PfaceclawUnsigned "-Dorg.gradle.jvmargs=-Xmx4g" --console=plain`. APK en `platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk`. No ejecutar un helper antiguo que pueda generar claves. Repetir comprobaciones si cambia el código/artefacto.
 
-## Plan de pruebas físicas y pendientes actuales
+## Protocolo de pruebas físicas conservado
 
-Las pruebas de captura/formato PCM, Hey Even, PTT y Pixel bloqueado ya se realizaron en el trabajo; véase el registro de esa sesión al principio de este informe. El usuario confirmó desde casa que quedaron pendientes las pantallas de las G2 apagadas, segundo plano, reconexión y OFF durante otra captura. La tabla siguiente conserva el protocolo de ensayo; no significa que deba repetirse toda la batería ni que todos sus casos estén pendientes.
+Las pruebas de captura/formato PCM, Hey Even, PTT y Pixel bloqueado se realizaron en el trabajo. Desde casa se completaron los ensayos breves restantes y se corrigió el arranque con bloqueo desactivado; véase el registro superior y su límite respecto a reconstrucción BLE. Esta tabla conserva el protocolo, no una lista de tareas pendientes ni una orden de repetirlo. No se ha medido autonomía ni Doze profundo.
 
 No pedir ponerse las gafas hasta que la APK esté instalada y arranque correctamente. Ensayos iniciales de 20–40 s, separados; ON tiene tope de dos minutos. Guiar cada acción y esperar la confirmación del usuario. No contar una prueba física como realizada por el mero hecho de ejecutar ADB.
 
-| Ensayo | Acción guiada y evidencia pendiente |
+| Ensayo | Protocolo de acción y evidencia |
 | --- | --- |
 | Referencia OFF | Ponerse G2 y confirmar conexión/firmware en UI; detector desactivado. Decir Hey Even y una pregunta inocua; respuesta normal. PTT y respuesta. Registrar éxitos, tiempos técnicos, batería/CPU/memoria de referencia, sin contenido |
 | Captura ON | Tocar Activar ensayo local; esperar «escuchando» y crecimiento de chunks. Contrastar paquetes observados 205 B y PCM1600 B; muestras/tiempo y errores. Sin guardar audio |
