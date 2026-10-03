@@ -117,3 +117,7 @@ Antes de G2.1, el Pixel 10 Pro Fold estaba actualizado por USB a `0.8.1-es.5-con
 Firma original recuperada en `E:\projects\faceclaw-es\.tools\signing\`: `faceclaw-es.jks` y `store.password`. Ambos checksums coinciden con el NAS. La contraseña permite abrir el almacén y el alias `faceclaw-es` tiene el certificado original SHA-256 `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`. Carpeta local con ACL limitada al usuario y SYSTEM; archivos excluidos de Git. NAS conserva carpeta 700 y archivos 600.
 
 La comprobación inicial de archivos recuperó la firma y sincronizó `405686b` del trabajo. Después se corrigió, compiló e instaló G0.2 y se completó la batería breve pendiente con el usuario. APK G0.2 firmada/sin firma y respaldo fresco G0.1 presentes en el NAS con hashes verificados; rutas y resultados en el informe permanente. Las copias históricas, la APK estable de ubicación y los ajustes privados se conservan.
+
+## Corrección posterior de ubicación GPS — 03-10-2026
+
+Hermes ya consulta la posición real del teléfono. Se corrigió además la caché Android: aceptación inmediata de dos minutos, coherente con el umbral del asistente; una posición de cuatro minutos solicita renovación puntual antes de devolverla. Actualización instalada con firma original sobre G2.2, versión conservada y 33 ajustes idénticos. Distinguir por nombre/hash del nuevo build; prueba física de renovación pendiente al escribir. Informe y rutas de APK/reversión: [gps-location-freshness-2026-10-03.md](gps-location-freshness-2026-10-03.md).
