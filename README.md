@@ -16,9 +16,10 @@ User-facing documentation lives at https://faceclaw.org/.
 
 ![App launcher](website/screenshots/launcher.png)
 ![Music player](website/screenshots/music-player.png)
+![Customization settings](website/screenshots/settings-customization.png)
 ![Assistant settings](website/screenshots/settings-assistant.png)
-![Display settings](website/screenshots/settings-display.png)
 ![Compass](website/screenshots/compass.png)
+![Blocks](website/screenshots/blocks.png)
 
 ## Installation
 
