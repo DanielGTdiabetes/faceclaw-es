@@ -101,14 +101,29 @@ Cierre confirmado por UI/JSON: **enabled=false**, desactivado, VAD inactivo, **l
 
 El hueco de 492 ms justifica **un ensayo nuevo de continuidad cercano al límite**, distinto de repetir la batería PTT: unos 100 s de captura, sin Hey Even/PTT/Chat ni consultas UI durante ON, con observación de voz/pausas al principio y más adelante, seguido de OFF y lectura técnica. Conserva el límite global de 120 s. Aunque resultase limpio, no resolvería la causa del hueco previo ni validaría funcionamiento prolongado, autonomía o Doze profundo.
 
-La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT, TV a un metro, convivencia breve con Hey Even y posible secuencia mixta Hey Even/PTT están ensayados; no repetirlos por defecto. PTT aislado no queda validado por la secuencia mixta. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
+## PTT aislado: cesión y retorno desde ON
 
-| Escenario nuevo | Observar sin conservar contenido |
+**03-10-2026, Europe/Madrid**, continuación de `dea6139`. Tras la aclaración de la secuencia mixta se guio un ensayo controlado: ON/escuchando, abrir Chat directamente sin Hey Even, mantener PTT/hablar/soltar, esperar respuesta, cerrar Chat, comprobar retorno y terminar OFF. El usuario confirmó **«sí, fueron normales»** respecto a respuesta y retorno. No se repitió la batería G0/G1.
+
+Lecturas UI solo después de OFF: **189 chunks / 151.200 muestras / 9,45 s PCM acumulados**, **2 inicios y 1 cesión**, hueco máximo UI **70 ms**, clipping 0. VAD: **945 ventanas, 0 ms positivos, 0 episodios, 0 completados y 0 interrumpidos**. Este ensayo acredita cesión y retorno desde ON, **sin episodio acústico experimental activo observado**; no acredita interrupción/reinicio de un episodio de posible voz ya iniciado. La voz durante PTT sigue la ruta normal del asistente, no se interpreta como ausencia de voz humana por estos contadores experimentales. No repetir el ensayo por defecto.
+
+Diagnóstico conservado **solo del último tramo reanudado**: **116 paquetes / 92.800 muestras / 5,8 s PCM**, hueco nativo **72 ms**, paquetes de 205 B, PCM de 1.600 B, mono 16 kHz; cero pérdidas, duplicados, malformed, stale, errores de decodificación, queue drops y **pcmDeliveryDrops=0 en ese tramo**. No se dispone de la instantánea completa del primer tramo ni se extrapolan esos ceros a todo el ensayo. Los máximos UI/nativo describen ámbitos distintos; no equiparar sus diferencias a pérdidas.
+
+Cierre confirmado: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. `capturing=true` nativo pertenece a la instantánea previa a STOP. Sin reinstalación ni cambios de código, firma, ajustes, Hermes o firmware; sin audio experimental guardado/enviado. El hueco histórico de **492 ms** y los **siete pcmDeliveryDrops** anteriores mantienen su incertidumbre: este tramo no explica ni demuestra resueltas ambas incidencias.
+
+## Cierre de la batería breve y decisión de avanzar
+
+**03-10-2026, Europe/Madrid.** El usuario pidió continuar el desarrollo, aceptar las pruebas realizadas en su alcance y resolver futuras incidencias conforme aparezcan en la app. **La batería breve se cierra con los escenarios observados**, sin nuevos ensayos físicos ahora y sin elevar esa aceptación a validación general de G2. Se conserva cada resultado y limitación del informe. La propuesta de continuidad de unos 100 s queda **aplazada, no ejecutada ni requisito para avanzar**; el hueco de 492 ms y los siete descartes históricos quedan como incidencias abiertas, no resueltas.
+
+Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT, TV a un metro, convivencia breve con Hey Even, posible secuencia mixta y PTT aislado desde ON están ensayados; no repetirlos por defecto. Último cierre OFF completo confirmado. No se reinstaló ni cambió código/APK/ajustes/firma/Hermes/firmware. No se conservó ni envió audio experimental.
+
+**La evaluación general sigue incompleta**: interlocutor humano, otros fondos, estabilidad prolongada, autonomía y Doze profundo no están validados; tampoco separación de hablantes, participación, precisión valenciana o ASR. Los siguientes escenarios se conservan como cobertura pendiente, no como una nueva batería inmediata:
+
+| Cobertura pendiente | Alcance futuro, sin repetir por defecto |
 | --- | --- |
 | Interlocutor, 20–30 s | Actividad posible, sin atribuir identidad o participación |
 | Otro ruido/fondo, si se necesita ampliar cobertura | Actividad espuria y límites del método por energía; la TV a un metro ya está ensayada |
-| PTT aislado G2.1, si se necesita completar esa comprobación | Solo pulsar/hablar/soltar desde Chat, sin Hey Even; la secuencia previa posiblemente mezcló ambas entradas y no prueba aislamiento |
-| Continuidad cerca del límite, unos 100 s | Sin consultas UI ni asistente durante ON; motivado por hueco de entrega de 492 ms del ensayo PTT, sin atribuir su causa |
+| Continuidad cerca del límite, unos 100 s (aplazado) | Propuesto por hueco492; usuario decidió avanzar sin ejecutarlo ahora, sin atribuir causa ni declarar resolución |
 | Cierre | OFF y recursos experimentales retirados, sin cortar captura ajena |
 
-Mantener los ensayos limitados a dos minutos, sin cambios de Hermes/bloqueo. No usar estas pruebas para dar por validadas autonomía o Doze profundo: siguen pendientes de protocolos propios. Para el ASR futuro permanecen español, valenciano y alternancia entre y dentro de frases, conservando el idioma y absteniéndose silenciosamente ante contenido incomprensible.
+En futuros ensayos mantener el límite de dos minutos y cierre OFF, sin cambios de Hermes/bloqueo salvo un diseño posterior autorizado. No usar esta batería para dar por validadas autonomía o Doze profundo: siguen pendientes de protocolos propios. Para el ASR futuro permanecen español, valenciano y alternancia entre y dentro de frases, conservando el idioma y absteniéndose silenciosamente ante contenido incomprensible. La hoja de ruta histórica propone G3 con perfil propio; **no está autorizado ni se implementa mientras siga vigente la exclusión de perfiles**. El siguiente incremento debe respetar esa restricción.
