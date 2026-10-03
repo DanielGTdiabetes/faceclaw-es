@@ -5,7 +5,7 @@ import { MENU_HIGHLIGHT_DURATION_MS, nextAnimationToken } from "./menu-highlight
 /** Longest scroll, in pixels, that animates; longer jumps snap. */
 export const MAX_ANIMATED_SCROLL = 96;
 /** At Normal menu animation speed, like MENU_HIGHLIGHT_DURATION_MS. */
-export const MENU_BOUNCE_DURATION_MS = 320;
+export const MENU_BOUNCE_DURATION_MS = 160;
 /** Fraction of a bounce spent moving out to the peak; the rest settles back. */
 const BOUNCE_PEAK = 0.35;
 

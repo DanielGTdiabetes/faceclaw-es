@@ -1,7 +1,7 @@
 import { menuAnimationDurationMs } from "./menu-animation-pref";
 
 /** At Normal menu animation speed; menuAnimationDurationMs scales it to the setting. */
-export const MENU_HIGHLIGHT_DURATION_MS = 240;
+export const MENU_HIGHLIGHT_DURATION_MS = 120;
 export type MenuHighlightAnimation = { dx: number; dy: number; startedAt: number; token: number; durationMs: number };
 
 let nextToken = 1;
