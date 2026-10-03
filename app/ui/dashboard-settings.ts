@@ -234,7 +234,7 @@ export const batteryDisplayModeSetting = new ConfigSettingEnum<BatteryDisplayMod
   id: "batteryDisplayMode",
   label: "Style",
   storageKey: "dashboard.systemCard.batteryDisplayMode",
-  defaultValue: "stacked",
+  defaultValue: "dense",
   values: ["icon", "percentage", "stacked", "stacked-percentage", "dense"],
   formatValue: batteryDisplayModeLabel,
   description: "How the top bar shows battery levels: a gauge icon or exact percentage beside the label, a compact gauge or percentage with the label stacked above it, or (dense) a device icon beside each gauge with two indicators stacked per column.",
@@ -365,7 +365,7 @@ export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosit
   id: "app-switcher-position",
   label: "App switcher position",
   storageKey: "display.appSwitcherPosition",
-  defaultValue: "left",
+  defaultValue: "bottom",
   values: ["left", "right", "bottom", "popup"],
   formatValue: (value) => APP_SWITCHER_POSITION_LABELS[value] ?? value,
   description:
@@ -388,7 +388,7 @@ export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({
   id: "ui-depth",
   label: "Depth",
   storageKey: "display.uiDepth",
-  defaultValue: "0",
+  defaultValue: "48",
   values: UI_DEPTH_VALUES,
   formatValue: (value) => {
     const depth = Number(value);
@@ -411,7 +411,7 @@ export const statusBarPositionSetting = new ConfigSettingEnum<StatusBarPosition>
   id: "status-bar-position",
   label: "Status bar position",
   storageKey: "display.statusBarPosition",
-  defaultValue: "top",
+  defaultValue: "bottom",
   values: ["top", "bottom"],
   // "switcher" was the bottom value's name while only a bottom row had one.
   normalize: (value) => value === "bottom" || value === "switcher" ? "bottom" : "top",
