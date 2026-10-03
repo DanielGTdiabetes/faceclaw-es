@@ -94,6 +94,8 @@ class LocalTranscriptSessionTest {
         finish.countDown(); assertTrue(released.await(2000))
         waitStopped(session)
         assertTrue(texts.isEmpty()); assertTrue(session.diagnostics().contains("\"inputBufferedBytes\":0"))
+        assertEquals(1L, metric(session.diagnostics(), "invalidatedDecodes"))
+        assertEquals(0L, metric(session.diagnostics(), "abstentions"))
     }
     @Test fun resetRejectsQueuedUiCallbackAndDecoderRunsOnlyOneSegmentAtOnce() {
         val platform = testPlatform()
@@ -208,5 +210,86 @@ class LocalTranscriptSessionTest {
             condition.withLock { condition.awaitMs(10) }
         }
         error("local test decode did not finish")
+    }
+
+    private fun metric(json: String, name: String): Long =
+        Regex("\"$name\":(\\d+)").find(json)?.groupValues?.get(1)?.toLong() ?: error("missing metric $name")
+
+    @Test fun segmentDiagnosticsDistinguishShortLimitSilenceAndErasedOpenAudio() {
+        val buffer = LocalTranscriptBuffer { it.fill(0) }
+        repeat(3) { buffer.accept(pcm(), "posible voz") }
+        buffer.accept(pcm(0), "sin actividad") // Too short; never submitted to the decoder.
+        repeat(160) { buffer.accept(pcm(), "posible voz") } // Exactly 8 s; hard cut.
+        speech(buffer); buffer.accept(pcm(0), "sin actividad")
+        speech(buffer); buffer.reset() // OFF/stream invalidation discards an open fragment.
+        val report = buffer.diagnostics()
+        assertEquals(2L, metric(report, "silenceClosures"))
+        assertEquals(1L, metric(report, "limitClosures"))
+        assertEquals(1L, metric(report, "shortSegments"))
+        assertEquals(1L, metric(report, "interruptedSegments"))
+        assertEquals(300L, metric(report, "interruptedAudioMs"))
+        assertEquals(8350L, metric(report, "submittedAudioMs"))
+        assertEquals(0, buffer.bufferedBytes())
+        buffer.reset() // Repeated cleanup does not count another interrupted segment.
+        assertEquals(1L, metric(buffer.diagnostics(), "interruptedSegments"))
+        buffer.resetMetrics()
+        assertEquals(0L, metric(buffer.diagnostics(), "submittedAudioMs"))
+    }
+
+    @Test fun analysisSeparatesLoadingLanguageFiltersErrorsTimingAndDeliveryWithoutContent() {
+        val real = testPlatform()
+        val clock = object : ProtocolPlatform by real {
+            @Volatile var now = 1000L
+            override fun elapsedRealtimeMs(): Long = now
+        }
+        val loading = Latch(1, real); val loaded = Latch(1, real); val released = Latch(1, real)
+        val outputs = listOf(LocalDecodedText("bonjour", "fr"), LocalDecodedText("", "es"),
+            LocalDecodedText("[inaudible]", "ca"), LocalDecodedText("palabra privada", "es"),
+            LocalDecodedText("Bon dia privat", "ca"))
+        var calls = 0
+        val session = LocalTranscriptSession(object : LocalTranscriptHost {
+            override val dispatcher = CallbackDispatcher { it() }
+            override fun loadDecoder(): LocalTranscriptDecoder {
+                loading.countDown(); loaded.await(2000)
+                return object : LocalTranscriptDecoder {
+                    override fun decode(samples: FloatArray): LocalDecodedText {
+                        clock.now += (calls + 1) * 10L
+                        val index = calls++
+                        if (index == outputs.size) error("decoder error with private content")
+                        return outputs[index]
+                    }
+                    override fun release() { released.countDown() }
+                }
+            }
+        }, clock)
+        val texts = mutableListOf<String>()
+        session.setListener(object : FaceclawLocalTranscriptListener {
+            override fun onText(text: String, language: String) { texts.add(text) }
+        })
+        assertTrue(session.start()); assertTrue(loading.await(2000))
+        repeat(2) { session.acceptPcm(pcm(), "posible voz") }
+        loaded.countDown(); waitReady(session)
+        repeat(6) {
+            repeat(6) { session.acceptPcm(pcm(), "posible voz") }
+            session.acceptPcm(pcm(0), "sin actividad")
+            waitNotBusy(session)
+        }
+        session.stop(); assertTrue(released.await(2000)); waitStopped(session)
+        val report = session.diagnostics()
+        for ((name, value) in mapOf("pcmAudioMs" to 2200L, "loadingAudioMs" to 100L,
+            "submittedAudioMs" to 2100L, "decodedAudioMs" to 2100L, "decodeCalls" to 6L,
+            "decodeTotalMs" to 210L, "decodeMaxMs" to 60L, "rejectedLanguage" to 1L,
+            "rejectedEmpty" to 1L, "rejectedStructure" to 1L, "decodeErrors" to 1L, "processingErrors" to 0L,
+            "languageEs" to 2L, "languageCa" to 2L, "languageOther" to 1L,
+            "accepted" to 2L, "delivered" to 2L, "abstentions" to 4L, "dropped" to 0L)) {
+            assertEquals(value, metric(report, name), name)
+        }
+        assertEquals(listOf("palabra privada", "Bon dia privat"), texts)
+        assertFalse(report.contains("privat")); assertFalse(report.contains("bonjour"))
+        assertFalse(report.contains("decoder error"))
+        assertEquals(0L, metric(report, "inputBufferedBytes"))
+        assertTrue(session.start()); waitReady(session)
+        assertEquals(0L, metric(session.diagnostics(), "decodeCalls"))
+        session.stop(); waitStopped(session)
     }
 }

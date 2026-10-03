@@ -1,5 +1,9 @@
 # Continuar Faceclaw desde otro PC
 
+**G2.3 preparada/autorizada y aún no instalada:** APK de diagnóstico ASR compilada y firmada, misma firma original/código805, GPS vigente/modelos/umbrales conservados. APKs en NAS `apk-builds/conversation-g2.3/` con hashes/permisos comprobados. Informe [conversation-detection-g2-asr-diagnostics.md](conversation-detection-g2-asr-diagnostics.md). Pendiente desbloquear Pixel y comprobar OFF visible antes de exportar ajustes actuales/instalar. Usuario ya autorizó actualización y ensayo breve; no pedir otra aprobación, comprobar estado. Pixel conserva G2.2+GPS; sin ensayo nuevo iniciado.
+
+**Análisis ASR posterior a79312b3:** [conversation-detection-g2-asr-diagnostics.md](conversation-detection-g2-asr-diagnostics.md). Diagnóstico agregado implementado/validado en código, **no instalado ni probado físicamente**. No cambia modelos/umbrales ni resuelve precisión. Pixel conserva G2.2+GPS confirmado funcionando, firma/ajustes/Hermes/bloqueo; último cierre experimental OFF anterior. 12Kotlin/35Node específicas, TypeScript/lint pasan; no repetir instalación/batería por defecto ni atribuir palabras incorrectas al VAD.
+
 ## Estado activo: G2.2/ASR local opcional (03-10-2026)
 
 Leer [informe G2.2](conversation-detection-g2-asr-results.md). El usuario cerró la batería breve de G2 en su alcance observado y pidió avanzar con transcripción local español/valenciano sin grabar ni enviar audio. G2.2 implementada, compilada e instalada con firma original y `adb install -r`: **0.8.1-es.5-conversation.g2.2**, código805. Los **33 ajustes son idénticos** antes/después, incluido Hermes100.65.212.74:8791 y bloqueo desactivado. No se cambió el asistente, perfiles, firmware u otros proyectos.

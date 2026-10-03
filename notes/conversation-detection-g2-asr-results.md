@@ -1,5 +1,7 @@
 # G2.2: transcripción local provisional español/valenciano
 
+**Continuación del análisis:** [diagnóstico de omisiones ASR](conversation-detection-g2-asr-diagnostics.md). Contadores agregados implementados/validados con fixtures y **no instalados**; modelo/umbrales conservados. No corrige ni acredita precisión. GPS posterior instalado y funciona según [informe GPS](gps-location-freshness-2026-10-03.md). Último cierre experimental OFF se conserva; no se repite batería.
+
 Fecha: **03-10-2026**, Europe/Madrid. Rama `codex/conversation-detection-g0`, tras el cierre breve G2 de `f2d791c`. El usuario pidió avanzar sin nuevos ensayos físicos, resolver incidencias conforme aparezcan y priorizó **transcripción local español/valenciano sin grabar ni enviar audio**. La hoja de ruta original conserva siete fases G0–G6; esta revisión **G2.2** no implementa el G3 original de participación/perfiles.
 
 ## Comportamiento

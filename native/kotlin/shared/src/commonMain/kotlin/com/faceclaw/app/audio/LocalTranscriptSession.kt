@@ -13,15 +13,20 @@ interface FaceclawLocalTranscriptListener {
     fun onText(text: String, language: String)
 }
 
+enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE }
+
 /** No semantic confidence is exposed by this runtime. These are structural abstentions only. */
-fun acceptedLocalText(result: LocalDecodedText): String {
+fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
     val text = result.text.trim()
-    if (result.language != "es" && result.language != "ca") return ""
-    if (text.isEmpty() || text.length > 600 || !text.any { it.isLetter() }) return ""
-    if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return ""
-    if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return ""
-    return text
+    if (result.language != "es" && result.language != "ca") return LocalTextRejection.LANGUAGE
+    if (text.isEmpty()) return LocalTextRejection.EMPTY
+    if (text.length > 600 || !text.any { it.isLetter() }) return LocalTextRejection.STRUCTURE
+    if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return LocalTextRejection.STRUCTURE
+    if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return LocalTextRejection.STRUCTURE
+    return LocalTextRejection.NONE
 }
+fun acceptedLocalText(result: LocalDecodedText): String =
+    if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
 
 /** Segments the existing provisional VAD. Copies PCM only into bounded, erasable RAM. */
 class LocalTranscriptBuffer(private val submit: (ShortArray) -> Unit) {
@@ -37,9 +42,31 @@ class LocalTranscriptBuffer(private val submit: (ShortArray) -> Unit) {
     private var count = 0
     private var voiced = 0
     private var active = false
+    private var silenceClosures = 0
+    private var limitClosures = 0
+    private var shortSegments = 0
+    private var interruptedSegments = 0
+    private var interruptedSamples = 0L
+    private var submittedSamples = 0L
     fun bufferedBytes(): Int = (count + preCount) * 2
 
     fun reset() {
+        if (active && count > 0) { interruptedSegments++; interruptedSamples += count }
+        clearAudio()
+    }
+
+    fun resetMetrics() {
+        clearAudio()
+        silenceClosures = 0; limitClosures = 0; shortSegments = 0
+        interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0
+    }
+
+    /** Duration is PCM sample time, not wall time or confirmed speech. */
+    fun diagnostics(): String = "\"silenceClosures\":$silenceClosures,\"limitClosures\":$limitClosures," +
+        "\"shortSegments\":$shortSegments,\"interruptedSegments\":$interruptedSegments," +
+        "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}"
+
+    private fun clearAudio() {
         samples.fill(0); pre.fill(0)
         count = 0; voiced = 0; preCount = 0; preWrite = 0; active = false
     }
@@ -63,15 +90,17 @@ class LocalTranscriptBuffer(private val submit: (ShortArray) -> Unit) {
                 preCount = minOf(PRE_SAMPLES, preCount + 1)
             }
             if (active && state == "posible voz") voiced++
-            if (count == MAX_SAMPLES) finish()
+            if (count == MAX_SAMPLES) finish(atLimit = true)
         }
-        if (active && state == "sin actividad") finish()
+        if (active && state == "sin actividad") finish(atLimit = false)
     }
 
-    private fun finish() {
+    private fun finish(atLimit: Boolean) {
+        if (atLimit) limitClosures++ else silenceClosures++
         val audio = if (voiced >= MIN_VOICED_SAMPLES) samples.copyOf(count) else null
+        if (audio == null) shortSegments++ else submittedSamples += count
         // Erase before handing a completed segment to an asynchronous consumer.
-        reset()
+        clearAudio()
         if (audio != null) submit(audio)
     }
 }
@@ -97,6 +126,22 @@ class LocalTranscriptSession(
     private var accepted = 0
     private var abstentions = 0
     private var dropped = 0
+    private var pcmChunks = 0
+    private var loadingChunks = 0
+    private var decodeCalls = 0
+    private var decodedSamples = 0L
+    private var decodeTotalMs = 0L
+    private var decodeMaxMs = 0L
+    private var rejectedLanguage = 0
+    private var rejectedEmpty = 0
+    private var rejectedStructure = 0
+    private var decodeErrors = 0
+    private var processingErrors = 0
+    private var invalidatedDecodes = 0
+    private var languageEs = 0
+    private var languageCa = 0
+    private var languageOther = 0
+    private var delivered = 0
     private var listener: FaceclawLocalTranscriptListener? = null
     private val buffer = LocalTranscriptBuffer { audio ->
         // Called under condition by acceptPcm; do not acquire its non-reentrant lock again.
@@ -111,6 +156,11 @@ class LocalTranscriptSession(
             running = true; worker = true; ready = false; generation++
             deadline = platform.elapsedRealtimeMs() + 120000
             accepted = 0; abstentions = 0; dropped = 0; status = "cargando"
+            buffer.resetMetrics()
+            pcmChunks = 0; loadingChunks = 0; decodeCalls = 0; decodedSamples = 0
+            decodeTotalMs = 0; decodeMaxMs = 0; rejectedLanguage = 0; rejectedEmpty = 0
+            rejectedStructure = 0; decodeErrors = 0; processingErrors = 0; invalidatedDecodes = 0
+            languageEs = 0; languageCa = 0; languageOther = 0; delivered = 0
         }
         startThread("FaceclawLocalTranscript", true) { runWorker() }
         return true
@@ -137,7 +187,10 @@ class LocalTranscriptSession(
 
     fun acceptPcm(pcm: ByteArray?, vadState: String) {
         condition.withLock {
-            if (running && ready && pcm != null && platform.elapsedRealtimeMs() < deadline) buffer.accept(pcm, vadState)
+            if (running && pcm != null && platform.elapsedRealtimeMs() < deadline) {
+                if (pcm.size == 1600) { pcmChunks++; if (!ready) loadingChunks++ }
+                if (ready) buffer.accept(pcm, vadState)
+            }
         }
     }
 
@@ -145,7 +198,15 @@ class LocalTranscriptSession(
     fun diagnostics(): String = condition.withLock {
         "{\"status\":\"$status\",\"worker\":$worker,\"busy\":$busy," +
             "\"inputBufferedBytes\":${buffer.bufferedBytes() + (job?.audio?.size ?: 0) * 2 + activeInputBytes}," +
-            "\"accepted\":$accepted,\"abstentions\":$abstentions,\"dropped\":$dropped}"
+            "\"accepted\":$accepted,\"abstentions\":$abstentions,\"dropped\":$dropped," +
+            "\"analysis\":{\"pcmAudioMs\":${pcmChunks * 50L},\"loadingAudioMs\":${loadingChunks * 50L}," +
+            buffer.diagnostics() + ",\"decodeCalls\":$decodeCalls,\"decodedAudioMs\":${decodedSamples / 16}," +
+            "\"decodeTotalMs\":$decodeTotalMs,\"decodeMaxMs\":$decodeMaxMs," +
+            "\"rejectedLanguage\":$rejectedLanguage,\"rejectedEmpty\":$rejectedEmpty," +
+            "\"rejectedStructure\":$rejectedStructure,\"decodeErrors\":$decodeErrors," +
+            "\"processingErrors\":$processingErrors," +
+            "\"invalidatedDecodes\":$invalidatedDecodes,\"languageEs\":$languageEs," +
+            "\"languageCa\":$languageCa,\"languageOther\":$languageOther,\"delivered\":$delivered}}"
     }
 
     private fun nextJob(): Job? = condition.withLock {
@@ -175,22 +236,52 @@ class LocalTranscriptSession(
                 val next = nextJob() ?: break
                 val floats = FloatArray(next.audio.size) { next.audio[it] / 32768f }
                 next.audio.fill(0)
+                var decodeStarted: Long? = null
+                var decodeFailed = false
                 try {
                     val canDecode = condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }
-                    val decoded = if (canDecode) decoder?.decode(floats) else null
+                    if (canDecode) {
+                        decodeStarted = platform.elapsedRealtimeMs()
+                        condition.withLock { decodeCalls++; decodedSamples += floats.size }
+                    }
+                    val decoded = if (canDecode) try {
+                        decoder?.decode(floats)
+                    } catch (failure: Throwable) {
+                        decodeFailed = true
+                        throw failure
+                    } finally {
+                        val elapsed = maxOf(0L, platform.elapsedRealtimeMs() - decodeStarted!!)
+                        condition.withLock { decodeTotalMs += elapsed; decodeMaxMs = maxOf(decodeMaxMs, elapsed) }
+                    } else null
                     val text = if (decoded != null) acceptedLocalText(decoded) else ""
                     val post = condition.withLock {
-                        if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) false
-                        else if (text.isEmpty()) { abstentions++; false }
-                        else {
-                            accepted++
-                            result = Result(next.generation, text, decoded!!.language)
-                            true
+                        if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) {
+                            if (canDecode) invalidatedDecodes++
+                            false
+                        } else {
+                            when (decoded?.language) { "es" -> languageEs++; "ca" -> languageCa++; else -> languageOther++ }
+                            when (decoded?.let { localTextRejection(it) }) {
+                                LocalTextRejection.LANGUAGE -> rejectedLanguage++
+                                LocalTextRejection.EMPTY -> rejectedEmpty++
+                                LocalTextRejection.STRUCTURE -> rejectedStructure++
+                                else -> Unit
+                            }
+                            if (text.isEmpty()) { abstentions++; false }
+                            else {
+                                accepted++
+                                result = Result(next.generation, text, decoded!!.language)
+                                true
+                            }
                         }
                     }
                     if (post) publish(next.generation)
                 } catch (_: Throwable) {
-                    condition.withLock { if (running && generation == next.generation) abstentions++ }
+                    condition.withLock {
+                        if (running && generation == next.generation && platform.elapsedRealtimeMs() < deadline) {
+                            abstentions++
+                            if (decodeFailed) decodeErrors++ else processingErrors++
+                        } else if (decodeStarted != null) invalidatedDecodes++
+                    }
                     // No error popup, transcript dump or fallback recognizer.
                 } finally {
                     floats.fill(0f); next.audio.fill(0)
@@ -213,6 +304,7 @@ class LocalTranscriptSession(
             val delivery = condition.withLock {
                 val current = result
                 if (running && generation == token && current?.generation == token && platform.elapsedRealtimeMs() < deadline) {
+                    if (listener != null) delivered++
                     result = null; Pair(listener, current)
                 } else null
             }
