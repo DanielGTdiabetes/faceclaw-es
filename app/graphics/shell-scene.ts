@@ -2,8 +2,14 @@ import { encodePresentation } from "./presentation-wire"
 import { GrayImage, type PlacedImage } from './image'
 import type { Plane } from './plane'
 
-/** Crop one independently owned, opaque shell surface; never split it into tiles. */
+/**
+ * Crop one independently owned, opaque shell surface; never split it into
+ * tiles. A fractional rect (TTF-measured layout) widens to the whole pixels it
+ * touches, since a fractional row stride overruns the crop's buffer.
+ */
 export function shellCrop(image: GrayImage, x: number, y: number, width: number, height: number, key: number): Plane {
+  const right = Math.ceil(x + width), bottom = Math.ceil(y + height)
+  x = Math.floor(x); y = Math.floor(y); width = right - x; height = bottom - y
   const baked = image.withDrawsBaked(false), crop = new GrayImage(width, height, 0)
   for (let row = 0; row < height; row++) crop.pixels.set(baked.pixels.subarray((y + row) * image.width + x, (y + row) * image.width + x + width), row * width)
   image.copyPresentationsInto(crop, -x, -y)

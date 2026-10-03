@@ -664,7 +664,8 @@ export class ShellChromeLayer implements Layer {
     const top = row.y + ROW_STATUS_TOP;
     const font = getDefaultMediumFont();
     const clock = clockText();
-    const clockX = row.x + row.width - font.measureText(clock);
+    // A TTF face measures fractionally; the status surface's crop edges need whole pixels.
+    const clockX = row.x + row.width - Math.ceil(font.measureText(clock));
     image.drawText(font, clockX, top + Math.max(0, ((TOP_BAR_HEIGHT - font.lineHeight) / 2) | 0), clock, 210);
     // The battery block keeps its usual right margin inside the edge it's given.
     const batteryLeft = this.drawTopBarBatteries(image, state, top, clockX - ROW_CLOCK_GAP + BATTERY_BLOCK_RIGHT_MARGIN);
@@ -759,7 +760,7 @@ export class ShellChromeLayer implements Layer {
     const batteryLeft = this.drawTopBarBatteries(image, state, barTop, barRight);
     const trayLeft = drawTrayIcons(image, state.trayIcons, batteryLeft, barTop);
 
-    const iconsX = clockX + font.measureText(clock) + 16;
+    const iconsX = clockX + Math.ceil(font.measureText(clock)) + 16;
     const maxIcons = Math.max(0, ((trayLeft - 8 - iconsX) / NOTIFICATION_ICON_STEP) | 0);
     if (maxIcons > 0) {
       const { icons, keys, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
@@ -841,8 +842,8 @@ export class ShellChromeLayer implements Layer {
     for (let index = items.length - 1; index >= 0; index--) {
       const item = items[index]!;
       const percentText = `${item.percent}%`;
-      const valueWidth = percentageMode ? font.measureText(percentText) : BATTERY_ICON_WIDTH;
-      const labelWidth = font.measureText(item.label);
+      const valueWidth = percentageMode ? Math.ceil(font.measureText(percentText)) : BATTERY_ICON_WIDTH;
+      const labelWidth = Math.ceil(font.measureText(item.label));
       x -= labelWidth + labelGap + valueWidth;
       image.drawText(font, x, textY, item.label, BATTERY_LABEL_VALUE);
       const valueX = x + labelWidth + labelGap;
