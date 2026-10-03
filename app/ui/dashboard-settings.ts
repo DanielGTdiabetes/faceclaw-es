@@ -18,6 +18,7 @@ import {
 } from "~/assistant/models";
 import { isLocalModelReady } from "../native/llama";
 import { drawRightValueMenuItem, drawToggleMenuItem, MenuItem, openModalMenu } from "./menu";
+import { ANIMATION_SPEEDS, animationSpeedLabel, scaleAnimationDuration, type AnimationSpeed } from "./animation-speed";
 import { MENU_ANIMATION_KEY } from "./menu-animation-pref";
 import { LIST_ROW_TEXT_INSET, lineStep } from "./metrics";
 import { Layer, type LayerContext } from "./layers";
@@ -480,29 +481,34 @@ export const autoBrightnessCurveSetting = new ConfigSettingString({
   defaultValue: DEFAULT_BRIGHTNESS_CURVE, normalize: normalizeBrightnessCurve, validate: brightnessCurveError,
   description: "2–16 lux:percent pairs, separated by commas. Percent is within your minimum–maximum range. Start at 0:0, end at 100%, and increase lux without decreasing percent. Incomplete edits stay in the preview; brightness keeps using the last valid curve.",
 });
+/** The screen on/off fade at Normal speed. */
 const SCREEN_FADE_MS = 280;
 
-export const menuAnimationSetting = new ConfigSettingBoolean({
+export const menuAnimationSetting = new ConfigSettingEnum<AnimationSpeed>({
   id: "menu-animation",
   label: "Menu animation",
   storageKey: MENU_ANIMATION_KEY,
-  defaultValue: true,
-  description: "Slide the highlight, scroll, and bounce at the ends in menus, lists, and the launcher and Files icon grids. When off, they move instantly.",
+  defaultValue: "normal",
+  values: ANIMATION_SPEEDS,
+  formatValue: animationSpeedLabel,
+  description: "How fast the highlight slides, lists scroll, and the ends bounce in menus, lists, and the launcher and Files icon grids. Disabled moves them instantly.",
 });
 
-export const screenFadeSetting = new ConfigSettingBoolean({
+export const screenFadeSetting = new ConfigSettingEnum<AnimationSpeed>({
   id: "screen-fade",
   label: "Screen fade",
-  storageKey: "display.screenFade",
-  defaultValue: true,
-  description: "Fade the display in and out when the screen turns on or off. When off, it switches instantly.",
+  storageKey: "display.screenFadeSpeed",
+  defaultValue: "normal",
+  values: ANIMATION_SPEEDS,
+  formatValue: animationSpeedLabel,
+  description: "How fast the display fades in and out when the screen turns on or off. Disabled switches it instantly.",
 });
 
 export function getBrightnessPreferences() {
   const level = brightnessSettingToLevel(brightnessSetting.get());
   return { auto: level === null, level: level ?? 50,
     minimum: Number(autoBrightnessMinSetting.get()), maximum: Number(autoBrightnessMaxSetting.get()),
-    curve: autoBrightnessCurveSetting.getValidValue(), fadeMs: screenFadeSetting.get() ? SCREEN_FADE_MS : 0 };
+    curve: autoBrightnessCurveSetting.getValidValue(), fadeMs: scaleAnimationDuration(SCREEN_FADE_MS, screenFadeSetting.get()) };
 }
 
 export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>({

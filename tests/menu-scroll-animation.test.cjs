@@ -1,13 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Menu } = require('../.test-build/app/ui/menu-core.js');
-const { MENU_HIGHLIGHT_DURATION_MS } = require('../.test-build/app/ui/menu-highlight-motion.js');
+const { MenuHighlightMotion, MENU_HIGHLIGHT_DURATION_MS } = require('../.test-build/app/ui/menu-highlight-motion.js');
 const { GrayImage } = require('../.test-build/app/graphics/image.js');
 const { DrawOp, encodeDisplayList, readDisplayList } = require('../.test-build/app/graphics/display-list.js');
 const { evaluate } = require('../.test-build/app/graphics/draw-expression.js');
 const { DrawExpression: E } = require('../.test-build/app/graphics/draw-expression.js');
 const { menuScrollList, slidingHighlightY } = require('../.test-build/app/graphics/menu-scroll-list.js');
-const { MENU_BOUNCE_DURATION_MS, scrollOffsetExpression } = require('../.test-build/app/ui/menu-scroll-motion.js');
+const { MenuScrollMotion, MENU_BOUNCE_DURATION_MS, scrollOffsetExpression } = require('../.test-build/app/ui/menu-scroll-motion.js');
 const { encodePresentation } = require('../.test-build/app/graphics/presentation-wire.js');
 const { setMenuAnimationReader } = require('../.test-build/app/ui/menu-animation-pref.js');
 // Also consumed by FrameDisplayListTest.kt.
@@ -197,9 +197,9 @@ test('a bounce during a scroll starts from the offset on screen', () => {
   assert.ok(offsets[0] < offsets[1], 'it starts where the scroll had got to, above its settled offset');
 });
 
-test('with menu animation off, scrolls, slides and bounces snap', (t) => {
-  setMenuAnimationReader(() => false);
-  t.after(() => setMenuAnimationReader(() => true));
+test('with menu animation disabled, scrolls, slides and bounces snap', (t) => {
+  setMenuAnimationReader(() => 'disabled');
+  t.after(() => setMenuAnimationReader(() => 'normal'));
   const timed = (image) => image.draws.filter((draw) => draw.presentation?.displayList?.timeline);
   const menu = inkMenu();
   paint(menu, 1000);
@@ -215,6 +215,23 @@ test('with menu animation off, scrolls, slides and bounces snap', (t) => {
   paint(menu, 4000);
   menu.moveSelection(1);
   assert.equal(timed(paint(menu, 5000)).length, 0, 'no bounce');
+});
+
+test('menu animation speed scales slide, scroll and bounce durations', (t) => {
+  t.after(() => setMenuAnimationReader(() => 'normal'));
+  for (const [speed, factor] of [['very-fast', 5], ['fast', 2], ['normal', 1], ['slow', 0.5]]) {
+    setMenuAnimationReader(() => speed);
+    const highlight = new MenuHighlightMotion();
+    highlight.paint(0, 0, 10, 20, 100, 20, 0);
+    highlight.navigate(0, false);
+    assert.equal(highlight.paint(1, 0, 10, 40, 100, 20, 100).durationMs, MENU_HIGHLIGHT_DURATION_MS / factor, speed);
+    const scroll = new MenuScrollMotion();
+    scroll.paint(0, BOX, 0);
+    scroll.navigate(false);
+    assert.equal(scroll.paint(20, BOX, 100).durationMs, MENU_HIGHLIGHT_DURATION_MS / factor, speed);
+    scroll.bounce(8);
+    assert.equal(scroll.paint(20, BOX, 1000).durationMs, MENU_BOUNCE_DURATION_MS / factor, speed);
+  }
 });
 
 test('scroll lists survive the bridge with animated copy coordinates', () => {

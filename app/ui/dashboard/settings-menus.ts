@@ -326,17 +326,17 @@ function batteryIndicatorsMenuItem(): MenuItem {
   };
 }
 
-/** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
+/** The Customization section's "Animations" row: opens a modal submenu of animation speeds. */
 function animationsMenuItem(): MenuItem {
   return submenuItem(
     "Animations",
     (ctx) => {
       openSettingsSubMenu(ctx, "Animations", [
-        toggleSettingMenuItem(menuAnimationSetting),
-        toggleSettingMenuItem(screenFadeSetting),
+        enumSettingMenuItem(menuAnimationSetting),
+        enumSettingMenuItem(screenFadeSetting),
       ]);
     },
-    { description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off." },
+    { description: "Speed up, slow down, or turn off menu and icon-grid motion and the fade when the screen turns on and off." },
   );
 }
 

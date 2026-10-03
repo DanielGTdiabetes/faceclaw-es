@@ -18,7 +18,7 @@ const menuCore=load('app/ui/menu-core.ts',{
   '../graphics/image':graphics,'./menu-highlight-motion': require('../.test-build/app/ui/menu-highlight-motion.js'), '../graphics/menu-scroll-list': require('../.test-build/app/graphics/menu-scroll-list.js'), './menu-scroll-motion': require('../.test-build/app/ui/menu-scroll-motion.js'), '../graphics/draw-expression': require('../.test-build/app/graphics/draw-expression.js'),
 });
 const {MenuLayer}=load('app/ui/menu.ts',{
-  './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), '../native/settings-store': { getBooleanSetting: (_key, fallback) => fallback },
+  './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), './animation-speed': require('../.test-build/app/ui/animation-speed.js'), '../native/settings-store': { getStringSetting: (_key, fallback) => fallback },
   '../graphics/image':graphics,'../graphics/textwrap':{},'../graphics/ui-fonts':{getDefaultSmallFont:()=>font},
   '../util/numeric-util':{clamp:(n,a,b)=>Math.max(a,Math.min(b,n))},'./gestures':{},
   './menu-highlight-motion': require('../.test-build/app/ui/menu-highlight-motion.js'), '../graphics/menu-scroll-list': require('../.test-build/app/graphics/menu-scroll-list.js'), './menu-scroll-motion': require('../.test-build/app/ui/menu-scroll-motion.js'), '../graphics/draw-expression': require('../.test-build/app/graphics/draw-expression.js'),
@@ -109,4 +109,10 @@ test('shell modal carries its inner menu highlight animation instead of baking i
   const image=paint(),row=image.draws.find(d=>d.presentation);
   assert.ok(row.y>before.y);assert.ok(row.presentation.displayList.timeline,'the slide stays a timed display list');
   assert.ok(!image.withDrawsBaked(false).pixels.some(v=>v===255),'selected text is not baked into the modal surface');
+});
+test('shell crop widens a fractional rect (TTF-measured status bar) to whole pixels',()=>{
+  const {shellCrop}=require('../.test-build/app/graphics/shell-scene.js'),image=new graphics.GrayImage(576,288,7);
+  const crop=shellCrop(image,400.5,250,175.5,15,2);
+  assert.deepEqual([crop.x,crop.y,crop.image.width,crop.image.height],[400,250,176,15]);
+  assert.ok(crop.image.pixels.every(v=>v===7));
 });
