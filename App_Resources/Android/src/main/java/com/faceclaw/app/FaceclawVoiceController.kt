@@ -3,6 +3,7 @@ package com.faceclaw.app
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 
 import java.io.File
@@ -150,6 +151,26 @@ class FaceclawVoiceController(context: Context) {
     }
 
     private val session = VoiceCaptureSession(host)
+    private var experimentalWakeLock: PowerManager.WakeLock? = null
+
+    fun setExperimentalRawMode(enabled: Boolean) {
+        releaseExperimentalWakeLock()
+        session.setExperimentalRawMode(enabled)
+        if (enabled) {
+            val manager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            experimentalWakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Faceclaw:ConversationG0").apply {
+                setReferenceCounted(false)
+                acquire(125_000L) // Bound independently of the JS two-minute session limit.
+            }
+        }
+    }
+
+    private fun releaseExperimentalWakeLock() {
+        experimentalWakeLock?.let { if (it.isHeld) it.release() }
+        experimentalWakeLock = null
+    }
+
+    fun experimentalAudioDiagnostics(): String = session.experimentalAudioDiagnostics()
 
     fun setListener(listener: FaceclawVoiceControllerListener?) {
         session.setListener(listener)
@@ -240,6 +261,7 @@ class FaceclawVoiceController(context: Context) {
     fun isCapturing(): Boolean = session.isCapturing()
 
     fun stop() {
+        releaseExperimentalWakeLock()
         session.stop()
     }
 

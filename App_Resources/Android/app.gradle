@@ -111,7 +111,11 @@ tasks.register("prepareFaceclawNativeLibs") {
     if (ndkRoot == null || !ndkRoot.exists()) {
       throw new GradleException("Android NDK is required to build libfaceclaw_lc3.so")
     }
-    def clang = file("$ndkRoot/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin/aarch64-linux-android24-clang")
+    // The extensionless target wrapper is a shell script on Windows; execute
+    // clang.exe directly with the equivalent target instead of CreateProcess on it.
+    def windowsClang = Os.isFamily(Os.FAMILY_WINDOWS)
+    def clangName = windowsClang ? "clang.exe" : "aarch64-linux-android24-clang"
+    def clang = file("$ndkRoot/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin/$clangName")
     if (!clang.exists()) {
       throw new GradleException("Could not find Android clang at $clang")
     }
@@ -124,7 +128,8 @@ tasks.register("prepareFaceclawNativeLibs") {
 
     exec {
       commandLine([
-        clang.absolutePath,
+        clang.absolutePath
+      ] + (windowsClang ? ["--target=aarch64-linux-android24"] : []) + [
         "-shared",
         "-fPIC",
         "-O3",
@@ -279,7 +284,8 @@ android {
 
     // Version Information (derived from app/version.ts above)
     versionCode faceclawVersionCode + 4
-    versionName "${faceclawVersionName}-es.5"
+    // Keep code 805 so the original same-signature APK can be restored with install -r.
+    versionName "${faceclawVersionName}-es.5-conversation.g0.1"
     
     generatedDensities = []
   }

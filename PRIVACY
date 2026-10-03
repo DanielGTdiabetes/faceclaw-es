@@ -89,3 +89,9 @@ recognizer, which may send audio to Google under Google's privacy policy:
   Google: https://policies.google.com/privacy
 
 The phone does nothing watch-related on phones without Google Play services.
+Experimental conversation capture (G0/G1): the Android phone may locally decode
+G2 BLE microphone audio during explicitly enabled, bounded test sessions. This
+experimental path does not transcribe, record, identify speakers or send audio
+or text to a server. It keeps only aggregate technical metrics in memory and
+retires its audio consumer during explicit assistant use. The existing assistant
+continues to follow its separately configured transcription/provider settings.

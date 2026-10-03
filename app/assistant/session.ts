@@ -4,6 +4,7 @@ import {
   describeAssistantContext,
 } from "../prompts";
 import { assistantBridge } from "./bridge-client";
+import { assistantAudioPriority } from "./audio-priority";
 import { DirectAssistantBackend } from "./direct-backend";
 import type { LlmMessage, LlmToolDefinition } from "./llm-protocol";
 import type { ResolvedAssistantModel } from "./models";
@@ -62,6 +63,7 @@ export class AssistantSession {
   }
 
   private changed(): void {
+    assistantAudioPriority.setActive(this, this.isTurnActive());
     for (const listener of this.listeners) {
       try { listener(); } catch (error) { console.warn("assistant history listener failed", error); }
     }

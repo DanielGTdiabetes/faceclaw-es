@@ -1,6 +1,14 @@
 # Continuar Faceclaw desde otro PC
 
+## Continuación activa: prototipo conversacional G2 (03-10-2026)
+
+Trabajo nuevo en **`codex/conversation-detection-g0`**, manteniendo la adaptación española como base. Leer [conversation-detection-g0-results.md](conversation-detection-g0-results.md): implementación y APK sin firma, resultados de software, continuación desde el trabajo y pruebas físicas pendientes. El Pixel conserva `0.8.1-es.5`; no se instaló el prototipo. No añadir VAD hasta superar G0/G1 en dispositivos reales. Se conservó la conexión con Hermes.
+
+**Firma compartida:** usar la carpeta privada ya creada **`Dani@100.64.237.87:/volume1/home/Dani/Faceclaw/signing/`** desde el exterior por Tailscale; en LAN corresponde a `192.168.0.110`. Desde `.tools/signing/` del repositorio del PC del trabajo, copiar juntos **`faceclaw-es.jks` y `store.password`**; carpeta 700 y archivos 600. Estaba vacía al comprobarla el 03-10-2026. El informe nuevo incluye comandos para copiar/recuperar y las rutas NAS de la APK de ensayo y de reversión. No subir firma, contraseñas, tokens ni ajustes privados a GitHub.
+
 Estado comprobado el **2 de octubre de 2026**. Esta nota está versionada en GitHub; las claves privadas y las APK se guardan en el NAS.
+
+**Asistente actual:** Faceclaw utiliza Hermes en Jarvis (`100.65.212.74:8791`), con Luna 6. El usuario confirmó la mejora de velocidad y decidió mantenerlo. El token no se cambió; OpenClaw queda como alternativa con sus datos conservados. Véase [asistente-hermes-jarvis.md](asistente-hermes-jarvis.md) para operación, mediciones y restauración. La copia del NAS contiene el estado más reciente mientras estos cambios de documentación locales estén pendientes de publicar en GitHub.
 
 ## Repositorio y rama
 
@@ -21,7 +29,7 @@ Codex debe leer el `AGENTS.md` de la raíz y esta nota. La memoria local del PC 
 
 ## Dónde está la información en el NAS
 
-Servidor: **192.168.0.110**. Usuario SSH/SCP: **Dani**. Acceso comprobado desde casa por SSH con la autenticación ya configurada. El otro PC necesita acceso de red al NAS y su propia autenticación; no asumir que tiene la misma configuración SSH.
+Servidor: **192.168.0.110** en LAN; desde el exterior usar **100.64.237.87 por Tailscale** (indicación confirmada por el usuario el 03-10-2026). Son dos direcciones del mismo NAS. Usuario SSH/SCP: **Dani**. Acceso comprobado desde casa por SSH con la autenticación ya configurada. El otro PC necesita acceso de red al NAS y su propia autenticación; no asumir que tiene la misma configuración SSH.
 
 | Contenido | Ruta absoluta en el NAS | Estado comprobado |
 | --- | --- | --- |
@@ -78,7 +86,7 @@ El hash del archivo y la huella del certificado son datos distintos. Una vez rec
 1. Copiar y verificar los dos archivos de firma originales en el NAS.
 2. Recuperar una copia privada de la firma en `.tools/signing/` del PC que vaya a firmar.
 3. Firmar la APK corregida, comprobar la huella e instalarla como actualización en el móvil.
-4. Reconectar el puente de OpenClaw para actualizar su lista de herramientas.
+4. Reconectar el puente actual de Hermes en Jarvis para actualizar su lista de herramientas.
 5. Preguntar desde las gafas: «¿Dónde estoy? Consulta la ubicación de mi móvil» y comprobar que llama a `location.get_current`.
 6. Actualizar esta nota y la del NAS con el resultado real y la fecha de la comprobación.
 

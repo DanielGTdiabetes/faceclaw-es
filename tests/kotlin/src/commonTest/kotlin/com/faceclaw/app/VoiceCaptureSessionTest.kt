@@ -17,6 +17,7 @@ class VoiceCaptureSessionTest {
         val statuses = mutableListOf<String?>()
         val transcripts = mutableListOf<Pair<String?, Boolean>>()
         val pcmChunks = mutableListOf<ByteArray>()
+        val experimentalPcmChunks = mutableListOf<ByteArray>()
         val frameMeta = mutableListOf<Pair<Int, Int>>()
         var speechEnds = 0
         var verified: Pair<Boolean, Float>? = null
@@ -26,6 +27,7 @@ class VoiceCaptureSessionTest {
         override fun onTranscript(text: String?, isFinal: Boolean) { transcripts.add(text to isFinal) }
         override fun onStopped(captureId: Int) { stopped.add(captureId); stoppedLatch.countDown() }
         override fun onPcm(pcm16le: ByteArray?) { pcmChunks.add(pcm16le!!) }
+        override fun onExperimentalPcm(pcm16le: ByteArray?) { experimentalPcmChunks.add(pcm16le!!.copyOf()) }
         override fun onFrameMeta(angleDegrees: Int, ssr: Int) { frameMeta.add(angleDegrees to ssr) }
         override fun onSpeechEnd() { speechEnds++ }
         override fun onSpeakerVerified(isWearer: Boolean, similarity: Float) { verified = isWearer to similarity }
@@ -112,6 +114,35 @@ class VoiceCaptureSessionTest {
         bytes[Lc3PacketFramer.ANGLE_OFFSET] = (angle and 0xff).toByte()
         bytes[Lc3PacketFramer.ANGLE_OFFSET + 1] = (angle shr 8).toByte()
         return bytes
+    }
+
+    @Test
+    fun experimentalRawValidatesPacketSizeAndDecodesWithoutOrdinaryPcmOrRecording() {
+        val platform = testPlatform()
+        val host = FakeHost(platform, g2Ready = true)
+        val events = Events()
+        val session = session(host, platform, "voice-test-experimental")
+        session.setListener(events)
+        session.setExperimentalRawMode(true)
+        session.setSaveRecordings(false)
+        session.start("cloud", 8)
+        val deadline = platform.elapsedRealtimeMs() + 3000
+        while (host.packetListener == null && platform.elapsedRealtimeMs() < deadline) sleepMs(5)
+        val listener = host.packetListener!!
+        listener.onAudioPacket(ByteArray(3), "L", platform.elapsedRealtimeMs())
+        listener.onAudioPacket(packet(20, 0, 0), "L", platform.elapsedRealtimeMs())
+        while (events.experimentalPcmChunks.isEmpty() && platform.elapsedRealtimeMs() < deadline) sleepMs(5)
+        session.stop()
+        assertTrue(events.stoppedLatch.await(3000))
+        assertEquals(1, events.experimentalPcmChunks.size)
+        assertEquals(1600, events.experimentalPcmChunks[0].size)
+        assertEquals(20.toByte(), events.experimentalPcmChunks[0][0])
+        assertTrue(events.pcmChunks.isEmpty())
+        assertTrue(events.transcripts.isEmpty())
+        assertTrue(events.frameMeta.isEmpty())
+        assertTrue(host.recordings.isEmpty())
+        assertTrue(session.experimentalAudioDiagnostics().contains("\"malformedPackets\":1"))
+        assertFalse(session.isCapturing())
     }
 
     @Test

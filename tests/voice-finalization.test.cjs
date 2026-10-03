@@ -165,6 +165,7 @@ test(`${provider}: native completion follows the final and is capture-specific`,
     setListener(listener) { this.listener = listener; }
     setCommunicator() {} setUsePhoneMic() {} setSaveRecordings() {} setEndpointing() {}
     setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {}
+    setExperimentalRawMode() {}
     setOnboardModelKind(kind) { this.modelKind = kind; }
     start(_mode, id) { this.captureId = id; this.active = true; }
     stop() { this.active = false; }
@@ -173,6 +174,7 @@ test(`${provider}: native completion follows the final and is capture-specific`,
   const { FaceclawVoiceControlBridge } = load('app/native/voice-control.ts', {
     '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
     './speech-pause': { SpeechPauseDetector: class { reset() {} } },
+    './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
   }, { global: { isAndroid: true }, com: { faceclaw: { app: {
     FaceclawVoiceController: Controller,
     FaceclawVoiceControllerListener: function (listener) { return listener; },

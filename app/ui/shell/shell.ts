@@ -21,6 +21,7 @@ import { CONTEXT_MENU_DIM, MenuLayer, type MenuItem } from "../menu";
 import { VoiceInputLayer, type VoiceSendTarget } from "./voice-input";
 import { KeyboardInputLayer, type KeyboardInputSession } from "./keyboard-input";
 import { voiceActivity } from "./voice-activity";
+import { assistantAudioPriority } from "../../assistant/audio-priority";
 import { AssistantLayer } from "./assistant";
 import { AssistantSession, type AssistantBackendConfig } from "../../assistant/session";
 import { resolveAssistantModel, type AssistantModel } from "../../assistant/models";
@@ -1303,12 +1304,14 @@ class Shell {
           // Removed by any path (Done, or the screen sleeping mid-conversation):
           // stop the turn and drop the overlay reference; keep shared history.
           this.assistantSession?.cancel();
+          assistantAudioPriority.setActive(created, false);
           if (this.assistantLayer === created) this.assistantLayer = null;
           this.emitAssistantActivity({ phase: "closed", text: "" });
         },
       });
       layer = created;
       this.assistantLayer = created;
+      assistantAudioPriority.setActive(created, true);
       this.stack.push(created);
     }
     this.runAssistantTurn(session, layer, text);

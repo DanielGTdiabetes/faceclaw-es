@@ -1,0 +1,221 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const ts = require('typescript');
+const { AudioCaptureArbiter } = require('../.test-build/app/native/audio-capture-arbiter.js');
+const { ConversationCaptureCoordinator } = require('../.test-build/app/conversation-detection/coordinator.js');
+const { assistantAudioPriority } = require('../.test-build/app/assistant/audio-priority.js');
+
+function harness({ prepare } = {}) {
+  let now = 1000, starts = 0, stops = 0, timer = null;
+  let environment = { available: true, reason: '', session: {} };
+  const leases = [];
+  const detector = new ConversationCaptureCoordinator({
+    environment: () => environment,
+    prepare: prepare || (() => Promise.resolve(true)),
+    acquire(pcm, revoked, failed) {
+      starts++;
+      const lease = { pcm, revoked, failed, stop() { stops++; }, diagnostics: () => '{"packets":1}' };
+      leases.push(lease);
+      return lease;
+    },
+    now: () => now,
+    every(cb) { timer = cb; return () => { timer = null; }; },
+  });
+  return { detector, leases,
+    async on() { detector.setEnabled(true); await Promise.resolve(); },
+    tick(ms = 500) { now += ms; timer?.(); },
+    env(patch) { environment = { ...environment, ...patch }; detector.refresh(); },
+    counts: () => ({ starts, stops, timer: !!timer }),
+  };
+}
+
+test('OFF is the default, has no timer/audio resources and does not prepare BLE', () => {
+  const h = harness({ prepare: () => assert.fail('OFF cannot prepare') });
+  h.detector.refresh();
+  assert.equal(h.detector.snapshot().state, 'desactivado');
+  assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+});
+
+test('listening requires a valid 800-sample PCM chunk; aggregates signed LE and retains zero PCM', async () => {
+  const h = harness(); await h.on();
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  const pcm = new Uint8Array(1600);
+  for (let i = 0; i < pcm.length; i += 2) { pcm[i] = 0; pcm[i + 1] = 128; }
+  h.leases[0].pcm(pcm);
+  const s = h.detector.snapshot();
+  assert.equal(s.state, 'escuchando');
+  assert.equal(s.metrics.rms, 1);
+  assert.equal(s.metrics.clippedSamples, 800);
+  assert.equal(s.metrics.samples, 800);
+  assert.equal(s.resources.bufferedBytes, 0);
+  h.detector.setEnabled(false);
+  h.leases[0].pcm(pcm); h.leases[0].failed(); h.tick(5000);
+  assert.equal(h.detector.snapshot().state, 'desactivado');
+  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+});
+
+for (const invalid of [0, 1599, 1602, 6400]) {
+  test(`unexpected PCM length ${invalid} fails closed without automatic retries`, async () => {
+    const h = harness(); await h.on(); h.leases[0].pcm(new Uint8Array(invalid));
+    h.tick(10000); h.detector.refresh();
+    assert.equal(h.detector.snapshot().state, 'error');
+    assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+  });
+}
+
+test('missing first PCM and flow outage both release and latch the error', async () => {
+  for (const flowing of [false, true]) {
+    const h = harness(); await h.on();
+    if (flowing) h.leases[0].pcm(new Uint8Array(1600));
+    h.tick(2500);
+    assert.equal(h.detector.snapshot().state, 'error');
+    assert.equal(h.detector.snapshot().resources.lease, false);
+    h.detector.refresh(); assert.equal(h.counts().starts, 1);
+    h.detector.setEnabled(false); await h.on();
+    assert.equal(h.counts().starts, 2);
+  }
+});
+
+test('disconnect/unwear invalidates old delivery, reacquires only in a new available session', async () => {
+  const h = harness(); await h.on();
+  const old = h.leases[0]; old.pcm(new Uint8Array(1600));
+  h.env({ available: false, reason: 'Desconectado' });
+  old.pcm(new Uint8Array(1600)); old.failed();
+  assert.equal(h.detector.snapshot().metrics.chunks, 1);
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  assert.equal(h.counts().stops, 1);
+  h.env({ available: true, session: {} }); await Promise.resolve();
+  assert.equal(h.counts().starts, 2);
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  h.leases[1].pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+});
+
+test('OFF during delayed BLE prepare and old readiness after reconnect cannot resurrect capture', async () => {
+  const resolves = [];
+  const h = harness({ prepare: () => new Promise(resolve => resolves.push(resolve)) });
+  await h.on(); h.detector.setEnabled(false); resolves[0](true); await Promise.resolve();
+  assert.equal(h.counts().starts, 0);
+  await h.on(); h.env({ available: false }); h.env({ available: true, session: {} });
+  resolves[1](true); await Promise.resolve();
+  assert.equal(h.counts().starts, 0);
+  resolves[2](true); await Promise.resolve();
+  assert.equal(h.counts().starts, 1);
+});
+
+test('normal owner preemption retires the tap and waits for explicit activity to finish', async () => {
+  const h = harness(); await h.on();
+  const old = h.leases[0];
+  old.revoked(); h.env({ available: false, reason: 'Asistente' });
+  old.pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().metrics.chunks, 0);
+  assert.equal(h.detector.snapshot().metrics.preemptions, 1);
+  h.tick(); assert.equal(h.counts().starts, 1);
+  h.env({ available: true }); await Promise.resolve();
+  assert.equal(h.counts().starts, 2);
+});
+
+test('two-minute limit leaves OFF even if all time was spent suspended', async () => {
+  const h = harness(); h.env({ available: false }); await h.on(); h.tick(120000);
+  assert.equal(h.detector.snapshot().state, 'desactivado');
+  assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+});
+
+test('preparation failure releases every resource and does not retry', async () => {
+  for (const prepare of [() => Promise.resolve(false), () => Promise.reject(new Error('BLE'))]) {
+    const h = harness({ prepare }); await h.on(); await Promise.resolve();
+    h.tick(15000); h.detector.refresh();
+    assert.equal(h.detector.snapshot().state, 'error');
+    assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+  }
+});
+
+test('arbiter revokes before normal ownership, and stale STOP cannot release a later lease', () => {
+  const a = new AudioCaptureArbiter(); let revoked = 0;
+  const first = a.acquireDetector(() => { revoked++; assert.equal(a.isBusy(), true); });
+  a.setOwner('ptt', true);
+  assert.equal(revoked, 1);
+  assert.equal(a.acquireDetector(() => {}), null);
+  a.setOwner('assistant', true); a.setOwner('ptt', false);
+  assert.equal(a.acquireDetector(() => {}), null);
+  a.setOwner('assistant', false);
+  const next = a.acquireDetector(() => {});
+  assert.equal(a.releaseDetector(first), false);
+  assert.equal(a.acquireDetector(() => {}), null);
+  assert.equal(a.releaseDetector(next), true);
+});
+
+test('assistant priority spans concurrent sessions and only contains a boolean', () => {
+  const states = [], first = {}, second = {};
+  const off = assistantAudioPriority.subscribe(active => states.push(active));
+  assistantAudioPriority.setActive(first, true); assistantAudioPriority.setActive(second, true);
+  assistantAudioPriority.setActive(first, false);
+  assert.equal(assistantAudioPriority.isActive(), true);
+  assistantAudioPriority.setActive(second, false); off();
+  assert.deepEqual(states, [true, false]);
+});
+
+function bridgeHarness() {
+  let listener, stops = 0, starts = 0;
+  const controller = new Proxy({ isCapturing: () => starts > stops,
+    setListener(value) { listener = value; }, stop() { stops++; }, start() { starts++; },
+    experimentalAudioDiagnostics: () => '{"packets":2}',
+  }, { get: (target, key) => target[key] || (() => {}) });
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/native/voice-control.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText, { exports, console, global: { isAndroid: true },
+    com: { faceclaw: { app: { FaceclawVoiceController: function() { return controller; },
+      FaceclawVoiceControllerListener: function(value) { return value; } } } },
+    require(name) {
+      if (name === '@nativescript/core') return { Utils: { android: { getApplicationContext: () => ({}) } } };
+      if (name === './audio-capture-arbiter') return { AudioCaptureArbiter };
+      if (name === '../util/array-util') return { toUint8Array: bytes => new Uint8Array(bytes) };
+      if (name === './speech-pause') return { SpeechPauseDetector: class { reset() {} accept() { return false; } } };
+      return {};
+    },
+  });
+  return { bridge: new exports.FaceclawVoiceControlBridge(), native: { isAudioCaptureActive: () => false },
+    listener: () => listener, counts: () => ({ starts, stops }) };
+}
+
+test('detector OFF after another raw owner acquires never stops its stream', () => {
+  const h = bridgeHarness(); let revoked = 0, delivered = 0;
+  const lease = h.bridge.acquireExperimentalRaw(h.native, () => delivered++, () => revoked++, () => {});
+  assert.ok(lease);
+  h.listener().onPcm(new Uint8Array(1600)); // A late ordinary/STT callback cannot reach detector.
+  assert.equal(delivered, 0);
+  h.listener().onExperimentalPcm(new Uint8Array(1600)); assert.equal(delivered, 1);
+  h.bridge.startRawCapture({ communicator: h.native, owner: 'evenhub' });
+  assert.equal(revoked, 1);
+  const before = h.counts().stops;
+  lease.stop(); h.bridge.stopRawCapture('unrelated');
+  assert.equal(h.counts().stops, before);
+  h.listener().onExperimentalPcm(new Uint8Array(1600)); assert.equal(delivered, 1);
+  h.bridge.stopRawCapture('evenhub'); assert.equal(h.counts().stops, before + 1);
+});
+
+test('PTT preempts detector and its late release cannot stop assistant capture', () => {
+  const h = bridgeHarness(); let revoked = 0;
+  const lease = h.bridge.acquireExperimentalRaw(h.native, () => {}, () => revoked++, () => {});
+  h.bridge.startPushToTalk({ communicator: h.native, provider: 'onboard', saveRecording: false });
+  assert.equal(revoked, 1);
+  const before = h.counts().stops; lease.stop(); assert.equal(h.counts().stops, before);
+  assert.equal(h.bridge.acquireExperimentalRaw(h.native, () => {}, () => {}, () => {}), null);
+  h.bridge.stopPushToTalk();
+  assert.equal(h.counts().stops, before + 1);
+});
+
+test('shared normal raw owners require the last release and unrelated OFF cannot stop detector', () => {
+  const h = bridgeHarness();
+  h.bridge.startRawCapture({ communicator: h.native, owner: 'microphones' });
+  h.bridge.startRawCapture({ communicator: h.native, owner: 'evenhub' });
+  h.bridge.stopRawCapture('microphones'); assert.equal(h.counts().stops, 0);
+  h.bridge.stopRawCapture('evenhub'); assert.equal(h.counts().stops, 1);
+  const lease = h.bridge.acquireExperimentalRaw(h.native, () => {}, () => {}, () => {});
+  assert.ok(lease); h.bridge.stopRawCapture('evenhub'); assert.equal(h.counts().stops, 1);
+  lease.stop(); assert.equal(h.counts().stops, 2);
+});

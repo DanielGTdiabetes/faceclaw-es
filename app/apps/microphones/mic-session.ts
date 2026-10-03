@@ -253,6 +253,7 @@ class MicSession {
 
   start(): void {
     if (this.running || !global.isAndroid) return;
+    voiceControlBridge.setAudioPriority("microphones", true);
     this.running = true;
     this.captionLines = [];
     this.speakerDots = [];
@@ -277,6 +278,8 @@ class MicSession {
     }
     const ok = extended ? this.startExtended() : this.startStock();
     if (!ok) {
+      voiceControlBridge.setAudioPriority("microphones", false);
+      voiceControlBridge.stopRawCapture("microphones");
       this.statusText = "Microphone unavailable (glasses not connected?)";
       this.running = false;
       this.stopCaptions();
@@ -317,6 +320,7 @@ class MicSession {
     this.speechActive = false;
     this.finishSessionRow();
     this.mode = "off";
+    voiceControlBridge.setAudioPriority("microphones", false);
     this.statusText = "Idle";
     this.levels = [];
     this.doaDeviceDeg = null;
@@ -383,7 +387,7 @@ class MicSession {
         micArrayController.apply({ ...this.activeConfig, channelMask: 0b11 });
       }
     } else {
-      voiceControlBridge.startRawCapture({ communicator });
+      voiceControlBridge.startRawCapture({ communicator, owner: "microphones" });
     }
   }
 
@@ -487,7 +491,7 @@ class MicSession {
     if (!communicator) return false;
     this.levels = [0];
     this.levelLabels = ["Glasses mic"];
-    const started = voiceControlBridge.startRawCapture({ communicator });
+    const started = voiceControlBridge.startRawCapture({ communicator, owner: "microphones" });
     if (!started) return false;
     this.offRawPcm = voiceControlBridge.onRawPcm((pcm) => this.handleStockPcm(pcm));
     this.offFrameMeta = voiceControlBridge.onFrameMeta((meta) => {
@@ -508,7 +512,7 @@ class MicSession {
     this.offRawPcm = null;
     this.offFrameMeta?.();
     this.offFrameMeta = null;
-    voiceControlBridge.stopRawCapture();
+    voiceControlBridge.stopRawCapture("microphones");
   }
 
   private handleStockPcm(pcm: Uint8Array): void {

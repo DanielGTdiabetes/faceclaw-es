@@ -83,9 +83,9 @@ class EvenHubMicRouter {
       // eligibility change so it self-heals after an STT preemption. Returns
       // false if STT currently owns the mic; a later trigger (assistant modal
       // close, foreground/screen change) re-tries.
-      voiceControlBridge.startRawCapture({ communicator: activeCommunicator() });
+      voiceControlBridge.startRawCapture({ communicator: activeCommunicator(), owner: "evenhub" });
     } else {
-      voiceControlBridge.stopRawCapture();
+      voiceControlBridge.stopRawCapture("evenhub");
     }
   }
 }

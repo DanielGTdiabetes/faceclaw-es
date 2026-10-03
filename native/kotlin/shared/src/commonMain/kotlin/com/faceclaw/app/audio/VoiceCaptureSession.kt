@@ -132,7 +132,32 @@ class VoiceCaptureSession(
     }
 
     private val lock = platform.createLock()
-    private val audioQueue = DroppingPacketQueue<AudioPacket>(MAX_AUDIO_QUEUE_PACKETS, platform)
+    private var audioQueue = DroppingPacketQueue<AudioPacket>(MAX_AUDIO_QUEUE_PACKETS, platform)
+    private var experimentalRawMode = false
+    private var activeExperimentalRaw = false
+    private var captureEpoch = 0L
+    private var stalePackets = 0L
+    private var malformedPackets = 0L
+    private var minObservedPacketBytes = 0
+    private var maxObservedPacketBytes = 0
+    private val experimentalDelivery = BoundedPcmDelivery(host.dispatcher, platform) { bytes ->
+        listener?.onExperimentalPcm(bytes)
+    }
+
+    fun setExperimentalRawMode(enabled: Boolean) {
+        lock.withLock { if (!started && workerFinished == null) experimentalRawMode = enabled }
+    }
+
+    /** Aggregate diagnostics only; does not expose or persist PCM. */
+    fun experimentalAudioDiagnostics(): String =
+        "{\"expectedPacketBytes\":205,\"sampleRate\":16000,\"channels\":1,\"pcmChunkBytes\":1600," +
+            "\"packets\":" + queuedPackets + ",\"samples\":" + decodedSamples +
+            ",\"minObservedPacketBytes\":" + minObservedPacketBytes + ",\"maxObservedPacketBytes\":" + maxObservedPacketBytes +
+            ",\"decodeErrors\":" + (packetDecoder?.decodeErrors ?: 0L) + ",\"missingPackets\":" + (packetDecoder?.missingPackets ?: 0L) +
+            ",\"duplicates\":" + (packetDecoder?.duplicatePackets ?: 0L) +
+            ",\"malformedPackets\":" + malformedPackets + ",\"stalePackets\":" + stalePackets +
+            ",\"queueDrops\":" + audioQueue.droppedCount + ",\"pcmDeliveryDrops\":" + experimentalDelivery.dropped +
+            ",\"maxPacketGapMs\":" + maxInterPacketMs + ",\"capturing\":" + started + "}"
     @Volatile
     private var listener: FaceclawVoiceControllerListener? = null
     @Volatile
@@ -267,7 +292,7 @@ class VoiceCaptureSession(
 
     fun start(requestedMode: String?, captureId: Int) {
         lock.withLock {
-            if (started) {
+            if (started || workerFinished != null) {
                 emitStatus("Voice control is already listening.")
                 emitStopped(captureId)
                 return
@@ -278,6 +303,14 @@ class VoiceCaptureSession(
                 return
             }
             mode = parseMode(requestedMode)
+            activeExperimentalRaw = experimentalRawMode && mode == Mode.CLOUD && !usePhoneMic
+            captureEpoch++
+            experimentalDelivery.reset()
+            stalePackets = 0
+            malformedPackets = 0
+            minObservedPacketBytes = 0
+            maxObservedPacketBytes = 0
+            audioQueue = DroppingPacketQueue(if (activeExperimentalRaw) 5 else MAX_AUDIO_QUEUE_PACKETS, platform)
             activePhoneMic = usePhoneMic
             started = true
             audioStarted = false
@@ -321,6 +354,7 @@ class VoiceCaptureSession(
      * packets (every packet or 250 ms wait) and between phone-mic reads (50 ms).
      */
     fun stop() {
+        experimentalDelivery.clear()
         var finished: Latch? = null
         var workerName: String? = null
         lock.withLock {
@@ -328,6 +362,7 @@ class VoiceCaptureSession(
                 return
             }
             started = false
+            captureEpoch++
             finished = workerFinished
             workerName = workerThreadName
         }
@@ -408,6 +443,8 @@ class VoiceCaptureSession(
             emitStatus("Voice control failed: " + error.message)
         } finally {
             stopG2Audio()
+            audioQueue.clear()
+            experimentalDelivery.clear()
             writeRecordingIfAny()
             releaseRecognizer()
             releaseDecoder()
@@ -460,6 +497,10 @@ class VoiceCaptureSession(
             if (packet == null) {
                 continue
             }
+            if (activeExperimentalRaw && platform.elapsedRealtimeMs() - packet.arrivalMs > 250) {
+                stalePackets++
+                continue
+            }
             val count = currentDecoder.decodePacket(packet.data, pcm)
             if (count <= 0) {
                 maybeEmitAudioStats(false)
@@ -507,7 +548,7 @@ class VoiceCaptureSession(
         // PCM and frame metadata flow in every mode so levels, recording,
         // and the Microphones radar keep working alongside onboard ASR.
         emitPcm(pcm, count)
-        if (hasFrameMeta) {
+        if (hasFrameMeta && !activeExperimentalRaw) {
             emitFrameMeta(angleDegrees, ssr)
         }
         if (mode != Mode.CLOUD) {
@@ -666,6 +707,10 @@ class VoiceCaptureSession(
             return
         }
         val le = AudioSegmentation.pcm16ToLittleEndian(pcm, 0, count)
+        if (activeExperimentalRaw) {
+            experimentalDelivery.offer(le)
+            return
+        }
         host.dispatcher.post { currentListener.onPcm(le) }
     }
 
@@ -748,6 +793,14 @@ class VoiceCaptureSession(
         if (!started || data == null) {
             return
         }
+        if (activeExperimentalRaw) {
+            if (minObservedPacketBytes == 0 || data.size < minObservedPacketBytes) minObservedPacketBytes = data.size
+            if (data.size > maxObservedPacketBytes) maxObservedPacketBytes = data.size
+            if (data.size != Lc3PacketFramer.PACKET_BYTES) {
+                malformedPackets++
+                return
+            }
+        }
         if ("L" != arm) {
             wrongArmPackets++
         }
@@ -826,7 +879,13 @@ class VoiceCaptureSession(
 
     private fun emitStatus(status: String?) {
         val currentListener = listener ?: return
-        host.dispatcher.post { currentListener.onStatus(status) }
+        val epoch = captureEpoch
+        val experimental = activeExperimentalRaw
+        host.dispatcher.post {
+            if (experimental) {
+                if (epoch == captureEpoch) currentListener.onExperimentalStatus(status)
+            } else currentListener.onStatus(status)
+        }
     }
 
     private fun emitTranscript(text: String?, isFinal: Boolean) {

@@ -18,7 +18,12 @@
         <ActionItem text="Desinstalar firmware modificado" tap="{{ onUninstallFirmwareTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
     </ActionBar>
 
-    <GridLayout>
+    <GridLayout rows="*,auto">
+        <StackLayout row="1" class="p-10">
+            <Label text="{{ conversationDetectorLabel }}" textWrap="true" tap="{{ onConversationDetectorMetricsTap }}" />
+            <Label text="{{ conversationDetectorDetail }}" textWrap="true" fontSize="11" />
+            <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
+        </StackLayout>
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
             <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">
                 <Image src="{{ displayPreview }}" stretch="fill" height="{{ displayPreviewHeight }}"

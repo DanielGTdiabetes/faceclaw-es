@@ -21,11 +21,13 @@ const config = (model = 'terra', effort = 'low') => ({ kind: 'direct', llm: {
   provider: model === 'sonnet' ? 'anthropic' : 'openai', selection: model, model, effort, apiKey: 'secret-key',
 } });
 function sessions() {
+  const audioPriority = load('app/assistant/audio-priority.ts', {}).assistantAudioPriority;
   const turns = [];
   let synchronousError = false;
   const { AssistantSession } = load('app/assistant/session.ts', {
     '../prompts': { ASSISTANT_SYSTEM_PROMPT_BASE: '', buildAssistantSystemPrompt: () => '', describeAssistantContext: () => '' },
     './bridge-client': { assistantBridge: {} },
+    './audio-priority': { assistantAudioPriority: audioPriority },
     './direct-backend': { DirectAssistantBackend: class { runTurn(options) {
       const turn = { ...options, cancelled: false };
       turns.push(turn);
@@ -40,8 +42,23 @@ function sessions() {
     turn.callbacks.onTextDelta(text, text);
     turn.callbacks.onTurnDone({ stopReason: 'end_turn' });
   }
-  return { AssistantSession, turns, done, setError() { synchronousError = true; } };
+  return { AssistantSession, turns, done, audioPriority, setError() { synchronousError = true; } };
 }
+
+test('audio priority remains held through reply and clears on completion, error and cancellation', () => {
+  const env = sessions();
+  const session = new env.AssistantSession(config());
+  session.sendUtterance('test fixture', {}, callbacks());
+  assert.equal(env.audioPriority.isActive(), true);
+  env.turns[0].callbacks.onTextDelta('reply', 'reply');
+  assert.equal(env.audioPriority.isActive(), true);
+  env.done('done');
+  assert.equal(env.audioPriority.isActive(), false);
+  session.sendUtterance('next', {}, callbacks()); session.cancel();
+  assert.equal(env.audioPriority.isActive(), false);
+  env.setError(); session.sendUtterance('error fixture', {}, callbacks());
+  assert.equal(env.audioPriority.isActive(), false);
+});
 function conversations(saved = '') {
   const env = sessions();
   const { AssistantConversations } = load('app/assistant/conversations.ts', {
@@ -301,6 +318,7 @@ function shellEnv({ wakeAction = 'voice-input', skipConfirmation = false } = {})
       startCapture() {}
       onRemoved() { this.options.onClosed(); }
     } }, './keyboard-input': {}, './voice-activity': { voiceActivity: { setActive() {} } }, './assistant': {},
+    '../../assistant/audio-priority': load('app/assistant/audio-priority.ts', {}),
     '../../assistant/conversations': {}, '../../assistant/models': {}, '../../native/settings-store': {},
     '../notifications': {}, '../dashboard-settings': settings, './ambient-cards': {},
     './chrome-layer': { ShellChromeLayer: class {} }, './modal-layer': {}, './tool-debug-layer': {},

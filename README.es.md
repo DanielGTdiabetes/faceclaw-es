@@ -15,6 +15,8 @@ Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), ba
 
 ## Estado
 
+El incremento experimental de captura conversacional G2 está en `codex/conversation-detection-g0`: versión `0.8.1-es.5-conversation.g0.1`, código 805. Tiene control local ON/OFF en el móvil, estados visibles y prioridad para el asistente. Compila sin firma y pasa las comprobaciones de software de su alcance; **no se ha instalado ni se han superado G0/G1 en las gafas**. La firma original está pendiente de recuperar desde el PC del trabajo. Continuación, NAS, APK, pruebas y reversión: [notes/conversation-detection-g0-results.md](notes/conversation-detection-g0-results.md). No incluye VAD ni reconocimiento de participación.
+
 La conexión con OpenClaw y una pregunta de voz sobre el tiempo han funcionado en las gafas. Los avisos creados directamente también se han mostrado; sigue pendiente comprobar que el agente programa correctamente los avisos solicitados por voz.
 
 La compilación conjunta de móvil y reloj pasa en GitHub. Las gafas han mostrado errores de reconocimiento con small; su mayor tamaño no garantiza una mejora. En una comparación local de la misma frase meteorológica, base y small acertaron. Una sola frase no valida la precisión general; la grabación temporal se eliminó y su guardado quedó desactivado.

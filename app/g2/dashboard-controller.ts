@@ -50,6 +50,9 @@ import { type GlanceEvent } from "./glance-state";
 import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
+import { ConversationCaptureCoordinator, type DetectorEnvironment } from "../conversation-detection/coordinator";
+import { voiceActivity } from "../ui/shell/voice-activity";
+import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
@@ -57,7 +60,7 @@ import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
 import { type InputEvent } from "../ui/gestures";
 import { registerSystemTools } from "../assistant/system-tools";
-import { updateGlassesPresence } from "./glasses-presence";
+import { getGlassesPresence, onGlassesPresenceChanged, updateGlassesPresence } from "./glasses-presence";
 import { timerEngine } from "../apps/timer/timer-engine";
 import { registerNavigateTools } from "../assistant/navigate-tools";
 import { registerRoamTools } from "../assistant/roam-tools";
@@ -346,6 +349,17 @@ class DashboardController {
   private unpairedDisconnectPending = false;
 
   constructor() {
+    if (global.isAndroid) {
+      voiceActivity.subscribe((active) => {
+        voiceControlBridge.setAudioPriority("voice-modal", active);
+        this.conversationDetector.refresh();
+      });
+      assistantAudioPriority.subscribe((active) => {
+        voiceControlBridge.setAudioPriority("assistant-turn", active);
+        this.conversationDetector.refresh();
+      });
+      onGlassesPresenceChanged(() => this.conversationDetector.refresh());
+    }
     const sharedActions = {
       disconnect: () => this.disconnect(),
       startTextSettingEdit: (setting: ConfigSettingString) => this.startTextSettingEdit(setting),
@@ -392,6 +406,8 @@ class DashboardController {
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
       onKeyboardInputChanged: (session) => {
         this.keyboardInput = session;
+        if (global.isAndroid) voiceControlBridge.setAudioPriority("keyboard", session !== null);
+        this.conversationDetector.refresh();
         this.emit();
       },
       onWindowsChanged: () => {
@@ -899,7 +915,7 @@ class DashboardController {
         return;
       }
 
-      if (voiceControlBridge.isCaptureHeld()) {
+      if (voiceControlBridge.isCaptureHeld() || this.conversationDetector.holdsSession()) {
         // Ending the plugin task ends the mic with it, so a live capture (the
         // Transcribe window, typically) outranks the screen-off power save.
         // Check before the lease refresh below, which costs a BLE message.
@@ -924,6 +940,7 @@ class DashboardController {
           this.glance.isVisible() ||
           this.phase !== "connected" ||
           this.communicator !== communicator
+          || this.conversationDetector.holdsSession()
         ) {
           return;
         }
@@ -1996,6 +2013,47 @@ class DashboardController {
    */
   private pttCaptureGeneration = 0;
 
+  /** Session-only ON: a process restart always starts this experiment OFF. */
+  readonly conversationDetector = new ConversationCaptureCoordinator({
+    environment: () => this.detectorEnvironment(),
+    prepare: () => this.prepareDetectorAudioSession(),
+    acquire: (pcm, revoked, failed) => voiceControlBridge.acquireExperimentalRaw(
+      this.communicator?.getNativeCommunicator(), pcm, revoked, failed,
+    ),
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    every: (callback, ms) => {
+      const timer = setInterval(callback, ms);
+      return () => clearInterval(timer);
+    },
+  });
+
+  private detectorEnvironment(): DetectorEnvironment {
+    const presence = getGlassesPresence();
+    const session = this.communicator;
+    let reason = "";
+    if (!global.isAndroid) reason = "Este ensayo requiere Android y audio BLE de las G2.";
+    else if (this.phase !== "connected" || !session) reason = "Gafas desconectadas; sin captura.";
+    else if (!this.customFirmwareConfirmed) reason = "Esperando confirmación del firmware Faceclaw.";
+    else if (presence.charging) reason = "Gafas en carga; sin captura.";
+    else if (presence.worn !== true) reason = "Esperando un estado nuevo de gafas puestas.";
+    else if (!hasMicrophonePermission()) reason = "Falta permiso de micrófono. Concédelo desde Permisos.";
+    else if (voiceActivity.isActive() || assistantAudioPriority.isActive() || this.keyboardInput) reason = "Interacción explícita con prioridad sobre el detector.";
+    else if (!voiceControlBridge.experimentalAudioAvailable(true)) reason = "Audio reservado por otra función.";
+    return { available: !reason, reason, session };
+  }
+
+  /** Internal protocol lifecycle only: never turns on or unblanks the displays. */
+  private async prepareDetectorAudioSession(): Promise<boolean> {
+    const communicator = this.communicator;
+    if (!communicator || this.phase !== "connected") return false;
+    if (this.evenHubSessionSuspended) {
+      if (!await communicator.resumeEvenHubSession()) return false;
+      if (this.communicator !== communicator) return false;
+      this.evenHubSessionSuspended = false;
+    }
+    return communicator.awaitEvenHubSessionReady(EVENHUB_WAKE_READY_TIMEOUT_MS);
+  }
+
   private startVoiceCapture(endpointing = false): Promise<void> {
     return this.beginVoiceCapture("ptt", endpointing);
   }
@@ -2193,6 +2251,10 @@ class DashboardController {
     try {
       const inputEvent = rawInputEventToInputEvent(event);
       if (!acceptInput(inputEvent)) return;
+      // Revoke synchronously before the existing wake/display barrier and dialog.
+      const detectorWake = event.kind === "even-ai" && event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP
+        && wakeWordActionSetting.get() !== "off";
+      if (global.isAndroid && detectorWake) voiceControlBridge.setAudioPriority("wake-event", true);
       // The gesture, plus which app is on screen and whether input goes to it,
       // the sidebar, or a shell overlay. Java only knows the raw event codes,
       // and without the target the export says what was pressed but not who
@@ -2304,6 +2366,9 @@ class DashboardController {
         frameTimings.finishFrame(frameId, "handled by shell; chrome render spawned");
       }
     } finally {
+      if (global.isAndroid && event.kind === "even-ai" && event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP) {
+        voiceControlBridge.setAudioPriority("wake-event", false);
+      }
       if (!frameOwned) {
         frameTimings.finishFrame(frameId, "discarded: input did not trigger a render");
       }
@@ -2732,6 +2797,7 @@ class DashboardController {
   private setPhase(phase: ConnectionPhase): void {
     if (this.phase === phase) return;
     this.phase = phase;
+    this.conversationDetector.refresh();
     if (phase !== "connected" && phase !== "charging") {
       shell.setBatteryLevels({ ring: null, ringCharging: null });
     }

@@ -124,6 +124,36 @@ export class MainViewModel extends RemoteControlsViewModel {
     }));
     this.syncBleBandwidthPolling();
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
+    this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
+      this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
+      this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    }));
+  }
+
+  get conversationDetectorLabel(): string {
+    return `Captura de conversaciones · experimental · ${dashboardController.conversationDetector.snapshot().state}`;
+  }
+
+  get conversationDetectorDetail(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const metrics = snapshot.metrics;
+    return `${snapshot.reason}\n${metrics.chunks} chunks · ${(metrics.samples / 16000).toFixed(1)} s PCM · hueco máx. ${metrics.maxGapMs} ms · ${metrics.preemptions} cesiones`;
+  }
+
+  get conversationDetectorButton(): string {
+    return dashboardController.conversationDetector.snapshot().enabled ? "Desactivar captura (OFF)" : "Activar ensayo local (ON, 2 min máx.)";
+  }
+
+  onConversationDetectorTap(): void {
+    const detector = dashboardController.conversationDetector;
+    detector.setEnabled(!detector.snapshot().enabled);
+  }
+
+  onConversationDetectorMetricsTap(): void {
+    const detector = dashboardController.conversationDetector;
+    void Dialogs.alert({ title: "Métricas técnicas G0/G1", message: JSON.stringify(detector.snapshot(), null, 2)
+      + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */
