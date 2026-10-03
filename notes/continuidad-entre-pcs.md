@@ -2,6 +2,8 @@
 
 ## Continuación activa: prototipo conversacional G2 (03-10-2026)
 
+**Para retomar desde el PC de casa tras las pruebas del trabajo, leer [continuacion-pc-casa-2026-10-03.md](continuacion-pc-casa-2026-10-03.md).** Incluye instalación, firma respaldada, pruebas reales de captura/Hey Even/Chat/Pixel bloqueado, evidencia y próximos pasos. El ensayo terminó OFF por su límite temporal; no se dan por superadas todas las puertas G0/G1.
+
 Trabajo activo en **`codex/conversation-detection-g0`**, manteniendo la adaptación española como base. Leer [conversation-detection-g0-results.md](conversation-detection-g0-results.md): implementación, instalación desde el trabajo y pruebas físicas pendientes. El Pixel ya tiene `0.8.1-es.5-conversation.g0.1`, firmado con la clave original; 32 ajustes conservados, incluido Hermes. Ensayo comprobado OFF, cero chunks y sin wakelock propio. No añadir VAD hasta superar G0/G1 en dispositivos reales. Requisito añadido: español y valenciano, también alternados; todavía pendiente de implementación y validación en ASR.
 
 **Firma compartida:** ambos originales **`faceclaw-es.jks` y `store.password`** ya están copiados en **`Dani@100.64.237.87:/volume1/home/Dani/Faceclaw/signing/`**; SHA-256 de ambos archivos comprobado idéntico al PC del trabajo. Carpeta 700 y archivos 600. En LAN corresponde a `192.168.0.110`. El certificado de la APK firmada coincide con el instalado, huella pública indicada más abajo. El informe incluye los comandos de recuperación. No subir firma, contraseñas, tokens ni ajustes privados a GitHub.
