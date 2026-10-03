@@ -293,6 +293,11 @@ function statusBarPlacement(state: ShellChromeState): StatusBarPlacement | null 
 }
 
 const NOTIFICATION_ICON_SIZE = 24;
+const NOTIFICATION_ICON_STEP = NOTIFICATION_ICON_SIZE + 4;
+// The box round a selected notification icon: clear of it by 2px either
+// side, and by 1px above and below, all a top bar leaves above its divider.
+const NOTIFICATION_BOX_MARGIN_X = 2;
+const NOTIFICATION_BOX_MARGIN_Y = 1;
 const BORDER_VALUE = 40;
 
 export type ShellChromeWindow = {
@@ -305,7 +310,13 @@ export type ShellChromeWindow = {
 
 export type ShellChromeState = {
   windows: ShellChromeWindow[];
+  /** The selected window's index, or -1 while the selection is on a notification. */
   selectedIndex: number;
+  /**
+   * The notification (by key) whose icon the switcher's selection is on
+   * instead of a window, if any (see Shell.moveSelection).
+   */
+  selectedNotificationKey?: string | null;
   focus: "sidebar" | "window";
   /** Height mode of the foreground window; decides where its top bar sits. */
   foregroundHeightMode: WindowHeightMode;
@@ -408,12 +419,16 @@ export class ShellChromeLayer implements Layer {
   // Whether the last paint's selection tab carries the window frame's left
   // side down, so the frame's bottom-left corner is square.
   private frameCornerSquare = false;
+  // The notification icons the last paint drew, left to right: what the
+  // switcher's selection can move onto, and mirror touches hit.
+  private notificationEntries: NotificationEntry[] = [];
 
   constructor(private readonly getState: () => ShellChromeState) {}
 
   paint(): GrayImage {
     const image = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
     const state = this.getState();
+    this.notificationEntries = [];
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     const popup = switcherPosition() === "popup";
     // Full-panel mode: the strip is an overlay, present only while the user
@@ -434,6 +449,7 @@ export class ShellChromeLayer implements Layer {
 
   paintParts(): Plane[] {
     const state = this.getState(), parts: Plane[] = [];
+    this.notificationEntries = [];
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
     const span = topBarSpan(state);
@@ -465,9 +481,10 @@ export class ShellChromeLayer implements Layer {
       if (statusLeft !== null) {
         // The status bar keeps the top bar's surface and its depth, -2, over
         // the row's right end below its separator line, so the clock ticking
-        // doesn't resend the window icons.
-        const right = strip.x + strip.width;
-        parts.push({ ...shellCrop(canvas, statusLeft, strip.y + 1, right - statusLeft, strip.height - 1, 2), depth: -2 });
+        // doesn't resend the window icons. It reaches into the gap before it
+        // by a selection box's margin, for one round its first icon.
+        const right = strip.x + strip.width, left = statusLeft - NOTIFICATION_BOX_MARGIN_X;
+        parts.push({ ...shellCrop(canvas, left, strip.y + 1, right - left, strip.height - 1, 2), depth: -2 });
       }
     }
     drawAmbientCards(canvas, span.right, parts);
@@ -526,6 +543,17 @@ export class ShellChromeLayer implements Layer {
     return null;
   }
 
+  /** Keys of the notifications whose icons the last paint drew, left to right. */
+  notificationKeys(): string[] {
+    return this.notificationEntries.map((entry) => entry.key);
+  }
+
+  /** Which notification's icon is under (x, y) on screen, if any (mirror touches). */
+  notificationKeyAt(x: number, y: number): string | null {
+    const entry = this.notificationEntries.find((e) => x >= e.x && x < e.x + e.width && y >= e.y && y < e.y + e.height);
+    return entry?.key ?? null;
+  }
+
   /**
    * Draw the switcher strip or row. Given `statusImage`, a bottom row shares
    * its right end with the status bar, drawn there (into that image, which
@@ -550,7 +578,10 @@ export class ShellChromeLayer implements Layer {
     const windowsRight = statusLeft === null ? strip.x + strip.width : statusLeft - ROW_STATUS_GAP;
     this.rowWindowsRight = windowsRight;
     const visibleCount = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight).visibleCount;
-    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, visibleCount, count);
+    // With the selection out on a notification, the windows stay scrolled as they were.
+    this.scrollRow = state.selectedIndex >= 0
+      ? scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, visibleCount, count)
+      : Math.min(this.scrollRow, Math.max(0, count - visibleCount));
     const layout = switcherLayout(count, state.foregroundHeightMode, state.foregroundAppId, windowsRight, this.scrollRow);
     const { iconSize, position } = layout;
     const lastVisible = Math.min(count, this.scrollRow + layout.visibleCount);
@@ -642,19 +673,16 @@ export class ShellChromeLayer implements Layer {
     // Right-aligned against the widgets, with the top bar's spacing.
     const slots = Math.min(windowCount, ROW_MIN_WINDOW_SLOTS);
     const windowsFloor = row.x + 2 * LIST_MARGIN + Math.max(0, slots * ROW_STEP - ICON_SPACING) + ROW_STATUS_GAP;
-    const iconsRight = trayLeft - 8, step = NOTIFICATION_ICON_SIZE + 4;
+    const iconsRight = trayLeft - 8, step = NOTIFICATION_ICON_STEP;
     const maxIcons = Math.max(0, ((iconsRight - windowsFloor + 4) / step) | 0);
     if (maxIcons === 0) return trayLeft;
-    const { icons, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
+    const { icons, keys, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
     if (stale) {
       noteStaleDataUsed();
     }
     if (!icons.length) return trayLeft;
     const iconsLeft = iconsRight - icons.length * step + 4;
-    const iconY = top + (((TOP_BAR_HEIGHT - NOTIFICATION_ICON_SIZE) / 2) | 0);
-    for (let index = 0; index < icons.length; index++) {
-      image.drawImage(icons[index]!, iconsLeft + index * step, iconY);
-    }
+    this.drawNotificationIcons(image, state, icons, keys, iconsLeft, top + (((TOP_BAR_HEIGHT - NOTIFICATION_ICON_SIZE) / 2) | 0));
     return iconsLeft;
   }
 
@@ -732,16 +760,36 @@ export class ShellChromeLayer implements Layer {
     const trayLeft = drawTrayIcons(image, state.trayIcons, batteryLeft, barTop);
 
     const iconsX = clockX + font.measureText(clock) + 16;
-    const maxIcons = Math.max(0, ((trayLeft - 8 - iconsX) / (NOTIFICATION_ICON_SIZE + 4)) | 0);
+    const maxIcons = Math.max(0, ((trayLeft - 8 - iconsX) / NOTIFICATION_ICON_STEP) | 0);
     if (maxIcons > 0) {
-      const { icons, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
+      const { icons, keys, stale } = readActiveNotificationIcons(maxIcons, renderPassAllowsStaleData());
       if (stale) {
         noteStaleDataUsed();
       }
-      const iconY = barTop + (((TOP_BAR_HEIGHT - NOTIFICATION_ICON_SIZE) / 2) | 0);
-      for (let index = 0; index < icons.length; index++) {
-        image.drawImage(icons[index]!, iconsX + index * (NOTIFICATION_ICON_SIZE + 4), iconY);
-      }
+      this.drawNotificationIcons(image, state, icons, keys, iconsX, barTop + (((TOP_BAR_HEIGHT - NOTIFICATION_ICON_SIZE) / 2) | 0));
+    }
+  }
+
+  /**
+   * Draw the notification icons left to right from `left`, noting each as a
+   * notification entry. The one the switcher's selection is on
+   * (state.selectedNotificationKey) sits in a rounded box like a sidebar
+   * overflow icon's: filled, with the icon inverted, while the switcher has
+   * focus, and outlined while its detail view in the foreground window has.
+   */
+  private drawNotificationIcons(image: GrayImage, state: ShellChromeState, icons: GrayImage[], keys: string[], left: number, iconY: number): void {
+    for (let index = 0; index < icons.length; index++) {
+      const x = left + index * NOTIFICATION_ICON_STEP;
+      const key = keys[index];
+      const box = {
+        x: x - NOTIFICATION_BOX_MARGIN_X, y: iconY - NOTIFICATION_BOX_MARGIN_Y,
+        width: NOTIFICATION_ICON_SIZE + 2 * NOTIFICATION_BOX_MARGIN_X, height: NOTIFICATION_ICON_SIZE + 2 * NOTIFICATION_BOX_MARGIN_Y,
+      };
+      if (key) this.notificationEntries.push({ key, ...box });
+      const selected = !!key && key === state.selectedNotificationKey;
+      const focused = selected && state.focus === "sidebar";
+      if (selected) drawSelectionBox(image, box.x, box.y, box.width, box.height, focused);
+      image.drawImage(focused ? invertedIcon(icons[index]!) : icons[index]!, x, iconY);
     }
   }
 
@@ -977,6 +1025,9 @@ function attentionDot(value: number): GrayImage {
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
+
+/** A notification icon as drawn: its notification's key, and its selection box. */
+type NotificationEntry = Rect & { key: string };
 
 /** Corner radius of the foreground window's frame. */
 const FRAME_RADIUS = 8;

@@ -71,12 +71,18 @@ type DetailMenuItem =
 
 type ConfirmationItem = { label: string; run: (ctx: LayerContext) => void };
 
-export type SingleNotificationLayerOrigin = "notifications-list" | "new-notification-modal";
+export type SingleNotificationLayerOrigin = "notifications-list" | "new-notification-modal" | "notification-tray";
 
 type SingleNotificationLayerOptions = {
   origin: SingleNotificationLayerOrigin;
-  /** Close hook for the modal origin (the layer is the modal stack's base, so pop() cannot close it). */
-  closeModal?: (ctx: LayerContext) => void;
+  /**
+   * Close hook for hosts that take the layer down themselves instead of
+   * popping it: the modal (the layer is the modal stack's base, so pop()
+   * cannot close it), and the app switcher's tray selection, which keeps
+   * the layer up until the selection moves on. `gone` says the notification
+   * itself went away (dismissed, or removed by one of its actions).
+   */
+  onClose?: (ctx: LayerContext, gone: boolean) => void;
 };
 
 /**
@@ -199,6 +205,9 @@ export class SingleNotificationLayer implements Layer {
     },
   });
   private confirmation: { source: AndroidNotification; menu: Menu<ConfirmationItem> } | null = null;
+  // The last paint, which a tray-hosted layer repeats once its notification
+  // is gone, until the tray swaps in a neighbour's (see closeUnavailableNotification).
+  private lastImage: GrayImage | null = null;
 
   constructor(
     private readonly notificationKey: string,
@@ -219,6 +228,7 @@ export class SingleNotificationLayer implements Layer {
     this.detailMenu.setItems(buildDetailMenu(notification, this.options.origin));
     drawDetailContent(image, font, notification, iconForNotification(notification.key), width, height);
     this.detailMenu.paint(image, detailMenuBox(width, height), ctx.stack.isFocused());
+    this.lastImage = image;
     return image;
   }
 
@@ -310,17 +320,23 @@ export class SingleNotificationLayer implements Layer {
   }
 
   /** Leave the detail view, whatever hosts it. */
-  private close(ctx: LayerContext): void {
-    if (this.options.origin === "new-notification-modal") {
-      this.options.closeModal?.(ctx);
+  private close(ctx: LayerContext, gone = false): void {
+    if (this.options.onClose) {
+      this.options.onClose(ctx, gone);
     } else {
       ctx.stack.pop();
     }
   }
 
   private closeUnavailableNotification(ctx: LayerContext, paintBelow?: PaintBelow): GrayImage {
-    this.close(ctx);
+    this.close(ctx, true);
     const { width, height } = ctx.stack.getBaseSize();
+    // The tray replaces this layer only after the paint (swapping layers
+    // mid-paint would render re-entrantly); meanwhile the screen keeps what
+    // it showed rather than flashing the list beneath.
+    if (this.options.origin === "notification-tray" && this.lastImage) {
+      return this.lastImage.clone();
+    }
     return paintBelow ? paintBelow() : new GrayImage(width, height, 0);
   }
 }

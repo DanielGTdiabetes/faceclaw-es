@@ -87,6 +87,7 @@ import {
   type PhoneUiButton,
 } from "../apps/evenhub/manager";
 import { openEvenHubStoreForPackage } from "../apps/evenhub";
+import { createNotificationsAppWindow, NOTIFICATIONS_SURFACE_ID, NOTIFICATIONS_WINDOW_ID } from "../apps/notifications/notifications-app";
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
 import { micSession } from "../apps/microphones/mic-session";
@@ -420,6 +421,8 @@ class DashboardController {
         // The foreground title is mirrored on both remote-control faces.
         this.emit();
       },
+      openNotificationsWindow: () =>
+        this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
         if (on) this.glance.dismiss();
@@ -1956,6 +1959,11 @@ class DashboardController {
     const foreground = shell.foregroundWindow();
     const stripShown = sidebarStripVisible(shell.getFocus(), foreground?.appId);
     this.appendLog(`mirror tap at ${x},${y}`);
+    if (!shell.hasOverlay() && shell.focusNotificationAt(x, y)) {
+      this.appendLog("mirror tap: notification icon");
+      this.requestShellRender();
+      return;
+    }
     if (!shell.hasOverlay() && stripShown && isOnSwitcherEdge(x, y, foreground?.heightMode ?? "min", foreground?.appId)) {
       const target = shell.windowAtSidebarPoint(x, y);
       if (target) {
@@ -2364,6 +2372,42 @@ class DashboardController {
       this.requestShellRender();
       return;
     }
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
+    shell.focusWindow(windowId);
+    this.requestShellRender();
+    this.appendLog(`launched ${windowId}`);
+  }
+
+  /**
+   * An in-process singleton app's window, opened in the background (neither
+   * foregrounded nor focused) unless it is open already: for the shell to
+   * bring forward itself (the Notifications window under a notification
+   * selected in the switcher). The bridge runs calls in order, so the
+   * shell may foreground it at once: its surface's visibility is settled
+   * when the configure call is queued, ahead of any frame.
+   */
+  private openInProcessAppInBackground(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): { window: InProcessWindow; opened: boolean } {
+    const existing = this.inProcessApps.get(windowId);
+    if (existing) return { window: existing, opened: false };
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    void this.configureWindowSurface(surfaceId, this.isForegroundWindow(windowId), app.window.heightMode).catch((error) => {
+      this.appendLog(`${windowId} surface configure failed: ${this.formatError(error)}`);
+    });
+    this.appendLog(`opened ${windowId} in the background`);
+    return { window: app, opened: true };
+  }
+
+  /** Create an in-process singleton app's window and register it with the shell. */
+  private createInProcessApp(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): InProcessWindow {
     const app = create({
       actions: {
         ...this.sharedActions,
@@ -2384,10 +2428,7 @@ class DashboardController {
     });
     this.inProcessApps.set(windowId, app);
     shell.registerWindow(app.window);
-    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
-    shell.focusWindow(windowId);
-    this.requestShellRender();
-    this.appendLog(`launched ${windowId}`);
+    return app;
   }
 
   /** Get or spawn the worker host for an app. */

@@ -206,7 +206,8 @@ test('a bottom app switcher centres 576-wide windows and hangs one tall tab unde
 
 // The real chrome layer over the given geometry, with platform pieces stubbed:
 // a 4px-per-character font that paints each character as a 2x6 block, up to
-// `notifications` 24px notification icons, and a phone battery at 80%.
+// `notifications` 24px notification icons (keyed n0, n1, ...), and a phone
+// battery at 80%.
 const graphics = require('../.test-build/app/graphics/image.js');
 const shellScene = require('../.test-build/app/graphics/shell-scene.js');
 const displayList = require('../.test-build/app/graphics/display-list.js');
@@ -224,7 +225,9 @@ function chromeLayer(g, { notifications = 0, phoneBattery = null, windows = 1, t
     './ambient-cards': { activeAmbientCards: () => [] },
     '../../native/notification-icons': { readActiveNotificationIcons: (max) => {
       requested.push(max);
-      return { icons: Array.from({ length: Math.min(max, notifications) }, () => new graphics.GrayImage(24, 24, 200)), stale: false };
+      const count = Math.min(max, notifications);
+      return { icons: Array.from({ length: count }, () => new graphics.GrayImage(24, 24, 200)),
+        keys: Array.from({ length: count }, (_, index) => `n${index}`), stale: false };
     } },
     '../../native/phone-battery': { readPhoneBatteryState: () => ({ battery: phoneBattery, charging: false }) },
     '../../util/render-freshness': { renderPassAllowsStaleData: () => false },
@@ -366,9 +369,10 @@ test('the switcher row lays out windows, free space, notifications, widgets, bat
   // Right to left from the row's end (x=608), centred under its separator
   // line (y=366): "Thu Oct 2 9:41" (56px) flush with it; the battery block (label
   // 20 + gap 5 + gauge 21) 16px before it; the 30px widget 10px before that;
-  // then the two notification icons, 8px clear of the widget.
+  // then the two notification icons, 8px clear of the widget. The surface
+  // starts 2px before them, room for a selection box round the first.
   const clockX = 608 - 56, batteryLeft = clockX - 16 - 46, trayLeft = batteryLeft - 40, iconsLeft = trayLeft - 8 - 56 + 4;
-  assert.deepEqual([status.x, status.y, status.image.width, status.image.height], [iconsLeft, 367, 608 - iconsLeft, 35]);
+  assert.deepEqual([status.x, status.y, status.image.width, status.image.height], [iconsLeft - 2, 367, 608 - iconsLeft + 2, 35]);
   const at = (p, x, y) => p.image.withDrawsBaked().pixels[(y - p.y) * p.image.width + x - p.x];
   // The clock's text runs 8 rows down the top bar's layout, which sits 5 rows into the row.
   assert.deepEqual([at(status, clockX, 366 + 5 + 8 + 2), at(status, trayLeft, 366 + 5 + 4), at(status, iconsLeft, 366 + 5 + 2)], [210, 180, 200]);
@@ -398,7 +402,7 @@ test('many windows scroll in what the notification icons leave them', () => {
   const max = Math.floor((trayLeft - 8 - floor + 4) / 28);
   assert.equal(requested.at(-1), max);
   const iconsLeft = trayLeft - 8 - max * 28 + 4;
-  assert.equal(status.x, iconsLeft);
+  assert.equal(status.x, iconsLeft - 2);
   // Three windows fit before the status bar's gap; the rest scroll, with the
   // chevron at the end of the windows rather than of the row.
   assert.equal(chrome.windowIndexAt(32 + 10 + 2 * 40 + 4, 380, 12), 2);
@@ -487,6 +491,59 @@ test('a popup switcher\'s status bar can sit at the bottom, show only in the swi
   g.settings.statusBarPositionSetting.value = 'top';
   [bar] = chrome.paintParts();
   assert.deepEqual([bar.y, at(bar, 300, 123)], [96, 40]);
+});
+
+test('a notification the switcher selects sits in a box, filled with its icon inverted while the switcher has focus', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  g.settings.statusBarPositionSetting.value = 'bottom';
+  const { chrome, state } = chromeLayer(g, { notifications: 3, windows: 2 });
+  Object.assign(state, { selectedIndex: -1, selectedNotificationKey: 'n1', focus: 'sidebar' });
+  let [row, status] = chrome.paintParts();
+  assert.deepEqual(Array.from(chrome.notificationKeys()), ['n0', 'n1', 'n2']);
+  // Clock only: the icons end 8px before its 8px lead-in, 28px apart, each
+  // 7 rows into the row (the top bar's layout, 5 rows down).
+  const iconsLeft = 608 - 56 - 8 - 8 - 3 * 28 + 4, iconY = 366 + 7, n1 = iconsLeft + 28;
+  const at = (p, x, y) => p.image.withDrawsBaked().pixels[(y - p.y) * p.image.width + x - p.x];
+  // The box: 2px either side of the icon, 1px above and below, white; the
+  // icon inside it inverted; its neighbours as ever.
+  assert.deepEqual([at(status, n1 - 2, iconY + 12), at(status, n1 + 25, iconY + 12), at(status, n1 + 12, iconY - 1)], [255, 255, 255]);
+  assert.equal(at(status, n1 + 12, iconY - 2), 1);
+  assert.deepEqual([at(status, n1 + 5, iconY + 5), at(status, iconsLeft + 5, iconY + 5)], [55, 200]);
+  // No window is selected: the separator runs unbroken over the windows.
+  assert.equal(at(row, 50, 366), 40);
+  // Mirror touches find the icons by their boxes, which tile the icons' run.
+  assert.deepEqual([chrome.notificationKeyAt(n1 + 5, 380), chrome.notificationKeyAt(n1 - 3, 380),
+    chrome.notificationKeyAt(iconsLeft - 3, 380), chrome.notificationKeyAt(n1 + 5, 400)], ['n1', 'n0', null, null]);
+  // With its detail view focused instead, the box is an outline round the plain icon.
+  state.focus = 'window';
+  [, status] = chrome.paintParts();
+  assert.deepEqual([at(status, n1 - 2, iconY + 12), at(status, n1 - 1, iconY + 12), at(status, n1 + 5, iconY + 5)], [150, 1, 200]);
+  // The first icon's box fits the status bar's surface.
+  state.selectedNotificationKey = 'n0';
+  [, status] = chrome.paintParts();
+  assert.equal(at(status, iconsLeft - 2, iconY + 12), 150);
+  // In the top bar (the status bar's default place) likewise; barTop=78.
+  g.settings.statusBarPositionSetting.value = 'top';
+  const [bar] = chrome.paintParts();
+  const barIconsLeft = 32 + 10 + 56 + 16;
+  assert.deepEqual(Array.from(chrome.notificationKeys()), ['n0', 'n1', 'n2']);
+  assert.deepEqual([at(bar, barIconsLeft - 2, 78 + 14), at(bar, barIconsLeft + 5, 78 + 7)], [150, 200]);
+  assert.equal(chrome.notificationKeyAt(barIconsLeft + 30, 78 + 10), 'n1');
+});
+
+test('with the selection out on a notification, the windows stay scrolled as they were', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  const { chrome, state } = chromeLayer(g, { notifications: 2, windows: 20 });
+  state.selectedIndex = 19;
+  chrome.paintParts();
+  const last = 32 + 10 + 2 * 40 + 4;
+  const before = chrome.windowIndexAt(last, 380, 20);
+  assert.ok(before > 2);
+  Object.assign(state, { selectedIndex: -1, selectedNotificationKey: 'n0' });
+  chrome.paintParts();
+  assert.equal(chrome.windowIndexAt(last, 380, 20), before);
 });
 
 // Exercise the real worker message handler with platform work stubbed out.
