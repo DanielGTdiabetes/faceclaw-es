@@ -79,13 +79,23 @@ VAD: **4.620 ventanas**, **2.210 ms** por encima del umbral, **0 episodios**, 0 
 
 Cierre nuevo: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. El diagnóstico nativo `capturing=true` sigue siendo la instantánea anterior a STOP. No se reinstaló ni cambió código, firma, ajustes, Hermes o firmware; no se guardó ni envió audio experimental. Los siete descartes históricos siguen sin causa atribuida y no se consideran definitivamente resueltos.
 
-La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT y este escenario de TV están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
+## Convivencia física G2.1 con Hey Even
+
+**03-10-2026, Europe/Madrid**, continuación de `3cf51e3`. Ensayo específico nuevo del VAD activo con Hey Even; no repetición de la batería G0/G1. El usuario confirmó **«Sí, ocurrió todo y terminé con OFF»** ante la comprobación de suspensión del VAD, respuesta normal del asistente, retorno a escuchando al cerrar el diálogo y después sin actividad mientras permanecía callado.
+
+Lecturas UI solo después de OFF: **431 chunks / 344.800 muestras / 21,55 s PCM acumulados**, **2 inicios y 1 cesión**, hueco máximo de entrega **77 ms**, clipping 0. La duración PCM excluye el tiempo suspendido; el máximo de entrega tampoco mide la duración de la cesión, porque se reinicia la continuidad al liberar. VAD: **2.155 ventanas / 3.340 ms positivos / 3 episodios provisionales**, 2 completados por silencio y 1 interrumpido. No se obtuvo cronología acústica para atribuir ese episodio interrumpido a un instante concreto ni identificar hablantes.
+
+El diagnóstico nativo conservado corresponde **solo al último tramo reanudado**, con **316 paquetes / 252.800 muestras / 15,8 s PCM**, paquetes de 205 B y PCM de 1.600 B, mono 16 kHz. Hueco máximo nativo **69 ms**; cero pérdidas, duplicados, malformed, stale, errores de decodificación, queue drops y **pcmDeliveryDrops=0 en ese tramo**. No se conservó el diagnóstico completo del primer tramo: no extender los ceros a todo el ensayo ni tratar la diferencia respecto a los 431 chunks acumulados como pérdida.
+
+La observación del usuario y los dos inicios/una cesión acreditan **convivencia breve del VAD G2.1 con Hey Even, cesión y retorno sin actividad arrastrada percibida**. No valida PTT en G2.1 ni estabilidad prolongada. El cierre está confirmado por UI/JSON: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. `capturing=true` nativo es la instantánea previa a STOP. Sin reinstalación ni cambios de código, firma, ajustes, Hermes o firmware; sin audio experimental guardado/enviado. Los siete descartes históricos mantienen su incertidumbre.
+
+La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT, TV a un metro y convivencia breve con Hey Even están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
 
 | Escenario nuevo | Observar sin conservar contenido |
 | --- | --- |
 | Interlocutor, 20–30 s | Actividad posible, sin atribuir identidad o participación |
 | Otro ruido/fondo, si se necesita ampliar cobertura | Actividad espuria y límites del método por energía; la TV a un metro ya está ensayada |
-| Hey Even/PTT mientras VAD está activo | Comprobar solo la nueva convivencia con VAD y retorno sin arrastrar actividad; G0/G1 ya completado no se repite como batería |
+| PTT mientras VAD está activo | Comprobar la nueva convivencia con VAD y retorno sin arrastrar actividad; Hey Even G2.1 ya ensayado y G0/G1 no se repite como batería |
 | Cierre | OFF y recursos experimentales retirados, sin cortar captura ajena |
 
 Mantener los ensayos limitados a dos minutos, sin cambios de Hermes/bloqueo. No usar estas pruebas para dar por validadas autonomía o Doze profundo: siguen pendientes de protocolos propios. Para el ASR futuro permanecen español, valenciano y alternancia entre y dentro de frases, conservando el idioma y absteniéndose silenciosamente ante contenido incomprensible.
