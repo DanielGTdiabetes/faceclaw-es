@@ -69,12 +69,22 @@ VAD: **8.705 ventanas**, **53.960 ms** positivos, **16 episodios provisionales**
 
 Cierre nuevo confirmado por interfaz/JSON: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0** y **0 wakelocks experimentales activos**. El `capturing=true` nativo pertenece a la instantánea anterior a STOP, no al estado actual. No se guardó contenido ni audio experimental. Este tramo limpio no demuestra que los siete descartes del ensayo previo estén definitivamente resueltos.
 
-La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética y alternancia con IA están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
+## Ensayo de TV a un metro
+
+**03-10-2026, Europe/Madrid**, continuación de `e3635af`. El usuario completó el protocolo propuesto de TV con voces sin hablar él, seguido de silencio y OFF. Confirmó **«No detectó las voces de la TV»** y distancia aproximada de **un metro**. No se obtuvo una confirmación adicional de volumen, inteligibilidad desde las gafas o contenido del programa; no suponer calibración acústica.
+
+Lecturas UI realizadas después de OFF: **924 chunks y paquetes / 739.200 muestras / 46,2 s PCM**, 1 inicio, 0 cesiones y clipping. Hueco máximo **UI 89 ms / nativo 88 ms**. Paquetes de 205 B, PCM de 1.600 B, mono 16 kHz; cero pérdidas, duplicados, malformed, stale, errores de decodificación, queue drops y **pcmDeliveryDrops=0**. El contador describe el ensayo global, no únicamente el intervalo con TV encendida.
+
+VAD: **4.620 ventanas**, **2.210 ms** por encima del umbral, **0 episodios**, 0 completados y 0 interrumpidos. Los milisegundos positivos no confirman habla ni episodios; no hay cronología para situarlos antes o después de silenciar la TV. Coincide con la no detección percibida. **La TV de este ensayo no activó episodios; esto no demuestra rechazo general de TV/ruido ni separación entre fuentes.** No se modifican los umbrales a partir de un solo escenario. RMS del último chunk 0,0007780; fondo/umbral/frameRms del VAD posteriores a OFF están reiniciados y no describen el tramo.
+
+Cierre nuevo: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. El diagnóstico nativo `capturing=true` sigue siendo la instantánea anterior a STOP. No se reinstaló ni cambió código, firma, ajustes, Hermes o firmware; no se guardó ni envió audio experimental. Los siete descartes históricos siguen sin causa atribuida y no se consideran definitivamente resueltos.
+
+La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT y este escenario de TV están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
 
 | Escenario nuevo | Observar sin conservar contenido |
 | --- | --- |
 | Interlocutor, 20–30 s | Actividad posible, sin atribuir identidad o participación |
-| TV o ruido, 20–30 s | Falsos positivos y límites del método por energía |
+| Otro ruido/fondo, si se necesita ampliar cobertura | Actividad espuria y límites del método por energía; la TV a un metro ya está ensayada |
 | Hey Even/PTT mientras VAD está activo | Comprobar solo la nueva convivencia con VAD y retorno sin arrastrar actividad; G0/G1 ya completado no se repite como batería |
 | Cierre | OFF y recursos experimentales retirados, sin cortar captura ajena |
 
