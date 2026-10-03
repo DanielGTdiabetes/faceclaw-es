@@ -4,6 +4,8 @@ param(
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$JavaDirectory = $env:JAVA_HOME,
     [string]$Serial = '',
+    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2')]
+    [string]$ExpectedVersion = '0.8.1-es.5-conversation.g0.2',
     [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
@@ -36,10 +38,11 @@ function Assert-OriginalSignature([string]$Apk) {
     }
 }
 $taskBadging = & $taskAapt dump badging $InputApk 2>&1
-if ($LASTEXITCODE -ne 0 -or !($taskBadging | Select-String "^package: name='com.faceclaw.app' versionCode='805' versionName='0.8.1-es.5-conversation.g0.1'")) {
-    throw 'Identidad o versión inesperada: se requiere com.faceclaw.app / 805 / 0.8.1-es.5-conversation.g0.1.'
+$taskExpectedPackage = "^package: name='com.faceclaw.app' versionCode='805' versionName='" + [regex]::Escape($ExpectedVersion) + "'"
+if ($LASTEXITCODE -ne 0 -or !($taskBadging | Select-String $taskExpectedPackage)) {
+    throw "Identidad o versión inesperada: se requiere com.faceclaw.app / 805 / $ExpectedVersion."
 }
-$taskOutput = Join-Path $taskRoot 'dist/conversation-g0/faceclaw-0.8.1-es.5-conversation.g0.1.apk'
+$taskOutput = Join-Path $taskRoot "dist/conversation-g0/faceclaw-$ExpectedVersion.apk"
 New-Item -ItemType Directory -Force (Split-Path -Parent $taskOutput) | Out-Null
 $taskAligned = $taskOutput + '.aligned'
 & $taskAlign -f -P 16 4 $InputApk $taskAligned

@@ -207,6 +207,7 @@ private class FakeListener : FaceclawBleCommunicatorListener {
     val events = ArrayList<String>()
     val finished = ArrayList<String>()
     val batteries = ArrayList<String>()
+    val wearReports = ArrayList<Boolean>()
 
     override fun onStateChange(phase: String?, status: String?) {
         phases.add(phase ?: "")
@@ -223,7 +224,7 @@ private class FakeListener : FaceclawBleCommunicatorListener {
 
     override fun onSilentMode(silent: Boolean) {}
 
-    override fun onWearState(wearing: Boolean) {}
+    override fun onWearState(wearing: Boolean) { wearReports.add(wearing) }
 
     override fun onPhoneLockState(locked: Boolean) {}
 
@@ -271,6 +272,31 @@ private class Session {
 }
 
 class GlassesSessionCoreTest {
+    @Test fun requestedWearSnapshotWaitsForFirmwareAndForwardsUnchangedValue() {
+        val s = Session()
+        s.core.monitor.withLock { s.core.running = true; s.core.sessionReady = true }
+        fun report(worn: Boolean) {
+            val event = BleProtocol.encodeVarintField(1, 1) + BleProtocol.encodeVarintField(2, if (worn) 1 else 0)
+            val pb = BleProtocol.encodeVarintField(1, 3) + byteArrayOf(0x2a, event.size.toByte()) + event
+            val frame = BleProtocol.framePb(pb, BleProtocol.SID_ONBOARDING, 0, 1).first()
+            s.core.onNotification(RIGHT, BleProtocol.NOTIFY_CHAR_UUID, frame)
+        }
+        try {
+            report(true)
+            report(true)
+            assertEquals(listOf(true), s.listener.wearReports)
+            s.core.enableWearDetectionAndRequestState()
+            assertEquals(listOf(true), s.listener.wearReports, "a query cannot emit cached presence")
+            report(true)
+            assertEquals(listOf(true, true), s.listener.wearReports, "the fresh reply must survive deduplication")
+            report(true)
+            assertEquals(2, s.listener.wearReports.size, "unsolicited duplicates remain suppressed")
+            s.core.enableWearDetectionAndRequestState()
+            report(false)
+            assertEquals(listOf(true, true, false), s.listener.wearReports)
+        } finally { s.core.close() }
+    }
+
     @Test fun brightnessConfigPrecedesFirstFrameAndSleepWakeFollowsComposites() {
         val s = Session()
         s.core.configureBrightness(false, 70, 2, 100, "0:0,1000:100", 280)

@@ -147,7 +147,7 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   onConversationDetectorTap(): void {
     const detector = dashboardController.conversationDetector;
-    detector.setEnabled(!detector.snapshot().enabled);
+    dashboardController.setConversationCaptureEnabled(!detector.snapshot().enabled);
   }
 
   onConversationDetectorMetricsTap(): void {

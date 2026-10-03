@@ -474,6 +474,7 @@ internal fun GlassesSessionCore.resetSessionStateLocked() {
     for (transport in cfwTransports) transport.reset()
     lastCfwCleanupAckMagic = 0
     wearState = -1
+    wearStateReportRequested = false
     displayedFingerprint = ""
     // Deliberately not clearing silentMode: it is a property of the glasses,
     // not of our session, and silent mode blocks app launches, so it can be

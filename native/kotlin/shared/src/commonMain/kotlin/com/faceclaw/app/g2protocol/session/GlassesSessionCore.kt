@@ -227,6 +227,7 @@ class GlassesSessionCore(
     // Silent mode: 1 = on, 0 = off, -1 = not yet known. See updateSilentModeLocked.
     internal var silentMode = -1
     internal var wearState = -1
+    internal var wearStateReportRequested = false
     internal var phoneLockState = -1
     internal var lastPhoneLockCheckAtMs = 0L
     internal var audioCaptureActive = false
@@ -655,6 +656,9 @@ class GlassesSessionCore(
             }
             clearMessagesOfKindLocked("wear-detection-control")
             clearMessagesOfKindLocked("wear-query-control")
+            // Forward the next actual firmware report even if its value is unchanged.
+            // TS may have invalidated its session-scoped snapshot during reconnect.
+            wearStateReportRequested = true
             val queryLeft = messageBuilder.faceclawWearQuery(true)
             val queryRight = messageBuilder.faceclawWearQuery(false)
             val enable = messageBuilder.setWearDetection(true)
@@ -1398,12 +1402,13 @@ class GlassesSessionCore(
         var event: G2Event? = null
         monitor.withLock {
             lastIncomingAtMs = now()
-            if (decodedWearState >= 0 && decodedWearState != wearState) {
+            if (decodedWearState >= 0 && (decodedWearState != wearState || wearStateReportRequested)) {
                 // An observed OFF_HEAD -> ON_HEAD means charging is over, up
                 // to CHARGING_BATTERY_POLL_MS before a battery poll would say
                 // so. Like TS's put-on wake, a first snapshot doesn't count.
                 putOnWhileCharging = chargingMode && wearState == 0 && decodedWearState == 1
                 wearState = decodedWearState
+                wearStateReportRequested = false
                 emitWearState = true
             }
             var faceclawWakeNotification = false
@@ -1703,6 +1708,7 @@ class GlassesSessionCore(
             // reconnect; forget ours too, or the new session's first report
             // (the CFW query reply) is deduped away and TS never relearns it.
             wearState = -1
+            wearStateReportRequested = false
         }
         setStateDisplay("connecting", "Connecting to the glasses...")
         try {

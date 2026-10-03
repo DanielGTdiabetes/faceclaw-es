@@ -2,6 +2,8 @@
 
 ## Continuación activa: prototipo conversacional G2 (03-10-2026)
 
+**Estado vigente de casa:** G0.2 (`0.8.1-es.5-conversation.g0.2`, código 805) instalada con firma original. Soluciona la espera de presencia con bloqueo desactivado, conservando ese ajuste. Comparación privada actual: 33 ajustes idénticos antes/después, Hermes reconectado. Probadas G2 apagadas y continuidad en segundo plano; pendientes ambas pantallas apagadas/bloqueadas, ciclo completo de estuche/reconexión con G0.2 y OFF durante captura ajena. Leer el estado y los hashes en [conversation-detection-g0-results.md](conversation-detection-g0-results.md). La firma ya está recuperada y verificada en casa. El documento temporal inferior contiene el punto anterior del trabajo, no una instrucción de repetir G0.1.
+
 **Para retomar desde el PC de casa tras las pruebas del trabajo, leer [continuacion-pc-casa-2026-10-03.md](continuacion-pc-casa-2026-10-03.md).** Incluye instalación, firma respaldada, pruebas reales de captura/Hey Even/Chat/Pixel bloqueado, evidencia y próximos pasos. El ensayo terminó OFF por su límite temporal; no se dan por superadas todas las puertas G0/G1.
 
 Trabajo activo en **`codex/conversation-detection-g0`**, manteniendo la adaptación española como base. Leer [conversation-detection-g0-results.md](conversation-detection-g0-results.md): implementación, instalación desde el trabajo y pruebas físicas pendientes. El Pixel ya tiene `0.8.1-es.5-conversation.g0.1`, firmado con la clave original; 32 ajustes conservados, incluido Hermes. Ensayo comprobado OFF, cero chunks y sin wakelock propio. No añadir VAD hasta superar G0/G1 en dispositivos reales. Requisito añadido: español y valenciano, también alternados; todavía pendiente de implementación y validación en ASR.
@@ -91,3 +93,9 @@ El hash del archivo y la huella del certificado son datos distintos. Una vez rec
 4. Registrar las pruebas reales aquí y en el NAS. Planificar el soporte español/valenciano sin darlo por validado.
 
 El Pixel 10 Pro Fold está actualizado por USB a `0.8.1-es.5-conversation.g0.1`, código 805. Conserva permisos de ubicación precisa/aproximada y notificaciones. Antes del prototipo se instaló también la APK de ubicación `11ed6ac`, con el mismo certificado. La corrección permite consultar coordenadas, precisión y antigüedad durante una conversación, sin abrir Tiempo ni Navegar. El puente oficial de OpenClaw pasó anteriormente una comprobación con una posición nativa simulada. **La instalación está comprobada; las pruebas desde las gafas reales siguen pendientes.**
+
+## Comprobación y recuperación desde casa (03-10-2026)
+
+Firma original recuperada en `E:\projects\faceclaw-es\.tools\signing\`: `faceclaw-es.jks` y `store.password`. Ambos checksums coinciden con el NAS. La contraseña permite abrir el almacén y el alias `faceclaw-es` tiene el certificado original SHA-256 `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`. Carpeta local con ACL limitada al usuario y SYSTEM; archivos excluidos de Git. NAS conserva carpeta 700 y archivos 600.
+
+APK G0 sin firma y reversión histórica presentes en casa y verificadas contra los hashes documentados. APK estable con ubicación firmada y respaldo privado de ajustes presentes en el NAS. Rama local `codex/conversation-detection-g0` sincronizada con `405686b`, incluida la continuidad del PC del trabajo. Según ese informe, G0 ya se instaló allí conservando 32 ajustes y Hermes; en esta comprobación de archivos no se ha inspeccionado ni modificado el móvil. Las pruebas físicas pendientes mantienen su estado.

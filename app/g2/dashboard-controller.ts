@@ -735,7 +735,7 @@ class DashboardController {
     // only after charging mode began) needs the OFF_HEAD snapshot so that
     // putting the glasses on registers as a put-on.
     if (
-      !lockScreenEnabledSetting.get() ||
+      (!lockScreenEnabledSetting.get() && !this.conversationDetector.snapshot().enabled) ||
       !this.customFirmwareConfirmed ||
       (this.phase !== "connected" && this.phase !== "charging") ||
       !communicator
@@ -2026,6 +2026,13 @@ class DashboardController {
       return () => clearInterval(timer);
     },
   });
+
+  setConversationCaptureEnabled(enabled: boolean): void {
+    this.conversationDetector.setEnabled(enabled);
+    // Capture needs a fresh wear report even when the optional lock screen is off.
+    // Request on ON and on ready sessions, never from the 500 ms refresh loop.
+    if (enabled) this.ensureWearStateTracking();
+  }
 
   private detectorEnvironment(): DetectorEnvironment {
     const presence = getGlassesPresence();

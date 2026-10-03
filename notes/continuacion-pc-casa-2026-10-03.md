@@ -1,5 +1,7 @@
 # Continuación desde casa: captura conversacional G2
 
+**Reanudada en casa (03-10-2026):** este punto de partida G0.1 ya se ha consumido parcialmente. Prevalece [conversation-detection-g0-results.md](conversation-detection-g0-results.md): G0.2 instalada, dependencia del bloqueo corregida, 33 ajustes actuales conservados, pantallas G2 apagadas y segundo plano comprobados. Quedan ambas pantallas apagadas/bloqueadas, ciclo completo de estuche/reconexión con G0.2 y OFF durante captura ajena. No repetir instalación ni las pruebas ya hechas. El móvil se está usando para otra prueba; esperar disponibilidad antes de acciones físicas. Este archivo sigue pendiente de la limpieza final indicada abajo, sin recrearlo como otra tarea.
+
 Estado del **3 de octubre de 2026**, al cerrar la sesión del PC del trabajo. El usuario pidió continuar el desarrollo desde casa y guardar esta continuidad en GitHub y el NAS.
 
 **CONTINUIDAD TEMPORAL, DE UN SOLO USO.** No tratar este archivo como una nueva tarea ni como el estado vigente después de completarse esta continuación. Por petición explícita del usuario, al completar el trabajo que se retoma en casa:

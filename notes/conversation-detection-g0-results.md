@@ -2,6 +2,32 @@
 
 Fecha: **03-10-2026**, Europe/Madrid. Proyecto `E:\projects\faceclaw-es`, repositorio [DanielGTdiabetes/faceclaw-es](https://github.com/DanielGTdiabetes/faceclaw-es), rama **`codex/conversation-detection-g0`**, base `5c5e6e60d39c7603a47ea8c52006d5e97331a259` de `spanish-0.8.1`.
 
+## Continuación en casa: G0.2 (03-10-2026)
+
+Repositorio sincronizado con `405686b` del trabajo, conservando la comprobación local de firma. El usuario confirmó que las cuatro pruebas de pantallas G2 apagadas, segundo plano, reconexión y OFF durante captura ajena quedaron pendientes; las pruebas ya realizadas en el trabajo no deben repetirse por defecto.
+
+**Problema observado con G0.1:** ON permanecía suspendido esperando presencia, pese a llevar las gafas puestas. Una retirada y puesta nueva generó OFF_HEAD/ON_HEAD y permitió captar PCM. Al guardar en el estuche se detuvo el micrófono y no quedó wakelock experimental activo. Al volver hubo audio nuevo (192 paquetes / 9,6 s) y después suspensión. Coincidió con una notificación, pero los registros mostraron reconexiones por `ack timeout` y un `loop error`; no se ha demostrado que la notificación los causara. El usuario tenía `display.lockScreenEnabled=false`, confirmó que lo había desactivado por molesto y se conserva así.
+
+**Corrección G0.2:** ON y cada sesión lista durante el ensayo solicitan presencia aunque el bloqueo esté desactivado. Una consulta nativa espera un informe real del firmware y entrega ese informe aunque el valor coincida con el anterior; no emite presencia positiva desde la caché. Se conserva la invalidación al perder sesión, el requisito de presencia positiva, prioridad del asistente, OFF por defecto y límite de dos minutos. No se añaden consultas al tick de 500 ms ni VAD.
+
+30 pruebas Node específicas, TypeScript, oxlint y 210 pruebas Kotlin pasan; preparación y compilación Android correctas. G0.2 instalada mediante `adb install -r`, certificado original verificado. Los **33 ajustes actuales** son idénticos antes/después (incluidos bloqueo desactivado y Hermes); esto se compara con el respaldo actual de casa, no con los 32 de la sesión del trabajo. Hermes reconectó. El usuario confirmó que ON pasa a `escuchando` sin otra retirada/puesta; los primeros 900 paquetes / 45 s no tuvieron pérdidas, duplicados ni errores de decodificación, un paquete tardío y hueco nativo máximo 91 ms. Los ensayos pendientes continúan; no se dan G0/G1 por superadas todavía.
+
+| Artefacto de casa | SHA-256 | Ruta NAS |
+| --- | --- | --- |
+| G0.2 sin firma | `809ca9aa44f8beea3ad8983003650439f37783624396919ee410b2468e99090e` | `/volume1/home/Dani/Faceclaw/apk-builds/conversation-g0.2/faceclaw-0.8.1-es.5-conversation.g0.2-unsigned.apk` |
+| G0.2 firmada instalada | `e5c518b9e8f1127a174f2364d688b86cb59dd769b116a5fc054b47d026495de6` | `/volume1/home/Dani/Faceclaw/apk-builds/conversation-g0.2/faceclaw-0.8.1-es.5-conversation.g0.2.apk` |
+| G0.1 extraída antes de actualizar | `27f0da44aa476c1a05633e18273f7dc9346ca79786de5f4ddf4765fdfb59d0c7` | `/volume1/home/Dani/Faceclaw/apk-backups/faceclaw-g0.1-before-g0.2.apk` |
+
+Todos los artefactos se copiaron al NAS y sus hashes se verificaron; archivos 600 y carpeta de G0.2 700. Respaldo local fresco: `dist/conversation-g0/before-install-20261003-115644.apk`. Reversión a ese G0.1: `adb -s 61161FDCG0013L install -r dist/conversation-g0/before-install-20261003-115644.apk`, tras OFF. El helper de instalación valida G0.2 por defecto; para el artefacto antiguo G0.1 indicar `-ExpectedVersion 0.8.1-es.5-conversation.g0.1`.
+
+**Pantallas G2 apagadas, Pixel encendido (G0.2):** el usuario confirmó que ambas pantallas no mostraban nada y que el estado seguía `escuchando`. Una captura del móvil durante ese ensayo mostró `Display off` y 975 chunks / 48,8 s. Los registros del mismo flujo crecieron hasta 2.380 paquetes / 119,0 s PCM, con cero pérdidas, duplicados, queue drops o errores de decodificación; un paquete tardío y hueco nativo máximo 91 ms. Se observó STOP al límite temporal. No se mantuvieron las pantallas encendidas como solución. Esto valida el ensayo breve con G2 apagadas y Pixel encendido; no equivale a ambas pantallas apagadas ni a autonomía.
+
+**Segundo plano (G0.2):** ensayo nuevo de 14:00:58 a 14:02:58. Se observó otra app en primer plano y después el launcher, mientras el mismo flujo pasó de 1.600 paquetes / 80,0 s a 2.200 / 110,0 s durante 30,1 s. Cero pérdidas, duplicados, paquetes tardíos, queue drops o errores de decodificación; hueco nativo máximo 87 ms. Al volver a Faceclaw estaba OFF con 2.378 chunks / 118,9 s (hueco UI 90 ms, cero cesiones). El usuario interpretó el apagado como efecto de pasar al segundo plano, pero el STOP registrado fue exactamente al límite de dos minutos; la captura sí continuó en segundo plano. No se presupone que OFF fuese inmediato al salir ni se omite la observación del usuario.
+
+## Historial del PC del trabajo y de la implementación inicial
+
+Las referencias inferiores a versión G0.1, firma ausente o pruebas totalmente pendientes describen instantáneas anteriores. Prevalece el estado de casa y el registro de pruebas reales.
+
 **Estado actualizado desde el PC del trabajo el 03-10-2026:** APK G0 **instalada** en el Pixel por USB con la firma original. Los 32 ajustes exportados antes/después son idénticos, incluidos los de Hermes. La firma original está copiada y verificada en el NAS (carpeta 700, ambos archivos 600). La interfaz muestra ensayo **desactivado**, 0 chunks y 0 s PCM; `dumpsys power` no muestra `Faceclaw:ConversationG0`. **Las pruebas físicas siguen pendientes y G0/G1 no están superadas.** No avanzar a G2/VAD hasta probar audio, Hey Even, apagado y ciclo de vida en las gafas. La petición vigente autoriza instalación y ensayos breves guiados; el usuario confirmó continuar desarrollando este proyecto. No repetir la auditoría completa ni pedir de nuevo esa autorización.
 
 APK firmada instalada: SHA-256 `27f0da44aa476c1a05633e18273f7dc9346ca79786de5f4ddf4765fdfb59d0c7`, versión `0.8.1-es.5-conversation.g0.1`, código 805. Local: `D:\Proyectos\Faceclaw_spanish\dist\conversation-g0\faceclaw-0.8.1-es.5-conversation.g0.1.apk`. Respaldo fresco anterior al prototipo: `dist/conversation-g0/before-install-20261003-080901.apk`, SHA-256 `ae1ed7ed27cc3560fd0e68ed28acf5e2ee930198d40aa6fe524be1b33d0c34ff` (incluye ya la corrección de ubicación). La copia inicial privada de APK/ajustes del trabajo está en `backups/update-20261003/`; no publicar sus ajustes. La evidencia histórica del PC de casa que sigue abajo describe el estado anterior a esta instalación.
@@ -116,7 +142,9 @@ Usar `-AndroidSdk <ruta-sdk>` y `-JavaDirectory <ruta-jdk-21>` si ANDROID_HOME/J
 
 5. Si se recompila: JDK 21, SDK/build-tools 35, NDK 27.2.12479018 y CMake 3.22.1. `npx nativescript@9.1.2 prepare android --release`; después `platforms/android/gradlew.bat -p platforms/android assembleRelease -Prelease -PfaceclawUnsigned "-Dorg.gradle.jvmargs=-Xmx4g" --console=plain`. APK en `platforms/android/app/build/outputs/apk/release/app-release-unsigned.apk`. No ejecutar un helper antiguo que pueda generar claves. Repetir comprobaciones si cambia el código/artefacto.
 
-## Pruebas físicas: todas pendientes, con usuario presente
+## Plan de pruebas físicas y pendientes actuales
+
+Las pruebas de captura/formato PCM, Hey Even, PTT y Pixel bloqueado ya se realizaron en el trabajo; véase el registro de esa sesión al principio de este informe. El usuario confirmó desde casa que quedaron pendientes las pantallas de las G2 apagadas, segundo plano, reconexión y OFF durante otra captura. La tabla siguiente conserva el protocolo de ensayo; no significa que deba repetirse toda la batería ni que todos sus casos estén pendientes.
 
 No pedir ponerse las gafas hasta que la APK esté instalada y arranque correctamente. Ensayos iniciales de 20–40 s, separados; ON tiene tope de dos minutos. Guiar cada acción y esperar la confirmación del usuario. No contar una prueba física como realizada por el mero hecho de ejecutar ADB.
 
