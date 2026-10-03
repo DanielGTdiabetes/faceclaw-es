@@ -70,6 +70,8 @@ class IosGlassesSession internal constructor(
 
     fun setListener(listener: FaceclawBleCommunicatorListener?) = core.setListener(listener)
 
+    fun setRequiredFirmwareRevision(revision: Int) = core.setRequiredFirmwareRevision(revision)
+
     fun start(): Boolean = core.start()
 
     fun disconnect() = core.disconnect()

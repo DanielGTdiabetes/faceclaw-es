@@ -14,6 +14,7 @@ export type CommunicatorPhase =
   | "charging"
   | "retrying"
   | "unpaired"
+  | "incompatible-firmware"
   | "disconnecting";
 
 export type CommunicatorState = {
@@ -34,7 +35,7 @@ export type FrameMetrics = {
   tileCount: number;
 };
 
-import { type FirmwareInfo } from "../g2/firmware-compat";
+import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/firmware-compat";
 
 export type { FirmwareInfo };
 
@@ -169,6 +170,8 @@ export class FaceclawCommunicatorBridge {
       addresses.left,
       addresses.ring ?? "",
     );
+    // The shared session halts on any other firmware ("incompatible-firmware").
+    this.communicator.setRequiredFirmwareRevision(REQUIRED_FACECLAW_FIRMWARE_VERSION);
     this.listenerProxy = new com.faceclaw.app.FaceclawBleCommunicatorListener({
       onStateChange: (phase: string, status: string) => {
         const state = {

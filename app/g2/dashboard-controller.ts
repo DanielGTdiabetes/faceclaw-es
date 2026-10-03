@@ -20,7 +20,7 @@ import { openEvenAppSettings, readEvenAppNotificationState } from "../native/eve
 import { grayImageToPreviewSource } from "../native/gray-image-preview";
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmware-compat";
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
-import { resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
+import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
 
 /** Who a synthetic (non-firmware) input stands for. */
@@ -361,11 +361,10 @@ class DashboardController {
   private openAppsRestored = false;
   private suppressOpenAppsPersist = false;
   // connect() is a long sequence of awaits against this.communicator; the
-  // incompatible-firmware disconnect must not tear that communicator down
+  // halted-session disconnect must not tear that communicator down
   // underneath it, so it waits for this to clear.
   private connectRunning = false;
-  private incompatibleDisconnectPending = false;
-  private unpairedDisconnectPending = false;
+  private haltedDisconnectPending = false;
 
   constructor() {
     const sharedActions = {
@@ -1456,12 +1455,12 @@ class DashboardController {
       await communicator.configureBrightness(getBrightnessPreferences());
       this.offState = communicator.onStateChange((state) => {
         if (state.phase !== "connected") resetRingInputFilter();
-        if (state.phase === "unpaired") {
-          // Java parked its retry loop: an arm's Android bond is gone, so
-          // every redial would fail the same way until the user re-pairs.
-          // Tear down into the manual-disconnected state and keep the
-          // re-pair instruction as the visible status.
-          this.scheduleUnpairedDisconnect(state.status);
+        if (isHaltedSessionPhase(state.phase)) {
+          // The shared session parked its retry loop (an arm's Android bond
+          // is gone, or the firmware can't run Faceclaw), so every redial
+          // would fail the same way. Tear down into the manual-disconnected
+          // state and keep the session's explanation as the visible status.
+          this.scheduleHaltedSessionDisconnect(state.status);
           return;
         }
         const mappedPhase =
@@ -1604,15 +1603,14 @@ class DashboardController {
           });
           this.ensureWearStateTracking();
         }
+        // The shared session halts on incompatible firmware by itself
+        // ("incompatible-firmware" phase); this only explains why.
         if (warning !== this.firmwareWarningMessage) {
           this.firmwareWarningMessage = warning;
           if (warning) {
             this.appendLog(`firmware compatibility warning: ${warning}`);
           }
           this.emit();
-        }
-        if (warning) {
-          this.scheduleIncompatibleFirmwareDisconnect();
         }
       });
       // The Music and Nightscout apps subscribe to their bridges directly and
@@ -1711,61 +1709,28 @@ class DashboardController {
   }
 
   /**
-   * Incompatible firmware means every message Faceclaw sends is one the
-   * glasses may misinterpret, and a live session fights the flash flow's own
-   * connection. Drop the connection (without the CFW-directed cleanup
-   * messages) and hold in the manual-disconnected state until the user
-   * connects explicitly or installs the custom firmware.
+   * The shared session parked its retry loop (an arm's Android bond is gone,
+   * or the glasses run firmware Faceclaw can't use; see isHaltedSessionPhase)
+   * and dropped both arms. Finish the teardown (without the CFW-directed
+   * cleanup messages, which incompatible firmware would misread) and hold in
+   * the manual-disconnected state until the user connects explicitly,
+   * re-pairs or installs the custom firmware, keeping [message] from the
+   * session as the status the user sees.
    */
-  private scheduleIncompatibleFirmwareDisconnect(): void {
-    if (this.incompatibleDisconnectPending) return;
-    this.incompatibleDisconnectPending = true;
+  private scheduleHaltedSessionDisconnect(message: string): void {
+    if (this.haltedDisconnectPending) return;
+    this.haltedDisconnectPending = true;
     const attempt = () => {
-      // Firmware info can arrive while connect() is still mid-flight; let it
+      // The halt can be reported while connect() is still mid-flight; let it
       // finish so the teardown doesn't race its surface setup.
       if (this.connectRunning) {
         setTimeout(attempt, 200);
         return;
       }
-      this.incompatibleDisconnectPending = false;
+      this.haltedDisconnectPending = false;
       if (this.phase === "disconnected" || this.phase === "disconnecting") {
         // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses we know can't run Faceclaw.
-        suppressAutoReconnect();
-        return;
-      }
-      this.appendLog(
-        "Disconnecting: the glasses firmware is incompatible. Auto-reconnect is disabled until you connect manually or install the custom firmware.",
-      );
-      void this.disconnect({ skipFirmwareCleanup: true })
-        .then(() => this.setStatus("Disconnected (incompatible firmware)."))
-        .catch((error) => {
-          this.appendLog(`incompatible-firmware disconnect failed: ${this.formatError(error)}`);
-        });
-    };
-    setTimeout(attempt, 0);
-  }
-
-  /**
-   * A connect attempt found an arm whose Android bond is missing, so the Java
-   * worker stopped retrying. Drop into the manual-disconnected state (no
-   * auto-reconnect: it would just fail again) and leave the re-pair
-   * instruction from Java as the status the user sees.
-   */
-  private scheduleUnpairedDisconnect(message: string): void {
-    if (this.unpairedDisconnectPending) return;
-    this.unpairedDisconnectPending = true;
-    const attempt = () => {
-      // The unpaired report can arrive while connect() is still mid-flight;
-      // let it finish so the teardown doesn't race its surface setup.
-      if (this.connectRunning) {
-        setTimeout(attempt, 200);
-        return;
-      }
-      this.unpairedDisconnectPending = false;
-      if (this.phase === "disconnected" || this.phase === "disconnecting") {
-        // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses that are no longer paired.
+        // re-dialing glasses that would fail the same way.
         suppressAutoReconnect();
         this.setStatus(message);
         return;
@@ -1774,7 +1739,7 @@ class DashboardController {
       void this.disconnect({ skipFirmwareCleanup: true })
         .then(() => this.setStatus(message))
         .catch((error) => {
-          this.appendLog(`unpaired disconnect failed: ${this.formatError(error)}`);
+          this.appendLog(`halted-session disconnect failed: ${this.formatError(error)}`);
         });
     };
     setTimeout(attempt, 0);

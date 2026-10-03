@@ -52,6 +52,10 @@ internal fun GlassesSessionCore.driveSession(): Long {
         maybeFinishNoChangeDesiredFrame()
 
         monitor.withLock {
+            if (incompatibleFirmware != null) {
+                // Incompatible firmware: hand back to the worker loop to halt.
+                return 0
+            }
             drainCfwAcknowledgementsLocked()
             if (cfwCleanupDelivered) {
                 /* Successful mode 11 must be the last Faceclaw write. Drop
@@ -1007,6 +1011,13 @@ internal fun GlassesSessionCore.createBatteryQueryMessageLocked(): OutboundMessa
         if (firmwareInfo != null) {
             customFirmwareDetected = firmwareInfo.isFaceclawFirmware()
             emitFirmwareInfo(firmwareInfo)
+            if (sessionReady && !firmwareInfo.isCompatible(requiredFirmwareRevision)) {
+                // Halting tears down the link, which belongs on the worker thread
+                // (this runs on the notification path); until it does, driveSession
+                // sends nothing more.
+                incompatibleFirmware = firmwareInfo
+                interruptibleSleep.interrupt()
+            }
         }
     }
     message.onTimeout = MessageCallback {

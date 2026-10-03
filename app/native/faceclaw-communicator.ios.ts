@@ -1,6 +1,6 @@
 import type { RingInput } from "../g2/ring-input";
 import { File, knownFolders, path, type ImageSource } from "@nativescript/core";
-import { type FirmwareInfo } from "../g2/firmware-compat";
+import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/firmware-compat";
 import { type CompassEvent } from "./compass-types";
 import { fromData, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
@@ -23,6 +23,7 @@ export type CommunicatorPhase =
   | "charging"
   | "retrying"
   | "unpaired"
+  | "incompatible-firmware"
   | "disconnecting";
 
 export type CommunicatorState = {
@@ -203,6 +204,8 @@ export class FaceclawCommunicatorBridge {
       String(addresses.left ?? "").toUpperCase(),
       String(addresses.ring ?? "").toUpperCase(),
     );
+    // The shared session halts on any other firmware ("incompatible-firmware").
+    this.communicator.setRequiredFirmwareRevisionRevision(REQUIRED_FACECLAW_FIRMWARE_VERSION);
     this.listenerProxy = SessionListener.new() as SessionListener;
     this.listenerProxy.bridge = this;
     this.communicator.setListenerListener(this.listenerProxy);

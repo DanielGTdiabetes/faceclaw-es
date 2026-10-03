@@ -265,6 +265,7 @@ test('background glasses input still composites frames; phone resume preserves t
     '../native/nightscout-bridge': { nightscoutBridge: { async start() { pollStarts++; }, async stop() { pollStops++; } } },
     './glance-host': { GlanceHost: class { dismiss() {} reset() {} isVisible() { return false; } } },
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
+    './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher/launcher-app': { createLauncherWindow: () => window, LAUNCHER_SURFACE_ID: 'launcher' },
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/all-apps': { ALL_APPS: [] }, '../ui/dashboard-settings': settings,

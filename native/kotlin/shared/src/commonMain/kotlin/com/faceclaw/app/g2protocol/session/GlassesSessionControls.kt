@@ -359,23 +359,7 @@ internal fun GlassesSessionCore.firstUnpairedArm(): String? {
  */
 internal fun GlassesSessionCore.handleUnpairedFailure(address: String) {
     logError("Connect failed and $address is not paired; suspending reconnect")
-    monitor.withLock {
-        reconnectHalted = true
-        sessionReady = false
-        fixedLayoutCreated = false
-        startupProbePending = false
-        shutdownRequested = false
-        chargingMode = false
-        imageRetryAfterMs = 0
-        displayedFingerprint = ""
-        faceclawWakePendingNonce = -1
-        lastFaceclawWakeLeaseQueuedAtMs = 0
-        faceclawWakeControlSentCount = 0
-        clearAllMessagesLocked("arm not paired: $address")
-        reconnectAfterMs = Long.MAX_VALUE
-        link.disconnect(rightAddress)
-        link.disconnect(leftAddress)
-    }
+    monitor.withLock { haltReconnectLocked("arm not paired: $address") }
     if (!userDisconnectRequested) {
         setStateDisplay(
             "unpaired",
@@ -384,6 +368,59 @@ internal fun GlassesSessionCore.handleUnpairedFailure(address: String) {
         )
     }
     interruptibleSleep.interrupt()
+}
+
+/**
+ * The settings ack reported firmware this app can't run: stock, another
+ * project's, or an older Faceclaw revision (see
+ * [BleProtocol.FirmwareInfo.isCompatible]). Everything else this session
+ * would send is a private-mode message the glasses may misread (stock leaves
+ * them unacked until the CFW retry limit drops the link), and a redial would
+ * only find the same firmware, so park the worker loop like
+ * [handleUnpairedFailure], without any cleanup messages. The firmware info
+ * was emitted just before this, so the TS side can explain the mismatch and
+ * offer the custom-firmware install.
+ */
+internal fun GlassesSessionCore.handleIncompatibleFirmware() {
+    val info = monitor.withLock {
+        val pending = incompatibleFirmware
+        incompatibleFirmware = null
+        pending
+    } ?: return
+    logError("Glasses report incompatible firmware L=" + info.leftVersion + " R=" + info.rightVersion
+        + " ext=\"" + info.extension + "\" (need Faceclaw/" + requiredFirmwareRevision + "); suspending reconnect")
+    monitor.withLock { haltReconnectLocked("incompatible firmware") }
+    if (!userDisconnectRequested) {
+        setStateDisplay(
+            "incompatible-firmware",
+            "The glasses firmware is not compatible with this version of Faceclaw."
+                + " Install the custom firmware, then connect."
+        )
+    }
+    interruptibleSleep.interrupt()
+}
+
+/**
+ * Park the worker loop for good: drop both arms, discard queued traffic and
+ * stop redialing. Only an explicit connect (start() on a fresh communicator)
+ * tries again.
+ */
+internal fun GlassesSessionCore.haltReconnectLocked(reason: String) {
+    reconnectHalted = true
+    sessionReady = false
+    fixedLayoutCreated = false
+    startupProbePending = false
+    shutdownRequested = false
+    chargingMode = false
+    imageRetryAfterMs = 0
+    displayedFingerprint = ""
+    faceclawWakePendingNonce = -1
+    lastFaceclawWakeLeaseQueuedAtMs = 0
+    faceclawWakeControlSentCount = 0
+    clearAllMessagesLocked(reason)
+    reconnectAfterMs = Long.MAX_VALUE
+    link.disconnect(rightAddress)
+    link.disconnect(leftAddress)
 }
 
 /**
@@ -454,6 +491,7 @@ internal fun GlassesSessionCore.resetSessionStateLocked() {
     reconnectAfterMs = 0
     consecutiveReconnects = 0
     reconnectHalted = false
+    incompatibleFirmware = null
     ringReconnectAfterMs = 0
     lastAckAtMs = 0
     lastIncomingAtMs = 0

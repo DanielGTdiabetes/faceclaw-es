@@ -126,6 +126,8 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun setListener(listener: FaceclawBleCommunicatorListener?) = core.setListener(listener)
 
+    fun setRequiredFirmwareRevision(revision: Int) = core.setRequiredFirmwareRevision(revision)
+
     fun start() {
         if (core.start()) {
             activeInstance = this
