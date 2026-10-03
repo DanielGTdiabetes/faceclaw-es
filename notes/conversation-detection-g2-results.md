@@ -59,12 +59,20 @@ Cierre comprobado en JSON: `enabled=false`, desactivado, VAD inactivo, `lease=fa
 
 **Cierre final:** el usuario confirmó OFF; JSON `enabled=false`, desactivado, VAD inactivo, `lease=false`, `timer=false`, `bufferedBytes=0`, y **0 wakelocks experimentales activos**. Las pruebas G2 realizadas cubren silencio, voz/pausas del usuario y reproducción sintética por altavoz, incluida una repetición controlada motivada por los descartes. No se reinstaló G0.2 ni se repitió su batería completa. Interlocutor real, TV/ruido variado, convivencia física específica del VAD con Hey Even/PTT y estabilidad prolongada siguen sin validar en G2. No se han medido autonomía ni Doze profundo y no se ha añadido ASR.
 
-La validación física específica de G2 está **iniciada, no completada**. Con G2.1 instalada, guiar ensayos breves nuevos, uno por uno, sin grabar ni enviar el audio experimental:
+## Continuación desde `7b82cd6`: alternancia con la voz de ChatGPT
+
+**03-10-2026, Europe/Madrid.** Rama y commit comprobados al retomar, árbol inicialmente limpio y Pixel conectado con G2.1/código 805. No se reinstaló ni cambió código, Hermes, ajustes, firma o firmware. El usuario propuso conversar con una IA con voz casi humana y aclaró después que era **la voz de ChatGPT**; el escenario se registra como **voz propia alternada con voz sintética de ChatGPT reproducida por altavoz**, no como interlocutor humano ni como validación de participación.
+
+Tras indicar que había terminado, el usuario confirmó «Sí, con ambas voces y vuelta al silencio»: observó posible voz con su intervención y con la respuesta de la IA, y pausa/sin actividad en los silencios. Las consultas UI de esta continuación se hicieron después de OFF. La lectura conservada corresponde al ensayo global: **1.741 chunks y paquetes / 1.392.800 muestras / 87,05 s PCM**, no a un intervalo aislado de respuesta ni a los 20–30 s propuestos. Un inicio, cero cesiones y clipping, hueco máximo UI/nativo **78 ms**. Diagnóstico nativo: paquetes de 205 B, mono 16 kHz y PCM de 1.600 B; cero pérdidas, duplicados, malformed, stale, errores de decodificación, queue drops y **pcmDeliveryDrops=0**.
+
+VAD: **8.705 ventanas**, **53.960 ms** positivos, **16 episodios provisionales**, **15 completados por silencio y 1 interrumpido**. No equiparar episodios a turnos ni milisegundos positivos a conversación. No se obtuvo cronología; no atribuir la interrupción a un instante o causa concretos. El último RMS de captura fue 0,0239555; fondo/umbral/frameRms del VAD leídos después de OFF están reiniciados y no describen el fondo del ensayo. La observación del usuario acredita respuesta percibida a ambas fuentes y al silencio en este entorno, sin precisión general ni separación de hablantes.
+
+Cierre nuevo confirmado por interfaz/JSON: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0** y **0 wakelocks experimentales activos**. El `capturing=true` nativo pertenece a la instantánea anterior a STOP, no al estado actual. No se guardó contenido ni audio experimental. Este tramo limpio no demuestra que los siete descartes del ensayo previo estén definitivamente resueltos.
+
+La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética y alternancia con IA están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
 
 | Escenario nuevo | Observar sin conservar contenido |
 | --- | --- |
-| Silencio/fondo habitual, 20–30 s | Estado, episodios espurios, RMS/fondo/umbral agregados |
-| Voz del usuario y pausas, 20–30 s | Inicio provisional, paso a pausa, cierre por silencio; omisiones percibidas |
 | Interlocutor, 20–30 s | Actividad posible, sin atribuir identidad o participación |
 | TV o ruido, 20–30 s | Falsos positivos y límites del método por energía |
 | Hey Even/PTT mientras VAD está activo | Comprobar solo la nueva convivencia con VAD y retorno sin arrastrar actividad; G0/G1 ya completado no se repite como batería |
