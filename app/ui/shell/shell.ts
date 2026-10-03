@@ -42,8 +42,10 @@ import {
   onAnySettingChanged,
   openAiApiKeySetting,
   statusBarPositionSetting,
+  statusBarVisibilitySetting,
   timeFormatSetting,
   wakeWordActionSetting,
+  windowBorderSetting,
 } from "../dashboard-settings";
 import { onAmbientCardsChanged } from "./ambient-cards";
 import { ShellChromeLayer, sidebarContentSpan, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
@@ -321,7 +323,8 @@ class ShellAlertLayer implements Layer {
  * What a watch swipe means while the app switcher has focus, as the ring
  * gesture it stands for. Swipes are spatial: along the strip they move the
  * selection, toward the app area they enter the selected window, and away
- * from it there is nowhere further to go (ignored).
+ * from it there is nowhere further to go (ignored). A popup's row of icons
+ * lies over the window, so either way across it enters the window.
  */
 const SWITCHER_SWIPES: Record<
   AppSwitcherPosition,
@@ -330,15 +333,17 @@ const SWITCHER_SWIPES: Record<
   left: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-right": "click" },
   right: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-left": "click" },
   bottom: { "swipe-left": "scroll-up", "swipe-right": "scroll-down", "swipe-up": "click" },
+  popup: { "swipe-left": "scroll-up", "swipe-right": "scroll-down", "swipe-up": "click", "swipe-down": "click" },
 };
 
 /**
  * Every setting the shell's paint depends on that nothing else repaints it
- * for (the top bar's contents, the scene's stereo depth), as one comparable
- * string.
+ * for (the top bar's contents and placement, the window frame, the scene's
+ * stereo depth), as one comparable string.
  */
 function chromeSettingsKey(): string {
-  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}|${statusBarPositionSetting.get()}`;
+  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}|${statusBarPositionSetting.get()}`
+    + `|${statusBarVisibilitySetting.get()}|${windowBorderSetting.get()}`;
 }
 
 class Shell {
@@ -940,7 +945,8 @@ class Shell {
    * foreground window's band (full height for a max-height window, the
    * vertical-position-dependent 288px band otherwise) plus the switcher: a
    * side strip's icon columns (minus the outer dead strip the one-column
-   * variant leaves), or the row under it and the window frame's sides.
+   * variant leaves), or the row under it, and the window frame's sides. A
+   * popup switcher lies within the band.
    */
   screenshotCropRect(): { x: number; y: number; width: number; height: number } {
     const appId = this.foregroundWindow()?.appId;

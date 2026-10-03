@@ -32,11 +32,15 @@ import {
   SHELL_OPAQUE_BLACK,
   SIDEBAR_WIDTH,
   sidebarStripVisible,
+  statusBarEdge,
+  statusBarOverlays,
+  statusBarTop,
   statusInSwitcherRow,
   SWITCHER_ROW_HEIGHT,
   switcherPosition,
   switcherRect,
   TOP_BAR_HEIGHT,
+  windowFooterHeight,
   windowFramed,
   windowHeaderHeight,
   windowTop,
@@ -79,6 +83,30 @@ const ROW_STATUS_GAP = 8;
 // Notification icons stop short of room for this many windows' slots (or
 // all of them, when there are fewer); the windows take whatever is left.
 const ROW_MIN_WINDOW_SLOTS = 3;
+
+// The popup switcher (geometry.ts "popup"): a box centred over the
+// foreground window's content, holding a row of window icons above the
+// selected window's title. Each icon sits in a square cell, which the
+// selection fills white (the popup only shows while it has focus).
+const POPUP_ICON_SIZE = ROW_ICON_SIZE;
+const POPUP_CELL = POPUP_ICON_SIZE + 12;
+const POPUP_STEP = POPUP_CELL + 4;
+const POPUP_PADDING = 12;
+// Room at each end of the icons for a scroll chevron, once they scroll.
+const POPUP_CHEVRON_ROOM = 12;
+const POPUP_TITLE_GAP = 6;
+// The box keeps this far from the window's sides, and is at least this
+// wide, leaving a few windows' titles room.
+const POPUP_MARGIN = 16;
+const POPUP_MIN_WIDTH = 272;
+// The system menu's border.
+const POPUP_BORDER_VALUE = 72;
+// Nearer than the window, as the system menu is.
+const POPUP_DEPTH = 4;
+// Brightness of everything under the chrome (the windows) while the popup
+// shows: lighter than a context menu's dim, since the dimmed window is the
+// selected one, which the wearer may be looking for.
+const POPUP_DIM = 0.5;
 
 /** Icon rows that fit in one sidebar column. */
 function rowsPerColumn(variant: SidebarVariant): number {
@@ -174,6 +202,40 @@ function switcherLayout(windowCount: number, heightMode: WindowHeightMode, appId
 }
 
 /**
+ * Popup switcher geometry for the foreground window: its box, centred over
+ * the window's content (geometry.ts switcherRect), as wide as the icons
+ * need up to the window's width less margins (at least POPUP_MIN_WIDTH),
+ * the cells of the visible icons by slot (as switcherLayout's), and the
+ * title's top. Past what fits, the icons scroll, with room for a chevron at
+ * either end.
+ */
+function popupLayout(windowCount: number, state: ShellChromeState): SwitcherLayout & { box: Rect; titleTop: number } {
+  const area = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
+  const room = area.width - 2 * (POPUP_MARGIN + POPUP_PADDING);
+  const fits = (width: number) => Math.max(1, ((width + POPUP_STEP - POPUP_CELL) / POPUP_STEP) | 0);
+  const scrolls = windowCount > fits(room);
+  const visibleCount = scrolls ? fits(room - 2 * POPUP_CHEVRON_ROOM) : Math.max(1, windowCount);
+  const iconsWidth = visibleCount * POPUP_STEP - (POPUP_STEP - POPUP_CELL);
+  const width = 2 * POPUP_PADDING + Math.max(iconsWidth + (scrolls ? 2 * POPUP_CHEVRON_ROOM : 0), POPUP_MIN_WIDTH - 2 * POPUP_PADDING);
+  const height = 2 * POPUP_PADDING + POPUP_CELL + POPUP_TITLE_GAP + getDefaultMediumFont().lineHeight;
+  const box = {
+    x: area.x + ((area.width - width) >> 1),
+    y: area.y + Math.max(0, (area.height - height) >> 1),
+    width,
+    height,
+  };
+  const iconsLeft = box.x + ((width - iconsWidth) >> 1), cellTop = box.y + POPUP_PADDING;
+  return {
+    position: "popup",
+    iconSize: POPUP_ICON_SIZE,
+    visibleCount,
+    cell: (slot) => ({ x: iconsLeft + slot * POPUP_STEP, y: cellTop, width: POPUP_CELL, height: POPUP_CELL, atSeparator: false }),
+    box,
+    titleTop: cellTop + POPUP_CELL + POPUP_TITLE_GAP,
+  };
+}
+
+/**
  * Horizontal extent of the sidebar region that actually holds icons: the
  * one-column variant leaves a dead strip on the outer side of its single
  * column. Screenshot cropping uses this to trim the unused part.
@@ -200,6 +262,36 @@ function topBarSpan(state: ShellChromeState): { left: number; right: number } {
   }
   return { left, right };
 }
+
+/**
+ * Where the status bar is drawn for the foreground window: TOP_BAR_HEIGHT
+ * rows from `top`, across `left`..`right`. `contentTop` is where the top
+ * bar's layout starts in them: a row lower at the window's bottom, where
+ * the bar's first row is the one next to the window. `divider` is the row
+ * of the line between bar and window, or null where the window frame's side
+ * runs along it instead.
+ */
+type StatusBarPlacement = { left: number; right: number; top: number; contentTop: number; divider: number | null };
+
+/**
+ * The status bar's placement for the foreground window, or null when it
+ * isn't drawn as a bar: when it shares a bottom switcher row, or when it
+ * overlays the window (geometry.ts statusBarOverlays) and the popup
+ * switcher isn't up. An overlaying bar sits inside a window frame, whose
+ * side runs along its outer row, so it keeps its divider.
+ */
+function statusBarPlacement(state: ShellChromeState): StatusBarPlacement | null {
+  const appId = state.foregroundAppId;
+  if (statusInSwitcherRow(appId)) return null;
+  const overlays = statusBarOverlays();
+  if (overlays && !sidebarStripVisible(state.focus, appId)) return null;
+  const { left, right } = topBarSpan(state);
+  const top = statusBarTop(state.foregroundHeightMode, appId);
+  const atBottom = statusBarEdge() === "bottom";
+  const divider = windowFramed(appId) && !overlays ? null : atBottom ? top : top + TOP_BAR_HEIGHT - 1;
+  return { left, right, top, contentTop: atBottom ? top + 1 : top, divider };
+}
+
 const NOTIFICATION_ICON_SIZE = 24;
 const BORDER_VALUE = 40;
 
@@ -309,6 +401,8 @@ export function makeImageWindowIcon(
 export class ShellChromeLayer implements Layer {
   // First switcher icon shown; adjusted each paint to keep the selection visible.
   private scrollRow = 0;
+  // The popup switcher's shell surface.
+  private popupKey: number | undefined;
   // Where the last paint ended a bottom row's window icons, for hit testing.
   private rowWindowsRight: number | undefined;
   // Whether the last paint's selection tab carries the window frame's left
@@ -321,15 +415,20 @@ export class ShellChromeLayer implements Layer {
     const image = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
     const state = this.getState();
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
+    const popup = switcherPosition() === "popup";
     // Full-panel mode: the strip is an overlay, present only while the user
-    // is in it (the window underneath keeps its full width the rest of the time).
-    if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
+    // is in it (the window underneath keeps its full width the rest of the
+    // time); a popup only ever shows then.
+    const switcherShown = sidebarStripVisible(state.focus, state.foregroundAppId);
+    if (switcherShown && !popup) {
       this.drawSidebar(image, state, statusInRow ? image : undefined);
     }
-    if (!statusInRow) this.drawTopBar(image, state);
+    const bar = statusBarPlacement(state);
+    if (bar) this.drawTopBar(image, state, bar);
     const frame = windowFrameRect(state);
-    if (frame) drawWindowFrame(image, frame, this.frameCornerSquare);
+    if (frame) drawWindowFrame(image, frame, this.frameCornerSquare, popup);
     drawAmbientCards(image, topBarSpan(state).right);
+    if (switcherShown && popup) this.drawPopup(image, state);
     return image;
   }
 
@@ -337,12 +436,18 @@ export class ShellChromeLayer implements Layer {
     const state = this.getState(), parts: Plane[] = [];
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
-    const bar = topBarSpan(state);
-    if (!statusInRow) {
-      this.drawTopBar(canvas, state);
-      parts.push({ ...shellCrop(canvas, bar.left, windowTop(state.foregroundHeightMode, state.foregroundAppId), bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
+    const span = topBarSpan(state);
+    const bar = statusBarPlacement(state);
+    if (bar) {
+      this.drawTopBar(canvas, state, bar);
+      parts.push({ ...shellCrop(canvas, bar.left, bar.top, bar.right - bar.left, TOP_BAR_HEIGHT, 2), depth: -2 });
     }
-    if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
+    const switcherShown = sidebarStripVisible(state.focus, state.foregroundAppId);
+    if (switcherPosition() === "popup") {
+      this.paintPopupParts(state, parts, canvas, switcherShown);
+      return parts;
+    }
+    if (switcherShown) {
       const stripCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
       const statusLeft = this.drawSidebar(stripCanvas, state, statusInRow ? canvas : undefined);
       // The window frame rides on the switcher row, whose top edge is its
@@ -355,8 +460,8 @@ export class ShellChromeLayer implements Layer {
       // Under a framed window the row's surface spans the frame, whose left
       // side the first selection tab continues.
       const strip = switcherRect(state.foregroundHeightMode, state.foregroundAppId);
-      const span = frame ?? strip;
-      parts.push(shellCrop(stripCanvas, span.x, strip.y, span.width, strip.height, 1));
+      const rowSpan = frame ?? strip;
+      parts.push(shellCrop(stripCanvas, rowSpan.x, strip.y, rowSpan.width, strip.height, 1));
       if (statusLeft !== null) {
         // The status bar keeps the top bar's surface and its depth, -2, over
         // the row's right end below its separator line, so the clock ticking
@@ -365,8 +470,35 @@ export class ShellChromeLayer implements Layer {
         parts.push({ ...shellCrop(canvas, statusLeft, strip.y + 1, right - statusLeft, strip.height - 1, 2), depth: -2 });
       }
     }
-    drawAmbientCards(canvas, bar.right, parts);
+    drawAmbientCards(canvas, span.right, parts);
     return parts;
+  }
+
+  /**
+   * The popup switcher mode's parts after the status bar's: the window
+   * frame, ambient cards, then, while the switcher has focus, the popup. Its
+   * dim rides on the first part, so it dims the windows beneath the chrome
+   * and none of the chrome.
+   */
+  private paintPopupParts(state: ShellChromeState, parts: Plane[], canvas: GrayImage, switcherShown: boolean): void {
+    const frame = windowFrameRect(state);
+    if (frame) {
+      // A shell surface is an opaque rectangle and needs a pixel of its own
+      // to be sent at all, so the frame rides on one at its top-left corner,
+      // outside its curve, which it paints black anyway. As in the bottom
+      // row's case, it plays at the screen's own depth.
+      const frameCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+      frameCanvas.fillRect(frame.x, frame.y, 1, 1, SHELL_OPAQUE_BLACK);
+      drawWindowFrame(frameCanvas, frame, false, true);
+      parts.push(shellCrop(frameCanvas, frame.x, frame.y, 1, 1, 1));
+    }
+    drawAmbientCards(canvas, topBarSpan(state).right, parts);
+    if (!switcherShown) return;
+    const popupCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+    const box = this.drawPopup(popupCanvas, state);
+    this.popupKey ??= LayerStack.allocateShellKey();
+    parts.push({ ...shellCrop(popupCanvas, box.x, box.y, box.width, box.height, this.popupKey), depth: POPUP_DEPTH });
+    parts[0] = { ...parts[0]!, dimUnderneath: POPUP_DIM };
   }
 
   handleInput(): void {
@@ -382,7 +514,8 @@ export class ShellChromeLayer implements Layer {
   windowIndexAt(x: number, y: number, windowCount: number): number | null {
     if (windowCount === 0) return null;
     const state = this.getState();
-    const layout = switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId, this.rowWindowsRight, this.scrollRow);
+    const layout = switcherPosition() === "popup" ? popupLayout(windowCount, state)
+      : switcherLayout(windowCount, state.foregroundHeightMode, state.foregroundAppId, this.rowWindowsRight, this.scrollRow);
     const lastVisible = Math.min(windowCount, this.scrollRow + layout.visibleCount);
     for (let index = this.scrollRow; index < lastVisible; index++) {
       const cell = layout.cell(index - this.scrollRow);
@@ -525,20 +658,70 @@ export class ShellChromeLayer implements Layer {
     return iconsLeft;
   }
 
-  private drawTopBar(image: GrayImage, state: ShellChromeState): void {
-    const font = getDefaultMediumFont();
-    // The bar sits at the top edge of the foreground window's band, wherever
-    // its height mode puts that (screen top for max height). It moves when
-    // the foreground switches to a window of a different height.
-    const barTop = windowTop(state.foregroundHeightMode, state.foregroundAppId);
-    // The bar spans the app viewport; with a side strip overlaid (full-panel
-    // mode, sidebar focused) it still stops at the strip.
-    const { left: barLeft, right: barRight } = topBarSpan(state);
-    image.fillRect(barLeft, barTop, barRight - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);
-    // A framed window's frame draws this line as its top (drawWindowFrame).
-    if (!windowFramed(state.foregroundAppId)) {
-      image.drawLine(barLeft, barTop + TOP_BAR_HEIGHT - 1, barRight - 1, barTop + TOP_BAR_HEIGHT - 1, BORDER_VALUE);
+  /**
+   * The popup switcher: its box centred over the foreground window's
+   * content, the visible window icons in a row with the selected one's cell
+   * filled white (and its icon inverted), chevrons where more scroll, and
+   * the selected window's title underneath. Returns the box.
+   */
+  private drawPopup(image: GrayImage, state: ShellChromeState): Rect {
+    const count = state.windows.length;
+    const layout = popupLayout(count, state);
+    this.scrollRow = scrollToKeepSelectionVisible(this.scrollRow, state.selectedIndex, layout.visibleCount, count);
+    const { box } = layout;
+    image.fillRect(box.x, box.y, box.width, box.height, SHELL_OPAQUE_BLACK);
+    image.drawRect(box.x, box.y, box.width, box.height, POPUP_BORDER_VALUE);
+    const lastVisible = Math.min(count, this.scrollRow + layout.visibleCount);
+    for (let index = this.scrollRow; index < lastVisible; index++) {
+      const window = state.windows[index]!;
+      const cell = layout.cell(index - this.scrollRow);
+      const x = cell.x + ((cell.width - POPUP_ICON_SIZE) >> 1);
+      const y = cell.y + ((cell.height - POPUP_ICON_SIZE) >> 1);
+      const selected = index === state.selectedIndex;
+      if (selected) image.fillRoundedRect(cell.x, cell.y, cell.width, cell.height, 255, TAB_RADIUS);
+      // As in the sidebar: unselected icons are resources of their own, so
+      // moving the selection resends only the box.
+      const icon = selected ? image : new GrayImage(POPUP_ICON_SIZE, POPUP_ICON_SIZE + 1);
+      const iconX = selected ? x : 0, iconY = selected ? y : 1;
+      window.drawIcon(icon, iconX, iconY, POPUP_ICON_SIZE, selected);
+      if (window.attention) {
+        icon.drawImage(attentionDot(selected ? SHELL_OPAQUE_BLACK : 255), iconX + POPUP_ICON_SIZE - 7, iconY - 1);
+      }
+      if (!selected) image.drawDepthImage(icon, x, y - 1, -2);
     }
+    // Chevrons sit in the room either side of the icons, pointing off them.
+    const first = layout.cell(0), chevronY = first.y + (first.height >> 1);
+    if (this.scrollRow > 0) {
+      drawChevron(image, first.x - 5, chevronY, "left");
+    }
+    if (lastVisible < count) {
+      const last = layout.cell(lastVisible - 1 - this.scrollRow);
+      drawChevron(image, last.x + last.width + 4, chevronY, "right");
+    }
+    const selectedWindow = state.windows[state.selectedIndex];
+    if (selectedWindow) {
+      const font = getDefaultMediumFont();
+      const title = truncateText(font, selectedWindow.title, box.width - 2 * POPUP_PADDING);
+      image.drawText(font, box.x + ((box.width - font.measureText(title)) >> 1), layout.titleTop, title, 210);
+    }
+    return box;
+  }
+
+  private drawTopBar(image: GrayImage, state: ShellChromeState, bar: StatusBarPlacement): void {
+    const font = getDefaultMediumFont();
+    // The bar sits at the top (or, with a popup switcher, maybe the bottom)
+    // edge of the foreground window's band, wherever its height mode puts
+    // that (screen top for max height). It moves when the foreground
+    // switches to a window of a different height. It spans the app viewport;
+    // with a side strip overlaid (full-panel mode, sidebar focused) it still
+    // stops at the strip.
+    const { left: barLeft, right: barRight } = bar;
+    image.fillRect(barLeft, bar.top, barRight - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);
+    // A framed window's frame draws this line as its side (drawWindowFrame).
+    if (bar.divider !== null) {
+      image.drawLine(barLeft, bar.divider, barRight - 1, bar.divider, BORDER_VALUE);
+    }
+    const barTop = bar.contentTop;
 
     const clock = clockText();
     const clockX = barLeft + 10;
@@ -726,9 +909,9 @@ const AMBIENT_MAX_LINES_PER_CARD = 3;
 
 /**
  * Paint the active ambient cards bottom-up: the oldest card sits at the very
- * bottom of the window band and newer ones stack above it. Cards that would
- * cross into the window header are dropped rather than clipped. `right` is the
- * top bar's right edge, which the cards align to.
+ * bottom of the window band (above any footer) and newer ones stack above
+ * it. Cards that would cross into the window header are dropped rather than
+ * clipped. `right` is the top bar's right edge, which the cards align to.
  */
 const ambientKeys = new Map<string, number>();
 function drawAmbientCards(image: GrayImage, right: number, parts?: Plane[]): void {
@@ -736,7 +919,7 @@ function drawAmbientCards(image: GrayImage, right: number, parts?: Plane[]): voi
   if (!cards.length) return;
   const font = getDefaultSmallFont();
   const bandTop = minWindowTop();
-  const bandBottom = bandTop + MIN_WINDOW_HEIGHT;
+  const bandBottom = bandTop + MIN_WINDOW_HEIGHT - windowFooterHeight();
   // Right-aligned with the top bar: clear of a right-hand sidebar.
   const x = right - AMBIENT_CARD_WIDTH - AMBIENT_CARD_MARGIN;
   const textWidth = AMBIENT_CARD_WIDTH - 2 * AMBIENT_CARD_PADDING_X;
@@ -799,13 +982,15 @@ type Rect = { x: number; y: number; width: number; height: number };
 const FRAME_RADIUS = 8;
 
 /**
- * The rounded frame around the foreground window's content (below its
- * header), when it has one (geometry.ts windowFramed): one pixel all round.
- * Its sides run down the pixel just outside each side of the window, and
- * its top is the header's last row: the top bar's, in place of the bar's
- * divider, or the whole one-row header with the status bar in the switcher
- * row. Its bottom is the switcher row's top edge, where drawSeparator draws
- * it so the selection tab can divert it.
+ * The rounded frame around the foreground window's content (between its
+ * header and footer), when it has one (geometry.ts windowFramed): one pixel
+ * all round. Its sides run down the pixel just outside each side of the
+ * window, and its top is the header's last row: the top bar's, in place of
+ * the bar's divider, or the whole one-row header with the status bar
+ * elsewhere. Its bottom is a bottom switcher row's top edge, where
+ * drawSeparator draws it so the selection tab can divert it; with a popup
+ * switcher, the footer's first row, likewise a bottom status bar's or the
+ * whole one-row footer.
  */
 function windowFrameRect(state: ShellChromeState): Rect | null {
   if (!windowFramed(state.foregroundAppId)) return null;
@@ -817,19 +1002,21 @@ function windowFrameRect(state: ShellChromeState): Rect | null {
  * Draw the window frame (see windowFrameRect) as a retained firmware rounded
  * rect over whatever lies beneath it: no fill, so the window's content shows
  * through, and black outside the curve, cutting the content's square
- * corners to it. It is clipped short of its bottom row, which drawSeparator
- * draws with the selection tab's gap. With `squareBottomLeft` (a selection
- * tab continuing its left side down), the rect is clipped away from that
- * corner's box too, and the side runs straight through it as a one-pixel
- * clipped clear, leaving the content's corner whole.
+ * corners to it. Over a bottom switcher row it is clipped short of its
+ * bottom row, which drawSeparator draws with the selection tab's gap; with
+ * `withBottom` (a popup switcher's frame) it is drawn whole. With
+ * `squareBottomLeft` (a selection tab continuing its left side down), the
+ * rect is clipped away from that corner's box too, and the side runs
+ * straight through it as a one-pixel clipped clear, leaving the content's
+ * corner whole.
  */
-function drawWindowFrame(image: GrayImage, frame: Rect, squareBottomLeft: boolean): void {
+function drawWindowFrame(image: GrayImage, frame: Rect, squareBottomLeft: boolean, withBottom = false): void {
   const border = grayToNibble(BORDER_VALUE), above = frame.height - 1;
-  const rounded = (clip: ListClip): ListCall => ({
+  const rounded = (clip?: ListClip): ListCall => ({
     op: DrawOp.ROUNDED_RECT, x: 0, y: 0, width: frame.width, height: frame.height, radius: FRAME_RADIUS,
-    background: 0, border, outside: 0, clip,
+    background: 0, border, outside: 0, ...(clip ? { clip } : {}),
   });
-  const calls = squareBottomLeft ? [
+  const calls = withBottom ? [rounded()] : squareBottomLeft ? [
     rounded({ x: FRAME_RADIUS, y: 0, width: frame.width - FRAME_RADIUS, height: above }),
     rounded({ x: 0, y: 0, width: FRAME_RADIUS, height: above - FRAME_RADIUS }),
     { op: DrawOp.CLEAR, color: border, clip: { x: 0, y: above - FRAME_RADIUS, width: 1, height: FRAME_RADIUS } },

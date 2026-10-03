@@ -38,6 +38,9 @@ const TOP_PAD = 2;
 const BOTTOM_PAD = 4;
 /** Clearance between the rose's widest point and the viewport edge. */
 const EDGE_PAD = 8;
+/** Inset of the top-right magnetometer calibration readout from the window edges. */
+const ACCURACY_TOP_PAD = TOP_PAD + 4;
+const ACCURACY_RIGHT_PAD = EDGE_PAD + 4;
 /** Cap on the rose's radius, so a tall window doesn't get a comical one. */
 const MAX_ROSE_RADIUS = 98;
 
@@ -197,7 +200,7 @@ class CompassLayer implements Layer {
       y += smallStep;
     }
     const accuracyText = magneticAccuracyText(this.diagnostics);
-    image.drawText(small, width - EDGE_PAD - small.measureText(accuracyText), TOP_PAD, accuracyText, 175);
+    image.drawText(small, width - ACCURACY_RIGHT_PAD - small.measureText(accuracyText), ACCURACY_TOP_PAD, accuracyText, 175);
 
     return image;
   }

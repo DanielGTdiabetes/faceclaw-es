@@ -30,6 +30,8 @@ import {
   anthropicApiKeySetting,
   appSwitcherPositionSetting,
   statusBarPositionSetting,
+  statusBarVisibilitySetting,
+  windowBorderSetting,
   uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
@@ -239,14 +241,19 @@ function settingsSections(): SettingsSection[] {
  * stable list between paints.
  */
 function customizationRows(): () => MenuItem[] {
-  // Left / right / bottom edge; the dashboard controller moves (or, to and
-  // from the bottom, resizes) windows on change.
+  // Left / right / bottom edge, or popup; the dashboard controller moves or
+  // resizes windows on change.
   const position = enumSettingMenuItem(appSwitcherPositionSetting);
   // The whole display's stereo depth; the shell sends it with its scene.
   const depth = enumSettingMenuItem(uiDepthSetting);
-  // Top bar, or the right end of the switcher row; the dashboard controller
-  // resizes windows on change.
+  // Top bar, or the bottom: the right end of a bottom switcher's row, or a
+  // bar under the window with a popup switcher; the dashboard controller
+  // resizes or moves windows on change.
   const statusBar = enumSettingMenuItem(statusBarPositionSetting);
+  // Popup switcher only: whether the status bar shows only in the switcher
+  // (windows then grow into its rows), and the foreground window's border.
+  const statusBarVisibility = enumSettingMenuItem(statusBarVisibilitySetting);
+  const windowBorder = toggleSettingMenuItem(windowBorderSetting);
   const rest = [
     // Submenu: top-bar battery indicator style plus per-device visibility.
     batteryIndicatorsMenuItem(),
@@ -257,8 +264,19 @@ function customizationRows(): () => MenuItem[] {
     // Opens the modal font picker (face, weight, size) for UI text.
     uiFontPickerMenuItem(),
   ];
-  const withDepth = [position, depth, statusBar, ...rest], withoutDepth = [position, ...rest];
-  return () => appSwitcherPositionSetting.get() === "bottom" ? withDepth : withoutDepth;
+  const bottomRows = [position, depth, statusBar, ...rest];
+  const popupRows = [position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
+  const sideRows = [position, ...rest];
+  return () => {
+    switch (appSwitcherPositionSetting.get()) {
+      case "bottom":
+        return bottomRows;
+      case "popup":
+        return popupRows;
+      default:
+        return sideRows;
+    }
+  };
 }
 
 function autoBrightnessMenuItem(): MenuItem {

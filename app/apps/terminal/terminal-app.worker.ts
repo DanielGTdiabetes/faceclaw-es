@@ -1,9 +1,10 @@
 /**
  * Terminal app, hosted in its own worker thread. Window model:
  * - "terminal:hub": the window opened from the launcher; shows the list of
- *   live g2mirror sessions across every connected host (grouped by host when
- *   more than one is connected; selecting a host's heading launches a shell
- *   there), and hosts the Manage Connections section
+ *   live g2mirror sessions grouped under a heading per configured host
+ *   (unconnected hosts show their state and a Connect row; selecting a
+ *   connected host's heading launches a shell there), and hosts the Manage
+ *   Connections section
  *   where g2mirror:// connections are added, removed, and toggled.
  * - "terminal:view:N": opened by selecting a session in the hub; each has
  *   its own websocket connection (the protocol allows one attached session
@@ -1042,12 +1043,15 @@ function windowMenu(window: TerminalWindow): WindowMenu {
   return window.menu;
 }
 
+/** Whether a control's handshake has been accepted (it can list and launch sessions). */
+function isControlConnected(control: ControlConnection): boolean {
+  const phase = control.state?.phase;
+  return phase === "connected" || phase === "attached";
+}
+
 /** Controls currently connected (handshake accepted), in stored order. */
 function connectedControls(): ControlConnection[] {
-  return [...controls.values()].filter((control) => {
-    const phase = control.state?.phase;
-    return phase === "connected" || phase === "attached";
-  });
+  return [...controls.values()].filter(isControlConnected);
 }
 
 function windowMenuItems(window: TerminalWindow): MenuItem[] {
@@ -1220,7 +1224,7 @@ type HubItem = {
    */
   heading?: boolean;
   /**
-   * Top-level action (Manage Connections, Settings, Connect <host>): drawn
+   * Top-level action (Manage Connections, Settings): drawn
    * unindented like a heading but at full brightness, rather than as an
    * indented session row.
    */
@@ -1338,17 +1342,31 @@ function hubSessionItems(window: HubWindow): HubItem[] {
       onSelect: () => windowMenu(window).open(settingsMenuItems(), "Terminal settings"),
     },
   ];
-  const connected = connectedControls();
-  const multiHost = connected.length > 1;
+  const multiHost = controls.size > 1;
   const canLaunch = launchPresetNames().length > 0;
-  for (const control of connected) {
-    if (multiHost) {
-      items.push({
-        label: connectionDisplayName(control.config),
-        heading: true,
-        onSelect: canLaunch ? () => launchOnHost(window, control) : undefined,
-      });
+  // Every configured host is listed under its own heading, in stored order,
+  // whatever its connection state: a connected host lists its sessions, any
+  // other shows its state on the heading plus a Connect row (unless it is
+  // already connecting). Full management (remove, add) lives in Manage
+  // Connections.
+  for (const control of controls.values()) {
+    const name = connectionDisplayName(control.config);
+    if (!isControlConnected(control)) {
+      items.push({ label: `${name}  (${controlStatusWord(control)})`, heading: true });
+      const connecting = control.config.enabled && control.state?.phase === "connecting";
+      if (!connecting && clientOptionsFor(control.config)) {
+        items.push({
+          label: control.reconnectTimer ? "Connect now" : "Connect",
+          onSelect: () => connectControl(control),
+        });
+      }
+      continue;
     }
+    items.push({
+      label: name,
+      heading: true,
+      onSelect: canLaunch ? () => launchOnHost(window, control) : undefined,
+    });
     const sessions = orderedSessions(window, control);
     for (const session of sessions) {
       items.push({
@@ -1371,17 +1389,6 @@ function hubSessionItems(window: HubWindow): HubItem[] {
         onSelect: () => control.client?.listSessions(),
       });
     }
-  }
-  // Disconnected/failed connections get a one-click Connect shortcut here;
-  // full management (remove, add) lives in Manage Connections.
-  for (const control of controls.values()) {
-    if (connected.includes(control)) continue;
-    if (control.config.enabled && control.state?.phase === "connecting") continue;
-    items.push({
-      label: `Connect ${connectionDisplayName(control.config)}`,
-      topLevel: true,
-      onSelect: () => connectControl(control),
-    });
   }
   return items;
 }

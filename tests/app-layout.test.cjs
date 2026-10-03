@@ -15,6 +15,7 @@ function geometry() {
     navigateDisplayModeSetting: 'global', navigateVerticalPositionSetting: 'global',
     terminalDisplayModeSetting: 'default', terminalVerticalPositionSetting: 'global',
     appSwitcherPositionSetting: 'left', uiDepthSetting: '0', statusBarPositionSetting: 'top',
+    statusBarVisibilitySetting: 'always', windowBorderSetting: true,
   }).map(([name, value]) => [name, { value, get() { return this.value; } }]));
   const context = { exports: {}, require: (name) => {
     if (name === '../../graphics/image') return { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 };
@@ -66,9 +67,17 @@ test('Terminal can disable its tall default, inherit position or override both d
 
 test('all explicit size/position combinations stay within the display and align content below the bar', () => {
   const g = geometry();
-  for (const [switcher, statusBar] of [['left', 'top'], ['right', 'top'], ['bottom', 'top'], ['bottom', 'switcher'], ['left', 'switcher']]) {
+  const combos = [['left', 'top'], ['right', 'top'], ['bottom', 'top'], ['bottom', 'bottom'], ['left', 'bottom']];
+  for (const statusBar of ['top', 'bottom']) {
+    for (const visibility of ['always', 'switcher']) {
+      for (const border of [true, false]) combos.push(['popup', statusBar, visibility, border]);
+    }
+  }
+  for (const [switcher, statusBar, visibility = 'always', border = true] of combos) {
     g.settings.appSwitcherPositionSetting.value = switcher;
     g.settings.statusBarPositionSetting.value = statusBar;
+    g.settings.statusBarVisibilitySetting.value = visibility;
+    g.settings.windowBorderSetting.value = border;
     for (const globalMode of ['576x288', '576x480', '640x480']) {
       g.settings.displayModeSetting.value = globalMode;
       for (const appId of ['navigate', 'terminal']) {
@@ -79,12 +88,24 @@ test('all explicit size/position combinations stay within the display and align 
             for (const heightMode of ['min', 'medium', 'max']) {
               const rect = g.rect(heightMode, appId);
               const fullPanel = g.displayMode(appId) === '640x480';
-              assert.equal(rect.x + rect.width, fullPanel ? 640 : { left: 640, right: 576, bottom: 608 }[switcher]);
-              const header = g.windowHeaderHeight(appId);
-              assert.equal(header, g.statusInSwitcherRow(appId) ? 1 : g.TOP_BAR_HEIGHT);
-              assert.equal(g.statusInSwitcherRow(appId), statusBar === 'switcher' && g.switcherRowHeight(appId) > 0);
+              assert.equal(rect.x + rect.width, fullPanel ? 640 : { left: 640, right: 576, bottom: 608, popup: 608 }[switcher]);
+              const header = g.windowHeaderHeight(appId), footer = g.windowFooterHeight(appId);
+              assert.equal(g.statusInSwitcherRow(appId), statusBar === 'bottom' && g.switcherRowHeight(appId) > 0);
+              if (switcher === 'popup') {
+                // Each edge has the status bar's rows (unless it only
+                // overlays), else the frame's side, else nothing.
+                assert.equal(g.windowFramed(appId), border && !fullPanel);
+                const edge = (side) => visibility === 'always' && statusBar === side ? g.TOP_BAR_HEIGHT : g.windowFramed(appId) ? 1 : 0;
+                assert.deepEqual([header, footer], [edge('top'), edge('bottom')]);
+                // The status bar's rows lie within the band, at its edge.
+                const top = g.windowTop(heightMode, appId), band = g.windowBandHeight(heightMode, appId);
+                assert.equal(g.statusBarTop(heightMode, appId), statusBar === 'top' ? top : top + band - g.TOP_BAR_HEIGHT);
+              } else {
+                assert.deepEqual([header, footer], [g.statusInSwitcherRow(appId) ? 1 : g.TOP_BAR_HEIGHT, 0]);
+              }
               assert.equal(rect.y, g.windowTop(heightMode, appId) + header);
-              assert.ok(rect.y >= header && rect.y + rect.height <= 480 - g.switcherRowHeight(appId));
+              assert.equal(rect.height + header + footer, g.windowBandHeight(heightMode, appId));
+              assert.ok(rect.y >= header && rect.y + rect.height + footer <= 480 - g.switcherRowHeight(appId));
               const row = g.switcherRect(heightMode, appId);
               assert.ok(row.y + row.height <= 480);
               // A reserved bottom row hangs right under the window, as wide as it.
@@ -114,6 +135,45 @@ test('the app switcher can sit on the right edge', () => {
   assert.equal(g.uiDepth(), 0);
   g.settings.displayModeSetting.value = '640x480';
   assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+});
+
+test('a popup app switcher centres 576-wide windows, whose edges the status bar and frame decide', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'popup';
+  // Nothing is reserved for the switcher: it shows only while focused, and
+  // is modal while it does.
+  assert.equal(g.sidebarStripVisible('window'), false);
+  assert.equal(g.sidebarStripVisible('sidebar'), true);
+  assert.equal(g.isOnSwitcherEdge(5, 5, 'min'), true);
+  assert.equal(g.screenCenterInViewportX(), 288);
+  g.settings.uiDepthSetting.value = '-48';
+  assert.equal(g.uiDepth(), -48);
+  // The top bar above the content and the frame's bottom side below it.
+  assert.equal(g.windowFramed(), true);
+  assert.deepEqual(g.rect('min'), { x: 32, y: 124, width: 576, height: 259 });
+  assert.deepEqual(g.rect('medium'), { x: 32, y: 110, width: 576, height: 288 });
+  assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 28, width: 576, height: 451 });
+  // At the bottom, the bar takes the band's last rows, and the frame's top a row of its own.
+  g.settings.statusBarPositionSetting.value = 'bottom';
+  assert.deepEqual(g.rect('min'), { x: 32, y: 97, width: 576, height: 259 });
+  assert.equal(g.statusBarTop('min'), 356);
+  // Shown only in the switcher, the bar overlays the content, which grows into its rows.
+  g.settings.statusBarVisibilitySetting.value = 'switcher';
+  assert.deepEqual(g.rect('min'), { x: 32, y: 97, width: 576, height: 286 });
+  assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 1, width: 576, height: 478 });
+  assert.equal(g.statusBarTop('min'), 356);
+  // Without the frame too, windows have no chrome rows at all.
+  g.settings.windowBorderSetting.value = false;
+  assert.equal(g.windowFramed(), false);
+  assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 0, width: 576, height: 480 });
+  assert.deepEqual(g.rect('medium'), { x: 32, y: 96, width: 576, height: 288 });
+  // Full panel: the status bar keeps its edge, but there's no room for a frame.
+  g.settings.windowBorderSetting.value = true;
+  g.settings.statusBarVisibilitySetting.value = 'always';
+  g.settings.displayModeSetting.value = '640x480';
+  assert.equal(g.windowFramed(), false);
+  assert.deepEqual(g.rect('max'), { x: 0, y: 0, width: 640, height: 452 });
+  assert.equal(g.statusBarTop('max'), 452);
 });
 
 test('a bottom app switcher centres 576-wide windows and hangs one tall tab under them', () => {
@@ -159,6 +219,7 @@ function chromeLayer(g, { notifications = 0, phoneBattery = null, windows = 1, t
   const modules = {
     '../../graphics/shell-scene': shellScene, '../../graphics/image': graphics,
     '../../graphics/display-list': displayList, '../../graphics/ui-fonts': { getDefaultSmallFont: () => font, getDefaultMediumFont: () => font },
+    '../../graphics/textwrap': require('../.test-build/app/graphics/textwrap.js'),
     '../../graphics/battery': require('../.test-build/app/graphics/battery.js'),
     './ambient-cards': { activeAmbientCards: () => [] },
     '../../native/notification-icons': { readActiveNotificationIcons: (max) => {
@@ -179,7 +240,8 @@ function chromeLayer(g, { notifications = 0, phoneBattery = null, windows = 1, t
   const context = { exports: {}, require: (name) => modules[name] ?? {} };
   vm.runInNewContext(js(read('app/ui/shell/chrome-layer.ts')), context);
   const state = {
-    windows: Array.from({ length: windows }, () => ({ attention: false, drawIcon: (image, x, y, size) => image.fillRect(x, y, size, size, 120) })),
+    windows: Array.from({ length: windows }, (_, i) => ({ title: `Window ${i}`, attention: false,
+      drawIcon: (image, x, y, size) => image.fillRect(x, y, size, size, 120) })),
     selectedIndex: 0, focus: 'window', foregroundHeightMode: 'min',
     battery: { headset: null, ring: null, watch: null }, trayIcons,
   };
@@ -273,7 +335,7 @@ test('the launcher\'s tab lines up with the window frame, whose corner squares t
 
 test('the status bar can join a bottom app switcher, and windows grow into the top bar', () => {
   const g = geometry();
-  g.settings.statusBarPositionSetting.value = 'switcher';
+  g.settings.statusBarPositionSetting.value = 'bottom';
   // Only beside a reserved bottom row.
   assert.equal(g.statusInSwitcherRow(), false);
   g.settings.appSwitcherPositionSetting.value = 'bottom';
@@ -294,7 +356,7 @@ test('the status bar can join a bottom app switcher, and windows grow into the t
 test('the switcher row lays out windows, free space, notifications, widgets, batteries and the clock', () => {
   const g = geometry();
   g.settings.appSwitcherPositionSetting.value = 'bottom';
-  g.settings.statusBarPositionSetting.value = 'switcher';
+  g.settings.statusBarPositionSetting.value = 'bottom';
   const tray = new graphics.GrayImage(30, 20, 180);
   const { chrome, requested } = chromeLayer(g, { notifications: 2, phoneBattery: 80, trayIcons: [tray] });
   const parts = chrome.paintParts();
@@ -327,7 +389,7 @@ test('the switcher row lays out windows, free space, notifications, widgets, bat
 test('many windows scroll in what the notification icons leave them', () => {
   const g = geometry();
   g.settings.appSwitcherPositionSetting.value = 'bottom';
-  g.settings.statusBarPositionSetting.value = 'switcher';
+  g.settings.statusBarPositionSetting.value = 'bottom';
   const { chrome, requested } = chromeLayer(g, { notifications: 40, windows: 12 });
   const [row, status] = chrome.paintParts();
   // Clock only (no batteries or widgets): notifications end 8px before its
@@ -344,6 +406,87 @@ test('many windows scroll in what the notification icons leave them', () => {
   const windowsRight = iconsLeft - 8;
   const chevron = row.image.pixels.findIndex((v, i) => v === 140);
   assert.equal(chevron % row.image.width + row.x, windowsRight - 6);
+});
+
+test('a popup app switcher shows a box of window icons over the dimmed window while focused', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'popup';
+  const { chrome, state } = chromeLayer(g, { windows: 3 });
+  const summary = (parts) => Array.from(parts, (p) => [p.shellKey, p.depth ?? 0, p.dimUnderneath ?? 1]);
+  const at = (p, x, y) => p.image.pixels[(y - p.y) * p.image.width + x - p.x];
+  // In the window: the top bar, then the frame, which rides on a pixel of
+  // its own at its top-left corner (outside its curve).
+  let parts = chrome.paintParts();
+  assert.deepEqual(summary(parts), [[2, -2, 1], [1, 0, 1]]);
+  const [bar, carrier] = parts;
+  assert.deepEqual([carrier.x, carrier.y, carrier.image.width, carrier.image.height], [31, 123, 1, 1]);
+  // The whole rounded rect, from the bar's last row (in place of its
+  // divider) round the content (32,124 576×259) to the footer row under it.
+  const [frame] = carrier.image.draws.filter((d) => d.presentation?.displayList);
+  assert.deepEqual([carrier.x + frame.x, carrier.y + frame.y, frame.presentation.depth], [31, 123, 0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(frame.presentation.displayList.calls)), [{ op: displayList.DrawOp.ROUNDED_RECT,
+    x: 0, y: 0, width: 578, height: 261, radius: 8, background: 0, border: 3, outside: 0 }]);
+  assert.equal(at(bar, 300, 123), 1);
+  // Focused: the box, nearer than the window, last. Its dim rides on the
+  // first part, so it dims the windows and none of the chrome.
+  state.focus = 'sidebar';
+  parts = chrome.paintParts();
+  assert.deepEqual(summary(parts), [[2, -2, 0.5], [1, 0, 1], [100, 4, 1]]);
+  const encoded = shellScene.encodeShellScene(parts, g.uiDepth());
+  assert.equal(new DataView(encoded.buffer).getUint16(12, true), 128, 'first layer dims to half');
+  // Three 44px cells 4px apart, in the minimum 272px width, centred over the
+  // content; 12px padding round the cells and the 12px title line under them.
+  let popup = parts[2];
+  assert.deepEqual([popup.x, popup.y, popup.image.width, popup.image.height], [184, 210, 272, 86]);
+  assert.equal(at(popup, 184, 210), 72, 'border');
+  // The selected (first) cell is filled white around its icon; the others'
+  // icons are depth images of their own over the black box.
+  assert.deepEqual([at(popup, 252, 240), at(popup, 260, 240), at(popup, 310, 240)], [255, 120, 1]);
+  assert.deepEqual(popup.image.draws.filter((d) => d.presentation).map((d) => [popup.x + d.x, popup.y + d.y]), [[304, 227], [352, 227]]);
+  // The selected window's title, centred under the icons.
+  assert.equal(at(popup, 184 + (272 - 32) / 2, 222 + 44 + 6 + 2), 210);
+  assert.deepEqual([chrome.windowIndexAt(260, 240, 3), chrome.windowIndexAt(300, 240, 3), chrome.windowIndexAt(296, 240, 3),
+    chrome.windowIndexAt(10, 10, 3)], [0, 1, null, null]);
+  // The flat paint shows it too.
+  assert.equal(chrome.paint().pixels[210 * 640 + 184], 72);
+  // Many windows scroll, with a chevron at either end of the icons.
+  const many = chromeLayer(g, { windows: 20 });
+  many.state.focus = 'sidebar';
+  many.state.selectedIndex = 15;
+  popup = many.chrome.paintParts()[2];
+  assert.deepEqual([popup.x, popup.image.width], [58, 524]);
+  assert.equal(many.chrome.windowIndexAt(90, 240, 20), 6);
+  assert.deepEqual([at(popup, 74, 244), at(popup, 565, 244)], [140, 140]);
+});
+
+test('a popup switcher\'s status bar can sit at the bottom, show only in the switcher, or go without the frame', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'popup';
+  g.settings.statusBarVisibilitySetting.value = 'switcher';
+  const { chrome, state } = chromeLayer(g);
+  const at = (p, x, y) => p.image.pixels[(y - p.y) * p.image.width + x - p.x];
+  // Outside the switcher there's only the frame.
+  assert.deepEqual(Array.from(chrome.paintParts(), (p) => p.shellKey), [1]);
+  // In it, the bar overlays the content's top inside the frame, whose top
+  // runs along the bar's first row, so it keeps its divider on its last.
+  state.focus = 'sidebar';
+  let [bar, carrier] = chrome.paintParts();
+  assert.deepEqual([bar.x, bar.y, bar.image.width, bar.image.height, carrier.y], [32, 96, 576, 28, 96]);
+  assert.equal(at(bar, 300, 123), 40);
+  // At the bottom, its divider is its first row, and the frame's bottom its last.
+  g.settings.statusBarPositionSetting.value = 'bottom';
+  [bar] = chrome.paintParts();
+  assert.deepEqual([bar.y, at(bar, 300, 356), at(bar, 300, 383)], [356, 40, 1]);
+  // Always shown without a frame, a divider still separates bar and window.
+  g.settings.statusBarVisibilitySetting.value = 'always';
+  g.settings.windowBorderSetting.value = false;
+  state.focus = 'window';
+  const parts = chrome.paintParts();
+  assert.deepEqual(Array.from(parts, (p) => p.shellKey), [2]);
+  assert.deepEqual([parts[0].y, at(parts[0], 300, 356)], [356, 40]);
+  g.settings.statusBarPositionSetting.value = 'top';
+  [bar] = chrome.paintParts();
+  assert.deepEqual([bar.y, at(bar, 300, 123)], [96, 40]);
 });
 
 // Exercise the real worker message handler with platform work stubbed out.

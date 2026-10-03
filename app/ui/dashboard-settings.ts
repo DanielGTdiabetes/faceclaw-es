@@ -347,13 +347,18 @@ export const displayModeSetting = new ConfigSettingEnum<DisplayModeSetting>({
     "Band: the stock 288px-tall window beside the app switcher. Tall: the app switcher plus full-height windows. Full panel: the whole 640×480 display; the app switcher overlays the app only while you are in it. Open apps reopen in the new size.",
 });
 
-/** Which edge of the display the app switcher (the strip of open-window icons) sits on. */
-export type AppSwitcherPosition = "left" | "right" | "bottom";
+/**
+ * Where the app switcher (the open-window icons) sits: a strip along the
+ * left or right edge of the display, a row under the window, or a popup box
+ * over the middle of the window that shows only while it has focus.
+ */
+export type AppSwitcherPosition = "left" | "right" | "bottom" | "popup";
 
 const APP_SWITCHER_POSITION_LABELS: Record<AppSwitcherPosition, string> = {
   left: "Left",
   right: "Right",
   bottom: "Bottom",
+  popup: "Popup",
 };
 
 export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosition>({
@@ -361,10 +366,10 @@ export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosit
   label: "App switcher position",
   storageKey: "display.appSwitcherPosition",
   defaultValue: "left",
-  values: ["left", "right", "bottom"],
+  values: ["left", "right", "bottom", "popup"],
   formatValue: (value) => APP_SWITCHER_POSITION_LABELS[value] ?? value,
   description:
-    "Which edge of the display the strip of open-app icons sits on. Left and right take a column beside windows; bottom puts a row beneath the window, which leaves room at the sides to set the display's depth, and makes full-height windows a little shorter. Moving it to or from the bottom reopens open apps in the new size.",
+    "Where the open-app icons go. Left and right take a column beside windows; bottom puts a row beneath the window, which makes full-height windows a little shorter; popup shows them only while you're in the app switcher, in a box over the dimmed window. Bottom and popup leave room at the sides to set the display's depth. Open apps reopen at their new size when a change resizes windows.",
 });
 
 const UI_DEPTH_VALUES = ["-62", "-48", "-32", "-16", "0", "16", "32", "48", "62"] as const;
@@ -373,11 +378,11 @@ export type UiDepth = (typeof UI_DEPTH_VALUES)[number];
 /**
  * Stereo depth of the whole display, in the firmware's depth units: the
  * lenses shift everything by half this many pixels each, in opposite
- * directions. Only applies with the app switcher at the bottom, where the
- * windows' 576px width leaves 32px at each side: one for the side of the
- * window's frame and 31 to shift into, hence ±62 (see geometry.ts uiDepth
- * and windowFramed); values stay even so the per-lens halves of nested
- * depths add exactly.
+ * directions. Only applies with the app switcher at the bottom or a popup,
+ * where the windows' 576px width leaves 32px at each side: one for the side
+ * of the window's frame and 31 to shift into, hence ±62 (see geometry.ts
+ * uiDepth and windowFramed); values stay even so the per-lens halves of
+ * nested depths add exactly.
  */
 export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({
   id: "ui-depth",
@@ -390,26 +395,62 @@ export const uiDepthSetting = new ConfigSettingEnum<UiDepth>({
     return depth === 0 ? "0" : depth > 0 ? `+${depth} (nearer)` : `${depth} (farther)`;
   },
   description:
-    "Moves the whole display nearer (positive) or farther away (negative) by shifting it in opposite directions on the two lenses. Available with the app switcher at the bottom. Full-panel windows lose a sliver at the edges.",
+    "Moves the whole display nearer (positive) or farther away (negative) by shifting it in opposite directions on the two lenses. Available with the app switcher at the bottom or as a popup. Full-panel windows lose a sliver at the edges.",
 });
 
 /**
  * Where the status bar (clock, notification icons, app widgets, batteries)
- * goes: the top bar over each window, or the right end of a bottom app
- * switcher's row (geometry.ts statusInSwitcherRow), where windows grow into
- * the top bar's height.
+ * goes: the top bar over each window, or its bottom. With a bottom app
+ * switcher, the bottom is the right end of the switcher's row (geometry.ts
+ * statusInSwitcherRow), where windows grow into the top bar's height; with a
+ * popup switcher, a bar under the window (geometry.ts statusBarEdge).
  */
-export type StatusBarPosition = "top" | "switcher";
+export type StatusBarPosition = "top" | "bottom";
 
 export const statusBarPositionSetting = new ConfigSettingEnum<StatusBarPosition>({
   id: "status-bar-position",
-  label: "Status bar",
+  label: "Status bar position",
   storageKey: "display.statusBarPosition",
   defaultValue: "top",
-  values: ["top", "switcher"],
-  formatValue: (value) => value === "switcher" ? "With app switcher" : "Top",
+  values: ["top", "bottom"],
+  // "switcher" was the bottom value's name while only a bottom row had one.
+  normalize: (value) => value === "bottom" || value === "switcher" ? "bottom" : "top",
+  formatValue: (value) => value === "top" ? "Top"
+    : appSwitcherPositionSetting.get() === "bottom" ? "With app switcher" : "Bottom",
   description:
-    "Where the clock, notification icons, app widgets and battery indicators go. With app switcher puts them at the right end of the app switcher's row, and windows grow into the top bar's space. Available with the app switcher at the bottom; the full-panel display mode keeps the top bar. Changing it reopens open apps in the new size.",
+    "Where the clock, notification icons, app widgets and battery indicators go. With the app switcher at the bottom, With app switcher puts them at the right end of its row, and windows grow into the top bar's space; with a popup app switcher, Bottom puts them under the window. Available with the app switcher at the bottom or as a popup; with a bottom app switcher, the full-panel display mode keeps the top bar. Changing it reopens open apps in the new size.",
+});
+
+/**
+ * Whether the status bar always takes its rows along the window's edge, or
+ * shows only while the popup app switcher is up, over the window's edge
+ * (geometry.ts statusBarOverlays); the windows then grow into its rows.
+ */
+export type StatusBarVisibility = "always" | "switcher";
+
+export const statusBarVisibilitySetting = new ConfigSettingEnum<StatusBarVisibility>({
+  id: "status-bar-visibility",
+  label: "Status bar visibility",
+  storageKey: "display.statusBarVisibility",
+  defaultValue: "always",
+  values: ["always", "switcher"],
+  formatValue: (value) => value === "switcher" ? "In app switcher" : "Always",
+  description:
+    "Always keeps the clock, notification icons, app widgets and battery indicators beside the window. In app switcher shows them only while the app switcher is open, over the edge of the window, and windows grow into their space. Available with a popup app switcher. Changing it reopens open apps in the new size.",
+});
+
+/**
+ * Whether the foreground window gets a rounded border with a popup app
+ * switcher (geometry.ts windowFramed); without one, a line divides the
+ * window from the status bar.
+ */
+export const windowBorderSetting = new ConfigSettingBoolean({
+  id: "window-border",
+  label: "Window border",
+  storageKey: "display.windowBorder",
+  defaultValue: true,
+  description:
+    "Draw a rounded border around the window. Without it, a line separates the window from the status bar. Available with a popup app switcher. Changing it reopens open apps in the new size.",
 });
 
 export const brightnessSetting = new ConfigSettingEnum<BrightnessSetting>({
@@ -1002,7 +1043,7 @@ export const nightscoutMaxLoopAgeSetting = nightscoutThresholdSetting(
 );
 export const nightscoutAlwaysShowInTopBarSetting = new ConfigSettingBoolean({
   id: "nightscout-always-show-in-top-bar",
-  label: "Always show in top bar",
+  label: "Always show in status bar",
   storageKey: "integrations.nightscout.alwaysShowInTopBar",
   defaultValue: false,
   description: "Keep the Nightscout glucose graph and warnings in the top bar even when all Nightscout windows are closed.",
