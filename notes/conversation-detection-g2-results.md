@@ -89,13 +89,25 @@ El diagnóstico nativo conservado corresponde **solo al último tramo reanudado*
 
 La observación del usuario y los dos inicios/una cesión acreditan **convivencia breve del VAD G2.1 con Hey Even, cesión y retorno sin actividad arrastrada percibida**. No valida PTT en G2.1 ni estabilidad prolongada. El cierre está confirmado por UI/JSON: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. `capturing=true` nativo es la instantánea previa a STOP. Sin reinstalación ni cambios de código, firma, ajustes, Hermes o firmware; sin audio experimental guardado/enviado. Los siete descartes históricos mantienen su incertidumbre.
 
-La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT, TV a un metro y convivencia breve con Hey Even están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
+## Convivencia física G2.1 con PTT y hueco de entrega pendiente
+
+**03-10-2026, Europe/Madrid**, continuación de `dc690c2`. El usuario confirmó **«Sí, ocurrió todo y terminé con OFF»**: suspensión del VAD durante PTT, respuesta normal del asistente, retorno a escuchando al cerrar el diálogo y después sin actividad estando callado. Esto acredita convivencia breve de PTT con el VAD, no ausencia de incidencias de entrega ni estabilidad prolongada.
+
+Lecturas UI solo después de OFF: **450 chunks / 360.000 muestras / 22,5 s PCM acumulados**, **3 inicios y 2 cesiones**, clipping 0. No se obtuvo cronología para explicar las dos cesiones o asignarlas a acciones concretas. **Hueco máximo de entrega 492 ms**, superior al umbral de 250 ms de interrupción de continuidad del VAD. No confundirlo con la duración de una cesión: `release()` reinicia `lastPcm`. No se conoce su instante, tramo o causa; no atribuirlo a BLE, PTT, VAD o instrumentación. En esta continuación no se hicieron consultas UI durante ON. VAD: **2.250 ventanas / 4.760 ms positivos / 5 episodios**, 4 completados por silencio y 1 interrumpido; no atribuir ese episodio a una cesión o al hueco sin cronología.
+
+El diagnóstico nativo conservado cubre **solo el último tramo reanudado**: **178 paquetes / 142.400 muestras / 8,9 s PCM**, hueco nativo **76 ms**, paquetes de 205 B, PCM de 1.600 B, mono 16 kHz; cero pérdidas, duplicados, malformed, stale, errores de decodificación, queue drops y **pcmDeliveryDrops=0 en ese tramo**. No extrapolar esos ceros a los tramos anteriores ni interpretar la diferencia respecto a 450 chunks acumulados como pérdida. No se recuperaron estadísticas adicionales con el filtro técnico de logcat posterior; no se guardó contenido de conversación.
+
+Cierre confirmado por UI/JSON: **enabled=false**, desactivado, VAD inactivo, **lease=false, timer=false, bufferedBytes=0**, **0 wakelocks experimentales activos**. `capturing=true` nativo es la instantánea previa a STOP. Sin reinstalación ni cambios de código, firma, ajustes, Hermes o firmware; sin audio experimental guardado/enviado. Los siete descartes históricos siguen sin causa atribuida ni resolución definitiva.
+
+El hueco de 492 ms justifica **un ensayo nuevo de continuidad cercano al límite**, distinto de repetir la batería PTT: unos 100 s de captura, sin Hey Even/PTT/Chat ni consultas UI durante ON, con observación de voz/pausas al principio y más adelante, seguido de OFF y lectura técnica. Conserva el límite global de 120 s. Aunque resultase limpio, no resolvería la causa del hueco previo ni validaría funcionamiento prolongado, autonomía o Doze profundo.
+
+La validación física específica de G2 está **iniciada, no completada**. Silencio, voz propia/pausas, reproducción sintética, alternancia con ChatGPT, TV a un metro y convivencia breve con Hey Even/PTT están ensayados; no repetirlos por defecto. Con G2.1 instalada, guiar ensayos nuevos pendientes, uno por uno, sin grabar ni enviar el audio experimental:
 
 | Escenario nuevo | Observar sin conservar contenido |
 | --- | --- |
 | Interlocutor, 20–30 s | Actividad posible, sin atribuir identidad o participación |
 | Otro ruido/fondo, si se necesita ampliar cobertura | Actividad espuria y límites del método por energía; la TV a un metro ya está ensayada |
-| PTT mientras VAD está activo | Comprobar la nueva convivencia con VAD y retorno sin arrastrar actividad; Hey Even G2.1 ya ensayado y G0/G1 no se repite como batería |
+| Continuidad cerca del límite, unos 100 s | Sin consultas UI ni asistente durante ON; motivado por hueco de entrega de 492 ms del ensayo PTT, sin atribuir su causa |
 | Cierre | OFF y recursos experimentales retirados, sin cortar captura ajena |
 
 Mantener los ensayos limitados a dos minutos, sin cambios de Hermes/bloqueo. No usar estas pruebas para dar por validadas autonomía o Doze profundo: siguen pendientes de protocolos propios. Para el ASR futuro permanecen español, valenciano y alternancia entre y dentro de frases, conservando el idioma y absteniéndose silenciosamente ante contenido incomprensible.
