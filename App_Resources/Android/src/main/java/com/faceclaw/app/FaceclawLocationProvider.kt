@@ -14,20 +14,22 @@ import android.os.Looper
 import androidx.core.content.ContextCompat
 
 /**
- * One-shot, foreground-only location lookup for Weather. It prefers a fresh
+ * One-shot location lookup for Weather and the assistant. It prefers a fresh
  * coarse network fix, but can fall back to the newest cached provider fix if
  * Android cannot produce a new location before the timeout.
  */
 class FaceclawLocationProvider(context: Context) : LocationListener {
     companion object {
-        private const val FRESH_CACHE_MS = 10L * 60L * 1000L
+        // Match location.get_current's two-minute freshness limit. A four-
+        // minute cache must trigger a new one-shot request, not return at once.
+        private const val FRESH_CACHE_MS = 2L * 60L * 1000L
         private const val MAX_CACHE_MS = 24L * 60L * 60L * 1000L
         private const val TIMEOUT_MS = 15L * 1000L
 
         private fun isRecent(location: Location?, maximumAgeMs: Long): Boolean {
             return location != null &&
                 location.time > 0L &&
-                System.currentTimeMillis() - location.time <= maximumAgeMs
+                System.currentTimeMillis() - location.time in 0L..maximumAgeMs
         }
     }
 
