@@ -1,5 +1,7 @@
 # Omisiones ASR: análisis e incremento de diagnóstico
 
+**Aclaración de alcance posterior al cierre:** el usuario cuestiona haber excluido perfiles de voz; recuerda pedir adelantar pruebas. No considerar «G3/perfiles excluido» de las secciones históricas como veto permanente confirmado. G3 original con perfil propio local es una opción pendiente de consentimiento concreto para crear/persistir el vector; no se ha recogido ni autorizado biometría en esta aclaración. La alternativa manual no se impone como único siguiente paso. Revisar el apartado registro del usuario de [la auditoría original](auditoria-conversaciones-g2-2026-10-03.md). Priorizar avance G3 sin repetir G2 por defecto; cierre/instalación ASR conservados.
+
 03-10-2026, Europe/Madrid. Continuación de `79312b3`, rama `codex/conversation-detection-g0`, sin reiniciar la evaluación. Código `b92f18a` publicado. **G2.3 instalada con firma original y33ajustes idénticos; ensayo guiado cerrado en OFF y drenado.** Usuario valora transcripción casi perfecta, con algunas palabras valencianas pasadas a castellano que considera poco importantes. Se conserva modelo/umbrales; no acredita precisión bilingüe general ni resuelve incidencias históricas. Conserva GPS `c6cdedf`, cuyo funcionamiento físico ya confirmó el usuario; no se repite GPS. Las secciones iniciales analizan el cierre anterior; nueva instalación y resultados al final.
 
 ## Evidencia frente a hipótesis
