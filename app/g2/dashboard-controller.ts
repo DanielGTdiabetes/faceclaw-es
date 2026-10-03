@@ -51,6 +51,7 @@ import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment } from "../conversation-detection/coordinator";
+import { LocalTranscription } from "../native/local-transcription";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
@@ -2019,16 +2020,18 @@ class DashboardController {
     prepare: () => this.prepareDetectorAudioSession(),
     acquire: (pcm, revoked, failed) => voiceControlBridge.acquireExperimentalRaw(
       this.communicator?.getNativeCommunicator(), pcm, revoked, failed,
+      (nativePcm) => this.conversationDetector.acceptNativePcm(nativePcm),
     ),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => {
       const timer = setInterval(callback, ms);
       return () => clearInterval(timer);
     },
+    transcription: new LocalTranscription(),
   });
 
-  setConversationCaptureEnabled(enabled: boolean): void {
-    this.conversationDetector.setEnabled(enabled);
+  setConversationCaptureEnabled(enabled: boolean, transcribe = false): void {
+    this.conversationDetector.setEnabled(enabled, transcribe);
     // Capture needs a fresh wear report even when the optional lock screen is off.
     // Request on ON and on ready sessions, never from the 500 ms refresh loop.
     if (enabled) this.ensureWearStateTracking();

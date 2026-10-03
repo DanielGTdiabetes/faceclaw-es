@@ -103,6 +103,7 @@ export class FaceclawVoiceControlBridge {
   private readonly normalRawOwners = new Set<string>();
   private experimentalLeaseId: number | null = null;
   private experimentalPcm: RawPcmListener | null = null;
+  private experimentalNativePcm: ((pcm: unknown) => void) | null = null;
   private experimentalFailure: (() => void) | null = null;
   private readonly statusListeners = new Set<(state: VoiceControlState) => void>();
   private readonly transcriptListeners = new Set<(event: VoiceTranscriptEvent) => void>();
@@ -262,6 +263,7 @@ export class FaceclawVoiceControlBridge {
   /** Exclusive low-priority decode-only stream; never subscribes to STT PCM. */
   acquireExperimentalRaw(
     communicator: any, pcm: RawPcmListener, revoked: () => void, failed: () => void,
+    nativePcm?: (pcm: unknown) => void,
   ): DetectorLease | null {
     if (!global.isAndroid || !this.experimentalAudioAvailable() || communicator?.isAudioCaptureActive()) return null;
     let lastDiagnostics = "";
@@ -279,6 +281,7 @@ export class FaceclawVoiceControlBridge {
     if (id === null) return null;
     this.experimentalLeaseId = id;
     this.experimentalPcm = pcm;
+    this.experimentalNativePcm = nativePcm ?? null;
     this.experimentalFailure = failed;
     try {
       if (!this.beginRawCapture(communicator, true)) {
@@ -299,6 +302,7 @@ export class FaceclawVoiceControlBridge {
     if (this.experimentalLeaseId !== id) return; // Old STOP cannot stop someone else's capture.
     this.experimentalLeaseId = null;
     this.experimentalPcm = null;
+    this.experimentalNativePcm = null;
     this.experimentalFailure = null;
     this.audioArbiter.releaseDetector(id);
     this.stopRawStream();
@@ -610,7 +614,11 @@ export class FaceclawVoiceControlBridge {
         }
       },
       onExperimentalPcm: (pcm: any) => {
-        if (this.experimentalLeaseId !== null) this.experimentalPcm?.(toUint8Array(pcm));
+        const lease = this.experimentalLeaseId;
+        if (lease !== null) {
+          this.experimentalPcm?.(toUint8Array(pcm));
+          if (this.experimentalLeaseId === lease) this.experimentalNativePcm?.(pcm);
+        }
       },
       onExperimentalStatus: (status: string) => {
         if (this.experimentalLeaseId !== null && !String(status).startsWith("Listening")) this.experimentalFailure?.();

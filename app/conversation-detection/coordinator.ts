@@ -1,6 +1,7 @@
 import { LocalEnergyVad, type LocalVadSnapshot } from "./local-vad";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot } from "./transcription";
 
-/** Local capture + provisional G2 energy VAD; no ASR, identity, storage or network. */
+/** Local capture + provisional energy VAD and opt-in ASR; no identity, storage or network. */
 export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
 export type DetectorMetrics = {
   chunks: number; samples: number; bytes: number; maxGapMs: number;
@@ -10,6 +11,7 @@ export type DetectorSnapshot = {
   enabled: boolean; state: DetectorState; reason: string; epoch: number;
   metrics: DetectorMetrics; vad: LocalVadSnapshot;
   resources: { lease: boolean; timer: boolean; bufferedBytes: number };
+  transcription?: LocalTranscriptionSnapshot;
 };
 export type DetectorLease = { stop(): void; diagnostics(): string };
 export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
@@ -19,6 +21,7 @@ export type DetectorHost = {
   acquire(pcm: (bytes: Uint8Array) => void, revoked: () => void, failed: () => void): DetectorLease | null;
   now(): number;
   every(callback: () => void, ms: number): () => void;
+  transcription?: DetectorTranscription;
 };
 
 const emptyMetrics = (): DetectorMetrics => ({
@@ -40,6 +43,7 @@ export class ConversationCaptureCoordinator {
   private startedAt = 0;
   private enabledAt = 0;
   private lastDiagnostics = "";
+  private transcribing = false;
   private readonly listeners = new Set<(snapshot: DetectorSnapshot) => void>();
 
   constructor(private readonly host: DetectorHost) {}
@@ -47,7 +51,8 @@ export class ConversationCaptureCoordinator {
   snapshot(): DetectorSnapshot {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
       metrics: { ...this.metrics }, vad: this.vad.snapshot(),
-      resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 } };
+      resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
+      ...(this.host.transcription ? { transcription: this.host.transcription.snapshot() } : {}) };
   }
 
   subscribe(listener: (snapshot: DetectorSnapshot) => void): () => void {
@@ -59,10 +64,20 @@ export class ConversationCaptureCoordinator {
   diagnostics(): string { return this.lease?.diagnostics() ?? this.lastDiagnostics; }
   holdsSession(): boolean { return this.preparing || this.lease !== null; }
 
-  setEnabled(enabled: boolean): void {
+  transcriptText(): string { return this.host.transcription?.text() ?? ""; }
+
+  /** Original native array, after accept() validated PCM/epoch/expiry; avoids a second JS copy. */
+  acceptNativePcm(pcm: unknown): void {
+    if (this.transcribing && this.enabled && this.lease && this.state === "escuchando") {
+      this.host.transcription?.acceptNative(pcm, this.vad.snapshot().state);
+    }
+  }
+
+  setEnabled(enabled: boolean, transcribe = false): void {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
     this.cleanup();
+    this.transcribing = enabled && transcribe;
     if (!enabled) {
       this.state = "desactivado";
       this.reason = "OFF: concesión, suscripciones y temporizadores retirados.";
@@ -72,6 +87,10 @@ export class ConversationCaptureCoordinator {
     this.metrics = emptyMetrics();
     this.vad = new LocalEnergyVad();
     this.lastDiagnostics = "";
+    if (this.transcribing && !this.host.transcription?.start()) {
+      this.fail("Transcripción local no disponible. Revisa el modelo Whisper base local o espera al cierre anterior.");
+      return;
+    }
     this.enabledAt = this.host.now();
     this.state = "suspendido";
     this.reason = "Preparando captura local. Ensayo limitado a 2 minutos.";
@@ -84,6 +103,10 @@ export class ConversationCaptureCoordinator {
     if (!this.enabled || this.state === "error") return;
     const now = this.host.now();
     if (now - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
+    if (this.transcribing && ["error", "modelo no disponible"].includes(this.host.transcription?.snapshot().status ?? "error")) {
+      this.fail("El motor local no está disponible. Sin envío ni alternativa en red; usa OFF para cerrar.");
+      return;
+    }
     const env = this.host.environment();
     if (!env.available) {
       this.release();
@@ -94,7 +117,7 @@ export class ConversationCaptureCoordinator {
     }
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
-      if (this.lastPcm && now - this.lastPcm > 250) this.vad.resetStream();
+      if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
       if (now - (this.lastPcm || this.startedAt) > 2_000) {
         this.fail("No llega PCM válido desde hace 2 s. Recursos liberados; usa OFF/ON para reintentar.");
       } else {
@@ -142,7 +165,7 @@ export class ConversationCaptureCoordinator {
     if (now - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
-    if (this.lastPcm && now - this.lastPcm > 250) this.vad.resetStream();
+    if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
     this.lastPcm = now;
     let sum = 0;
     for (let i = 0; i < pcm.length; i += 2) {
@@ -157,7 +180,9 @@ export class ConversationCaptureCoordinator {
     this.metrics.bytes += pcm.length;
     this.vad.accept(pcm);
     this.state = "escuchando";
-    this.reason = "VAD local por energía; posible voz no confirma participación. Sin grabación ni envío de audio.";
+    this.reason = this.transcribing
+      ? "VAD y transcripción local provisionales. Sin grabación ni envío de audio; no confirma participación."
+      : "VAD local por energía; posible voz no confirma participación. Sin grabación ni envío de audio.";
     // No PCM is retained. UI notification is coalesced by the 500 ms lifecycle tick.
   }
 
@@ -182,7 +207,7 @@ export class ConversationCaptureCoordinator {
     this.preparing = false;
     this.session = null;
     this.lastPcm = 0;
-    this.vad.resetStream();
+    this.resetAcousticStream();
     const lease = this.lease;
     this.lease = null;
     if (lease) {
@@ -195,6 +220,12 @@ export class ConversationCaptureCoordinator {
     this.cancelTimer?.();
     this.cancelTimer = null;
     this.release();
+    this.host.transcription?.stop();
+  }
+
+  private resetAcousticStream(): void {
+    this.vad.resetStream();
+    this.host.transcription?.resetStream();
   }
 
   private emit(): void {

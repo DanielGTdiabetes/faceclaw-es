@@ -1,6 +1,16 @@
 # Continuar Faceclaw desde otro PC
 
-## Continuación activa: G2.1/VAD local provisional (03-10-2026)
+## Estado activo: G2.2/ASR local opcional (03-10-2026)
+
+Leer [informe G2.2](conversation-detection-g2-asr-results.md). El usuario cerró la batería breve de G2 en su alcance observado y pidió avanzar con transcripción local español/valenciano sin grabar ni enviar audio. G2.2 implementada, compilada e instalada con firma original y `adb install -r`: **0.8.1-es.5-conversation.g2.2**, código805. Los **33 ajustes son idénticos** antes/después, incluido Hermes100.65.212.74:8791 y bloqueo desactivado. No se cambió el asistente, perfiles, firmware u otros proyectos.
+
+Whisper base multilingüe/sherpa1.13.0, idioma automático por segmento, sin traducción ni identificación de participación. PCM/texto acotados en RAM, texto temporal solo en el teléfono y borrado al ceder/OFF. Sin red de audio, almacenamiento de conversaciones ni acciones del agente. JNI no interrumpible: se invalida resultado y drena trabajador antes de liberar; estado de entrada/worker/busy lo refleja. Abstención estructural silenciosa, sin garantía de comprensión o eliminación de alucinaciones. Alternancia real español/valenciano y precisión siguen sin validar.
+
+UI nueva **OFF/inactivo, 0 episodios/0chunks**, modelo base detectado por el gestor y 0 wakelocks experimentales activos. Sin descargar pesos ni iniciar inferencia/captura o nuevos ensayos físicos. No se obtuvo JSON final tras bloquearse el Pixel. **732 Node pasan/1 omitida; 220 Kotlin; TypeScript/lint/build correctos**. No repetir batería por defecto; continuidad100 s aplazada. Hueco492 ms y siete descartes históricos sin causa atribuida ni resolución definitiva. Estabilidad prolongada, autonomía, Doze profundo, interlocutor humano y convivencia física G2.2 con inferencia pendientes.
+
+APK firmada/unsigned NAS en `/volume1/home/Dani/Faceclaw/apk-builds/conversation-g2.2/`; respaldo fresco G2.1 en `/volume1/home/Dani/Faceclaw/apk-backups/faceclaw-g2.1-before-g2.2-20261003-170144.apk`, hashes/permisos verificados y detalle en informe. Copias privadas de los33 ajustes en `/volume1/home/Dani/Faceclaw/connection-backups/2026-10-03-g2.2/` (700/600, hashes coincidentes), no mostrar/exportar a Git. Firma original sigue en `.tools/signing` y NAS. Reversión conserva datos mediante `adb install -r` del respaldo tras OFF; no regenerar firma/desinstalar.
+
+## Cierre previo: G2.1/VAD local provisional (03-10-2026)
 
 Rama `codex/conversation-detection-g0`. APK instalada `0.8.1-es.5-conversation.g2.1`, código805 y firma original; 33 ajustes conservados, Hermes `100.65.212.74:8791` y `display.lockScreenEnabled=false` intactos. No reinstalar ni repetir G0/G1 o ensayos completados por defecto. Parámetros, artefactos NAS, resultados y límites en [informe G2](conversation-detection-g2-results.md).
 

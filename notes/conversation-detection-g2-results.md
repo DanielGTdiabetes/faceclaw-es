@@ -1,5 +1,7 @@
 # G2.1: VAD local provisional
 
+**Continuación G2.2:** por decisión posterior del usuario se cerró la batería breve en el alcance documentado y se avanzó con ASR local opcional español/valenciano, sin perfiles/grabaciones/envío de audio. Código, instalación y límites separados en [conversation-detection-g2-asr-results.md](conversation-detection-g2-asr-results.md). Este informe conserva la evidencia G2.1 y las incidencias abiertas; no implica una nueva batería física ni valida precisión ASR.
+
 Continuación del cierre del **03-10-2026**, Europe/Madrid, desde `b0002cf`, rama `codex/conversation-detection-g0`. La batería breve G0/G1 ya está completada: [resultados y límites](conversation-detection-g0-results.md). Este incremento no repite aquella instalación ni los ensayos físicos.
 
 ## Alcance

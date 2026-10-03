@@ -8,7 +8,7 @@ const { AudioCaptureArbiter } = require('../.test-build/app/native/audio-capture
 const { ConversationCaptureCoordinator } = require('../.test-build/app/conversation-detection/coordinator.js');
 const { assistantAudioPriority } = require('../.test-build/app/assistant/audio-priority.js');
 
-function harness({ prepare } = {}) {
+function harness({ prepare, transcription } = {}) {
   let now = 1000, starts = 0, stops = 0, timer = null;
   let environment = { available: true, reason: '', session: {} };
   const leases = [];
@@ -23,14 +23,62 @@ function harness({ prepare } = {}) {
     },
     now: () => now,
     every(cb) { timer = cb; return () => { timer = null; }; },
+    transcription,
   });
   return { detector, leases,
-    async on() { detector.setEnabled(true); await Promise.resolve(); },
+    async on(transcribe = false) { detector.setEnabled(true, transcribe); await Promise.resolve(); },
     tick(ms = 500) { now += ms; timer?.(); },
     env(patch) { environment = { ...environment, ...patch }; detector.refresh(); },
     counts: () => ({ starts, stops, timer: !!timer }),
   };
 }
+
+function transcriptPort(ready = true) {
+  const events = [];
+  let enabled = false;
+  return { events, start() { events.push('start'); enabled = ready; return ready; },
+    stop() { events.push('stop'); enabled = false; }, resetStream() { events.push('reset'); },
+    acceptNative(_pcm, vad) { events.push(`pcm:${vad}`); }, text() { return enabled ? 'texto efímero' : ''; },
+    snapshot() { return { enabled, status: enabled ? 'listo' : 'inactivo', worker: false, busy: false,
+      inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 }; },
+  };
+}
+
+test('local transcription is opt-in, and diagnostics never contain its temporary text', async () => {
+  const transcription = transcriptPort(); const h = harness({ transcription });
+  await h.on(); h.leases[0].pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.equal(transcription.events.includes('start'), false);
+  assert.equal(transcription.events.some(event => event.startsWith('pcm:')), false);
+  h.detector.setEnabled(false); await h.on(true);
+  h.leases[1].pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.equal(h.detector.transcriptText(), 'texto efímero');
+  assert.equal(JSON.stringify(h.detector.snapshot()).includes('texto efímero'), false);
+  assert.equal(transcription.events.filter(event => event.startsWith('pcm:')).length, 1);
+  h.detector.setEnabled(false); h.detector.acceptNativePcm({});
+  assert.equal(h.detector.transcriptText(), '');
+  assert.equal(transcription.events.filter(event => event.startsWith('pcm:')).length, 1);
+});
+
+test('missing local model never arms capture or falls back to another provider', async () => {
+  const h = harness({ transcription: transcriptPort(false) }); await h.on(true);
+  assert.equal(h.detector.snapshot().state, 'error');
+  assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+});
+
+test('local ASR resets with gaps and preemption, and cannot accept late/expired native arrays', async () => {
+  const transcription = transcriptPort(); const h = harness({ transcription }); await h.on(true);
+  h.leases[0].pcm(new Uint8Array(1600));
+  const initial = transcription.events.filter(event => event === 'reset').length;
+  h.tick(251); h.leases[0].pcm(new Uint8Array(1600));
+  assert.ok(transcription.events.filter(event => event === 'reset').length > initial);
+  h.leases[0].revoked(); h.detector.acceptNativePcm({});
+  assert.equal(transcription.events.some(event => event.startsWith('pcm:')), false);
+  h.env({ available: true }); await Promise.resolve();
+  h.tick(120000); h.detector.acceptNativePcm({});
+  assert.equal(h.detector.snapshot().enabled, false);
+  assert.equal(h.detector.snapshot().transcription.enabled, false);
+  assert.equal(transcription.events.some(event => event.startsWith('pcm:')), false);
+});
 
 test('OFF is the default, has no timer/audio resources and does not prepare BLE', () => {
   const h = harness({ prepare: () => assert.fail('OFF cannot prepare') });

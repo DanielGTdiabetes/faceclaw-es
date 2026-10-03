@@ -25,7 +25,7 @@ internal object AndroidSpeechEngines {
     private const val FEATURE_DIM = 80
 
     /** Sherpa-onnx configuration for the on-device model files in [modelDir]. */
-    fun recognizerConfig(modelDir: File, kind: VoiceModelKind): OfflineRecognizerConfig {
+    fun recognizerConfig(modelDir: File, kind: VoiceModelKind, whisperLanguage: String = "es"): OfflineRecognizerConfig {
         val modelConfig = OfflineModelConfig.builder()
             .setNumThreads(1)
         if (kind.isWhisper) {
@@ -34,7 +34,7 @@ internal object AndroidSpeechEngines {
                 .setWhisper(OfflineWhisperModelConfig.builder()
                     .setEncoder(File(modelDir, "$prefix-encoder.int8.onnx").absolutePath)
                     .setDecoder(File(modelDir, "$prefix-decoder.int8.onnx").absolutePath)
-                    .setLanguage("es")
+                    .setLanguage(whisperLanguage)
                     .setTask("transcribe")
                     .build())
                 .setTokens(File(modelDir, "$prefix-tokens.txt").absolutePath)

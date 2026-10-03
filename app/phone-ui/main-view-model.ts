@@ -26,6 +26,7 @@ import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
+import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -128,6 +129,13 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
       this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
       this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      this.notifyPropertyChange("localTranscript", this.localTranscript);
+      this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
+      this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+      this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
+    }));
+    this.unsubscribers.push(onAsrModelStateChanged("whisper-base-es", () => {
+      this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
     }));
   }
 
@@ -152,8 +160,30 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   onConversationDetectorMetricsTap(): void {
     const detector = dashboardController.conversationDetector;
-    void Dialogs.alert({ title: "Métricas técnicas G2/VAD", message: JSON.stringify(detector.snapshot(), null, 2)
+    void Dialogs.alert({ title: "Métricas técnicas G2/VAD/ASR", message: JSON.stringify(detector.snapshot(), null, 2)
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
+  }
+
+  get localTranscript(): string { return dashboardController.conversationDetector.transcriptText(); }
+  get localTranscriptionCanStart(): boolean { return !dashboardController.conversationDetector.snapshot().enabled; }
+  get localTranscriptionLabel(): string {
+    const state = dashboardController.conversationDetector.snapshot().transcription;
+    return state?.enabled ? `Texto provisional es/valencià · ${state.status} · se borra al parar o ceder audio.` : "";
+  }
+  get localTranscriptionButton(): string {
+    const model = asrModelState("whisper-base-es");
+    if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
+    return model.status === "ready" ? "Transcribir localmente (es/valencià, 2 min máx.)" : "Descargar modelo local (161 MB)";
+  }
+  onLocalTranscriptionTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    const model = asrModelState("whisper-base-es");
+    if (model.status === "downloading") return;
+    if (model.status !== "ready") {
+      startAsrModelDownload("whisper-base-es");
+      return; // Weights only; download completion never starts capture.
+    }
+    dashboardController.setConversationCaptureEnabled(true, true);
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */
