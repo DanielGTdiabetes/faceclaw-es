@@ -2,11 +2,11 @@
 
 ## Continuación activa: prototipo conversacional G2 (03-10-2026)
 
-Trabajo nuevo en **`codex/conversation-detection-g0`**, manteniendo la adaptación española como base. Leer [conversation-detection-g0-results.md](conversation-detection-g0-results.md): implementación y APK sin firma, resultados de software, continuación desde el trabajo y pruebas físicas pendientes. El Pixel conserva `0.8.1-es.5`; no se instaló el prototipo. No añadir VAD hasta superar G0/G1 en dispositivos reales. Se conservó la conexión con Hermes.
+Trabajo activo en **`codex/conversation-detection-g0`**, manteniendo la adaptación española como base. Leer [conversation-detection-g0-results.md](conversation-detection-g0-results.md): implementación, instalación desde el trabajo y pruebas físicas pendientes. El Pixel ya tiene `0.8.1-es.5-conversation.g0.1`, firmado con la clave original; 32 ajustes conservados, incluido Hermes. Ensayo comprobado OFF, cero chunks y sin wakelock propio. No añadir VAD hasta superar G0/G1 en dispositivos reales. Requisito añadido: español y valenciano, también alternados; todavía pendiente de implementación y validación en ASR.
 
-**Firma compartida:** usar la carpeta privada ya creada **`Dani@100.64.237.87:/volume1/home/Dani/Faceclaw/signing/`** desde el exterior por Tailscale; en LAN corresponde a `192.168.0.110`. Desde `.tools/signing/` del repositorio del PC del trabajo, copiar juntos **`faceclaw-es.jks` y `store.password`**; carpeta 700 y archivos 600. Estaba vacía al comprobarla el 03-10-2026. El informe nuevo incluye comandos para copiar/recuperar y las rutas NAS de la APK de ensayo y de reversión. No subir firma, contraseñas, tokens ni ajustes privados a GitHub.
+**Firma compartida:** ambos originales **`faceclaw-es.jks` y `store.password`** ya están copiados en **`Dani@100.64.237.87:/volume1/home/Dani/Faceclaw/signing/`**; SHA-256 de ambos archivos comprobado idéntico al PC del trabajo. Carpeta 700 y archivos 600. En LAN corresponde a `192.168.0.110`. El certificado de la APK firmada coincide con el instalado, huella pública indicada más abajo. El informe incluye los comandos de recuperación. No subir firma, contraseñas, tokens ni ajustes privados a GitHub.
 
-Estado comprobado el **2 de octubre de 2026**. Esta nota está versionada en GitHub; las claves privadas y las APK se guardan en el NAS.
+Estado actualizado el **3 de octubre de 2026**. Esta nota está versionada en GitHub; las claves privadas y las APK se guardan en el NAS.
 
 **Asistente actual:** Faceclaw utiliza Hermes en Jarvis (`100.65.212.74:8791`), con Luna 6. El usuario confirmó la mejora de velocidad y decidió mantenerlo. El token no se cambió; OpenClaw queda como alternativa con sus datos conservados. Véase [asistente-hermes-jarvis.md](asistente-hermes-jarvis.md) para operación, mediciones y restauración. La copia del NAS contiene el estado más reciente mientras estos cambios de documentación locales estén pendientes de publicar en GitHub.
 
@@ -36,21 +36,21 @@ Servidor: **192.168.0.110** en LAN; desde el exterior usar **100.64.237.87 por T
 | Carpeta del proyecto privado | `/volume1/home/Dani/Faceclaw/` | Creada, permisos 700 |
 | Resumen de continuidad | `/volume1/home/Dani/Faceclaw/LEEME.md` | Guardado |
 | Nota de Obsidian compartida | `/volume1/Docker/obsidian/vault/Proyectos/Faceclaw.md` | Guardada |
-| Carpeta de firma | `/volume1/home/Dani/Faceclaw/signing/` | **Vacía; falta copiar la firma desde el PC del trabajo** |
+| Carpeta de firma | `/volume1/home/Dani/Faceclaw/signing/` | Ambos originales copiados, hashes verificados y permisos 600 |
 | APK original extraída del móvil | `/volume1/home/Dani/Faceclaw/apk-backups/faceclaw-installed-es.5.apk` | Guardada y comprobada por SHA-256 |
 | APK de móvil corregida, sin firmar | `/volume1/home/Dani/Faceclaw/apk-builds/11ed6ac/faceclaw-location-unsigned.apk` | Guardada y comprobada por SHA-256 |
 | APK de reloj del mismo build, sin firmar | `/volume1/home/Dani/Faceclaw/apk-builds/11ed6ac/faceclaw-watch-unsigned.apk` | Guardada y comprobada por SHA-256 |
 
 La nota de Obsidian puede actualizarse mediante SSH/SCP; el conector de Obsidian presentó problemas de finales de línea desde Windows. No modificar ni borrar otras notas del NAS para resolverlos.
 
-## Firma original: copia todavía pendiente
+## Firma original: copia completada
 
 Los archivos originales están en la carpeta `.tools/signing/` del repositorio del **PC del trabajo**:
 
 - `faceclaw-es.jks`
 - `store.password`
 
-Se necesitan **los dos archivos juntos**. En el estado comprobado no estaban en el NAS ni en el PC de casa. Comprobar de nuevo su existencia antes de afirmar que la firma está respaldada. No ejecutar el script de firma si falta la clave original, ya que podría generar otra.
+Se necesitan **los dos archivos juntos**. Ya están respaldados y verificados en el NAS. El PC de casa puede recuperarlos siguiendo el informe G0; no sobrescribir otra firma existente sin comprobar su identidad. No ejecutar el script de firma si falta la clave original, ya que podría generar otra.
 
 Desde la raíz del repositorio en el PC del trabajo, después de comprobar que ambos archivos existen:
 
@@ -83,11 +83,9 @@ El hash del archivo y la huella del certificado son datos distintos. Una vez rec
 
 ## Qué queda por hacer en Android
 
-1. Copiar y verificar los dos archivos de firma originales en el NAS.
-2. Recuperar una copia privada de la firma en `.tools/signing/` del PC que vaya a firmar.
-3. Firmar la APK corregida, comprobar la huella e instalarla como actualización en el móvil.
-4. Reconectar el puente actual de Hermes en Jarvis para actualizar su lista de herramientas.
-5. Preguntar desde las gafas: «¿Dónde estoy? Consulta la ubicación de mi móvil» y comprobar que llama a `location.get_current`.
-6. Actualizar esta nota y la del NAS con el resultado real y la fecha de la comprobación.
+1. Validar físicamente G0/G1 con el usuario presente, siguiendo el informe: referencia OFF, captura breve, Hey Even/PTT, apagado y ciclo de vida. Terminar con ensayo OFF.
+2. Confirmar desde las gafas la conexión con Hermes y la consulta de `location.get_current`; la APK instalada incluye esa corrección.
+3. Recuperar la firma del NAS en cualquier otro PC que vaya a actualizar la app, verificando la misma huella pública.
+4. Registrar las pruebas reales aquí y en el NAS. Planificar el soporte español/valenciano sin darlo por validado.
 
-El teléfono comprobado fue un Pixel 10 Pro Fold con Faceclaw `0.8.1-es.5`: ubicación activada, permisos de ubicación precisa y aproximada concedidos y servicio de Faceclaw en funcionamiento. La corrección permite consultar coordenadas, precisión y antigüedad durante una conversación, sin abrir Tiempo ni Navegar. El puente oficial de OpenClaw pasó una comprobación con una posición nativa simulada. **La APK corregida todavía no se había instalado ni probado desde las gafas reales.**
+El Pixel 10 Pro Fold está actualizado por USB a `0.8.1-es.5-conversation.g0.1`, código 805. Conserva permisos de ubicación precisa/aproximada y notificaciones. Antes del prototipo se instaló también la APK de ubicación `11ed6ac`, con el mismo certificado. La corrección permite consultar coordenadas, precisión y antigüedad durante una conversación, sin abrir Tiempo ni Navegar. El puente oficial de OpenClaw pasó anteriormente una comprobación con una posición nativa simulada. **La instalación está comprobada; las pruebas desde las gafas reales siguen pendientes.**

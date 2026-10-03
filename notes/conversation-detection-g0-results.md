@@ -2,7 +2,18 @@
 
 Fecha: **03-10-2026**, Europe/Madrid. Proyecto `E:\projects\faceclaw-es`, repositorio [DanielGTdiabetes/faceclaw-es](https://github.com/DanielGTdiabetes/faceclaw-es), rama **`codex/conversation-detection-g0`**, base `5c5e6e60d39c7603a47ea8c52006d5e97331a259` de `spanish-0.8.1`.
 
-**Estado para continuar:** implementación G0/G1 y compilación Android terminadas; **instalación y pruebas físicas NO realizadas** por falta de la firma original en este PC y el NAS. G0/G1 no están superadas. No avanzar a G2/VAD hasta probar audio, Hey Even, apagado y ciclo de vida en las gafas. El usuario se traslada al PC del trabajo, donde afirma que están los archivos de firma; comprobarlos allí. La petición vigente ya autoriza compilar, instalar con la identidad original conservando datos y realizar ensayos breves guiados. No repetir la auditoría completa ni pedir de nuevo esa autorización.
+**Estado actualizado desde el PC del trabajo el 03-10-2026:** APK G0 **instalada** en el Pixel por USB con la firma original. Los 32 ajustes exportados antes/después son idénticos, incluidos los de Hermes. La firma original está copiada y verificada en el NAS (carpeta 700, ambos archivos 600). La interfaz muestra ensayo **desactivado**, 0 chunks y 0 s PCM; `dumpsys power` no muestra `Faceclaw:ConversationG0`. **Las pruebas físicas siguen pendientes y G0/G1 no están superadas.** No avanzar a G2/VAD hasta probar audio, Hey Even, apagado y ciclo de vida en las gafas. La petición vigente autoriza instalación y ensayos breves guiados; el usuario confirmó continuar desarrollando este proyecto. No repetir la auditoría completa ni pedir de nuevo esa autorización.
+
+APK firmada instalada: SHA-256 `27f0da44aa476c1a05633e18273f7dc9346ca79786de5f4ddf4765fdfb59d0c7`, versión `0.8.1-es.5-conversation.g0.1`, código 805. Local: `D:\Proyectos\Faceclaw_spanish\dist\conversation-g0\faceclaw-0.8.1-es.5-conversation.g0.1.apk`. Respaldo fresco anterior al prototipo: `dist/conversation-g0/before-install-20261003-080901.apk`, SHA-256 `ae1ed7ed27cc3560fd0e68ed28acf5e2ee930198d40aa6fe524be1b33d0c34ff` (incluye ya la corrección de ubicación). La copia inicial privada de APK/ajustes del trabajo está en `backups/update-20261003/`; no publicar sus ajustes. La evidencia histórica del PC de casa que sigue abajo describe el estado anterior a esta instalación.
+
+## Requisito bilingüe añadido el 03-10-2026
+
+El usuario es bilingüe español/valenciano. La captura G0 no interpreta idiomas. En un incremento posterior, la transcripción deberá admitir español y valenciano y evaluar cambios de idioma entre turnos y dentro de una frase, conservando el idioma original. [Whisper enumera catalán como `ca`](https://github.com/openai/whisper/blob/main/whisper/tokenizer.py), pero eso no valida la precisión para el valenciano del usuario ni frases mixtas. El asistente Android actual fuerza `es` en `AndroidSpeechEngines.kt`; no afirmar que ya admite ambos idiomas automáticamente. Planificar pruebas guiadas sin grabar audio por defecto, después de superar G0/G1. Mantener la abstención silenciosa ante contenido incomprensible, sin avisos repetidos ni interrupciones.
+
+## Pruebas reales desde el trabajo (03-10-2026)
+
+- Referencia con ensayo OFF: el usuario confirmó que el asistente respondió al preguntarle si le escucha. Tras un mensaje inicial «Voice control stopped», lo atribuyó a un arranque en frío y confirmó funcionamiento. Registro técnico: evento wakeword recibido; 78 paquetes decodificados, 3,9 s de audio, sin pérdidas/duplicados/errores y hueco máximo 73 ms. Sin grabar audio. No atribuir el mensaje inicial a una causa demostrada.
+- Captura ON y las demás pruebas de coexistencia/recursos: pendientes. No dar G0/G1 por superadas por una respuesta normal con el ensayo OFF.
 
 ## Lo implementado
 
