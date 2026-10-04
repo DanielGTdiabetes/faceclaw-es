@@ -299,7 +299,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   get localTranscriptionLabel(): string {
     const state = dashboardController.conversationDetector.snapshot().transcription;
     const language = dashboardController.conversationDetector.snapshot().languageMode;
-    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${state.status} · se borra al parar o ceder audio.` : "";
+    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${state.status} · puede equivocarse con ruido. Se borra al parar.` : "";
   }
   get localTranscriptionButton(): string {
     const model = asrModelState("whisper-base-es");
@@ -322,9 +322,17 @@ export class MainViewModel extends RemoteControlsViewModel {
     const detector = dashboardController.conversationDetector;
     const profile = detector.hasOwnProfile();
     const ownAction = profile ? "Borrar mi perfil" : "Crear mi perfil";
+    const textAction = this.conversationTextButton;
+    const languageAction = this.conversationLanguageButton;
+    const diagnosticsAction = this.conversationDiagnosticsButton;
     const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
-      actions: [ownAction, "Solo transcripción", "Solo actividad de voz", "Métricas tras OFF"] });
+      actions: [textAction, languageAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
+        "Métricas tras OFF", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
+    if (choice === textAction) { this.onConversationTextTap(); return; }
+    if (choice === languageAction) { this.onConversationLanguageTap(); return; }
+    if (choice === diagnosticsAction) { this.onConversationDiagnosticsTap(); return; }
+    if (choice === "Mi perfil") { this.onVoiceProfileTap(); return; }
     if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
     if (choice === "Solo transcripción") { this.onLocalTranscriptionTap(); return; }
     if (choice === "Solo actividad de voz") { dashboardController.setConversationCaptureEnabled(true); return; }

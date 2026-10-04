@@ -8,7 +8,7 @@ export function textLanguageLabel(language: TextLanguage | undefined): string {
 
 /** Session-only choices. Readiness checks never download weights or replace a profile. */
 export function conversationStartPlan(snapshot: DetectorSnapshot, profile: string,
-  voiceModel: string, textModel: string, withText: boolean, language: TextLanguage = "auto") {
+  voiceModel: string, textModel: string, withText: boolean, language: TextLanguage = "es") {
   const mode = profile === "guardado" ? "conversation" as const : "off" as const;
   const base = { transcribe: withText, mode };
   const blocked = (button: string, hint: string) => ({ ...base, canStart: false, button, hint });
@@ -27,7 +27,7 @@ export function conversationStartPlan(snapshot: DetectorSnapshot, profile: strin
   }
   return { ...base, canStart: true, button: "Iniciar conversación local (2 min máx.)",
     hint: mode === "conversation"
-      ? `Mi perfil guardado · comparación y alternancia provisionales · ${withText ? `texto local ${textLanguageLabel(language)}` : "sin transcripción"}.`
+      ? `Mi perfil guardado · ${withText ? `texto local ${textLanguageLabel(language)} de todas las voces, sin filtro por perfil` : "comparación provisional sin transcripción"}.`
       : `${withText ? `Texto local ${textLanguageLabel(language)}` : "Solo actividad de voz"} · sin perfil no se evalúa participación.` };
 }
 
@@ -44,7 +44,7 @@ export function conversationDetail(snapshot: DetectorSnapshot, hint: string, inc
     return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.${time}`;
   }
   if (snapshot.participationMode === "conversation" && snapshot.state === "escuchando") {
-    return `${snapshot.participation?.voice ?? "insuficiente"} · ${snapshot.participation?.participation ?? "evidencia insuficiente"}\nIndicios provisionales; no confirman participación ni voz en vivo.${time}`;
+    return `${snapshot.transcription?.enabled ? `Texto ${textLanguageLabel(snapshot.languageMode)} · todas las voces. Espera unos 6 s para el primer texto.` : "Comparación local de voz."}\n${snapshot.participation?.participation ?? "evidencia insuficiente"} · indicio provisional.${time}`;
   }
   return `${snapshot.reason}${time}`;
 }

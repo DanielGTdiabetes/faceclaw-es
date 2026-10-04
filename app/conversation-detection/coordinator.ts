@@ -137,7 +137,7 @@ export class ConversationCaptureCoordinator {
     this.vad = new LocalEnergyVad();
     this.lastDiagnostics = "";
     this.gapCounted = false;
-    this.language = this.transcribing ? (options.language === "es" ? "es" : "auto") : null;
+    this.language = this.transcribing ? (options.language === "auto" ? "auto" : "es") : null;
     this.phases = options.diagnostics ? new PhaseDiagnostics(() => this.host.now()) : null;
     this.vad.setObserver(this.phases);
     if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment")) {

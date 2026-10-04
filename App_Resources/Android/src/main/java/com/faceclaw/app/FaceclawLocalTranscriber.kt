@@ -56,7 +56,7 @@ class FaceclawLocalTranscriber(context: Context) {
     })
     fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)
     /** "es" forces Spanish for this session only; anything else keeps automatic detection. */
-    fun start(language: String): Boolean = session.start(LocalTranscriptLanguage.fromWire(language))
+    fun start(language: String): Boolean = session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS)
     fun setPhase(phase: Int) = session.setPhase(phase)
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()

@@ -20,6 +20,8 @@ export type LocalTranscriptionSnapshot = {
   accepted: number; abstentions: number; dropped: number;
   /** Aggregate RAM-only diagnostics; no transcript, per-segment timeline or confidence. */
   analysis?: {
+    /** Windows include overlap, so decodedAudioMs can exceed unique PCM time. */
+    segmentation?: "vad" | "windows"; constantWindows?: number;
     pcmAudioMs: number; loadingAudioMs: number;
     silenceClosures: number; limitClosures: number; shortSegments: number;
     interruptedSegments: number; interruptedAudioMs: number; submittedAudioMs: number;

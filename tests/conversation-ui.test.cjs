@@ -47,7 +47,7 @@ test('candidate evidence remains provisional and waiting time counts towards the
     participation: { voice: 'compatible con mi perfil', participation: 'conversación candidata' } };
   const detail = conversationDetail(candidate, '');
   assert.match(detail, /conversación candidata/);
-  assert.match(detail, /no confirman participación ni voz en vivo/);
+  assert.match(detail, /indicio provisional/);
   assert.match(detail, /2 s restantes/);
   const suspended = conversationDetail({ ...candidate, state: 'suspendido', reason: 'Audio cedido al asistente' }, '');
   assert.match(suspended, /Audio cedido/);

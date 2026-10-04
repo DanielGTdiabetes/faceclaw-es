@@ -35,7 +35,8 @@ export class LocalConversationLayer implements Layer {
     let y = inset + lineStep(titleFont) + 4;
     const profile = this.session.detector.ownProfileState();
     image.drawText(font, inset, y, truncateText(font,
-      `Mi perfil: ${profile} · Texto: ${(snapshot.enabled ? snapshot.transcription?.enabled : conversationTextSelected()) ? "ON" : "OFF"}`, available), 180);
+      `Perfil: ${profile} · Texto: ${(snapshot.enabled ? snapshot.transcription?.enabled : conversationTextSelected()) ?
+        ((snapshot.enabled ? snapshot.languageMode : conversationTextLanguage()) === "es" ? "castellano" : "auto") : "OFF"}`, available), 180);
     y += step;
     // The deadline has its own line below; the detail must not repeat it.
     const detail = conversationDetail(snapshot, plan.hint, false);
@@ -55,7 +56,7 @@ export class LocalConversationLayer implements Layer {
       ? this.session.detector.transcriptText() : "";
     const emptyText = !snapshot.enabled ? "Abrir esta app mantiene la captura OFF."
       : !snapshot.transcription?.enabled ? "Sin transcripción · comparación local provisional"
-      : snapshot.state === "escuchando" ? "Texto temporal · esperando voz aprovechable" : "Texto borrado mientras la captura está suspendida.";
+      : snapshot.state === "escuchando" ? "Escuchando todas las voces · primer texto en unos 6 s" : "Texto borrado mientras la captura está suspendida.";
     const textLines = wrapText(font, text || emptyText, available);
     const count = Math.max(0, Math.floor((footerY - y - 4) / step));
     this.scrollBack = Math.min(this.scrollBack, Math.max(0, textLines.length - count));
@@ -66,7 +67,7 @@ export class LocalConversationLayer implements Layer {
     image.drawText(font, inset, footerY, truncateText(font,
       snapshot.enabled ? "Toque: OFF · doble toque: OFF y salir" : `Toque: ${plan.canStart ? "iniciar (2 min)" : plan.button} · doble: salir`, available), 220);
     image.drawText(font, inset, footerY + step, truncateText(font,
-      "Menú: texto ON/OFF · rueda: texto · indicios provisionales", available), 140);
+      "Rueda: texto · provisional; puede errar con ruido", available), 140);
     return image;
   }
 
@@ -103,7 +104,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
         else if (!session.detector.snapshot().enabled) toggleLensConversation(session);
       } },
       { label: `Texto local: ${textShown ? "ON" : "OFF"}${stopping ? " · sesión en curso" : ""}`,
-        description: `Cambiar solo en OFF. Texto temporal ${textLanguageLabel(conversationTextLanguage())}, sin envío al asistente.`,
+        description: `Cambiar solo en OFF. Texto temporal ${textLanguageLabel(stopping ? opened.languageMode : conversationTextLanguage())}, sin envío al asistente.`,
         onSelect: (ctx) => { ctx.stack.pop(); if (!stopping) setConversationTextSelected(!conversationTextSelected()); } },
       { label: "Detener (OFF)", onSelect: (ctx) => { ctx.stack.pop(); session.setEnabled(false); } },
       ];

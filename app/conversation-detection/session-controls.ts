@@ -13,8 +13,8 @@ export type ConversationSessionPort = {
 /** One RAM-only choice shared by the phone and lenses. Binding never starts audio. */
 let port: ConversationSessionPort | null = null;
 let withText = true;
-/** C1: default automatic language and diagnostics off. RAM only, never written to settings. */
-let textLanguage: TextLanguage = "auto";
+/** Spanish-first product default, including after process restart. RAM only; assistant settings unchanged. */
+let textLanguage: TextLanguage = "es";
 let diagnostics = false;
 const listeners = new Set<() => void>();
 

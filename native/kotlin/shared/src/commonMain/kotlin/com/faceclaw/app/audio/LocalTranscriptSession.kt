@@ -8,6 +8,9 @@ enum class LocalTranscriptLanguage(val wire: String) {
     }
 }
 
+/** ASR can consume the whole stream; participation/enrollment retain their separate VAD buffer. */
+enum class LocalTranscriptSegmentation(val wire: String) { VAD("vad"), WINDOWS("windows") }
+
 /** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
 data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false)
 interface LocalTranscriptDecoder {
@@ -51,6 +54,20 @@ fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
 fun acceptedLocalText(result: LocalDecodedText): String =
     if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
 
+/** Remove only a matching suffix/prefix of >=2 whole words from adjacent overlapping windows. */
+fun localWindowNovelText(previous: String, current: String): String {
+    val words = Regex("\\S+")
+    val before = words.findAll(previous).map { it.value.trim { c -> !c.isLetterOrDigit() }.lowercase() }.toList()
+    val after = words.findAll(current).toList()
+    for (size in minOf(12, before.size, after.size) downTo 2) {
+        val prefix = after.take(size).map { it.value.trim { c -> !c.isLetterOrDigit() }.lowercase() }
+        if (prefix.all { it.isNotEmpty() } && before.takeLast(size) == prefix) {
+            return current.substring(after[size - 1].range.last + 1).trimStart()
+        }
+    }
+    return current
+}
+
 /**
  * Diagnostic phases are user marks, not speaker identification. Indices 0..4 are marks and 5 is a
  * segment whose samples (including pre-roll) came from more than one mark.
@@ -73,6 +90,8 @@ class LocalTranscriptBuffer(
         const val PRE_SAMPLES = 16000 / 5
         const val MIN_VOICED_SAMPLES = 16000 * 3 / 10
         const val CHUNK_SAMPLES = 800
+        const val WINDOW_SAMPLES = 16000 * 6
+        const val OVERLAP_SAMPLES = 16000
     }
     private val samples = ShortArray(MAX_SAMPLES)
     private val pre = ShortArray(PRE_SAMPLES)
@@ -83,6 +102,9 @@ class LocalTranscriptBuffer(
     private var count = 0
     private var voiced = 0
     private var active = false
+    private var segmentation = LocalTranscriptSegmentation.VAD
+    private val windowPhases = IntArray(WINDOW_SAMPLES / CHUNK_SAMPLES)
+    private var constantWindows = 0
     private var silenceClosures = 0
     private var limitClosures = 0
     private var shortSegments = 0
@@ -107,8 +129,9 @@ class LocalTranscriptBuffer(
         clearAudio()
     }
 
-    fun resetMetrics() {
+    fun resetMetrics(mode: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD) {
         clearAudio()
+        segmentation = mode; constantWindows = 0
         silenceClosures = 0; limitClosures = 0; shortSegments = 0
         interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0
         for (array in listOf(phaseSilence, phaseLimit, phaseShort, phaseInterrupted,
@@ -118,7 +141,8 @@ class LocalTranscriptBuffer(
     /** Duration is PCM sample time, not wall time or confirmed speech. */
     fun diagnostics(): String = "\"silenceClosures\":$silenceClosures,\"limitClosures\":$limitClosures," +
         "\"shortSegments\":$shortSegments,\"interruptedSegments\":$interruptedSegments," +
-        "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}"
+        "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}," +
+        "\"segmentation\":\"${segmentation.wire}\",\"constantWindows\":$constantWindows"
 
     /** Same segment counters attributed to the origin phase of each segment. */
     fun phaseDiagnostics(phase: Int): String = "\"silenceClosures\":${phaseSilence[phase]}," +
@@ -133,6 +157,7 @@ class LocalTranscriptBuffer(
 
     private fun clearAudio() {
         samples.fill(0); pre.fill(0); prePhases.fill(0); segmentSamplesByPhase.fill(0)
+        windowPhases.fill(0)
         count = 0; voiced = 0; preCount = 0; preWrite = 0; active = false
     }
 
@@ -158,6 +183,10 @@ class LocalTranscriptBuffer(
 
     fun accept(pcm: ByteArray, state: String, phase: Int = 0) {
         if (pcm.size != 1600) { reset(); return }
+        if (segmentation == LocalTranscriptSegmentation.WINDOWS) {
+            acceptWindow(pcm, phase.coerceIn(0, LocalTranscriptPhases.MARKED - 1))
+            return
+        }
         if (state != "posible voz" && state != "pausa" && state != "sin actividad" && state != "candidato") {
             reset(); return
         }
@@ -184,6 +213,38 @@ class LocalTranscriptBuffer(
             if (count == MAX_SAMPLES) finish(atLimit = true)
         }
         if (active && state == "sin actividad") finish(atLimit = false)
+    }
+
+    /**
+     * Every valid chunk reaches a six-second window, regardless of VAD or speaker identity.
+     * One second of overlap protects words at boundaries. Only a perfectly constant signal
+     * (digital silence/DC, including stuck saturation) is skipped: this is NOT a speech detector.
+     * Noise can still hallucinate in Whisper. This text never supplies participation evidence.
+     */
+    private fun acceptWindow(pcm: ByteArray, origin: Int) {
+        active = true
+        windowPhases[count / CHUNK_SAMPLES] = origin
+        repeat(CHUNK_SAMPLES) { i ->
+            samples[count++] = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
+        }
+        segmentSamplesByPhase[origin] += CHUNK_SAMPLES.toLong()
+        if (count < WINDOW_SAMPLES) return
+        val phase = closePhase()
+        limitClosures++; phaseLimit[phase]++
+        val varying = (1 until count).any { samples[it] != samples[0] }
+        val audio = if (varying) samples.copyOf(count) else null
+        if (audio == null) constantWindows++
+        else { submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong() }
+        // Keep only the overlap; no second PCM queue or unbounded conversation history.
+        samples.copyInto(samples, 0, WINDOW_SAMPLES - OVERLAP_SAMPLES, WINDOW_SAMPLES)
+        samples.fill(0, OVERLAP_SAMPLES)
+        val overlapChunks = OVERLAP_SAMPLES / CHUNK_SAMPLES
+        windowPhases.copyInto(windowPhases, 0, windowPhases.size - overlapChunks, windowPhases.size)
+        windowPhases.fill(0, overlapChunks)
+        segmentSamplesByPhase.fill(0)
+        repeat(overlapChunks) { segmentSamplesByPhase[windowPhases[it]] += CHUNK_SAMPLES.toLong() }
+        count = OVERLAP_SAMPLES
+        if (audio != null) { segmentPhase(phase); submit(audio) }
     }
 
     private fun finish(atLimit: Boolean) {
@@ -213,8 +274,8 @@ class LocalTranscriptSession(
         var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
         var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
     }
-    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int)
-    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int)
+    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int, val endChunk: Long)
+    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long)
     private val condition = platform.createCondition()
     private var running = false
     private var worker = false
@@ -226,6 +287,9 @@ class LocalTranscriptSession(
     private var busy = false
     private var activeInputBytes = 0
     private var result: Result? = null
+    private var lastDelivered: Result? = null
+    private var inputChunks = 0L
+    private var windowed = false
     private var phase = 0
     private var pendingSegmentPhase = 0
     private var languageMode = LocalTranscriptLanguage.AUTO
@@ -234,19 +298,21 @@ class LocalTranscriptSession(
     private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it }) { audio ->
         // Called under condition by acceptPcm; do not acquire its non-reentrant lock again.
         if (!running || !ready || busy) { audio.fill(0); stats[pendingSegmentPhase].dropped++ }
-        else { job = Job(generation, audio, pendingSegmentPhase); busy = true; condition.signalAll() }
+        else { job = Job(generation, audio, pendingSegmentPhase, inputChunks); busy = true; condition.signalAll() }
     }
 
     fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
 
     /** The language is captured only by an accepted start and handed to that worker as an immutable value. */
-    fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO): Boolean {
+    fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO,
+        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD): Boolean {
         condition.withLock {
             if (worker) return false // A non-interruptible previous JNI call must drain first.
             running = true; worker = true; ready = false; generation++
             deadline = platform.elapsedRealtimeMs() + 120000
             status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
-            buffer.resetMetrics()
+            buffer.resetMetrics(segmentation)
+            inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
         }
         val config = language
@@ -261,7 +327,7 @@ class LocalTranscriptSession(
 
     fun resetStream() {
         condition.withLock {
-            generation++; buffer.reset(); discardPendingResult()
+            generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             condition.signalAll()
@@ -271,7 +337,7 @@ class LocalTranscriptSession(
     /** Non-blocking. In-flight JNI decoding is invalidated and releases its stream on return. */
     fun stop() {
         condition.withLock {
-            running = false; ready = false; generation++; buffer.reset(); discardPendingResult()
+            running = false; ready = false; generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             status = "inactivo"; condition.signalAll()
@@ -282,7 +348,7 @@ class LocalTranscriptSession(
         condition.withLock {
             if (running && pcm != null && platform.elapsedRealtimeMs() < deadline) {
                 if (pcm.size == 1600) { stats[phase].pcmChunks++; if (!ready) stats[phase].loadingChunks++ }
-                if (ready) buffer.accept(pcm, vadState, phase)
+                if (ready) { if (pcm.size == 1600) inputChunks++; buffer.accept(pcm, vadState, phase) }
             }
         }
     }
@@ -333,7 +399,7 @@ class LocalTranscriptSession(
         while (running && job == null && platform.elapsedRealtimeMs() < deadline) condition.awaitMs(250)
         if (platform.elapsedRealtimeMs() >= deadline) {
             running = false; ready = false; status = "inactivo"
-            buffer.reset(); discardPendingResult(); job?.audio?.fill(0)
+            buffer.reset(); discardPendingResult(); lastDelivered = null; job?.audio?.fill(0)
         }
         val next = if (running) job else null
         job = null
@@ -401,7 +467,7 @@ class LocalTranscriptSession(
                                 s.accepted++
                                 // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
                                 discardPendingResult()
-                                result = Result(next.generation, text, decoded!!.language, next.phase)
+                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk)
                                 true
                             }
                         }
@@ -426,7 +492,7 @@ class LocalTranscriptSession(
         } finally {
             try { decoder?.release() } catch (_: Throwable) { /* no content in diagnostics */ }
             condition.withLock {
-                buffer.reset(); job?.audio?.fill(0); job = null; discardPendingResult()
+                buffer.reset(); job?.audio?.fill(0); job = null; discardPendingResult(); lastDelivered = null
                 activeInputBytes = 0; busy = false; ready = false; running = false; worker = false
             }
         }
@@ -441,9 +507,16 @@ class LocalTranscriptSession(
                     result = null
                     val target = listener
                     if (running && generation == token && platform.elapsedRealtimeMs() < deadline && target != null) {
+                        val previous = lastDelivered
+                        val text = if (windowed && previous?.generation == current.generation &&
+                            current.endChunk - previous.endChunk ==
+                            (LocalTranscriptBuffer.WINDOW_SAMPLES - LocalTranscriptBuffer.OVERLAP_SAMPLES) / LocalTranscriptBuffer.CHUNK_SAMPLES.toLong())
+                            localWindowNovelText(previous.text, current.text) else current.text
+                        lastDelivered = current
+                        if (text.isEmpty()) return@withLock null
                         stats[current.phase].delivered++
-                        stats[current.phase].deliveredChars += current.text.length.toLong()
-                        Pair(target, current)
+                        stats[current.phase].deliveredChars += text.length.toLong()
+                        Pair(target, current.copy(text = text))
                     } else {
                         // Invalid publication or consumption without a listener is never a delivery.
                         stats[current.phase].deliveryDiscarded++

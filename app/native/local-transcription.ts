@@ -12,7 +12,8 @@ export class LocalTranscription implements DetectorTranscription {
   private lines: string[] = [];
   private status = "inactivo";
 
-  start(language: TextLanguage = "auto"): boolean {
+  start(language: TextLanguage = "es"): boolean {
+    if (this.enabled) return false;
     this.lines = [];
     if (!global.isAndroid || !isAsrModelReady("whisper-base-es")) {
       this.status = "modelo no disponible";

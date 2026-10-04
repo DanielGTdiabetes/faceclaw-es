@@ -165,7 +165,7 @@ test('N4: language selector only changes while OFF, is frozen per session and te
   const transcription = transcriptPort();
   const h = harness(transcription);
   controls.bindConversationSession({ detector: h.detector, setEnabled: () => {}, voiceModel: () => 'ready', textModel: () => 'ready' });
-  assert.equal(controls.conversationTextLanguage(), 'auto');
+  assert.equal(controls.conversationTextLanguage(), 'es');
   assert.equal(controls.conversationDiagnosticsSelected(), false);
   controls.setConversationTextLanguage('es');
   assert.deepEqual(controls.conversationSessionOptions(), { language: 'es', diagnostics: false });
@@ -188,7 +188,7 @@ test('N4: language selector only changes while OFF, is frozen per session and te
   assert.equal(h.detector.markPhase('yo'), false);
   h.detector.setEnabled(false);
   await h.on(true);
-  assert.ok(transcription.events.includes('start:auto'), 'default start keeps automatic language');
+  assert.ok(transcription.events.includes('start:es'), 'default start uses Spanish');
   h.detector.setEnabled(false);
 });
 
