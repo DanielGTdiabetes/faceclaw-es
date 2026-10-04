@@ -40,3 +40,16 @@ El log de la prueba ya no estaba disponible: el búfer `main` del Pixel empezaba
 Frente a G3.4.1: siete bibliotecas nativas y `assets/app/package.json` idénticos, bundle distinto. Antes de instalar: `Wake Locks: size=0`. Preferencias privadas en `.tools/g3.4.2-private/` (ACL usuario/SYSTEM): **33 antes, 33 después, idénticas**, incluidos Hermes y bloqueo. `adb install -r` → `Success`, sin desinstalar ni borrar datos. Instalada `0.8.2-es.5-conversation.g3.4.2`/805. Perfil sin tocar.
 
 Pendiente de este bloque: copia NAS de G3.4.2 y resultado del ensayo (secciones siguientes).
+
+## Resultado del ensayo guiado G3.4.2 (04-10-2026)
+
+El usuario hizo el ensayo e informó «OFF» y que **la voz del otro interlocutor no aparece en pantalla**. Con OFF confirmado por el usuario y por la UI, Claude abrió «Opciones → Métricas tras OFF» por ADB (solo lectura, sin tocar Iniciar). Se leyeron únicamente contadores agregados, sin texto ni audio. Copia privada en `.tools/g3.4.2-private/ui-metrics.xml`.
+
+- **Captura continua, sin cortes:** 1482 chunks / 74,1 s de PCM, `starts=1`, `preemptions=0`, hueco máximo 89 ms. Nativo: 0 pérdidas, duplicados, paquetes malformados, descartes de cola y `pcmDeliveryDrops`. Cierre `manual` (doble toque), no por error ni plazo. La sesión no se desconectó, aunque no hay confirmación visual de que la pantalla se mantuviera encendida.
+- **VAD:** 17 episodios completados, 29,84 s de posible voz. El detector de energía sí se activó durante el ensayo (~30 s de habla prevista entre las dos fases): **el VAD no parece el cuello de botella**.
+- **Texto local:** 14 decodificaciones sobre 46,05 s de audio enviado. **9 entregadas** (idioma `es`), **4 rechazadas por idioma** (Whisper detectó un idioma distinto de es/ca: `languageOther=4`, `rejectedLanguage=4`), 1 invalidada, 3 segmentos cortos y 0 vacíos o rechazados por estructura. Decodificación total 9,7 s, máximo 1,08 s.
+- **Comparación de perfil:** 10 comparaciones, 4 abstenciones, estado final «insuficiente».
+
+**Interpretación (probable, no verificada por segmento):** los contadores no guardan qué segmento corresponde a quién, a propósito. Aun así, el usuario vio su propio texto y no el del interlocutor, y el único descarte significativo son 4 de 14 segmentos rechazados por idioma. Lo más probable es que Whisper, con detección automática por segmento, identifique la voz lejana y atenuada del interlocutor como otro idioma y `localTextRejection` la descarte. La hipótesis del VAD queda débil. El perfil no interviene en el filtrado.
+
+**Propuesta G4 (justificada por este error, no implementada):** cuando la detección automática devuelva un idioma distinto de es/ca, redecodificar ese segmento forzando `es` (Whisper multilingüe de sherpa-onnx admite idioma fijo) y aceptar solo si supera las comprobaciones estructurales actuales. Se conserva la detección automática para el valenciano. Coste: una decodificación extra por segmento rechazado (~1 s en el peor caso observado). Riesgo: alucinaciones con TV/ruido etiquetado como otro idioma. Requiere cambio Kotlin (`LocalTranscriptSession`/`FaceclawLocalTranscriber`), recompilar el AAR, pruebas Kotlin y un ensayo breve con métricas que muestre `rejectedLanguage` bajando y texto del interlocutor visible.
