@@ -23,7 +23,8 @@
             <Label text="{{ conversationDetectorLabel }}" textWrap="true" tap="{{ onConversationDetectorMetricsTap }}" />
             <Label text="{{ conversationDetectorDetail }}" textWrap="true" fontSize="11" />
             <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
-            <Button text="Mi perfil · asistente de creación" tap="{{ onVoiceProfileTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="{{ voiceProfileButton }}" tap="{{ onVoiceProfileTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="{{ conversationTextButton }}" tap="{{ onConversationTextTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
             <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
             <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
             <Label text="{{ localTranscript }}" textWrap="true" maxLines="4" fontSize="13" />

@@ -1,5 +1,11 @@
 # G3 integrado — 04-10-2026
 
+## Estado posterior: perfil guardado; G3.3 preparada, no instalada
+
+El usuario completó el asistente G3.2. La comprobación posterior observó «Conversación local · OFF», «OFF · Mi perfil se ha guardado localmente. Ya puedes iniciar conversación» y «Mi perfil: guardado en este móvil», con cero wakelocks experimentales. **Prevalece sobre «sin perfil»/registro pendiente de las instantáneas inferiores.** No repetir registro, exportar el vector ni respaldarlo en NAS. Guardado no acredita precisión de comparación/participación.
+
+[Continuación G3.3](conversation-detection-g3.3-usage.md): texto realmente opcional con el perfil existente, espera de ambos motores antes de capturar, error→OFF, causa del cierre/tiempo restante y drenaje visible.42Node específicas/TypeScript/lint/XML/webpack/build offline/lintVital correctos. APK código805/firma original preparada; **NO instalada** conforme a la indicación del usuario. Pixel conectado y G3.2 comprobada; hoy sin UI/captura/modelos/ensayo/ajustes nuevos. Incidencias históricas abiertas; sin app propia ni texto en lentes todavía. Próximo avance desde este estado, sin reevaluar ni recrear el perfil.
+
 ## G3.2 instalada: asistente visual para crear Mi perfil
 
 El usuario pide saber si existe el perfil y recibir instrucciones claras, frases para leer y guía durante el registro. La consulta previa en G3.1 desde OFF mostraba modelo listo y siguiente paso Crear mi perfil; ese aviso no acredita un perfil guardado. G3.2 añade una consulta nativa de existencia del archivo comprometido que distingue guardado, sin perfil y error de consulta. La presencia del archivo no valida aún compatibilidad criptográfica ni precisión; la carga completa se comprueba al activar la comparación.
@@ -64,4 +70,4 @@ Se conserva valoración anterior del ASR: casi perfecto en el único ensayo guia
 
 ## Próximo paso concreto
 
-Instalación y conservación completadas según actualización superior. Pendiente respuesta al flujo opcional Mi perfil, con OFF confirmado. No consultar UI mediante herramientas durante ON. El perfil se crea únicamente si el usuario elige el flujo informado en la app; ningún enrolamiento automático ni envío de audio. Cerrar siempre OFF. El ensayo de continuidad100s sigue aplazado y no es requisito.
+Perfil propio ya guardado según la comprobación posterior superior. No repetir registro. G3.3 preparada y no instalada: continuar desde [el avance de uso integrado](conversation-detection-g3.3-usage.md), respetando la indicación de no reinstalar. Corregir incidencias reales de uso; no reiniciar evaluación ni imponer ensayos. No consultar UI durante ON; cerrar siempre OFF si hay ensayo. La continuidad100s sigue aplazada y no es requisito.

@@ -70,6 +70,15 @@ test('profile comparison is optional and enrollment never starts ASR', async () 
   h.detector.setEnabled(false);
 });
 
+test('comparison without text needs no ASR engine and reports its actual mode', async () => {
+  const h = harness({ participation: participationPort() });
+  await h.on(false, 'conversation'); h.leases[0].pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+  assert.equal(h.detector.snapshot().transcription, undefined);
+  assert.match(h.detector.snapshot().reason, /sin transcripción/);
+  h.detector.setEnabled(false);
+});
+
 test('voice model loads before capture and a missing compatible profile fails closed', async () => {
   const participation = participationPort(); participation.state.status = 'cargando';
   const h = harness({ participation }); await h.on(false, 'conversation');
@@ -252,7 +261,46 @@ test('normal owner preemption retires the tap and waits for explicit activity to
 test('two-minute limit leaves OFF even if all time was spent suspended', async () => {
   const h = harness(); h.env({ available: false }); await h.on(); h.tick(120000);
   assert.equal(h.detector.snapshot().state, 'desactivado');
+  assert.equal(h.detector.snapshot().stopReason, 'expired');
+  assert.match(h.detector.snapshot().reason, /Tiempo agotado/);
   assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+});
+
+test('failure leaves OFF automatically, erases text and permits an explicit new start', async () => {
+  const transcription = transcriptPort(), participation = participationPort();
+  const h = harness({ transcription, participation }); await h.on(true, 'conversation');
+  h.leases[0].pcm(new Uint8Array(1600)); h.leases[0].failed();
+  const failed = h.detector.snapshot();
+  assert.equal(failed.enabled, false);
+  assert.equal(failed.state, 'error');
+  assert.equal(failed.stopReason, 'error');
+  assert.equal(failed.participationMode, 'off');
+  assert.equal(h.detector.transcriptText(), '');
+  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+  h.detector.acceptNativePcm({});
+  assert.equal(participation.events.some(e => e.startsWith('pcm:')), false);
+  await h.on(true, 'conversation');
+  assert.equal(h.detector.snapshot().enabled, true);
+  assert.equal(h.detector.snapshot().stopReason, 'none');
+  assert.equal(h.counts().starts, 2);
+  h.detector.setEnabled(false);
+  assert.equal(h.detector.snapshot().stopReason, 'manual');
+});
+
+test('integrated capture waits for both local engines instead of losing initial ASR input', async () => {
+  const transcription = transcriptPort();
+  const snapshot = transcription.snapshot;
+  let loading = true;
+  transcription.snapshot = () => ({ ...snapshot(), status: loading ? 'cargando' : 'listo' });
+  const h = harness({ transcription, participation: participationPort() });
+  await h.on(true, 'conversation');
+  assert.equal(h.counts().starts, 0);
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  assert.match(h.detector.snapshot().reason, /Preparando texto local/);
+  loading = false; h.tick(); await Promise.resolve();
+  assert.equal(h.counts().starts, 1);
+  assert.equal(h.detector.snapshot().remainingMs, 119500);
+  h.detector.setEnabled(false);
 });
 
 function energyChunk() {

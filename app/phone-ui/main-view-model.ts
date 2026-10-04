@@ -27,8 +27,9 @@ import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
-import { micModelState, onMicModelStateChanged, startMicModelDownload } from "../apps/microphones/mic-models";
+import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
+import { conversationDetail, conversationStartPlan } from "../conversation-detection/conversation-ui";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -69,6 +70,8 @@ export class MainViewModel extends RemoteControlsViewModel {
   private _previewMode = false;
   private _evenHubPhoneUi: PhoneUiButton | null = null;
   private _phase: "disconnected" | "connecting" | "connected" | "charging" | "disconnecting" = "disconnected";
+  private conversationWithText = true; // RAM only: preserves the existing 33 settings.
+  private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   // A new view model is built on every navigation to the main page; these
   // module-level subscriptions must die with it (see dispose) or each
@@ -128,57 +131,75 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.syncBleBandwidthPolling();
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
     this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
-      this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
-      this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
-      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
-      this.notifyPropertyChange("localTranscript", this.localTranscript);
-      this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
-      this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
-      this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
-      this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
+      this.refreshConversationUi();
     }));
+    this.unsubscribers.push(() => {
+      if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
+      this.localCloseTimer = null;
+    });
     this.unsubscribers.push(onAsrModelStateChanged("whisper-base-es", () => {
       this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
-      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      this.refreshConversationUi();
     }));
     this.unsubscribers.push(onMicModelStateChanged((id) => {
       if (id !== "speaker-embedding") return;
-      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
-      this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
+      this.refreshConversationUi();
     }));
+  }
+
+  private refreshConversationUi(pollsLeft = 60): void {
+    if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
+    this.localCloseTimer = null;
+    this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
+    this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+    this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    this.notifyPropertyChange("localTranscript", this.localTranscript);
+    this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
+    this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+    this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
+    this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
+    this.notifyPropertyChange("voiceProfileButton", this.voiceProfileButton);
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const draining = snapshot.participation?.worker || snapshot.participation?.busy || snapshot.transcription?.worker || snapshot.transcription?.busy;
+    // UI-only polling after OFF: no audio, maximum 30 s, cancelled when the page unloads.
+    if (!snapshot.enabled && draining && pollsLeft > 0) {
+      this.localCloseTimer = setTimeout(() => this.refreshConversationUi(pollsLeft - 1), 500);
+    }
   }
 
   get conversationDetectorLabel(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
-    return `Conversación local · ${snapshot.enabled ? snapshot.state : "OFF"}`;
+    return `Conversación local · ${snapshot.enabled ? snapshot.state : snapshot.state === "error" ? "OFF · error" : "OFF"}`;
   }
 
   get conversationDetectorDetail(): string {
-    const snapshot = dashboardController.conversationDetector.snapshot();
-    if (snapshot.state === "error") return snapshot.reason;
-    if (!snapshot.enabled) return snapshot.reason.includes("perfil se ha guardado") ? snapshot.reason
-      : dashboardController.conversationDetector.hasOwnProfile() ? "Mi perfil guardado en este móvil · texto temporal es/valencià."
-      : "Texto temporal es/valencià. Mi perfil es opcional: sin él no se evalúa participación.";
-    if (snapshot.participationMode === "enrollment") {
-      const profile = snapshot.participation;
-      return `${snapshot.reason}\nMi perfil: ${profile?.status} · ${profile?.enrollmentSegments ?? 0}/3 frases · ${((profile?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.`;
-    }
-    return snapshot.participationMode === "conversation" && snapshot.state === "escuchando"
-      ? `${snapshot.participation?.voice} · ${snapshot.participation?.participation}\nIndicios provisionales; puede aceptar una voz reproducida.` : snapshot.reason;
+    return conversationDetail(dashboardController.conversationDetector.snapshot(), this.conversationPlan.hint);
+  }
+
+  private get conversationPlan() {
+    const detector = dashboardController.conversationDetector;
+    return conversationStartPlan(detector.snapshot(), detector.ownProfileState(),
+      micModelState("speaker-embedding").status, asrModelState("whisper-base-es").status, this.conversationWithText);
   }
 
   get conversationDetectorButton(): string {
-    const detector = dashboardController.conversationDetector;
-    if (detector.snapshot().enabled) return "Detener (OFF)";
-    const voice = micModelState("speaker-embedding");
-    if (voice.status === "downloading") return `Descargando modelo de mi voz: ${Math.floor(voice.bytesDownloaded * 100 / voice.totalBytes)} %`;
-    const asr = asrModelState("whisper-base-es");
-    if (asr.status === "downloading") return `Descargando transcripción: ${Math.floor(asr.bytesDownloaded * 100 / asr.totalBytes)} %`;
-    if (asr.status !== "ready") return "Descargar transcripción local (161 MB)";
-    if (detector.hasOwnProfile()) {
-      if (voice.status !== "ready") return "Descargar modelo de mi voz (29 MB)";
-    }
-    return "Iniciar conversación local (2 min máx.)";
+    return this.conversationPlan.button;
+  }
+
+  get conversationTextButton(): string {
+    return `Texto local opcional: ${this.conversationWithText ? "ON" : "OFF"} · tocar para cambiar`;
+  }
+
+  onConversationTextTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    this.conversationWithText = !this.conversationWithText;
+    this.notifyPropertyChange("conversationTextButton", this.conversationTextButton);
+    this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+  }
+
+  get voiceProfileButton(): string {
+    return dashboardController.conversationDetector.ownProfileState() === "guardado" ? "Mi perfil · guardado" : "Mi perfil · consultar / crear";
   }
 
   get voiceProfileSetupLabel(): string {
@@ -194,17 +215,13 @@ export class MainViewModel extends RemoteControlsViewModel {
   onConversationDetectorTap(): void {
     const detector = dashboardController.conversationDetector;
     if (detector.snapshot().enabled) { dashboardController.setConversationCaptureEnabled(false); return; }
-    if (micModelState("speaker-embedding").status === "downloading") return;
-    const asr = asrModelState("whisper-base-es");
-    if (asr.status !== "ready") {
-      if (asr.status !== "downloading") startAsrModelDownload("whisper-base-es");
+    this.refreshConversationUi();
+    const plan = this.conversationPlan;
+    if (!plan.canStart) {
+      void Dialogs.alert({ title: "Conversación local · OFF", message: plan.hint, okButtonText: "Cerrar" });
       return;
     }
-    const profile = detector.hasOwnProfile();
-    if (profile && micModelState("speaker-embedding").status !== "ready") {
-      startMicModelDownload("speaker-embedding"); return;
-    }
-    dashboardController.setConversationCaptureEnabled(true, true, profile ? "conversation" : "off");
+    dashboardController.setConversationCaptureEnabled(true, plan.transcribe, plan.mode);
   }
 
   onConversationDetectorMetricsTap(): void {

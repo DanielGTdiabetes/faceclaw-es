@@ -16,6 +16,8 @@ export type DetectorSnapshot = {
   participation?: LocalParticipationSnapshot;
   participationMode: ParticipationMode;
   enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
+  stopReason: "none" | "manual" | "expired" | "saved" | "error";
+  remainingMs: number;
 };
 export type DetectorLease = { stop(): void; diagnostics(): string };
 export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
@@ -51,6 +53,7 @@ export class ConversationCaptureCoordinator {
   private transcribing = false;
   private participationMode: ParticipationMode = "off";
   private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
+  private stopReason: DetectorSnapshot["stopReason"] = "none";
   private readonly listeners = new Set<(snapshot: DetectorSnapshot) => void>();
 
   constructor(private readonly host: DetectorHost) {}
@@ -59,6 +62,8 @@ export class ConversationCaptureCoordinator {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
       metrics: { ...this.metrics }, vad: this.vad.snapshot(), participationMode: this.participationMode,
       enrollmentOutcome: this.enrollmentOutcome,
+      stopReason: this.stopReason,
+      remainingMs: this.enabled ? Math.max(0, 120_000 - (this.host.now() - this.enabledAt)) : 0,
       resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
       ...(this.host.transcription ? { transcription: this.host.transcription.snapshot() } : {}),
       ...(this.host.participation ? { participation: this.host.participation.snapshot() } : {}) };
@@ -94,6 +99,7 @@ export class ConversationCaptureCoordinator {
     if (!enabled && this.participationMode === "enrollment" && this.enrollmentOutcome === "none") this.enrollmentOutcome = "canceled";
     if (enabled && participation === "enrollment") this.enrollmentOutcome = "none";
     this.enabled = enabled;
+    this.stopReason = enabled ? "none" : "manual";
     this.cleanup();
     this.transcribing = enabled && transcribe && participation !== "enrollment";
     this.participationMode = enabled ? participation : "off";
@@ -104,6 +110,7 @@ export class ConversationCaptureCoordinator {
       return;
     }
     this.metrics = emptyMetrics();
+    this.enabledAt = this.host.now();
     this.vad = new LocalEnergyVad();
     this.lastDiagnostics = "";
     if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment")) {
@@ -114,7 +121,6 @@ export class ConversationCaptureCoordinator {
       this.fail("Transcripción local no disponible. Revisa el modelo Whisper base local o espera al cierre anterior.");
       return;
     }
-    this.enabledAt = this.host.now();
     this.state = "suspendido";
     this.reason = "Preparando captura local. Ensayo limitado a 2 minutos.";
     this.cancelTimer = this.host.every(() => this.refresh(), 500);
@@ -126,14 +132,14 @@ export class ConversationCaptureCoordinator {
     if (!this.enabled || this.state === "error") return;
     const now = this.host.now();
     if (now - this.enabledAt >= 120_000) {
-      if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
-      this.setEnabled(false); return;
+      this.expire(); return;
     }
     if (this.participationMode !== "off") {
       const participation = this.host.participation?.snapshot();
       if (this.participationMode === "enrollment" && participation?.profileSaved) {
         this.enrollmentOutcome = "saved";
         this.setEnabled(false);
+        this.stopReason = "saved";
         this.reason = "OFF · Mi perfil se ha guardado localmente. Ya puedes iniciar conversación.";
         this.emit();
         return;
@@ -148,9 +154,17 @@ export class ConversationCaptureCoordinator {
         return;
       }
     }
-    if (this.transcribing && ["error", "modelo no disponible"].includes(this.host.transcription?.snapshot().status ?? "error")) {
-      this.fail("El motor local no está disponible. Sin envío ni alternativa en red; usa OFF para cerrar.");
-      return;
+    if (this.transcribing) {
+      const status = this.host.transcription?.snapshot().status ?? "error";
+      if (["error", "modelo no disponible"].includes(status)) {
+        this.fail("El motor de texto local no está disponible. Captura OFF, sin alternativa en red.");
+        return;
+      }
+      if (status === "cargando") {
+        this.reason = "Preparando texto local; captura todavía suspendida.";
+        this.emit();
+        return;
+      }
     }
     const env = this.host.environment();
     if (!env.available) {
@@ -164,7 +178,7 @@ export class ConversationCaptureCoordinator {
     if (this.lease) {
       if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
       if (now - (this.lastPcm || this.startedAt) > 2_000) {
-        this.fail("No llega PCM válido desde hace 2 s. Recursos liberados; usa OFF/ON para reintentar.");
+        this.fail("No llega PCM válido desde hace 2 s. Captura OFF; puedes reintentar cuando termine el cierre.");
       } else {
         this.emit();
       }
@@ -183,22 +197,22 @@ export class ConversationCaptureCoordinator {
       this.preparing = false;
       const current = this.host.environment();
       if (!current.available || current.session !== this.session) { this.refresh(); return; }
-      if (!ready) { this.fail("La sesión BLE no está lista. Usa OFF/ON para reintentar."); return; }
+      if (!ready) { this.fail("La sesión BLE no está lista. Captura OFF; puedes reintentar."); return; }
       this.startedAt = this.host.now();
       this.lastPcm = 0;
       const lease = this.host.acquire(
         (pcm) => this.accept(pcm, epoch),
         () => this.preempt(epoch),
-        () => { if (this.epoch === epoch) this.fail("La captura nativa falló. Usa OFF/ON para reintentar."); },
+        () => { if (this.epoch === epoch) this.fail("La captura nativa falló. Captura OFF; puedes reintentar."); },
       );
       // A synchronous failure/revocation during acquire cannot resurrect a lease.
       if (epoch !== this.epoch) { lease?.stop(); return; }
-      if (!lease) { this.fail("El audio no está libre. Recursos liberados; usa OFF/ON para reintentar."); return; }
+      if (!lease) { this.fail("El audio no está libre. Captura OFF; puedes reintentar."); return; }
       this.lease = lease;
       this.metrics.starts++;
       this.emit();
     }).catch(() => {
-      if (epoch === this.epoch) this.fail("No se pudo preparar el audio BLE. Usa OFF/ON para reintentar.");
+      if (epoch === this.epoch) this.fail("No se pudo preparar el audio BLE. Captura OFF; puedes reintentar.");
     });
   }
 
@@ -228,7 +242,7 @@ export class ConversationCaptureCoordinator {
     this.reason = this.participationMode === "enrollment"
       ? "Registro guiado: lee la frase visible cuando indique Habla ahora. OFF cancela."
       : this.participationMode === "conversation"
-      ? "Comparación de mi voz y turnos provisionales; texto local temporal."
+      ? `Comparación de mi voz y turnos provisionales; ${this.transcribing ? "texto local temporal" : "sin transcripción"}.`
       : this.transcribing
       ? "VAD y transcripción local provisionales. Sin grabación ni envío de audio; no confirma participación."
       : "VAD local por energía; posible voz no confirma participación. Sin grabación ni envío de audio.";
@@ -247,10 +261,17 @@ export class ConversationCaptureCoordinator {
   private expire(): void {
     if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
     this.setEnabled(false);
+    this.stopReason = "expired";
+    this.reason = "OFF · Tiempo agotado (2 min). La sesión ha terminado; puedes iniciar otra.";
+    this.emit();
   }
 
   private fail(reason: string): void {
     if (this.participationMode === "enrollment") this.enrollmentOutcome = "error";
+    this.enabled = false;
+    this.transcribing = false;
+    this.participationMode = "off";
+    this.stopReason = "error";
     this.cleanup();
     this.state = "error";
     this.reason = reason;
