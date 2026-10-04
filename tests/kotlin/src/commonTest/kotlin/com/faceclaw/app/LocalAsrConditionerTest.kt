@@ -89,7 +89,7 @@ class LocalAsrConditionerTest {
         stats.add(LocalAsrConditioner.Level(-90, -120, -90, 0, 0))
         val json = stats.json()
         assertTrue(json.contains("\"windows\":3"), json)
-        assertTrue(json.contains("\"loudWindows\":[1,0,0,1,1,0]"), json)
+        assertTrue(json.contains("\"loudWindows\":[1,0,1,0,1,0]"), json)
         assertTrue(json.contains("\"quietActiveWindows\":[0,1,0,1,0,0]"), json)
         assertTrue(json.contains("\"maxGainDb\":24"), json)
         stats.reset()

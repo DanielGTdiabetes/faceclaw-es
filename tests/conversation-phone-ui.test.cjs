@@ -23,7 +23,7 @@ function harness() {
       if (name === '@nativescript/core') return { Dialogs: { alert: data => alerts.push(data) } };
       if (name === '../g2/dashboard-controller') return { dashboardController: { conversationDetector: detector,
         setConversationCaptureEnabled: (...args) => starts.push(args) } };
-      if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), startAsrModelDownload: () => downloads++ };
+      if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), conversationTextModelStatus: () => textModel, preciseTextModelLabel: () => 'Modelo preciso (small): descargar 375 MB', startAsrModelDownload: () => downloads++ };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
       if (name === '../conversation-detection/session-controls') return {
