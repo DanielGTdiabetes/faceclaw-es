@@ -2,6 +2,12 @@
 
 Continuación desde el cierre `6244cf0`, sin reiniciar la evaluación G2. El usuario pidió completar el flujo integrado y corregir incidencias reales después, evitando pruebas físicas por cada componente. Hoy el móvil está desconectado; se avisó cuando la APK quedó lista. **G3 compilada y firmada, aún no instalada.** El último estado instalado comprobado sigue siendo G2.3, OFF, con GPS vigente y los 33 ajustes conservados.
 
+**Actualización posterior de este mismo día:** usuario conectó el móvil; **G3.0 instalada** con firma original y código805, `adb install-r`, 33 ajustes actuales idénticos antes/después. UI nueva «Conversación local · OFF», sin perfil al abrir, botón de inicio y Opciones visibles;0wakelocks activos. Código `0ba27ec` publicado. APKs, reversión, fuente y ajustes privados respaldados NAS600/checksums coincidentes. La descripción «aún no instalada» anterior conserva el momento de preparación y queda superada. Se guió al usuario para elegir opcionalmente Crear Mi perfil en la app y cerrar siempre OFF; pendiente su resultado. No consultar UI mientras pueda estar ON; no afirmar enrolamiento ni precisión G3 validados sin observación.
+
+Antes de instalar, la UI G2.3 mostraba OFF/inactivo,2220chunks/111s/gapUI98ms/1episodio/0cesiones y0wakelocks activos. Esa actividad previa no tiene protocolo ni cronología en esta sesión: no atribuirla a un ensayo nuestro ni generalizar resultados. No se leyó un modal de ASR nuevo ni se reinició la evaluación.
+
+Respaldo fresco previo: `dist/conversation-g0/before-install-20261004-034319.apk`, SHA256 `83cfa3616266fa70a352603abee3d4832737d0f49e1e72acd1d87564acdebb53`, coincide con G2.3. NAS `/volume1/home/Dani/Faceclaw/apk-backups/faceclaw-g2.3-before-g3.0-20261004-034319.apk`. APKs G3 en `apk-builds/conversation-g3.0/`; fuente `faceclaw-g3.0-source-0ba27ec.zip`; ajustes `.tools/g3.0-private/before.xml`/`after.xml` (ACL usuario/SYSTEM) y NAS `connection-backups/2026-10-04-g3.0/`700/archivos600. Se verificaron los seis checksums sin mostrar datos/hashes privados. **No se incluye el perfil propio en estos respaldos.**
+
 ## Cambio implementado
 
 La pantalla principal ofrece un inicio de conversación local y un OFF común. Sin perfil, conserva transcripción es/valencià y no evalúa participación. Con perfil propio compatible añade comparación de voz y alternancia temporal. Opciones permite crear/borrar Mi perfil, usar solo transcripción o actividad VAD y consultar agregados después de OFF. Texto temporal: últimas tres líneas/máximo600 caracteres por línea, borrado al parar, ceder audio o perder continuidad; no se atribuye el texto a una persona mediante resultados de otro trabajador.
@@ -34,4 +40,4 @@ Se conserva valoración anterior del ASR: casi perfecto en el único ensayo guia
 
 ## Próximo paso concreto
 
-Usuario avisado: conectar/desbloquear Pixel, Faceclaw OFF visible. Tras conexión: comprobar estado actual, respaldar APK y ajustes privados nuevos, actualizar con adb install-r y comparar todos los ajustes preservando Hermes/bloqueo/GPS. No consultar UI mediante herramientas durante ON. El perfil se crea únicamente si el usuario elige el flujo informado en la app; ningún enrolamiento automático ni envío de audio. Cerrar siempre OFF. El ensayo de continuidad100s sigue aplazado y no es requisito.
+Instalación y conservación completadas según actualización superior. Pendiente respuesta al flujo opcional Mi perfil, con OFF confirmado. No consultar UI mediante herramientas durante ON. El perfil se crea únicamente si el usuario elige el flujo informado en la app; ningún enrolamiento automático ni envío de audio. Cerrar siempre OFF. El ensayo de continuidad100s sigue aplazado y no es requisito.
