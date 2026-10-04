@@ -1,6 +1,6 @@
 import type { RingInput } from "../g2/ring-input";
 import { File, knownFolders, path, type ImageSource } from "@nativescript/core";
-import { type FirmwareInfo } from "../g2/firmware-compat";
+import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/firmware-compat";
 import { type CompassEvent } from "./compass-types";
 import { fromData, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
@@ -23,6 +23,7 @@ export type CommunicatorPhase =
   | "charging"
   | "retrying"
   | "unpaired"
+  | "incompatible-firmware"
   | "disconnecting";
 
 export type CommunicatorState = {
@@ -190,6 +191,7 @@ export class FaceclawCommunicatorBridge {
   private latestPhoneLockState: boolean | null = null;
   private readonly evenAppConflictListeners = new Set<(message: string) => void>();
   private readonly frameMetricsListeners = new Set<(metrics: FrameMetrics) => void>();
+  private readonly previewAnimationListeners = new Set<() => void>();
   private readonly firmwareInfoListeners = new Set<(info: FirmwareInfo) => void>();
   private readonly ancsAuthorizationListeners = new Set<(authorized: boolean) => void>();
   private readonly ancsRelayListeners = new Set<(frame: Uint8Array) => void>();
@@ -203,9 +205,15 @@ export class FaceclawCommunicatorBridge {
       String(addresses.left ?? "").toUpperCase(),
       String(addresses.ring ?? "").toUpperCase(),
     );
+    // The shared session halts on any other firmware ("incompatible-firmware").
+    this.communicator.setRequiredFirmwareRevisionRevision(REQUIRED_FACECLAW_FIRMWARE_VERSION);
     this.listenerProxy = SessionListener.new() as SessionListener;
     this.listenerProxy.bridge = this;
     this.communicator.setListenerListener(this.listenerProxy);
+    // Kotlin calls this on the main queue.
+    this.communicator.setPreviewAnimationListenerListener(() => {
+      for (const listener of Array.from(this.previewAnimationListeners)) listener();
+    });
   }
 
   // ----- Kotlin listener entry points (main queue) -----------------------------------
@@ -352,6 +360,15 @@ export class FaceclawCommunicatorBridge {
   onFrameMetrics(listener: (metrics: FrameMetrics) => void): () => void {
     this.frameMetricsListeners.add(listener);
     return () => this.frameMetricsListeners.delete(listener);
+  }
+
+  /**
+   * Each step of an animation the phone preview is replaying (a menu slide
+   * reaches the glasses as one frame, so frame metrics fire only at its start).
+   */
+  onPreviewAnimationFrame(listener: () => void): () => void {
+    this.previewAnimationListeners.add(listener);
+    return () => this.previewAnimationListeners.delete(listener);
   }
 
   onFirmwareInfo(listener: (info: FirmwareInfo) => void): () => void {
@@ -600,7 +617,11 @@ export class FaceclawCommunicatorBridge {
 
   async close(): Promise<void> {
     this.setAncsListeners(false);
-    await this.enqueueNativeCall(() => this.communicator.close());
+    this.previewAnimationListeners.clear();
+    await this.enqueueNativeCall(() => {
+      this.communicator.setPreviewAnimationListenerListener(null);
+      this.communicator.close();
+    });
   }
 
   // ----- iOS extras: compass, microphone, iPhone notifications (ANCS) ----------------------

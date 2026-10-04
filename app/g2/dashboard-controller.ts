@@ -20,7 +20,7 @@ import { openEvenAppSettings, readEvenAppNotificationState } from "../native/eve
 import { grayImageToPreviewSource } from "../native/gray-image-preview";
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmware-compat";
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
-import { resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
+import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
 
 /** Who a synthetic (non-firmware) input stands for. */
@@ -74,10 +74,10 @@ import { ALL_APPS } from "../apps/all-apps";
 import { type AppContext, type AppDefinition, type AppLaunchParams, type TextEditorHost } from "../apps/app-definition";
 import { type InProcessAppOptions, type InProcessWindow } from "../ui/shell/in-process-window";
 import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-apps-persistence";
-import { appViewportRect, SIDEBAR_WIDTH, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
+import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -93,6 +93,7 @@ import {
   type PhoneUiButton,
 } from "../apps/evenhub/manager";
 import { openEvenHubStoreForPackage } from "../apps/evenhub";
+import { createNotificationsAppWindow, NOTIFICATIONS_SURFACE_ID, NOTIFICATIONS_WINDOW_ID } from "../apps/notifications/notifications-app";
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
 import { micSession } from "../apps/microphones/mic-session";
@@ -186,6 +187,27 @@ const EVEN_APP_DETECTED_MESSAGE =
 
 // The launcher grid's app list; also fixes the app ids apps.launch accepts.
 const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
+
+/**
+ * The global settings window viewport sizes depend on: the display mode,
+ * whether the app switcher takes width beside windows, height below them
+ * or neither (a popup), and the chrome rows each window loses to it: below
+ * them, whether the status bar joins the row (dropping the top bar); with a
+ * popup, whether the status bar keeps rows of its own and the window frame
+ * (where the status bar goes only moves windows).
+ */
+function viewportSizesKey(): string {
+  const position = appSwitcherPositionSetting.get();
+  const switcher = position === "bottom" ? `row|${statusBarPositionSetting.get()}`
+    : position === "popup" ? `popup|${statusBarVisibilitySetting.get()}|${windowBorderSetting.get()}`
+    : "strip";
+  return `${displayModeSetting.get()}|${switcher}`;
+}
+
+/** The global settings that move window surfaces without resizing them. */
+function windowPlacementKey(): string {
+  return `${verticalPositionSetting.get()}|${appSwitcherPositionSetting.get()}|${statusBarPositionSetting.get()}`;
+}
 
 function createInitialDisplayPreview(): ImageSource | null {
   return grayImageToPreviewSource(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
@@ -315,6 +337,7 @@ class DashboardController {
   private offPhoneLockState: (() => void) | null = null;
   private offEvenAppConflict: (() => void) | null = null;
   private offFrameMetrics: (() => void) | null = null;
+  private offPreviewAnimation: (() => void) | null = null;
   private offFirmwareInfo: (() => void) | null = null;
   private offVoiceStatus: (() => void) | null = null;
   private offAndroidNotification: (() => void) | null = null;
@@ -345,11 +368,10 @@ class DashboardController {
   private openAppsRestored = false;
   private suppressOpenAppsPersist = false;
   // connect() is a long sequence of awaits against this.communicator; the
-  // incompatible-firmware disconnect must not tear that communicator down
+  // halted-session disconnect must not tear that communicator down
   // underneath it, so it waits for this to clear.
   private connectRunning = false;
-  private incompatibleDisconnectPending = false;
-  private unpairedDisconnectPending = false;
+  private haltedDisconnectPending = false;
 
   constructor() {
     if (global.isAndroid) {
@@ -418,6 +440,8 @@ class DashboardController {
         // The foreground title is mirrored on both remote-control faces.
         this.emit();
       },
+      openNotificationsWindow: () =>
+        this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
         if (on) this.glance.dismiss();
@@ -446,8 +470,10 @@ class DashboardController {
       this.pushFirmwareDebugFlags();
       this.pushBrightness();
       this.syncEvenHubScreenOffSetting();
-      this.applyVerticalPositionIfChanged();
+      // Display mode first: a reflow repositions every surface too, so the
+      // vertical-position check after it then has nothing left to do.
       this.applyDisplayModeIfChanged();
+      this.applyVerticalPositionIfChanged();
       this.applyAppLayoutsIfChanged();
       this.syncAssistantBridgeIfChanged();
       this.syncLockScreenSettingIfChanged();
@@ -525,24 +551,29 @@ class DashboardController {
     });
   }
 
-  // Vertical-position changes move every window surface (and the chrome that
-  // aligns with them); the value is tracked so unrelated setting changes
-  // don't trigger a full reposition.
-  private lastVerticalPosition = verticalPositionSetting.get();
+  // Vertical-position changes (and moving the app switcher between the left
+  // and right edges, or a popup switcher's status bar between the top and
+  // bottom) move every window surface and the chrome that aligns with them;
+  // the values are tracked so unrelated setting changes don't trigger a full
+  // reposition.
+  private lastWindowPlacement = windowPlacementKey();
 
-  private lastDisplayMode = displayModeSetting.get();
+  private lastViewportSizes = viewportSizesKey();
 
   /**
-   * Display mode changed (Settings > Display, or the phone page's picker):
-   * every window's viewport size changes. In-process windows re-measure in
-   * place; workers that support resizing receive the new viewport. Other
-   * worker windows are closed and launched again at the new size.
+   * Display mode changed (Settings > Display, or the phone page's picker),
+   * or the app switcher or its chrome changed what windows lose to them
+   * (see viewportSizesKey): every window's viewport size changes. In-process windows re-measure in place; workers
+   * that support resizing receive the new viewport. Other worker windows are
+   * closed and launched again at the new size.
    */
   private applyDisplayModeIfChanged(): void {
-    const mode = displayModeSetting.get();
-    if (mode === this.lastDisplayMode) return;
-    this.lastDisplayMode = mode;
-    this.appendLog(`display mode: ${mode}`);
+    const sizes = viewportSizesKey();
+    if (sizes === this.lastViewportSizes) return;
+    this.lastViewportSizes = sizes;
+    // The reflow below reconfigures every surface, covering any move too.
+    this.lastWindowPlacement = windowPlacementKey();
+    this.appendLog(`display layout: ${sizes}`);
     const foregroundWindowId = shell.foregroundWindow()?.windowId;
     void (async () => {
       const relaunch: string[] = [];
@@ -598,9 +629,9 @@ class DashboardController {
   }
 
   private applyVerticalPositionIfChanged(): void {
-    const position = verticalPositionSetting.get();
-    if (position === this.lastVerticalPosition) return;
-    this.lastVerticalPosition = position;
+    const placement = windowPlacementKey();
+    if (placement === this.lastWindowPlacement) return;
+    this.lastWindowPlacement = placement;
     void (async () => {
       for (const window of shell.getWindows()) {
         await this.configureWindowSurface(
@@ -1445,12 +1476,12 @@ class DashboardController {
       await communicator.configureBrightness(getBrightnessPreferences());
       this.offState = communicator.onStateChange((state) => {
         if (state.phase !== "connected") resetRingInputFilter();
-        if (state.phase === "unpaired") {
-          // Java parked its retry loop: an arm's Android bond is gone, so
-          // every redial would fail the same way until the user re-pairs.
-          // Tear down into the manual-disconnected state and keep the
-          // re-pair instruction as the visible status.
-          this.scheduleUnpairedDisconnect(state.status);
+        if (isHaltedSessionPhase(state.phase)) {
+          // The shared session parked its retry loop (an arm's Android bond
+          // is gone, or the firmware can't run Faceclaw), so every redial
+          // would fail the same way. Tear down into the manual-disconnected
+          // state and keep the session's explanation as the visible status.
+          this.scheduleHaltedSessionDisconnect(state.status);
           return;
         }
         const mappedPhase =
@@ -1576,6 +1607,10 @@ class DashboardController {
           }
         }
       });
+      // A menu slide reaches the glasses as one frame whose display list
+      // animates on-device; the mirror replays it in the compositor and needs
+      // a pull per step, or it keeps whichever mid-motion frame it last got.
+      this.offPreviewAnimation = communicator.onPreviewAnimationFrame(() => this.schedulePreviewUpdate());
       this.offFirmwareInfo = communicator.onFirmwareInfo((info) => {
         this.appendLog(
           `firmware: L=${info.leftVersion || "?"} R=${info.rightVersion || "?"}` +
@@ -1593,15 +1628,14 @@ class DashboardController {
           });
           this.ensureWearStateTracking();
         }
+        // The shared session halts on incompatible firmware by itself
+        // ("incompatible-firmware" phase); this only explains why.
         if (warning !== this.firmwareWarningMessage) {
           this.firmwareWarningMessage = warning;
           if (warning) {
             this.appendLog(`firmware compatibility warning: ${warning}`);
           }
           this.emit();
-        }
-        if (warning) {
-          this.scheduleIncompatibleFirmwareDisconnect();
         }
       });
       // The Music and Nightscout apps subscribe to their bridges directly and
@@ -1671,6 +1705,8 @@ class DashboardController {
       this.offEvenAppConflict = null;
       this.offFrameMetrics?.();
       this.offFrameMetrics = null;
+      this.offPreviewAnimation?.();
+      this.offPreviewAnimation = null;
       this.offFirmwareInfo?.();
       this.offFirmwareInfo = null;
       this.offVoiceStatus?.();
@@ -1700,61 +1736,28 @@ class DashboardController {
   }
 
   /**
-   * Incompatible firmware means every message Faceclaw sends is one the
-   * glasses may misinterpret, and a live session fights the flash flow's own
-   * connection. Drop the connection (without the CFW-directed cleanup
-   * messages) and hold in the manual-disconnected state until the user
-   * connects explicitly or installs the custom firmware.
+   * The shared session parked its retry loop (an arm's Android bond is gone,
+   * or the glasses run firmware Faceclaw can't use; see isHaltedSessionPhase)
+   * and dropped both arms. Finish the teardown (without the CFW-directed
+   * cleanup messages, which incompatible firmware would misread) and hold in
+   * the manual-disconnected state until the user connects explicitly,
+   * re-pairs or installs the custom firmware, keeping [message] from the
+   * session as the status the user sees.
    */
-  private scheduleIncompatibleFirmwareDisconnect(): void {
-    if (this.incompatibleDisconnectPending) return;
-    this.incompatibleDisconnectPending = true;
+  private scheduleHaltedSessionDisconnect(message: string): void {
+    if (this.haltedDisconnectPending) return;
+    this.haltedDisconnectPending = true;
     const attempt = () => {
-      // Firmware info can arrive while connect() is still mid-flight; let it
+      // The halt can be reported while connect() is still mid-flight; let it
       // finish so the teardown doesn't race its surface setup.
       if (this.connectRunning) {
         setTimeout(attempt, 200);
         return;
       }
-      this.incompatibleDisconnectPending = false;
+      this.haltedDisconnectPending = false;
       if (this.phase === "disconnected" || this.phase === "disconnecting") {
         // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses we know can't run Faceclaw.
-        suppressAutoReconnect();
-        return;
-      }
-      this.appendLog(
-        "Disconnecting: the glasses firmware is incompatible. Auto-reconnect is disabled until you connect manually or install the custom firmware.",
-      );
-      void this.disconnect({ skipFirmwareCleanup: true })
-        .then(() => this.setStatus("Disconnected (incompatible firmware)."))
-        .catch((error) => {
-          this.appendLog(`incompatible-firmware disconnect failed: ${this.formatError(error)}`);
-        });
-    };
-    setTimeout(attempt, 0);
-  }
-
-  /**
-   * A connect attempt found an arm whose Android bond is missing, so the Java
-   * worker stopped retrying. Drop into the manual-disconnected state (no
-   * auto-reconnect: it would just fail again) and leave the re-pair
-   * instruction from Java as the status the user sees.
-   */
-  private scheduleUnpairedDisconnect(message: string): void {
-    if (this.unpairedDisconnectPending) return;
-    this.unpairedDisconnectPending = true;
-    const attempt = () => {
-      // The unpaired report can arrive while connect() is still mid-flight;
-      // let it finish so the teardown doesn't race its surface setup.
-      if (this.connectRunning) {
-        setTimeout(attempt, 200);
-        return;
-      }
-      this.unpairedDisconnectPending = false;
-      if (this.phase === "disconnected" || this.phase === "disconnecting") {
-        // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses that are no longer paired.
+        // re-dialing glasses that would fail the same way.
         suppressAutoReconnect();
         this.setStatus(message);
         return;
@@ -1763,7 +1766,7 @@ class DashboardController {
       void this.disconnect({ skipFirmwareCleanup: true })
         .then(() => this.setStatus(message))
         .catch((error) => {
-          this.appendLog(`unpaired disconnect failed: ${this.formatError(error)}`);
+          this.appendLog(`halted-session disconnect failed: ${this.formatError(error)}`);
         });
     };
     setTimeout(attempt, 0);
@@ -1809,6 +1812,8 @@ class DashboardController {
     this.offEvenAppConflict = null;
     this.offFrameMetrics?.();
     this.offFrameMetrics = null;
+    this.offPreviewAnimation?.();
+    this.offPreviewAnimation = null;
     this.offFirmwareInfo?.();
     this.offFirmwareInfo = null;
     this.offVoiceStatus?.();
@@ -1945,9 +1950,15 @@ class DashboardController {
     }
     const x = Math.round(Math.min(1, Math.max(0, nx)) * G2_LENS_WIDTH);
     const y = Math.round(Math.min(1, Math.max(0, ny)) * G2_LENS_HEIGHT);
-    const stripShown = sidebarStripVisible(shell.getFocus(), shell.foregroundWindow()?.appId);
+    const foreground = shell.foregroundWindow();
+    const stripShown = sidebarStripVisible(shell.getFocus(), foreground?.appId);
     this.appendLog(`mirror tap at ${x},${y}`);
-    if (!shell.hasOverlay() && stripShown && x < SIDEBAR_WIDTH) {
+    if (!shell.hasOverlay() && shell.focusNotificationAt(x, y)) {
+      this.appendLog("mirror tap: notification icon");
+      this.requestShellRender();
+      return;
+    }
+    if (!shell.hasOverlay() && stripShown && isOnSwitcherEdge(x, y, foreground?.heightMode ?? "min", foreground?.appId)) {
       const target = shell.windowAtSidebarPoint(x, y);
       if (target) {
         this.appendLog(`mirror tap: sidebar -> ${target.title}`);
@@ -2413,6 +2424,42 @@ class DashboardController {
       this.requestShellRender();
       return;
     }
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
+    shell.focusWindow(windowId);
+    this.requestShellRender();
+    this.appendLog(`launched ${windowId}`);
+  }
+
+  /**
+   * An in-process singleton app's window, opened in the background (neither
+   * foregrounded nor focused) unless it is open already: for the shell to
+   * bring forward itself (the Notifications window under a notification
+   * selected in the switcher). The bridge runs calls in order, so the
+   * shell may foreground it at once: its surface's visibility is settled
+   * when the configure call is queued, ahead of any frame.
+   */
+  private openInProcessAppInBackground(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): { window: InProcessWindow; opened: boolean } {
+    const existing = this.inProcessApps.get(windowId);
+    if (existing) return { window: existing, opened: false };
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    void this.configureWindowSurface(surfaceId, this.isForegroundWindow(windowId), app.window.heightMode).catch((error) => {
+      this.appendLog(`${windowId} surface configure failed: ${this.formatError(error)}`);
+    });
+    this.appendLog(`opened ${windowId} in the background`);
+    return { window: app, opened: true };
+  }
+
+  /** Create an in-process singleton app's window and register it with the shell. */
+  private createInProcessApp(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): InProcessWindow {
     const app = create({
       actions: {
         ...this.sharedActions,
@@ -2433,10 +2480,7 @@ class DashboardController {
     });
     this.inProcessApps.set(windowId, app);
     shell.registerWindow(app.window);
-    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
-    shell.focusWindow(windowId);
-    this.requestShellRender();
-    this.appendLog(`launched ${windowId}`);
+    return app;
   }
 
   /** Get or spawn the worker host for an app. */
@@ -2891,7 +2935,10 @@ class DashboardController {
     }
     this.previewTrailingTimer = setTimeout(() => {
       this.previewTrailingTimer = null;
-      this.updateCompositePreview();
+      // Re-check rather than pull directly: a timer that fires a millisecond
+      // early would fail the floor in updateCompositePreview and drop the
+      // burst's last frame (an animation's settled frame) until the 1s poll.
+      this.schedulePreviewUpdate();
     }, wait);
   }
 

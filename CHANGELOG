@@ -1,6 +1,24 @@
 # Changelog
 
-## 0.8.1 - Future
+## 0.8.2 - 2026-10-03
+
+### User Interface Customization
+
+* Customizable app switcher: put it on the left, right, bottom, or make it a popup
+* The status bar can be combined with the app switcher when it's on the bottom
+* The display depth is configurable when the app switcher is on the bottom
+* Add Dense style for battery indicators
+
+### Other Features and Fixes
+
+* Animations have configurable speed
+* Fix an issue where animations on the phone preview display stopped before finishing
+* Terminal app lists every configured host, including ones that are still connecting
+* Music app shows its library-browsing app picker on the front page when nothing is playing
+* Fix iOS failing to connect when an incompatible firmware version is installed
+* Mark stock firmware 2.3.2 as validated for installing custom firmware over
+
+## 0.8.1 - 2026-09-30
 
 ### Assorted Features and Bug Fixes
 

@@ -45,14 +45,20 @@ export class PreviewDisplayTarget implements DisplayTarget {
   private onFrameComposited: (() => void) | null = null;
   private released = false;
 
-  /** Receive a callback per applied frame, the stand-in for the connected path's frame-finished callback. */
+  /**
+   * Receive a callback per applied frame, the stand-in for the connected
+   * path's frame-finished callback, and per step of an animation the
+   * preview is replaying.
+   */
   activate(onFrameComposited: () => void): void {
     this.onFrameComposited = onFrameComposited;
+    this.compositor.setPreviewAnimationListener(() => this.composited());
   }
 
   release(): void {
     this.released = true;
     this.onFrameComposited = null;
+    this.compositor.setPreviewAnimationListener(null);
   }
 
   private composited(): void {
@@ -61,7 +67,9 @@ export class PreviewDisplayTarget implements DisplayTarget {
 
   async configureCompositorScreen(width: number, height: number): Promise<void> {
     if (Math.round(width) !== this.compositor.width || Math.round(height) !== this.compositor.height) {
+      this.compositor.setPreviewAnimationListener(null);
       this.compositor = new SurfaceCompositor(Math.round(width), Math.round(height));
+      if (this.onFrameComposited) this.compositor.setPreviewAnimationListener(() => this.composited());
     }
   }
 

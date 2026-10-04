@@ -38,4 +38,6 @@ export class SurfaceCompositor {
   }
   setShellScene(bytes: Uint8Array): void { this.native.shellData(toData(bytes)) }
   composite(): Uint8Array { return fromData(this.native.composite()) }
+  /** Called on the main queue after each step of an animation the preview is replaying. */
+  setPreviewAnimationListener(listener: (() => void) | null): void { this.native.setPreviewAnimationListenerListener(listener) }
 }

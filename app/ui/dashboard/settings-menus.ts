@@ -24,10 +24,15 @@ import {
 } from "../../native/asr-model";
 import { TextViewerLayer } from "../../apps/files/text-viewer";
 import type { LayerContext } from "../layers";
-import { drawRightValueMenuItem, openModalMenu, type MenuItem } from "../menu";
+import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
+  appSwitcherPositionSetting,
+  statusBarPositionSetting,
+  statusBarVisibilitySetting,
+  windowBorderSetting,
+  uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
   assistantBridgeHostSetting,
@@ -84,6 +89,7 @@ export function createSettingsPanelLayer(): SettingsPanelLayer {
 }
 
 function settingsSections(): SettingsSection[] {
+  const customizationItems = customizationRows();
   const sections: SettingsSection[] = [
     {
       label: "Pantalla",
@@ -107,16 +113,11 @@ function settingsSections(): SettingsSection[] {
     },
     {
       label: "Personalización",
-      items: [
-        // Submenu: top-bar battery indicator style plus per-device visibility.
-        batteryIndicatorsMenuItem(),
-        // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
-        animationsMenuItem(),
-        // Controls the top-bar clock (24-hour vs 12-hour).
-        enumSettingMenuItem(timeFormatSetting),
-        // Opens the modal font picker (face, weight, size) for UI text.
-        uiFontPickerMenuItem(),
-      ],
+      // Depth only applies (and only shows) with the app switcher at the
+      // bottom; the panel re-reads the rows each paint.
+      get items() {
+        return customizationItems();
+      },
     },
     {
       label: "Voz",
@@ -235,18 +236,62 @@ function settingsSections(): SettingsSection[] {
   });
 }
 
+/**
+ * The Customization rows, as a function of the current settings: the same
+ * array while the switcher position stays put, so the panel's menu sees a
+ * stable list between paints.
+ */
+function customizationRows(): () => MenuItem[] {
+  // Opens the modal font picker (face, weight, size) for UI text.
+  const font = uiFontPickerMenuItem();
+  // Left / right / bottom edge, or popup; the dashboard controller moves or
+  // resizes windows on change.
+  const position = enumSettingMenuItem(appSwitcherPositionSetting);
+  // The whole display's stereo depth; the shell sends it with its scene.
+  const depth = enumSettingMenuItem(uiDepthSetting);
+  // Top bar, or the bottom: the right end of a bottom switcher's row, or a
+  // bar under the window with a popup switcher; the dashboard controller
+  // resizes or moves windows on change.
+  const statusBar = enumSettingMenuItem(statusBarPositionSetting);
+  // Popup switcher only: whether the status bar shows only in the switcher
+  // (windows then grow into its rows), and the foreground window's border.
+  const statusBarVisibility = enumSettingMenuItem(statusBarVisibilitySetting);
+  const windowBorder = toggleSettingMenuItem(windowBorderSetting);
+  const rest = [
+    // Submenu: top-bar battery indicator style plus per-device visibility.
+    batteryIndicatorsMenuItem(),
+    // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
+    animationsMenuItem(),
+    // Controls the top-bar clock (24-hour vs 12-hour).
+    enumSettingMenuItem(timeFormatSetting),
+  ];
+  const bottomRows = [font, position, depth, statusBar, ...rest];
+  const popupRows = [font, position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
+  const sideRows = [font, position, ...rest];
+  return () => {
+    switch (appSwitcherPositionSetting.get()) {
+      case "bottom":
+        return bottomRows;
+      case "popup":
+        return popupRows;
+      default:
+        return sideRows;
+    }
+  };
+}
+
 function autoBrightnessMenuItem(): MenuItem {
-  return {
-    label: "Brillo automático",
-    description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness.",
-    onSelect: (ctx) => {
+  return submenuItem(
+    "Brillo automático",
+    (ctx) => {
       openSettingsSubMenu(ctx, "Brillo automático", [
         enumSettingMenuItem(autoBrightnessMinSetting),
         enumSettingMenuItem(autoBrightnessMaxSetting),
         textSettingMenuItem(autoBrightnessCurveSetting),
       ]);
     },
-  };
+    { description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness." },
+  );
 }
 
 /**
@@ -282,18 +327,18 @@ function batteryIndicatorsMenuItem(): MenuItem {
   };
 }
 
-/** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
+/** The Customization section's "Animations" row: opens a modal submenu of animation speeds. */
 function animationsMenuItem(): MenuItem {
-  return {
-    label: "Animaciones",
-    description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off.",
-    onSelect: (ctx) => {
+  return submenuItem(
+    "Animaciones",
+    (ctx) => {
       openSettingsSubMenu(ctx, "Animaciones", [
-        toggleSettingMenuItem(menuAnimationSetting),
-        toggleSettingMenuItem(screenFadeSetting),
+        enumSettingMenuItem(menuAnimationSetting),
+        enumSettingMenuItem(screenFadeSetting),
       ]);
     },
-  };
+    { description: "Speed up, slow down, or turn off menu and icon-grid motion and the fade when the screen turns on and off." },
+  );
 }
 
 const LOCAL_MODEL_GB = `${(LOCAL_MODEL.sizeBytes / 1e9).toFixed(1)}GB`;

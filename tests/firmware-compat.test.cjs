@@ -65,7 +65,9 @@ test("stock firmware classifies by base version and warns on the main screen", (
   assert.equal(compat.classifyOnboardingFirmware(info("", "2.2.10.10", "2.2.10.10")).kind, "flashable-stock");
   assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.0.1", "2.3.0.1")).kind, "flashable-stock");
   assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.0.24", "2.3.0.24")).kind, "flashable-stock");
-  assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.0.24", "2.3.0.25")).kind, "newer-stock-unvalidated");
+  assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.0.24", "2.3.0.25")).kind, "newer-stock-validated");
+  assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.2.14", "2.3.2.14")).kind, "newer-stock-validated");
+  assert.equal(compat.classifyOnboardingFirmware(info("", "2.3.2.14", "2.3.2.15")).kind, "newer-stock-unvalidated");
   // Faceclaw firmware on a newer base is still judged by its revision, not the base.
   assert.equal(compat.classifyOnboardingFirmware(info(`Faceclaw/${REQUIRED}`, "2.3.0.1", "2.3.0.1")).kind, "custom");
 });

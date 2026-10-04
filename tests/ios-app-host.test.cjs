@@ -111,7 +111,8 @@ for (const isIOS of [true, false]) {
       if (id === '../dashboard-settings') return settings;
       if (id === './remote-input-menu') return { remoteInputMenuItem: () => ({ label: 'Input tokens' }) };
       if (id === './settings-panel') return { SettingsPanelLayer: class { constructor(sections) { this.sections = sections; } } };
-      return { LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-es': {}, 'whisper-small-es': {} },
+      return { submenuItem: (label, onSelect, options = {}) => ({ label, onSelect, ...options }),
+        LOCAL_MODEL: { sizeBytes: 1000 }, ASR_MODELS: { moonshine: {}, 'whisper-base-es': {}, 'whisper-small-es': {} },
         uiFontPickerMenuItem: () => ({ label: 'Font' }), terminalFontPickerMenuItem: () => ({ label: 'Terminal font' }) };
     } });
     const sections = menus.createSettingsPanelLayer().sections;
@@ -223,6 +224,7 @@ test('background glasses input still composites frames; phone resume preserves t
     onStateChange(fn) { this.stateListener = fn; return noop(); }
     onRingEvent(fn) { this.ringListener = fn; return noop(); }
     onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); } onFrameMetrics() { return noop(); }
+    onPreviewAnimationFrame() { return noop(); }
     onWearState() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
     onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {}
@@ -265,6 +267,7 @@ test('background glasses input still composites frames; phone resume preserves t
     '../native/nightscout-bridge': { nightscoutBridge: { async start() { pollStarts++; }, async stop() { pollStops++; } } },
     './glance-host': { GlanceHost: class { dismiss() {} reset() {} isVisible() { return false; } } },
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
+    './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher/launcher-app': { createLauncherWindow: () => window, LAUNCHER_SURFACE_ID: 'launcher' },
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/all-apps': { ALL_APPS: [] }, '../ui/dashboard-settings': settings,

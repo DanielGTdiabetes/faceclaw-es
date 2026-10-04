@@ -46,6 +46,12 @@ const CELL = 12;
 const BOARD_X = 60;
 const BOARD_Y = 10;
 const PANEL_X = 230;
+/**
+ * Height the layout above is drawn for: a min-height window's viewport under
+ * the standard top bar. A taller viewport (the status bar folded into the
+ * switcher row, a full-panel display) centers it vertically.
+ */
+const LAYOUT_HEIGHT = 260;
 
 /**
  * Gravity starts here and speeds up with score (see dropIntervalMs). Slow
@@ -601,7 +607,7 @@ function paint(window: BlocksWindow): Plane[] {
 }
 
 function paintContent(window: BlocksWindow): GrayImage {
-  const image = new GrayImage(window.viewportWidth, window.viewportHeight, 0);
+  const image = new GrayImage(window.viewportWidth, LAYOUT_HEIGHT, 0);
   image.drawRect(BOARD_X - 2, BOARD_Y - 2, COLS * CELL + 4, ROWS * CELL + 4, 120);
   if (window.phase === "paused") {
     // Hide the board so pausing can't be used to study the stack.
@@ -613,6 +619,14 @@ function paintContent(window: BlocksWindow): GrayImage {
     if (window.phase === "game-over") paintGameOver(image);
   }
   paintPanel(image, window);
+  return centeredInViewport(window, image);
+}
+
+/** Place the fixed-height layout vertically centered in the window's viewport. */
+function centeredInViewport(window: BlocksWindow, layout: GrayImage): GrayImage {
+  if (layout.height === window.viewportHeight) return layout;
+  const image = new GrayImage(window.viewportWidth, window.viewportHeight, 0);
+  layout.composeInto(image, 0, Math.max(0, Math.floor((window.viewportHeight - layout.height) / 2)));
   return image;
 }
 
@@ -639,7 +653,41 @@ function paintBoard(image: GrayImage, window: BlocksWindow): void {
 }
 
 function drawCell(image: GrayImage, x: number, y: number, shade: number): void {
-  image.fillRect(BOARD_X + x * CELL, BOARD_Y + y * CELL, CELL - 1, CELL - 1, shade);
+  drawTile(image, BOARD_X + x * CELL, BOARD_Y + y * CELL, shade);
+}
+
+/**
+ * One beveled tile (CELL - 1 square, leaving a 1px gap): lit top and left
+ * edges, shadowed bottom and right, stepping in over two rings to a raised
+ * face. The face keeps the piece's shade, so pieces stay distinguishable by
+ * brightness after 4bpp quantization.
+ */
+function drawTile(image: GrayImage, x: number, y: number, shade: number): void {
+  const size = CELL - 1;
+  const lit = (amount: number): number => Math.round(shade + (255 - shade) * amount);
+  const dim = (factor: number): number => Math.round(shade * factor);
+  image.fillRect(x, y, size, size, dim(0.8));
+  drawBevelRing(image, x, y, size, lit(0.6), dim(0.4), shade);
+  drawBevelRing(image, x + 1, y + 1, size - 2, lit(0.3), dim(0.6), shade);
+  image.fillRect(x + 3, y + 3, size - 6, size - 6, shade);
+}
+
+/** A square's 1px edge: light along the top and left, dark along the bottom and right, mid at the two mixed corners. */
+function drawBevelRing(
+  image: GrayImage,
+  x: number,
+  y: number,
+  size: number,
+  light: number,
+  dark: number,
+  mid: number,
+): void {
+  image.fillRect(x, y, size, 1, light);
+  image.fillRect(x, y, 1, size, light);
+  image.fillRect(x, y + size - 1, size, 1, dark);
+  image.fillRect(x + size - 1, y, 1, size, dark);
+  image.setPixel(x + size - 1, y, mid);
+  image.setPixel(x, y + size - 1, mid);
 }
 
 function paintGameOver(image: GrayImage): void {
@@ -665,7 +713,7 @@ function paintPanel(image: GrayImage, window: BlocksWindow): void {
   const offsetX = PANEL_X + Math.round((previewBoxSize - (maxX - minX + 1) * CELL) / 2);
   const offsetY = previewY + Math.round((previewBoxSize - (maxY - minY + 1) * CELL) / 2);
   for (const [cx, cy] of cells) {
-    image.fillRect(offsetX + (cx - minX) * CELL, offsetY + (cy - minY) * CELL, CELL - 1, CELL - 1, def.shade);
+    drawTile(image, offsetX + (cx - minX) * CELL, offsetY + (cy - minY) * CELL, def.shade);
   }
 
   const statX = PANEL_X + previewBoxSize + 40;

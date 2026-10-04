@@ -127,10 +127,16 @@ class GlassesSessionCore(
     internal val audioMonitorListeners = CopyOnWriteList<FaceclawAudioPacketListener>(platform)
     @Volatile internal var running = false
     @Volatile internal var userDisconnectRequested = false
-    // Set when a connect attempt failed while an arm's OS bond is gone:
-    // retrying is pointless until the user re-pairs, so the worker loop parks
+    // Set when a connect attempt failed while an arm's OS bond is gone, or the
+    // glasses reported firmware this app can't run: retrying is pointless until
+    // the user re-pairs or installs the custom firmware, so the worker loop parks
     // instead of redialing. Cleared by start() (a fresh explicit connect).
     @Volatile internal var reconnectHalted = false
+    // The Faceclaw firmware revision this app needs; see setRequiredFirmwareRevision.
+    @Volatile internal var requiredFirmwareRevision = 0
+    // Firmware info from a settings ack that failed requiredFirmwareRevision. While
+    // set, driveSession sends nothing; the worker loop halts on it (handleIncompatibleFirmware).
+    internal var incompatibleFirmware: BleProtocol.FirmwareInfo? = null
 
     internal var phase = "disconnected"
     internal var status = "Disconnected."
@@ -179,9 +185,9 @@ class GlassesSessionCore(
     /**
      * The last firmware-info read said the glasses run Faceclaw's custom
      * firmware. Gates the private modes (cleanup, resource cache, ...) so stock
-     * or third-party firmware never sees them; the TS side checks the actual
-     * revision and disconnects on a mismatch, so no per-feature gating is
-     * needed here.
+     * or third-party firmware never sees them; a revision mismatch halts the
+     * session (handleIncompatibleFirmware), so no per-feature gating is needed
+     * here.
      */
     internal var customFirmwareDetected = false
     internal val brightnessPolicy = BrightnessPolicy()
@@ -231,7 +237,6 @@ class GlassesSessionCore(
     internal var phoneLockState = -1
     internal var lastPhoneLockCheckAtMs = 0L
     internal var audioCaptureActive = false
-    internal var firmwareInfoQueried = false
     // Glasses are in the charging case: nobody is wearing them, so display
     // communication pauses and only battery polls flow (see driveSession).
     internal var chargingMode = false
@@ -372,6 +377,15 @@ class GlassesSessionCore(
         emitPhoneLockStateIfChanged(true)
     }
 
+    /**
+     * The Faceclaw firmware revision this app needs (REQUIRED_FACECLAW_FIRMWARE_VERSION in
+     * app/g2/firmware-compat.ts; the TS bridges pass it in before start()). A settings ack
+     * reporting anything else halts the session. 0 accepts any Faceclaw revision.
+     */
+    fun setRequiredFirmwareRevision(revision: Int) {
+        requiredFirmwareRevision = revision
+    }
+
     /** Start the worker (through the host); false when it was already running. */
     fun start(): Boolean {
         monitor.withLock {
@@ -381,6 +395,7 @@ class GlassesSessionCore(
             running = true
             userDisconnectRequested = false
             reconnectHalted = false
+            incompatibleFirmware = null
             shutdownRequested = false
             host.startWorker { run() }
             return true
@@ -960,6 +975,9 @@ class GlassesSessionCore(
     /** The current composite for previews/screenshots, or null before any surface exists. */
     fun previewComposite(): SurfaceCompositor.Composite? = compositor.previewComposite()
 
+    /** See SurfaceCompositor.setPreviewAnimationListener; runs on the redraw scheduler's thread. */
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) = compositor.setPreviewAnimationListener(listener)
+
     /**
      * Show or hide a compositor surface, immediately submitting the resulting
      * frame. Recompositing here (rather than waiting for the next surface
@@ -1301,6 +1319,10 @@ class GlassesSessionCore(
                     break
                 }
                 emitPhoneLockStateIfChanged(false)
+                if (monitor.withLock { incompatibleFirmware != null }) {
+                    handleIncompatibleFirmware()
+                    continue
+                }
                 if (!sessionReady) {
                     if (reconnectHalted) {
                         interruptibleSleep.sleep(ConnectionOptions.IDLE_SLEEP_MS.toLong())
@@ -1766,16 +1788,16 @@ class GlassesSessionCore(
             setStateDisplay("connected", "Connected.")
             logLine("session ready")
             monitor.withLock {
-                // Query settings promptly on the first session so firmware
+                // Query settings at the start of every session so firmware
                 // version/extension (and battery) arrive without waiting for
-                // the input-quiet battery poll. The settings response doubles as
-                // the firmware-compatibility check surfaced during onboarding.
-                if (!firmwareInfoQueried) {
-                    firmwareInfoQueried = true
-                    lastBatteryRefreshAtMs = now()
-                    pendingMessages.addLast(createBatteryQueryMessageLocked())
-                    logLine("queue settings query for firmware info")
-                }
+                // the input-quiet battery poll. The reply is the firmware-
+                // compatibility check, and the drive loop only creates the
+                // layout once the queue is empty, so it lands before any
+                // custom-firmware traffic -- including after a reconnect to
+                // glasses that were reflashed in the meantime.
+                lastBatteryRefreshAtMs = now()
+                pendingMessages.addLast(createBatteryQueryMessageLocked())
+                logLine("queue settings query for firmware info")
             }
             tryConnectRing("initial")
         } catch (t: Throwable) {

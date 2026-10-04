@@ -106,7 +106,7 @@ function fixture() {
     on(kind, fn) { this.listeners[kind] = fn; return () => { if (this.listeners[kind] === fn) delete this.listeners[kind]; }; }
     onStateChange(fn) { return this.on('state', fn); } onRingEvent(fn) { return this.on('ring', fn); }
     onWearState(fn) { return this.on('wear', fn); } onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); }
-    onFrameMetrics() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
+    onFrameMetrics() { return noop(); } onPreviewAnimationFrame() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
     onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {} async configureBrightness() {} async setBrightness() {} async enableWearDetectionAndRequestState() {} async playBuzzerSequence() {} async close() {}
     emitState(phase, status = phase) { if (phase === 'connected' || phase === 'disconnected') this.phase = phase; this.listeners.state?.({ phase, status }); }
@@ -146,6 +146,7 @@ function fixture() {
     './glance-host': { GlanceHost }, './events': events,
     './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
+    './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/evenhub/installed-apps': {}, '../apps/evenhub/manager': {}, '../apps/evenhub/updates': {}, '../apps/evenhub': {},
     '../apps/launcher/launcher-app': { createLauncherWindow: () => window, LAUNCHER_SURFACE_ID: 'launcher' },

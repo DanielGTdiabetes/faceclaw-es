@@ -1,6 +1,6 @@
 # G3 integrado — 04-10-2026
 
-## Estado posterior: perfil guardado; G3.3 preparada, no instalada
+**Estado vigente, 04-10-2026: instalada Faceclaw0.8.2 + G3.3, código805/firma original.** Leer [integración0.8.2](faceclaw-0.8.2-integration-2026-10-04.md) y [avanceG3.3](conversation-detection-g3.3-usage.md). Instalación con datos conservados,33ajustes idénticos antes/después/Hermes/bloqueo desactivado/GPS vigente; perfil guardado y conversaciónOFF observados después. No repetir registro ni leer/exportar/copiar vector al NAS. Gafas notifican /35 y requisito /36: el usuario las actualiza mediante Faceclaw y desconecta temporalmente el Pixel; el agente no modifica ni flashea firmware. Pendiente confirmación de cierre/compatibilidad.782Node correctas/1omitida,240Kotlin,TS/lint/webpack/AAR/build/lintVital correctos. Sin audio/captura/modelos/umbrales/ensayo nuevos. Candidata y alternancia provisionales, precisión/participación no acreditadas. Interfaz móvil; app propia/texto en lentes pendiente. Incidentes históricos de audio abiertos; G4 errores concretos/G5 pendiente/G6 sin audio-texto a Hermes.
 
 El usuario completó el asistente G3.2. La comprobación posterior observó «Conversación local · OFF», «OFF · Mi perfil se ha guardado localmente. Ya puedes iniciar conversación» y «Mi perfil: guardado en este móvil», con cero wakelocks experimentales. **Prevalece sobre «sin perfil»/registro pendiente de las instantáneas inferiores.** No repetir registro, exportar el vector ni respaldarlo en NAS. Guardado no acredita precisión de comparación/participación.
 

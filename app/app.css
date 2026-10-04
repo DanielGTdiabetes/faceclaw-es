@@ -303,6 +303,10 @@ Button.pairing-link {
   color: #2a5bc4;
   font-size: 14;
   border-width: 0;
+  /* Buttons keep their Material elevation shadow even with a transparent
+   * background, which shows up as a stray, downward-offset outline. */
+  android-elevation: 0;
+  android-dynamic-elevation-offset: 0;
 }
 
 /*

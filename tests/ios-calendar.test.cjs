@@ -216,6 +216,7 @@ test('iOS Calendar is launchable and its permission remains optional during onbo
       Application: { on: (_event, fn) => { resumed = fn; }, off() {} } },
     '../native/ios-bluetooth': { iosBluetooth: () => ({ state: 5 }) },
     '../native/calendar-permissions': f.api,
+    '../native/file-access': {},
     '../g2/android-permissions': {}, '../native/battery-optimization': {}, '../native/notification-access': {},
   }, { global: { isIOS: true } });
   const model = new PermissionsViewModel({ onboarding: true }); model.onPageLoaded();
