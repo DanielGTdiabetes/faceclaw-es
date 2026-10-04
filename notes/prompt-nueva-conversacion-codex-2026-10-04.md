@@ -4,7 +4,7 @@ Continúa el trabajo desde este relevo. El usuario tiene poco uso restante de Co
 
 ## Estado del repositorio y lectura inicial
 
-Proyecto Windows `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`, origen `https://github.com/DanielGTdiabetes/faceclaw-es.git`. Último commit antes de guardar este prompt: `f56ab37`, revisión Codex y siguiente encargo de build. Árbol limpio y rama sincronizada en esa comprobación. Este prompt puede tener un commit posterior, y Claude puede publicar más cambios: comprueba estado/HEAD real, conserva cambios ajenos y no hagas reset/clean ni cambies de rama a ciegas.
+Proyecto Windows `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`, origen `https://github.com/DanielGTdiabetes/faceclaw-es.git`. Último commit antes de guardar este prompt: `f56ab37`, revisión Codex y siguiente encargo de build. Rama sincronizada, pero al preparar el relevo aparecieron cambios locales en `App_Resources/Android/app.gradle` y `scripts/install-conversation-g0.ps1`, compatibles con el encargo de build en curso. Se conservaron intactos; no se revisó ni atribuyó su autoría. Este prompt tiene commits posteriores, y Claude puede publicar más cambios: comprueba estado/HEAD real, conserva cambios ajenos y no hagas reset/clean ni cambies de rama a ciegas. No edites esos archivos mientras otro agente esté trabajando; espera su entrega final.
 
 Lee primero:
 
