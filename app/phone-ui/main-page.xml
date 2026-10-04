@@ -35,7 +35,7 @@
                 </GridLayout>
             </StackLayout>
             <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
-            <Label text="{{ localTranscript }}" textWrap="true" maxLines="4" fontSize="13" />
+            <Label text="{{ localTranscript }}" textWrap="true" maxLines="7" fontSize="13" />
             <Button text="Opciones · Mi perfil y modos locales" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
         </StackLayout>
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">

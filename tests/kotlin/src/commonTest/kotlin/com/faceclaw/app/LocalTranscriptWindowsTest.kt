@@ -34,7 +34,7 @@ class LocalTranscriptWindowsTest {
         assertEquals(0, gated); assertEquals(1, segments.size)
         assertEquals(96000, segments[0].size); assertEquals(8.toShort(), segments[0][0])
         assertEquals((-8).toShort(), segments[0][1])
-        assertEquals(32000, window.bufferedBytes())
+        assertEquals(96000, window.bufferedBytes())
         window.reset(); participation.reset()
         assertEquals(0, window.bufferedBytes())
     }
@@ -43,13 +43,13 @@ class LocalTranscriptWindowsTest {
         val segments = mutableListOf<ShortArray>(); val phases = mutableListOf<Int>()
         val window = LocalTranscriptBuffer(segmentPhase = { phases.add(it) }) { segments.add(it) }
         window.resetMetrics(LocalTranscriptSegmentation.WINDOWS)
-        repeat(100) { window.accept(pcm(8), "sin actividad", 1) }
-        repeat(20) { window.accept(pcm(16), "sin actividad", 2) }
-        repeat(100) { window.accept(pcm(24), "inactivo", 2) }
+        repeat(60) { window.accept(pcm(8), "sin actividad", 1) }
+        repeat(60) { window.accept(pcm(16), "sin actividad", 2) }
+        repeat(60) { window.accept(pcm(24), "inactivo", 2) }
         assertEquals(listOf(LocalTranscriptPhases.MIXED, 2), phases)
-        assertTrue(segments[0].takeLast(16000) == segments[1].take(16000))
-        assertEquals(24.toShort(), segments[1][16000])
-        assertEquals(32000, window.bufferedBytes())
+        assertTrue(segments[0].takeLast(48000) == segments[1].take(48000))
+        assertEquals(24.toShort(), segments[1][48000])
+        assertEquals(96000, window.bufferedBytes())
         window.reset(); assertEquals(0, window.bufferedBytes())
     }
 
@@ -108,7 +108,7 @@ class LocalTranscriptWindowsTest {
         repeat(120) { session.acceptPcm(pcm(), "sin actividad") }
         assertTrue(entered.await(2000))
         repeat(1000) { session.acceptPcm(pcm(), "sin actividad") }
-        assertEquals(10L, metric(session, "dropped")); assertEquals(1, calls)
+        assertEquals(16L, metric(session, "dropped")); assertEquals(1, calls)
         assertTrue(metric(session, "inputBufferedBytes") <= 832000)
         session.stop(); assertFalse(session.start())
         finish.countDown(); waitFor(session, "worker", "false")
@@ -153,6 +153,19 @@ class LocalTranscriptWindowsTest {
         assertEquals("", localWindowNovelText("Vamos a casa", "a casa"))
     }
 
+    @Test fun tolerantOverlapSkipsWordsCutAtWindowEdgesOnlyWithThreeWordEvidence() {
+        // Leading word cut at the start of the new window.
+        assertEquals("y luego al cine", localWindowNovelText("mañana vamos a comer juntos",
+            "ana vamos a comer juntos y luego al cine"))
+        // Trailing word cut at the end of the previous window.
+        assertEquals("juntos y luego al cine", localWindowNovelText("mañana vamos a comer jun",
+            "mañana vamos a comer juntos y luego al cine"))
+        // Two-word coincidence after a skip is not enough evidence: keep everything.
+        assertEquals("ah de la casa nueva", localWindowNovelText("la puerta de la", "ah de la casa nueva"))
+        // A different speaker answering is never trimmed.
+        assertEquals("sí, a las ocho", localWindowNovelText("¿quedamos mañana?", "sí, a las ocho"))
+    }
+
     @Test fun windowResultsMergeOnlyAfterAnAdjacentDeliveredResultAndNotAcrossReset() {
         val platform = testPlatform(); val texts = mutableListOf<String>()
         val outputs = listOf("La carrera empieza", "carrera empieza el domingo", "el domingo por la tarde",
@@ -176,7 +189,7 @@ class LocalTranscriptWindowsTest {
         repeat(120) { session.acceptPcm(pcm(), "sin actividad") }; waitFor(session, "busy", "false")
         // One skipped constant window breaks continuity even if its previous overlap held signal.
         repeat(220) { session.acceptPcm(pcm(0, true), "sin actividad") }; waitFor(session, "busy", "false")
-        repeat(100) { session.acceptPcm(pcm(), "sin actividad") }; waitFor(session, "busy", "false")
+        repeat(60) { session.acceptPcm(pcm(), "sin actividad") }; waitFor(session, "busy", "false")
         session.stop(); waitFor(session, "worker", "false")
         assertEquals(listOf("La carrera empieza", "el domingo", "el domingo por la tarde", "volvemos", "tarde volvemos a casa"), texts)
         assertFalse(session.diagnostics().contains("domingo"))

@@ -296,7 +296,14 @@ export class MainViewModel extends RemoteControlsViewModel {
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 
-  get localTranscript(): string { return dashboardController.conversationDetector.transcriptText(); }
+  /** A4: the phone label is line-limited, so show the newest tail instead of the oldest head. */
+  get localTranscript(): string {
+    const text = dashboardController.conversationDetector.transcriptText();
+    if (text.length <= 320) return text;
+    const tail = text.slice(-320);
+    const space = tail.indexOf(" ");
+    return "…" + (space >= 0 && space < 40 ? tail.slice(space + 1) : tail);
+  }
   get localTranscriptionCanStart(): boolean { return !dashboardController.conversationDetector.snapshot().enabled; }
   get localTranscriptionLabel(): string {
     const state = dashboardController.conversationDetector.snapshot().transcription;

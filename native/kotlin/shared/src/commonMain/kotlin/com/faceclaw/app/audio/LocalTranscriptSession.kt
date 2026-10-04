@@ -57,18 +57,35 @@ fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
 fun acceptedLocalText(result: LocalDecodedText): String =
     if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
 
-/** Remove only a matching suffix/prefix of >=2 whole words from adjacent overlapping windows. */
+/**
+ * Remove the part of `current` that repeats the end of the adjacent previous window.
+ * Exact prefix match of >=2 whole words first (unchanged behaviour). A4 adds a tolerant pass for
+ * the 3 s overlap: up to 2 garbled leading words of `current` (word cut at the window start) and
+ * up to 2 trailing words of `previous` (word cut at its end) may be skipped, but then at least 3
+ * consecutive words must match. Never deletes a single isolated word; keeps everything if unsure.
+ */
 fun localWindowNovelText(previous: String, current: String): String {
     val words = Regex("\\S+")
-    val before = words.findAll(previous).map { it.value.trim { c -> !c.isLetterOrDigit() }.lowercase() }.toList()
+    fun norm(value: String) = value.trim { c -> !c.isLetterOrDigit() }.lowercase()
+    val before = words.findAll(previous).map { norm(it.value) }.toList()
     val after = words.findAll(current).toList()
-    for (size in minOf(12, before.size, after.size) downTo 2) {
-        val prefix = after.take(size).map { it.value.trim { c -> !c.isLetterOrDigit() }.lowercase() }
-        if (prefix.all { it.isNotEmpty() } && before.takeLast(size) == prefix) {
-            return current.substring(after[size - 1].range.last + 1).trimStart()
+    val afterNorm = after.map { norm(it.value) }
+    var best: Int? = null
+    var bestSize = 0
+    for (skipEnd in 0..minOf(2, before.size)) {
+        for (skipStart in 0..minOf(2, afterNorm.size)) {
+            val minimum = if (skipEnd == 0 && skipStart == 0) 2 else 3
+            val limit = minOf(12, before.size - skipEnd, afterNorm.size - skipStart)
+            for (size in limit downTo minimum) {
+                if (size <= bestSize) break
+                val tail = before.subList(before.size - skipEnd - size, before.size - skipEnd)
+                val head = afterNorm.subList(skipStart, skipStart + size)
+                if (head.all { it.isNotEmpty() } && tail == head) { best = skipStart + size; bestSize = size; break }
+            }
         }
     }
-    return current
+    val end = best ?: return current
+    return if (end >= after.size) "" else current.substring(after[end - 1].range.last + 1).trimStart()
 }
 
 /**
@@ -94,7 +111,8 @@ class LocalTranscriptBuffer(
         const val MIN_VOICED_SAMPLES = 16000 * 3 / 10
         const val CHUNK_SAMPLES = 800
         const val WINDOW_SAMPLES = 16000 * 6
-        const val OVERLAP_SAMPLES = 16000
+        /** A4: 3 s hop. Every second is heard by two windows, so one busy drop loses no audio. */
+        const val OVERLAP_SAMPLES = 16000 * 3
     }
     private val samples = ShortArray(MAX_SAMPLES)
     private val pre = ShortArray(PRE_SAMPLES)

@@ -1,5 +1,8 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
+
+/** A4: rolling RAM-only text, by characters instead of the last three deliveries. */
+const MAX_TEXT_CHARS = 1200;
 import { type DetectorTranscription, type LocalTranscriptionSnapshot, type TextLanguage } from "../conversation-detection/transcription";
 
 declare const com: any;
@@ -15,7 +18,7 @@ export class LocalTranscription implements DetectorTranscription {
   start(language: TextLanguage = "es"): boolean {
     if (this.enabled) return false;
     this.lines = [];
-    if (!global.isAndroid || !isAsrModelReady("whisper-base-es")) {
+    if (!global.isAndroid || !(isAsrModelReady("whisper-small-es") || isAsrModelReady("whisper-base-es"))) {
       this.status = "modelo no disponible";
       return false;
     }
@@ -26,7 +29,8 @@ export class LocalTranscription implements DetectorTranscription {
           onText: (text: string, _language: string) => {
             if (!this.enabled) return;
             this.lines.push(String(text).slice(0, 600));
-            this.lines = this.lines.slice(-3);
+            // Drop whole oldest deliveries until the text fits; always keep the newest one.
+            while (this.lines.length > 1 && this.lines.join(" ").length > MAX_TEXT_CHARS) this.lines.shift();
           },
         });
         this.engine.setListener(this.listener);
@@ -48,7 +52,8 @@ export class LocalTranscription implements DetectorTranscription {
   acceptNative(pcm: unknown, vadState: string): void {
     if (this.enabled) this.engine?.acceptPcm(pcm, vadState);
   }
-  text(): string { return this.lines.join("\n"); }
+  /** Continuous text: 3 s windows deliver short fragments that read as one paragraph. */
+  text(): string { return this.lines.join(" "); }
   snapshot(): LocalTranscriptionSnapshot {
     const empty = { enabled: this.enabled, status: this.status, worker: false, busy: false,
       inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 };

@@ -10,7 +10,7 @@ import java.security.MessageDigest
 /**
  * Independent local-only Whisper route. No speaker model, storage, BLE or network client.
  *
- * A3: prefers Whisper small int8 when its weights are already downloaded and verify; otherwise
+ * A3/A4: prefers Whisper small int8 (4 threads, A4) when its weights are already downloaded and verify; otherwise
  * falls back to Whisper base. Never downloads anything by itself. The ASR copy of each window is
  * level-conditioned (LocalAsrConditioner) before decoding; capture, VAD and profile are untouched.
  */
@@ -20,7 +20,7 @@ class FaceclawLocalTranscriber(context: Context) {
 
     private val root = File(context.applicationContext.filesDir, "faceclaw-voice-asr")
     private val small = Model("whisper-small", VoiceModelKind.WHISPER_SMALL,
-        File(root, "sherpa-onnx-whisper-small-es-int8"), 2, mapOf(
+        File(root, "sherpa-onnx-whisper-small-es-int8"), 4, mapOf(
             "small-encoder.int8.onnx" to "4cbe7b22fa9026b843b60a68640c747de05bafb1a11b57edc0e66c232d9f33a9",
             "small-decoder.int8.onnx" to "acad50b5c782696e91b55914cc5ab4f756f1532f76e22aa6fc615f39fb69a8ee",
             "small-tokens.txt" to "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",

@@ -56,7 +56,7 @@ export class LocalConversationLayer implements Layer {
       ? this.session.detector.transcriptText() : "";
     const emptyText = !snapshot.enabled ? "Abrir esta app mantiene la captura OFF."
       : !snapshot.transcription?.enabled ? "Sin transcripción · comparación local provisional"
-      : snapshot.state === "escuchando" ? "Escuchando todas las voces · primer texto en unos 6 s" : "Texto borrado mientras la captura está suspendida.";
+      : snapshot.state === "escuchando" ? "Escuchando todas las voces · primer texto en unos 7 s, luego cada 3 s" : "Texto borrado mientras la captura está suspendida.";
     const textLines = wrapText(font, text || emptyText, available);
     const count = Math.max(0, Math.floor((footerY - y - 4) / step));
     this.scrollBack = Math.min(this.scrollBack, Math.max(0, textLines.length - count));

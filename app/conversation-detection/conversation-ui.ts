@@ -44,7 +44,7 @@ export function conversationDetail(snapshot: DetectorSnapshot, hint: string, inc
     return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.${time}`;
   }
   if (snapshot.participationMode === "conversation" && snapshot.state === "escuchando") {
-    return `${snapshot.transcription?.enabled ? `Texto ${textLanguageLabel(snapshot.languageMode)} · todas las voces. Espera unos 6 s para el primer texto.` : "Comparación local de voz."}\n${snapshot.participation?.participation ?? "evidencia insuficiente"} · indicio provisional.${time}`;
+    return `${snapshot.transcription?.enabled ? `Texto ${textLanguageLabel(snapshot.languageMode)} · todas las voces. Primer texto en unos 7 s y después cada 3 s.` : "Comparación local de voz."}\n${snapshot.participation?.participation ?? "evidencia insuficiente"} · indicio provisional.${time}`;
   }
   return `${snapshot.reason}${time}`;
 }
