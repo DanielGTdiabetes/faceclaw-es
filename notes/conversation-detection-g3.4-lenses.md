@@ -41,7 +41,7 @@ Certificado público SHA256 `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e
 | `faceclaw-0.8.2-es.5-conversation.g3.4-unsigned.apk` | `c04a581b6902358e6ac083701f84f7456232911b740b3503b5ad2c1002008153` |
 | `before-update-g3.4.apk` (G3.3 extraída del Pixel) | `dc0370bae67863a5a6b061f374b8186def0997544a93762c3c04039467dfaf05` |
 
-Ajustes privados `.tools/g3.4-private/before.xml`/`after.xml`, ACL usuario/SYSTEM. Contienen preferencias, no el almacén noBackup del perfil. Destinos NAS autorizados: `apk-builds/0.8.2-conversation-g3.4/` y `connection-backups/2026-10-04-g3.4/`, bajo `/volume1/home/Dani/Faceclaw/`; registrar comprobación de copias/hashes al completarla. Nunca incluir perfil/audio/secretos en fuente, notas o Git.
+Ajustes privados `.tools/g3.4-private/before.xml`/`after.xml`, ACL usuario/SYSTEM. Contienen preferencias, no el almacén noBackup del perfil. Copias NAS **completadas y verificadas**: `apk-builds/0.8.2-conversation-g3.4/` y `connection-backups/2026-10-04-g3.4/`, bajo `/volume1/home/Dani/Faceclaw/`. Seis archivos con SHA256 idénticos; carpetas700/archivos600. Fuente sin secretos `faceclaw-0.8.2-g3.4-source-63f234b.zip`, SHA256 `d7f2c49fae5ceb7c773e6efa5eaf162e7682a82f7631320c81a72de9602485ce`. Código publicado en GitHub, commit `63f234b`; los commits posteriores de continuidad no alteran la APK. Nunca incluir perfil/audio/secretos en fuente, notas o Git.
 
 ## Próxima continuidad
 
