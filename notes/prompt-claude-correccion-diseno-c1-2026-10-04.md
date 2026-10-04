@@ -1,0 +1,30 @@
+# Encargo Claude: corregir contratos del diseño y dejar C1 listo — 04-10-2026
+
+Continúa en `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`. Diseño entregado en `5bffdf4`, base `826449c`. Comprueba HEAD/árbol y conserva cambios ajenos. Lee `AGENTS.md`, el diseño entregado y `notes/revision-codex-diseno-conversacion-proactiva-2026-10-04.md`.
+
+Codex acepta la dirección: detectar participación propia + otra voz y asistir mediante Hermes proactivo en lentes; primero castellano, valenciano aplazado, tono con humor ocasional. Faltan contratos concretos para que las mediciones y los incrementos sean fiables. Resuelve estos puntos en el mismo diseño, preservando evidencia e historial. No reinicies auditoría ni vuelvas a pedir elección automático/manual/ambos.
+
+## Correcciones obligatorias para C1
+
+1. Histograma de **todas las tramas válidas**, no solo positivas: RMS/umbral relativo, clipping, duración de entrada y distribución por fase. Define franjas/unidades/baseline sin contenido. `candidato` ya supera el umbral; no lo llames voz por debajo del umbral. `candidateOnlyMs` debe contar solo candidatos abortados, sin contar los que acaban abriendo episodio. Sin habla conocida/indicada, describir actividad acústica sin atribuir voz o hablante.
+2. Diseña fronteras entre fases que funcionen con buffer parcialmente lleno, carga, JNI activo, resultado/callback pendiente, drops, OFF, expiración y cambio de época. Restar snapshots al pulsar no basta. Elige y justifica una ruta mínima: atribución de muestras/trabajos al origen, o cierre/invalidación de buffers con drenaje y frontera explícita. Identifica audio excluido/mezclado y contadores que siguen llegando. Si para hacerlo bien cambia código Kotlin compartido/AAR, decláralo; no restrinjas la solución artificialmente a TS. Define cómo conservar agregados finales tras OFF sin volver a publicar texto.
+3. Define pruebas de software mínimas que fallen con atribución incorrecta: una inferencia de la fase anterior termina durante la siguiente; callback demorado; segmento abierto al marcar; reset/OFF durante drenaje. Incluye métrica con señal inferior al umbral que hoy quedaría fuera del histograma. No escribas estas pruebas todavía, pero concreta entrada/resultado esperados.
+4. Mantén `auto/es` solo como selector temporal RAM del diagnóstico, modificable OFF y congelado para la sesión. Castellano es el destino; `auto` solo la referencia inicial. Especifica mapeo del idioma del decoder sin presentar una etiqueta forzada como idioma detectado ni como confianza. No reintento ni cambios de modelos/umbrales aún.
+5. Acota el ensayo posterior: reproducción artificial como control de idioma y una comprobación humana mínima para el fallo real. No usar resultado con altavoz como prueba de conversación presencial. Criterios de aceptación fijados antes, mejora de texto real además de menos rechazos, evidencia limitada de falsos textos y resultados inconclusos posibles. No deducir «bajar umbral» solo por falta de candidatos; puede haber señal insuficiente/ruido/segmentación. No leer/capturar UI durante ON por el agente; el usuario marca fases. Comprobación de agregados tras OFF. El ensayo no se ejecuta en este encargo.
+
+Corrige también la descripción del trabajador ASR: `LocalTranscriptSession` descarta nuevos segmentos si `busy`, con un único trabajo pendiente o activo en total; no hay uno en curso más otro pendiente ni sustitución de pendientes durante inferencia.
+
+## Completa ahora los contratos del camino posterior, sin desarrollar
+
+- Textos/etiquetas: los workers ASR/perfil son independientes. Define unión mediante intervalo/segmentId/época, manejo de mezcla/drops/caducidad y `desconocida` cuando no haya unión fiable. No usar el último snapshot de voz para etiquetar una frase. La detección puede funcionar con eventos acústicos y Hermes recibir texto sin atribución cuando no se pueda asociar.
+- Motores: `setEnabled(true, ...)` no reconfigura una sesión ya ON. Describe API/estados de iniciar/parar ASR sin soltar la concesión, carga/drain/cancel y límites de buffers. Resuelve cuánto contexto inicial no se transcribe y cómo afectaría a una pregunta temprana; propone mínimo buffer acotado solo si necesario y declara coste/limpieza. No amplíes ahora el tope de 120 s.
+- Incertidumbre: reemplazar reset por ignorar todo no queda aprobado. Define qué incertidumbre permite continuidad temporal y qué gap/mezcla/reset rompe evidencia. Reproducción/voz ajena no se presentan como persona verificada. Probar caducidad y evidencia débil antes de autoactivación.
+- Hermes: mantener canal aislado, allowlist real en ejecución (no solo prompt), negociación de capacidad, historia propia, prioridad/cancelación selectiva e idempotencia OFF/desconexión. Retención del Hermes instalado sigue por verificar en C3; proveedor externo sigue siendo externo aunque el puente esté en Jarvis. Limítate a dejar pendiente la habilitación/envío/retención de C3; no afirmar conocer el consentimiento de otras personas ni exigir decisión para C1/C2.
+
+## Entrega
+
+Actualiza `notes/diseno-claude-conversacion-proactiva-hermes-2026-10-04.md` en el mismo archivo. Añade una sección breve de resolución de cada hallazgo y especificación final C1 con archivos/símbolos, criterios, costes, pruebas mínimas y reversión. Si algo no puede asegurarse sin implementar, decláralo como condición verificable, no hecho.
+
+Actualiza AGENTS/continuidad con «dirección aceptada, contratos corregidos pendientes de revisión Codex», sin dar C1 implementado ni G3.4.2 aprobada. Commit/publicación documental en rama autorizada, sin secretos, PR ni fusiones. Entrega commit y ruta para Codex.
+
+Sin implementación, build, instalación, ensayo, consulta al móvil ni conexión real. Preserva perfil, firma, 33 ajustes, Hermes habitual, GPS/bloqueo, Wear desconectado y firmware /36. No tocar otros proyectos o servicios. Ninguna prueba general nueva. Al quedar revisada esta entrega, el siguiente encargo será implementar C1 acotado, no otra ronda de diseño general.
