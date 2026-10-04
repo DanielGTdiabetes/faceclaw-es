@@ -31,6 +31,8 @@ Certificado original SHA256: `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007
 - Reversión fresca extraída del Pixel: `dist/conversation-g0/before-update-0.8.2-g3.2.apk`, SHA256 `bb4f5e5eea97bd9e27aee98f90c4f5ffd4ec0e6b1d5c204e76d003d9e831378c`.
 - Los respaldos de ajustes contienen preferencias, no el perfil. El perfil nunca se copia al NAS ni se incluye en fuente/APKs.
 
+Integración publicada en GitHub: `5cfe1af`, fusión con dos padres `bf3a37a`/`61ede9b`. La rama original `codex/conversation-detection-g0` se actualizó por fast-forward y está sincronizada; se conserva también la rama de integración. Copias NAS privadas en `/volume1/home/Dani/Faceclaw/apk-builds/0.8.2-conversation-g3.3/`: firmada/sin firma/reversión y fuente `faceclaw-0.8.2-g3.3-source-5cfe1af.zip` (SHA256 `a756a2e09c1fbce6fb10d27643b158d23b1960fbf80723efa70f04cd51f09acc`). Los cuatro hashes coinciden, carpeta700/archivos600. Informes/continuidad/LEEME/Obsidian compartidos, preservando su historial.
+
 ## Continuación
 
 Cerrar la compatibilidad de firmware oficial conservando conversaciónOFF. No repetir el registro del perfil ni la evaluación inicial. La interfaz de conversación aún está en el móvil: falta una entrada propia y estado/texto en lentes. G4 solo ante errores concretos; G5 estabilidad/autonomía prolongadas pendientes; G6 requiere decisión posterior, sin conectar audio/texto experimental a Hermes.
