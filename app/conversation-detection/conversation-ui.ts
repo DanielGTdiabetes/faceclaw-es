@@ -1,5 +1,6 @@
 import { type DetectorSnapshot } from "./coordinator";
 import { type TextLanguage } from "./transcription";
+import { WEARER_PHRASE, type IdentityOutcome } from "./wearer-identity";
 
 /** Forced Spanish is always shown as forced: never as a detected language or with a confidence. */
 export function textLanguageLabel(language: TextLanguage | undefined): string {
@@ -47,4 +48,40 @@ export function conversationDetail(snapshot: DetectorSnapshot, hint: string, inc
     return `${snapshot.transcription?.enabled ? `Texto ${textLanguageLabel(snapshot.languageMode)} · todas las voces. Primer texto en unos 7 s y después cada 3 s.` : "Comparación local de voz."}\n${snapshot.participation?.participation ?? "evidencia insuficiente"} · indicio provisional.${time}`;
   }
   return `${snapshot.reason}${time}`;
+}
+
+/** One-line reasons for the last identification attempt; shown once, never repeated as alerts. */
+export const IDENTITY_OUTCOME_TEXT: Record<IdentityOutcome, string> = {
+  "ninguno": "", "aceptado": "",
+  "frase-no-reconocida": "no se reconoció la frase completa",
+  "frase-ambigua": "la frase apareció en más de una voz",
+  "voces-solapadas": "otra voz se solapó con la frase",
+  "tiempos-invalidos": "tiempos de Soniox no válidos",
+  "tiempos-implausibles": "tiempos de la frase incoherentes",
+  "frase-fuera-de-ventana": "la frase quedó fuera de la ventana",
+  "audio-insuficiente": "llegó poco audio",
+  "sin-resultado": "Soniox no confirmó a tiempo",
+  "audio-interrumpido": "el audio se interrumpió",
+  "cancelado-manual": "intento cancelado",
+  "cancelado-off": "cancelado al parar",
+  "motor-local": "sin Soniox",
+};
+
+/** S2 status line for phone and lenses; empty when OFF or before Soniox opens. */
+export function wearerLine(snapshot: DetectorSnapshot): string {
+  const identity = snapshot.transcription?.identity;
+  if (!snapshot.enabled || !identity) return "";
+  const note = IDENTITY_OUTCOME_TEXT[identity.lastOutcome] ? ` · último intento: ${IDENTITY_OUTCOME_TEXT[identity.lastOutcome]}` : "";
+  switch (identity.state) {
+    case "no-disponible":
+      return snapshot.transcription?.engine?.startsWith("local") ? "Portador: identificación solo con Soniox" : "";
+    case "escuchando-frase":
+      return `Di: «${WEARER_PHRASE}» · ${Math.ceil((identity.windowRemainingMs ?? 0) / 1000)} s`;
+    case "esperando-resultado":
+      return "Portador: comprobando la frase…";
+    case "identificado":
+      return `Portador: «Yo» = voz ${identity.speaker} (${identity.source === "manual" ? "elegida" : "frase"})${note}`;
+    default:
+      return `Portador: sin identificar${note}`;
+  }
 }

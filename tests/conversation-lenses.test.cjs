@@ -6,13 +6,22 @@ const ts = require('typescript');
 const controls = require('../.test-build/app/conversation-detection/session-controls.js');
 const ui = require('../.test-build/app/conversation-detection/conversation-ui.js');
 
+function identityHarness() { return harness(); }
 function harness() {
   let snapshot = { enabled: false, state: 'desactivado', reason: '', epoch: 0,
     stopReason: 'none', remainingMs: 0, participationMode: 'off' };
   let voiceModel = 'ready', textModel = 'ready', profile = 'guardado', transcript = '';
   let listener = null, reads = 0, renders = 0, yields = 0, closed = 0, options;
   const starts = [], timers = new Map();
+  const wearerCalls = [], modals = [];
+  let speakers = [];
   const session = { detector: {
+    wearerActionRef: () => snapshot.enabled ? { sessionId: 's1', streamId: 1, attemptSeq: 0, version: 0 } : null,
+    identifyWearer: () => { wearerCalls.push('identify'); return true; },
+    finishWearerIdentification: () => { wearerCalls.push('finish'); return true; },
+    cancelWearerIdentification: () => { wearerCalls.push('cancel'); return true; },
+    assignWearer: (ref) => { wearerCalls.push(ref); return true; },
+    observedSpeakers: () => speakers,
     snapshot: () => snapshot, ownProfileState: () => profile,
     transcriptText: () => { reads++; return transcript; },
     subscribe(fn) { listener = fn; fn(snapshot); return () => { listener = null; }; },
@@ -36,6 +45,7 @@ function harness() {
       if (name === '../../ui/metrics') return { lineStep: f => f.lineHeight + 2 };
       if (name === '../../conversation-detection/conversation-ui') return ui;
       if (name === '../../conversation-detection/session-controls') return controls;
+      if (name === '../../ui/menu') return { openModalMenu: (ctx, title, items) => modals.push({ title, items }) };
       if (name === '../../ui/shell/shell') return { shell: { isWindowVisible: () => true, yieldFocusToSidebar: () => yields++ } };
       if (name === '../../ui/shell/in-process-window') return { createInProcessWindow: value => {
         options = value; return { requestRender() { renders++; } }; } };
@@ -44,7 +54,7 @@ function harness() {
   });
   exports.createLocalConversationWindow({ onClosed: () => closed++ });
   const ctx = { stack: { getBaseSize: () => ({ width: 480, height: 264 }) } };
-  return { session, starts, timers, options,
+  return { session, starts, timers, options, wearerCalls, modals, speakers(v) { speakers = v; },
     patch(patch) { snapshot = { ...snapshot, ...patch }; listener?.(snapshot); },
     model(v, t) { voiceModel = v; textModel = t; }, profile(v) { profile = v; }, text(v) { transcript = v; },
     paint: () => options.baseLayer.paint(ctx).text.join('\n'),
@@ -151,4 +161,29 @@ test('the lenses stay on only while a session is ON, never while OFF or after cl
   h.patch({ enabled: false, state: 'desactivado', stopReason: 'expired' }); assert.equal(h.options.keepsScreenOn(), false);
   h.patch({ enabled: true, state: 'suspendido' }); h.options.onClosed();
   assert.equal(h.options.keepsScreenOn(), false);
+});
+
+test('S2 lenses: wearer line and menu only while ON with Soniox; «Soy la voz…» lists every label; gestures unchanged', () => {
+  const h = identityHarness();
+  const pop = { stack: { pop() {} } };
+  assert.ok(!h.paint().includes('Portador'));
+  assert.ok(!h.options.menuItems().some((item) => /voz/.test(item.label)));
+  const identity = { state: 'sin-identificar', version: 0, knownOthers: 0, lastOutcome: 'ninguno', speakersSeen: 5 };
+  h.patch({ enabled: true, state: 'escuchando', remainingMs: 60000, transcription: { enabled: true, engine: 'soniox', identity } });
+  h.speakers(['1', '2', '3', '4', '5'].map((speaker) => ({ sessionId: 's1', streamId: 1, speaker, preview: `hola ${speaker}` })));
+  assert.match(h.paint(), /Portador: sin identificar/);
+  const labels = h.options.menuItems().map((item) => item.label);
+  assert.ok(labels.includes('Identificar mi voz (frase)') && labels.includes('Soy la voz…') && labels.includes('Detener (OFF)'));
+  h.options.menuItems().find((item) => item.label === 'Identificar mi voz (frase)').onSelect(pop);
+  assert.deepEqual(h.wearerCalls, ['identify']);
+  h.options.menuItems().find((item) => item.label === 'Soy la voz…').onSelect(pop);
+  assert.deepEqual([...h.modals[0].items].map((item) => item.label),
+    ['Soy la voz 1 · «hola 1»', 'Soy la voz 2 · «hola 2»', 'Soy la voz 3 · «hola 3»', 'Soy la voz 4 · «hola 4»', 'Soy la voz 5 · «hola 5»', 'No soy ninguna']);
+  h.modals[0].items[4].onSelect(pop);
+  assert.deepEqual(h.wearerCalls[1], { sessionId: 's1', streamId: 1, speaker: '5' });
+  h.patch({ transcription: { enabled: true, engine: 'soniox', identity: { ...identity, state: 'escuchando-frase', windowRemainingMs: 4200 } } });
+  assert.match(h.paint(), /Di: «Soy yo quien lleva las gafas» · 5 s/);
+  assert.deepEqual([...h.options.menuItems().slice(2, 4)].map((item) => item.label), ['Listo, ya la he dicho', 'Cancelar identificación']);
+  h.input('click');
+  assert.deepEqual(h.starts.at(-1), [false]);
 });

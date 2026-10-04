@@ -1,12 +1,13 @@
 import { GrayImage } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText, wrapText } from "../../graphics/textwrap";
-import { conversationDetail, textLanguageLabel } from "../../conversation-detection/conversation-ui";
+import { conversationDetail, textLanguageLabel, wearerLine } from "../../conversation-detection/conversation-ui";
 import {
   conversationSession, conversationTextLanguage, conversationTextSelected, lensConversationPlan,
-  onConversationTextSelected, setConversationTextSelected, toggleLensConversation,
+  onConversationTextSelected, setConversationTextSelected, toggleLensConversation, wearerActions, wearerChoices,
   type ConversationSessionPort,
 } from "../../conversation-detection/session-controls";
+import { openModalMenu, type MenuItem } from "../../ui/menu";
 import { type InputEvent } from "../../ui/gestures";
 import { type Layer, type LayerContext } from "../../ui/layers";
 import { lineStep } from "../../ui/metrics";
@@ -38,6 +39,12 @@ export class LocalConversationLayer implements Layer {
       `Perfil: ${profile} · Texto: ${(snapshot.enabled ? snapshot.transcription?.enabled : conversationTextSelected()) ?
         ((snapshot.enabled ? snapshot.languageMode : conversationTextLanguage()) === "es" ? "castellano" : "auto") : "OFF"}`, available), 180);
     y += step;
+    // S2: wearer association (or the phrase to say) on its own line while ON; never an alert.
+    const wearer = wearerLine(snapshot);
+    if (wearer) {
+      image.drawText(font, inset, y, truncateText(font, wearer, available), 255);
+      y += step;
+    }
     // The deadline has its own line below; the detail must not repeat it.
     const detail = conversationDetail(snapshot, plan.hint, false);
     const lines = wrapText(font, detail, available);
@@ -81,6 +88,28 @@ export class LocalConversationLayer implements Layer {
   }
 }
 
+/**
+ * S2: identification actions plus «Soy la voz…», a list of every label of the live stream. The list
+ * is built when opened and carries that session/stream, so a menu kept across OFF/ON assigns nothing.
+ */
+export function wearerMenuItems(session: ConversationSessionPort): MenuItem[] {
+  const items: MenuItem[] = wearerActions(session.detector).map((action) => ({
+    label: action.label, onSelect: (ctx) => { ctx.stack.pop(); action.run(); },
+  }));
+  if (wearerChoices(session.detector).length) {
+    items.push({ label: "Soy la voz…", description: "Elegir o corregir qué voz eres. Cancela un intento pendiente.",
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        const choices = wearerChoices(session.detector);
+        if (!choices.length) return;
+        openModalMenu(ctx, "¿Cuál es tu voz?", choices.map((choice) => ({
+          label: choice.label, onSelect: (inner) => { inner.stack.pop(); choice.run(); },
+        })));
+      } });
+  }
+  return items;
+}
+
 export function createLocalConversationWindow(options: InProcessAppOptions): InProcessWindow {
   const session = conversationSession();
   let closed = false, closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -106,6 +135,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
       { label: `Texto local: ${textShown ? "ON" : "OFF"}${stopping ? " · sesión en curso" : ""}`,
         description: `Cambiar solo en OFF. Texto temporal ${textLanguageLabel(stopping ? opened.languageMode : conversationTextLanguage())}, sin envío al asistente.`,
         onSelect: (ctx) => { ctx.stack.pop(); if (!stopping) setConversationTextSelected(!conversationTextSelected()); } },
+      ...(stopping ? wearerMenuItems(session) : []),
       { label: "Detener (OFF)", onSelect: (ctx) => { ctx.stack.pop(); session.setEnabled(false); } },
       ];
     },

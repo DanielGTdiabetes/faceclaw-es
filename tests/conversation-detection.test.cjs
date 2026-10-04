@@ -399,7 +399,7 @@ function bridgeHarness() {
   let listener, stops = 0, starts = 0;
   const controller = new Proxy({ isCapturing: () => starts > stops,
     setListener(value) { listener = value; }, stop() { stops++; }, start() { starts++; },
-    experimentalAudioDiagnostics: () => '{"packets":2}',
+    experimentalAudioDiagnostics: () => JSON.stringify({ packets: 2, capturing: starts > stops }),
   }, { get: (target, key) => target[key] || (() => {}) });
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../app/native/voice-control.ts'), 'utf8'), {
@@ -455,4 +455,27 @@ test('shared normal raw owners require the last release and unrelated OFF cannot
   const lease = h.bridge.acquireExperimentalRaw(h.native, () => {}, () => {}, () => {});
   assert.ok(lease); h.bridge.stopRawCapture('evenhub'); assert.equal(h.counts().stops, 1);
   lease.stop(); assert.equal(h.counts().stops, 2);
+});
+
+test('stopped lease diagnostics record OFF and cannot describe the following owner', () => {
+  const h = bridgeHarness();
+  const lease = h.bridge.acquireExperimentalRaw(h.native, () => {}, () => {}, () => {});
+  assert.equal(JSON.parse(lease.diagnostics()).capturing, true);
+  lease.stop();
+  assert.deepEqual(JSON.parse(lease.diagnostics()), { packets: 2, capturing: false });
+  h.bridge.startRawCapture({ communicator: h.native, owner: 'evenhub' });
+  lease.stop();
+  assert.equal(JSON.parse(lease.diagnostics()).capturing, false);
+  assert.equal(h.counts().stops, 1);
+  h.bridge.stopRawCapture('evenhub');
+});
+
+test('coordinator keeps diagnostics from after STOP, with original counters', async () => {
+  const h = harness(); await h.on();
+  let capturing = true;
+  const lease = h.leases[0];
+  lease.stop = () => { capturing = false; };
+  lease.diagnostics = () => JSON.stringify({ capturing, packets: 1018 });
+  h.detector.setEnabled(false);
+  assert.deepEqual(JSON.parse(h.detector.diagnostics()), { capturing: false, packets: 1018 });
 });

@@ -29,6 +29,9 @@ constructor(url: String?, listener: FaceclawWebSocketListener?, headerName: Stri
     private val socket: WebSocket
     @Volatile
     private var closeRequested = false
+    @Volatile private var transportState = "connecting"
+    @Volatile private var transportFailure = "none"
+    @Volatile private var transportCloseCode: Int? = null
 
     init {
         if (url == null || url.trim().isEmpty()) {
@@ -55,6 +58,7 @@ constructor(url: String?, listener: FaceclawWebSocketListener?, headerName: Stri
             + " headers=[" + headerLog.toString().trim() + "]")
         socket = getClient().newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                transportState = "open"
                 callbackHandler.post {
                     try {
                         listener.onOpen()
@@ -75,10 +79,14 @@ constructor(url: String?, listener: FaceclawWebSocketListener?, headerName: Stri
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                transportState = "closing"
+                transportCloseCode = code
                 webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                transportState = "closed"
+                transportCloseCode = code
                 callbackHandler.post {
                     try {
                         listener.onClosed(code, reason)
@@ -89,6 +97,13 @@ constructor(url: String?, listener: FaceclawWebSocketListener?, headerName: Stri
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                transportState = "failed"
+                transportFailure = when (t) {
+                    is javax.net.ssl.SSLException -> "tls"
+                    is java.io.InterruptedIOException -> "timeout"
+                    is java.io.IOException -> "network"
+                    else -> "other"
+                }
                 if (closeRequested) {
                     return
                 }
@@ -143,8 +158,14 @@ constructor(url: String?, listener: FaceclawWebSocketListener?, headerName: Stri
         return socket.send((bytes ?: ByteArray(0)).toByteString())
     }
 
+    /** Scalar state only: never includes URL, headers, payload, server reason or exception text. */
+    fun transportDiagnostics(): String =
+        "{\"state\":\"$transportState\",\"queuedBytes\":${socket.queueSize()}," +
+            "\"failure\":\"$transportFailure\",\"closeCode\":${transportCloseCode ?: "null"}}"
+
     fun close(code: Int, reason: String?) {
         closeRequested = true
+        transportState = "closing"
         try {
             if (!socket.close(code, reason)) {
                 socket.cancel()

@@ -2,6 +2,7 @@ import { type ConversationCaptureCoordinator, type SessionOptions } from "./coor
 import { conversationStartPlan } from "./conversation-ui";
 import { type ParticipationMode } from "./participation";
 import { type TextLanguage } from "./transcription";
+import { type SpeakerRef } from "./wearer-identity";
 
 export type ConversationSessionPort = {
   detector: ConversationCaptureCoordinator;
@@ -67,4 +68,51 @@ export function toggleLensConversation(session: ConversationSessionPort): string
   if (!plan.canStart) return plan.hint;
   session.setEnabled(true, plan.transcribe, plan.mode, conversationSessionOptions());
   return "";
+}
+
+/** S2: the detector surface used by phone and lenses for the wearer association. */
+export type WearerControls = Pick<ConversationCaptureCoordinator, "snapshot" | "wearerActionRef" | "identifyWearer"
+  | "finishWearerIdentification" | "cancelWearerIdentification" | "assignWearer" | "observedSpeakers">;
+export type WearerAction = { label: string; run(): boolean };
+
+/**
+ * Explicit identification actions for the current state; empty when OFF or without Soniox.
+ * Each action carries the session, stream, attempt and association version captured now: «Listo» or
+ * «Cancelar» kept from attempt A never act on attempt B, nor on a later session after OFF/ON, and an
+ * «Identificar» kept across another attempt or association change starts nothing (all return false).
+ */
+export function wearerActions(detector: WearerControls): WearerAction[] {
+  const snapshot = detector.snapshot();
+  const identity = snapshot.transcription?.identity;
+  if (!snapshot.enabled || !identity || identity.state === "no-disponible") return [];
+  const ref = detector.wearerActionRef();
+  if (!ref) return [];
+  if (identity.state === "escuchando-frase") return [
+    { label: "Listo, ya la he dicho", run: () => detector.finishWearerIdentification(ref) },
+    { label: "Cancelar identificación", run: () => detector.cancelWearerIdentification(ref) },
+  ];
+  if (identity.state === "esperando-resultado") return [
+    { label: "Cancelar identificación", run: () => detector.cancelWearerIdentification(ref) },
+  ];
+  return [{ label: "Identificar mi voz (frase)", run: () => detector.identifyWearer(ref) }];
+}
+
+/**
+ * Manual choice among every label of the live stream (associated first) plus «No soy ninguna».
+ * Each action carries the session/stream captured now: a menu kept across OFF/ON assigns nothing.
+ */
+export function wearerChoices(detector: WearerControls): WearerAction[] {
+  const snapshot = detector.snapshot();
+  if (!snapshot.enabled || !snapshot.transcription?.identity || snapshot.transcription.identity.state === "no-disponible") return [];
+  const speakers = detector.observedSpeakers();
+  if (!speakers.length) return [];
+  const associated = snapshot.transcription.identity.speaker;
+  const ref = (speaker: string | null): SpeakerRef => ({ sessionId: speakers[0]!.sessionId, streamId: speakers[0]!.streamId, speaker });
+  return [
+    ...speakers.map((entry) => ({
+      label: `${entry.speaker === associated ? "Yo soy" : "Soy"} la voz ${entry.speaker}${entry.preview ? ` · «${entry.preview}»` : ""}`,
+      run: () => detector.assignWearer(ref(entry.speaker)),
+    })),
+    { label: "No soy ninguna", run: () => detector.assignWearer(ref(null)) },
+  ];
 }

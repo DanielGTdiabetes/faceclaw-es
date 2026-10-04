@@ -1,3 +1,6 @@
+import { type ConversationTurn } from "./conversation-turns";
+import { type IdentitySnapshot, type IdentitySummary, type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } from "./wearer-identity";
+
 /** RAM-only session selector. "es" forces Spanish (reported as forced, never detected). */
 export type TextLanguage = "auto" | "es";
 
@@ -22,6 +25,10 @@ export type LocalTranscriptionSnapshot = {
   engine?: string;
   /** Scalar Soniox counters; never text or key. */
   soniox?: { sentMs: number; finalTokens: number; messages: number; speakers: number; fallbacks: number; errors: number; lastError: string };
+  /** S2: wearer association state; scalars and Soniox labels only, never text. */
+  identity?: IdentitySnapshot;
+  /** S2: true only while Soniox interventions are produced (never for the local fallback). */
+  turnsAvailable?: boolean;
   /** Aggregate RAM-only diagnostics; no transcript, per-segment timeline or confidence. */
   analysis?: {
     /** Windows include overlap, so decodedAudioMs can exceed unique PCM time. */
@@ -41,6 +48,31 @@ export type LocalTranscriptionSnapshot = {
       avgNoiseDb: number; avgGainDb: number; maxGainDb: number };
   };
 };
+/** S2: aggregate of the last Soniox session, kept after OFF until the next accepted start. No text. */
+export type SonioxSessionSummary = {
+  engineFinal: string;
+  sentAudioMs: number; finalAudioProcMs: number | null; totalAudioProcMs: number | null; backlogAtStopMs: number | null;
+  /** Monotonic phone clock from the first audio send to the first token / final; includes network and service wait. */
+  firstTokenAfterMs: number | null; firstFinalAfterMs: number | null;
+  messages: number; finalTokens: number; turns: number; speakersSeen: number;
+  invalidTimingTokens: number; invalidProgress: number;
+  fallbacks: number; errors: number; lastErrorCategory: string | null;
+  identity: IdentitySummary;
+  /** Redacted socket state at the failure, if the platform exposes it; no payload or exception text. */
+  transportFailure?: SonioxTransportDiagnostics;
+  /** Filled by the coordinator from its stopReason after OFF. */
+  endedBy?: string;
+};
+
+export type SonioxTransportDiagnostics = {
+  state: "connecting" | "open" | "closing" | "closed" | "failed";
+  queuedBytes: number;
+  failure: "none" | "timeout" | "tls" | "network" | "other";
+  closeCode: number | null;
+};
+
+export type ObservedSpeaker = SpeakerRef & { speaker: string; preview: string };
+
 export interface DetectorTranscription {
   /** The language is captured by an accepted start and stays fixed for that session. */
   start(language?: TextLanguage): boolean;
@@ -51,4 +83,17 @@ export interface DetectorTranscription {
   acceptNative(pcm: unknown, vadState: string): void;
   snapshot(): LocalTranscriptionSnapshot;
   text(): string;
+  /** S2: called by the coordinator before its cleanup resets the stream, so OFF is not an audio gap. */
+  prepareStop?(): void;
+  /** Reference captured by phrase actions; the actions below reject a reference that no longer matches. */
+  wearerActionRef?(): WearerActionRef | null;
+  identifyWearer?(ref?: WearerActionRef): boolean;
+  finishWearerIdentification?(ref?: WearerActionRef): boolean;
+  cancelWearerIdentification?(ref?: WearerActionRef): boolean;
+  assignWearer?(ref: SpeakerRef): boolean;
+  observedSpeakers?(): ObservedSpeaker[];
+  subscribeTurns?(listener: (turn: ConversationTurn) => void): () => void;
+  subscribeAssociation?(listener: (event: WearerAssociationEvent) => void): () => void;
+  turns?(): ConversationTurn[];
+  lastSessionSummary?(): SonioxSessionSummary | null;
 }

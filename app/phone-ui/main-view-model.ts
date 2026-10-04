@@ -29,10 +29,11 @@ import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, preciseTextModelLabel, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
-import { conversationDetail, conversationStartPlan, textLanguageLabel } from "../conversation-detection/conversation-ui";
+import { conversationDetail, conversationStartPlan, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
 import {
   conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
   setConversationDiagnosticsSelected, setConversationTextEngine, setConversationTextLanguage, setConversationTextSelected,
+  wearerActions, wearerChoices,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 
@@ -167,6 +168,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationDiagnosticsButton", this.conversationDiagnosticsButton);
     this.notifyPropertyChange("conversationPhaseLabel", this.conversationPhaseLabel);
     this.notifyPropertyChange("conversationPhaseVisibility", this.conversationPhaseVisibility);
+    this.notifyPropertyChange("conversationWearerLabel", this.conversationWearerLabel);
+    this.notifyPropertyChange("conversationWearerVisibility", this.conversationWearerVisibility);
+    this.notifyPropertyChange("conversationWearerPhraseButton", this.conversationWearerPhraseButton);
     this.notifyPropertyChange("localTranscript", this.localTranscript);
     this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
     this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
@@ -285,6 +289,37 @@ export class MainViewModel extends RemoteControlsViewModel {
     dashboardController.setConversationCaptureEnabled(true, plan.transcribe, plan.mode);
   }
 
+  /** S2: wearer association line; empty when OFF or before Soniox opens. */
+  get conversationWearerLabel(): string {
+    return wearerLine(dashboardController.conversationDetector.snapshot());
+  }
+
+  get conversationWearerVisibility(): "visible" | "collapse" {
+    return wearerActions(dashboardController.conversationDetector).length ? "visible" : "collapse";
+  }
+
+  /** Primary phrase action on the page itself, visible without opening the manual voice list. */
+  get conversationWearerPhraseButton(): string {
+    return wearerActions(dashboardController.conversationDetector)[0]?.label ?? "Identificar mi voz (frase)";
+  }
+
+  onConversationWearerPhraseTap(): void {
+    wearerActions(dashboardController.conversationDetector)[0]?.run();
+    this.refreshConversationUi();
+  }
+
+  /** Identify, finish, cancel or correct the wearer. Actions captured now; stale ones are rejected. */
+  async onConversationWearerTap(): Promise<void> {
+    const detector = dashboardController.conversationDetector;
+    const actions = [...wearerActions(detector), ...wearerChoices(detector)];
+    if (!actions.length) return;
+    const choice = await Dialogs.action({ title: "Mi voz en esta sesión", cancelButtonText: "Cerrar",
+      message: "Identifica tu voz con la frase o elige la etiqueta. Elegir cancela un intento pendiente.",
+      actions: actions.map((action) => action.label) });
+    actions.find((action) => action.label === choice)?.run();
+    this.refreshConversationUi();
+  }
+
   onConversationDetectorMetricsTap(): void {
     const detector = dashboardController.conversationDetector;
     if (detector.snapshot().enabled) return; // Aggregate inspection after OFF, not during capture.
@@ -292,7 +327,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     const draining = snapshot.transcription?.worker || snapshot.transcription?.busy
       || snapshot.participation?.worker || snapshot.participation?.busy;
     const note = draining ? "Drenando motores locales: cifras todavía no finales. Vuelve a abrir en unos segundos.\n" : "";
+    const summary = detector.lastSessionSummary();
     void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
+      + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 

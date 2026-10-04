@@ -270,8 +270,11 @@ export class FaceclawVoiceControlBridge {
     const diagnostics = () => this.experimentalLeaseId === id
       ? String(this.controller?.experimentalAudioDiagnostics() ?? "") : lastDiagnostics;
     const stop = () => {
-      if (this.experimentalLeaseId === id) lastDiagnostics = diagnostics();
+      if (this.experimentalLeaseId !== id) return;
       this.stopExperimentalRaw(id!);
+      // Read the stopped controller before any other owner starts a fresh capture. The lease keeps
+      // this snapshot, so old diagnostics never describe the next owner's stream.
+      lastDiagnostics = String(this.controller?.experimentalAudioDiagnostics() ?? "");
     };
     const id = this.audioArbiter.acquireDetector(() => {
       // Detach delivery before touching the native controller or invoking the coordinator.

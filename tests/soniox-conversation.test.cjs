@@ -96,7 +96,7 @@ test('a dropped socket or server error falls back to local Whisper and keeps the
     assert.deepEqual(h.local.events, ['start:es'], failure);
     assert.equal(h.sockets[0].closed, true);
     h.local.setText('seguimos aquí');
-    assert.equal(h.engine.text(), '1: Hola\nseguimos aquí');
+    assert.equal(h.engine.text(), 'Texto anterior · Soniox:\n1: Hola\nLocal · sin identificación:\nseguimos aquí');
     assert.equal(h.engine.snapshot().engine, 'local (sin red)');
     h.engine.acceptNative({}, 'posible voz');
     assert.ok(h.local.events.includes('pcm'));

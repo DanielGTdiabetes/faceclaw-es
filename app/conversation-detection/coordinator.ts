@@ -1,5 +1,8 @@
 import { LocalEnergyVad, type LocalVadSnapshot } from "./local-vad";
-import { type DetectorTranscription, type LocalTranscriptionSnapshot, type TextLanguage } from "./transcription";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot, type ObservedSpeaker, type SonioxSessionSummary,
+  type TextLanguage } from "./transcription";
+import { type ConversationTurn } from "./conversation-turns";
+import { type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } from "./wearer-identity";
 import { PhaseDiagnostics, type DiagnosticPhase, type PhaseDiagnosticsSnapshot } from "./phase-diagnostics";
 import { type DetectorParticipation, type LocalParticipationSnapshot, type ParticipationMode } from "./participation";
 
@@ -96,6 +99,49 @@ export class ConversationCaptureCoordinator {
     return this.host.participation?.profileState?.() ?? (this.hasOwnProfile() ? "guardado" : "sin perfil");
   }
   deleteOwnProfile(): boolean { this.setEnabled(false); return this.host.participation?.deleteProfile() ?? false; }
+
+  /**
+   * S2: explicit wearer identification. Only acts on a listening session; never starts capture.
+   * The reference is captured by phrase action menus when built; null while OFF or without Soniox.
+   */
+  wearerActionRef(): WearerActionRef | null {
+    return this.enabled ? this.host.transcription?.wearerActionRef?.() ?? null : null;
+  }
+  identifyWearer(ref?: WearerActionRef): boolean {
+    if (!this.enabled || this.state !== "escuchando") return false;
+    return this.afterWearerAction(this.host.transcription?.identifyWearer?.(ref) ?? false);
+  }
+  finishWearerIdentification(ref?: WearerActionRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.finishWearerIdentification?.(ref) ?? false);
+  }
+  cancelWearerIdentification(ref?: WearerActionRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.cancelWearerIdentification?.(ref) ?? false);
+  }
+  /** Manual choice or clear; the reference must belong to the live session and stream. */
+  assignWearer(ref: SpeakerRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.assignWearer?.(ref) ?? false);
+  }
+  observedSpeakers(): ObservedSpeaker[] {
+    return this.enabled ? this.host.transcription?.observedSpeakers?.() ?? [] : [];
+  }
+  subscribeTurns(listener: (turn: ConversationTurn) => void): () => void {
+    return this.host.transcription?.subscribeTurns?.(listener) ?? (() => {});
+  }
+  subscribeAssociation(listener: (event: WearerAssociationEvent) => void): () => void {
+    return this.host.transcription?.subscribeAssociation?.(listener) ?? (() => {});
+  }
+  /** Aggregate of the last Soniox session; `endedBy` is this coordinator's stopReason once OFF. */
+  lastSessionSummary(): SonioxSessionSummary | null {
+    const summary = this.host.transcription?.lastSessionSummary?.() ?? null;
+    return summary && !this.enabled ? { ...summary, endedBy: this.stopReason } : summary;
+  }
+  private afterWearerAction(done: boolean): boolean {
+    if (done) this.emit();
+    return done;
+  }
 
   /**
    * Diagnostic mark from an explicit user control. Same thread as PCM delivery: the mark applies to
@@ -317,14 +363,17 @@ export class ConversationCaptureCoordinator {
     const lease = this.lease;
     this.lease = null;
     if (lease) {
-      try { this.lastDiagnostics = lease.diagnostics(); } catch { this.lastDiagnostics = "Diagnóstico no disponible."; }
       lease.stop();
+      try { this.lastDiagnostics = lease.diagnostics(); } catch { this.lastDiagnostics = "Diagnóstico no disponible."; }
     }
   }
 
   private cleanup(): void {
     this.cancelTimer?.();
     this.cancelTimer = null;
+    // S2: OFF/expiry/terminal error end the identity before release() resets the stream, so a
+    // pending attempt is recorded as cancelled by OFF instead of as an audio interruption.
+    this.host.transcription?.prepareStop?.();
     this.release();
     this.host.transcription?.stop();
     this.host.participation?.stop();

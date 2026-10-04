@@ -4,8 +4,8 @@ param(
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$JavaDirectory = $env:JAVA_HOME,
     [string]$Serial = '',
-    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1')]
-    [string]$ExpectedVersion = '0.8.2-es.5-conversation.s1',
+    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1', '0.8.2-es.5-conversation.s2', '0.8.2-es.5-conversation.s2.1', '0.8.2-es.5-conversation.s2.2', '0.8.2-es.5-conversation.s2.3')]
+    [string]$ExpectedVersion = '0.8.2-es.5-conversation.s2.3',
     [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
