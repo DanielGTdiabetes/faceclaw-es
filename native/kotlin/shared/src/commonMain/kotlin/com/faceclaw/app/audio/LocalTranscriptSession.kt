@@ -1,13 +1,22 @@
 package com.faceclaw.app
 
-data class LocalDecodedText(val text: String, val language: String)
+/** Language configuration captured by each accepted start. A rejected start never changes it. */
+enum class LocalTranscriptLanguage(val wire: String) {
+    AUTO("auto"), ES("es");
+    companion object {
+        fun fromWire(value: String?): LocalTranscriptLanguage = if (value == "es") ES else AUTO
+    }
+}
+
+/** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
+data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false)
 interface LocalTranscriptDecoder {
     fun decode(samples: FloatArray): LocalDecodedText
     fun release()
 }
 interface LocalTranscriptHost {
     val dispatcher: CallbackDispatcher
-    fun loadDecoder(): LocalTranscriptDecoder?
+    fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder?
 }
 interface FaceclawLocalTranscriptListener {
     fun onText(text: String, language: String)
@@ -15,10 +24,24 @@ interface FaceclawLocalTranscriptListener {
 
 enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE }
 
+/** Forced Spanish: an empty or "es" engine label becomes forced Spanish; any other explicit label is kept. */
+fun normalizeForcedLanguage(raw: String?): String {
+    val value = raw?.trim().orEmpty()
+    return if (value.isEmpty() || value == "es") "es" else value
+}
+
+/** Maps the engine result for the session language. Automatic mode keeps the engine label unchanged. */
+fun localDecodedText(text: String, rawLanguage: String?, mode: LocalTranscriptLanguage): LocalDecodedText =
+    if (mode == LocalTranscriptLanguage.ES) LocalDecodedText(text, normalizeForcedLanguage(rawLanguage), forced = true)
+    else LocalDecodedText(text, rawLanguage ?: "")
+
 /** No semantic confidence is exposed by this runtime. These are structural abstentions only. */
 fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
     val text = result.text.trim()
-    if (result.language != "es" && result.language != "ca") return LocalTextRejection.LANGUAGE
+    if (result.forced) {
+        // In forced Spanish, any other explicit label (including "ca") is a mismatch, never text.
+        if (result.language != "es") return LocalTextRejection.LANGUAGE
+    } else if (result.language != "es" && result.language != "ca") return LocalTextRejection.LANGUAGE
     if (text.isEmpty()) return LocalTextRejection.EMPTY
     if (text.length > 600 || !text.any { it.isLetter() }) return LocalTextRejection.STRUCTURE
     if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return LocalTextRejection.STRUCTURE
@@ -28,18 +51,33 @@ fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
 fun acceptedLocalText(result: LocalDecodedText): String =
     if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
 
+/**
+ * Diagnostic phases are user marks, not speaker identification. Indices 0..4 are marks and 5 is a
+ * segment whose samples (including pre-roll) came from more than one mark.
+ */
+object LocalTranscriptPhases {
+    const val MARKED = 5
+    const val MIXED = 5
+    const val COUNT = 6
+    val NAMES = arrayOf("sin-marcar", "otra-persona", "yo", "referencia", "fin", "mixta")
+}
+
 /** Segments the existing provisional VAD. Copies PCM only into bounded, erasable RAM. */
 class LocalTranscriptBuffer(
     private val segmentInfo: (Int) -> Unit = {},
+    private val segmentPhase: (Int) -> Unit = {},
     private val submit: (ShortArray) -> Unit,
 ) {
     companion object {
         const val MAX_SAMPLES = 16000 * 8
         const val PRE_SAMPLES = 16000 / 5
         const val MIN_VOICED_SAMPLES = 16000 * 3 / 10
+        const val CHUNK_SAMPLES = 800
     }
     private val samples = ShortArray(MAX_SAMPLES)
     private val pre = ShortArray(PRE_SAMPLES)
+    private val prePhases = IntArray(PRE_SAMPLES / CHUNK_SAMPLES)
+    private val segmentSamplesByPhase = LongArray(LocalTranscriptPhases.MARKED)
     private var preCount = 0
     private var preWrite = 0
     private var count = 0
@@ -51,10 +89,21 @@ class LocalTranscriptBuffer(
     private var interruptedSegments = 0
     private var interruptedSamples = 0L
     private var submittedSamples = 0L
+    private val phaseSilence = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseLimit = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseShort = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseInterrupted = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseInterruptedSamples = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseSubmittedSamples = LongArray(LocalTranscriptPhases.COUNT)
+    private val mixedSamplesByPhase = LongArray(LocalTranscriptPhases.MARKED)
     fun bufferedBytes(): Int = (count + preCount) * 2
 
     fun reset() {
-        if (active && count > 0) { interruptedSegments++; interruptedSamples += count }
+        if (active && count > 0) {
+            val phase = closePhase()
+            interruptedSegments++; interruptedSamples += count
+            phaseInterrupted[phase]++; phaseInterruptedSamples[phase] += count.toLong()
+        }
         clearAudio()
     }
 
@@ -62,6 +111,8 @@ class LocalTranscriptBuffer(
         clearAudio()
         silenceClosures = 0; limitClosures = 0; shortSegments = 0
         interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0
+        for (array in listOf(phaseSilence, phaseLimit, phaseShort, phaseInterrupted,
+            phaseInterruptedSamples, phaseSubmittedSamples, mixedSamplesByPhase)) array.fill(0)
     }
 
     /** Duration is PCM sample time, not wall time or confirmed speech. */
@@ -69,26 +120,63 @@ class LocalTranscriptBuffer(
         "\"shortSegments\":$shortSegments,\"interruptedSegments\":$interruptedSegments," +
         "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}"
 
+    /** Same segment counters attributed to the origin phase of each segment. */
+    fun phaseDiagnostics(phase: Int): String = "\"silenceClosures\":${phaseSilence[phase]}," +
+        "\"limitClosures\":${phaseLimit[phase]},\"shortSegments\":${phaseShort[phase]}," +
+        "\"interruptedSegments\":${phaseInterrupted[phase]}," +
+        "\"interruptedAudioMs\":${phaseInterruptedSamples[phase] / 16}," +
+        "\"submittedAudioMs\":${phaseSubmittedSamples[phase] / 16}"
+
+    /** Audio of mixed segments (submitted, short or interrupted) split by the mark it arrived under. */
+    fun mixedDiagnostics(): String =
+        "\"mixedAudioMsByPhase\":[${mixedSamplesByPhase.joinToString(",") { (it / 16).toString() }}]"
+
     private fun clearAudio() {
-        samples.fill(0); pre.fill(0)
+        samples.fill(0); pre.fill(0); prePhases.fill(0); segmentSamplesByPhase.fill(0)
         count = 0; voiced = 0; preCount = 0; preWrite = 0; active = false
     }
 
-    fun accept(pcm: ByteArray, state: String) {
+    private fun segmentPhaseOf(): Int {
+        var found = -1
+        for (index in 0 until LocalTranscriptPhases.MARKED) {
+            if (segmentSamplesByPhase[index] > 0) {
+                if (found >= 0) return LocalTranscriptPhases.MIXED
+                found = index
+            }
+        }
+        return if (found < 0) 0 else found
+    }
+
+    /** Origin of the segment being closed; mixed segments also record their split. */
+    private fun closePhase(): Int {
+        val phase = segmentPhaseOf()
+        if (phase == LocalTranscriptPhases.MIXED) {
+            for (index in 0 until LocalTranscriptPhases.MARKED) mixedSamplesByPhase[index] += segmentSamplesByPhase[index]
+        }
+        return phase
+    }
+
+    fun accept(pcm: ByteArray, state: String, phase: Int = 0) {
         if (pcm.size != 1600) { reset(); return }
         if (state != "posible voz" && state != "pausa" && state != "sin actividad" && state != "candidato") {
             reset(); return
         }
+        val origin = phase.coerceIn(0, LocalTranscriptPhases.MARKED - 1)
         if (!active && state == "posible voz") {
             val start = (preWrite - preCount + PRE_SAMPLES) % PRE_SAMPLES
-            repeat(preCount) { samples[count++] = pre[(start + it) % PRE_SAMPLES] }
-            pre.fill(0); preCount = 0; preWrite = 0; active = true
+            repeat(preCount) {
+                val position = (start + it) % PRE_SAMPLES
+                samples[count++] = pre[position]
+                segmentSamplesByPhase[prePhases[position / CHUNK_SAMPLES]]++
+            }
+            pre.fill(0); prePhases.fill(0); preCount = 0; preWrite = 0; active = true
         }
         for (i in 0 until 800) {
             val value = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
-            if (active) samples[count++] = value
+            if (active) { samples[count++] = value; segmentSamplesByPhase[origin]++ }
             else {
                 pre[preWrite] = value
+                prePhases[preWrite / CHUNK_SAMPLES] = origin
                 preWrite = (preWrite + 1) % PRE_SAMPLES
                 preCount = minOf(PRE_SAMPLES, preCount + 1)
             }
@@ -99,13 +187,15 @@ class LocalTranscriptBuffer(
     }
 
     private fun finish(atLimit: Boolean) {
-        if (atLimit) limitClosures++ else silenceClosures++
+        val phase = closePhase()
+        if (atLimit) { limitClosures++; phaseLimit[phase]++ } else { silenceClosures++; phaseSilence[phase]++ }
         val audio = if (voiced >= MIN_VOICED_SAMPLES) samples.copyOf(count) else null
         val voicedSamples = voiced
-        if (audio == null) shortSegments++ else submittedSamples += count
+        if (audio == null) { shortSegments++; phaseShort[phase]++ }
+        else { submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong() }
         // Erase before handing a completed segment to an asynchronous consumer.
         clearAudio()
-        if (audio != null) { segmentInfo(voicedSamples); submit(audio) }
+        if (audio != null) { segmentInfo(voicedSamples); segmentPhase(phase); submit(audio) }
     }
 }
 
@@ -114,8 +204,17 @@ class LocalTranscriptSession(
     private val host: LocalTranscriptHost,
     private val platform: ProtocolPlatform = protocolPlatform(),
 ) {
-    private data class Job(val generation: Long, val audio: ShortArray)
-    private data class Result(val generation: Long, val text: String, val language: String)
+    /** Per-phase scalar counters. They never hold text, audio or model paths. */
+    private class LocalTranscriptPhaseStats {
+        var pcmChunks = 0L; var loadingChunks = 0L; var dropped = 0L
+        var decodeCalls = 0L; var decodedSamples = 0L; var decodeTotalMs = 0L; var decodeMaxMs = 0L
+        var rejectedLanguage = 0L; var rejectedEmpty = 0L; var rejectedStructure = 0L
+        var decodeErrors = 0L; var processingErrors = 0L; var invalidatedDecodes = 0L
+        var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
+        var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
+    }
+    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int)
+    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int)
     private val condition = platform.createCondition()
     private var running = false
     private var worker = false
@@ -127,52 +226,42 @@ class LocalTranscriptSession(
     private var busy = false
     private var activeInputBytes = 0
     private var result: Result? = null
-    private var accepted = 0
-    private var abstentions = 0
-    private var dropped = 0
-    private var pcmChunks = 0
-    private var loadingChunks = 0
-    private var decodeCalls = 0
-    private var decodedSamples = 0L
-    private var decodeTotalMs = 0L
-    private var decodeMaxMs = 0L
-    private var rejectedLanguage = 0
-    private var rejectedEmpty = 0
-    private var rejectedStructure = 0
-    private var decodeErrors = 0
-    private var processingErrors = 0
-    private var invalidatedDecodes = 0
-    private var languageEs = 0
-    private var languageCa = 0
-    private var languageOther = 0
-    private var delivered = 0
+    private var phase = 0
+    private var pendingSegmentPhase = 0
+    private var languageMode = LocalTranscriptLanguage.AUTO
+    private var stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
     private var listener: FaceclawLocalTranscriptListener? = null
-    private val buffer = LocalTranscriptBuffer { audio ->
+    private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it }) { audio ->
         // Called under condition by acceptPcm; do not acquire its non-reentrant lock again.
-        if (!running || !ready || busy) { audio.fill(0); dropped++ }
-        else { job = Job(generation, audio); busy = true; condition.signalAll() }
+        if (!running || !ready || busy) { audio.fill(0); stats[pendingSegmentPhase].dropped++ }
+        else { job = Job(generation, audio, pendingSegmentPhase); busy = true; condition.signalAll() }
     }
 
     fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
-    fun start(): Boolean {
+
+    /** The language is captured only by an accepted start and handed to that worker as an immutable value. */
+    fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO): Boolean {
         condition.withLock {
             if (worker) return false // A non-interruptible previous JNI call must drain first.
             running = true; worker = true; ready = false; generation++
             deadline = platform.elapsedRealtimeMs() + 120000
-            accepted = 0; abstentions = 0; dropped = 0; status = "cargando"
+            status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
             buffer.resetMetrics()
-            pcmChunks = 0; loadingChunks = 0; decodeCalls = 0; decodedSamples = 0
-            decodeTotalMs = 0; decodeMaxMs = 0; rejectedLanguage = 0; rejectedEmpty = 0
-            rejectedStructure = 0; decodeErrors = 0; processingErrors = 0; invalidatedDecodes = 0
-            languageEs = 0; languageCa = 0; languageOther = 0; delivered = 0
+            stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
         }
-        startThread("FaceclawLocalTranscript", true) { runWorker() }
+        val config = language
+        startThread("FaceclawLocalTranscript", true) { runWorker(config) }
         return true
+    }
+
+    /** User mark for diagnostics. Applies to the next PCM chunk; invalid values are ignored. */
+    fun setPhase(value: Int) {
+        condition.withLock { if (value in 0 until LocalTranscriptPhases.MARKED) phase = value }
     }
 
     fun resetStream() {
         condition.withLock {
-            generation++; buffer.reset(); result = null
+            generation++; buffer.reset(); discardPendingResult()
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             condition.signalAll()
@@ -182,7 +271,7 @@ class LocalTranscriptSession(
     /** Non-blocking. In-flight JNI decoding is invalidated and releases its stream on return. */
     fun stop() {
         condition.withLock {
-            running = false; ready = false; generation++; buffer.reset(); result = null
+            running = false; ready = false; generation++; buffer.reset(); discardPendingResult()
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             status = "inactivo"; condition.signalAll()
@@ -192,32 +281,59 @@ class LocalTranscriptSession(
     fun acceptPcm(pcm: ByteArray?, vadState: String) {
         condition.withLock {
             if (running && pcm != null && platform.elapsedRealtimeMs() < deadline) {
-                if (pcm.size == 1600) { pcmChunks++; if (!ready) loadingChunks++ }
-                if (ready) buffer.accept(pcm, vadState)
+                if (pcm.size == 1600) { stats[phase].pcmChunks++; if (!ready) stats[phase].loadingChunks++ }
+                if (ready) buffer.accept(pcm, vadState, phase)
             }
         }
     }
 
-    /** Scalar diagnostics only: no text/audio/model path in this snapshot. */
+    /** Single exit for a pending result that will not be delivered. Must run under condition. */
+    private fun discardPendingResult() {
+        result?.let { stats[it.phase].deliveryDiscarded++ }
+        result = null
+    }
+
+    private fun sum(field: (LocalTranscriptPhaseStats) -> Long): Long = stats.sumOf(field)
+
+    private fun phaseJson(index: Int): String {
+        val s = stats[index]
+        return "{\"phase\":\"${LocalTranscriptPhases.NAMES[index]}\",\"pcmAudioMs\":${s.pcmChunks * 50}," +
+            "\"loadingAudioMs\":${s.loadingChunks * 50}," + buffer.phaseDiagnostics(index) +
+            ",\"dropped\":${s.dropped},\"decodeCalls\":${s.decodeCalls},\"decodedAudioMs\":${s.decodedSamples / 16}," +
+            "\"decodeTotalMs\":${s.decodeTotalMs},\"decodeMaxMs\":${s.decodeMaxMs}," +
+            "\"rejectedLanguage\":${s.rejectedLanguage},\"rejectedEmpty\":${s.rejectedEmpty}," +
+            "\"rejectedStructure\":${s.rejectedStructure},\"decodeErrors\":${s.decodeErrors}," +
+            "\"processingErrors\":${s.processingErrors},\"invalidatedDecodes\":${s.invalidatedDecodes}," +
+            "\"languageEs\":${s.languageEs},\"languageCa\":${s.languageCa},\"languageOther\":${s.languageOther}," +
+            "\"languageForced\":${s.languageForced},\"forcedMismatch\":${s.forcedMismatch}," +
+            "\"accepted\":${s.accepted},\"abstentions\":${s.abstentions},\"delivered\":${s.delivered}," +
+            "\"deliveredChars\":${s.deliveredChars},\"deliveryDiscarded\":${s.deliveryDiscarded}}"
+    }
+
+    /** Scalar diagnostics only: no text/audio/model path in this snapshot. Totals first, phases last. */
     fun diagnostics(): String = condition.withLock {
         "{\"status\":\"$status\",\"worker\":$worker,\"busy\":$busy," +
             "\"inputBufferedBytes\":${buffer.bufferedBytes() + (job?.audio?.size ?: 0) * 2 + activeInputBytes}," +
-            "\"accepted\":$accepted,\"abstentions\":$abstentions,\"dropped\":$dropped," +
-            "\"analysis\":{\"pcmAudioMs\":${pcmChunks * 50L},\"loadingAudioMs\":${loadingChunks * 50L}," +
-            buffer.diagnostics() + ",\"decodeCalls\":$decodeCalls,\"decodedAudioMs\":${decodedSamples / 16}," +
-            "\"decodeTotalMs\":$decodeTotalMs,\"decodeMaxMs\":$decodeMaxMs," +
-            "\"rejectedLanguage\":$rejectedLanguage,\"rejectedEmpty\":$rejectedEmpty," +
-            "\"rejectedStructure\":$rejectedStructure,\"decodeErrors\":$decodeErrors," +
-            "\"processingErrors\":$processingErrors," +
-            "\"invalidatedDecodes\":$invalidatedDecodes,\"languageEs\":$languageEs," +
-            "\"languageCa\":$languageCa,\"languageOther\":$languageOther,\"delivered\":$delivered}}"
+            "\"accepted\":${sum { it.accepted }},\"abstentions\":${sum { it.abstentions }},\"dropped\":${sum { it.dropped }}," +
+            "\"analysis\":{\"pcmAudioMs\":${sum { it.pcmChunks } * 50},\"loadingAudioMs\":${sum { it.loadingChunks } * 50}," +
+            buffer.diagnostics() + ",\"decodeCalls\":${sum { it.decodeCalls }},\"decodedAudioMs\":${sum { it.decodedSamples } / 16}," +
+            "\"decodeTotalMs\":${sum { it.decodeTotalMs }},\"decodeMaxMs\":${stats.maxOf { it.decodeMaxMs }}," +
+            "\"rejectedLanguage\":${sum { it.rejectedLanguage }},\"rejectedEmpty\":${sum { it.rejectedEmpty }}," +
+            "\"rejectedStructure\":${sum { it.rejectedStructure }},\"decodeErrors\":${sum { it.decodeErrors }}," +
+            "\"processingErrors\":${sum { it.processingErrors }}," +
+            "\"invalidatedDecodes\":${sum { it.invalidatedDecodes }},\"languageEs\":${sum { it.languageEs }}," +
+            "\"languageCa\":${sum { it.languageCa }},\"languageOther\":${sum { it.languageOther }},\"delivered\":${sum { it.delivered }}," +
+            "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
+            "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
+            "\"languageMode\":\"${languageMode.wire}\"," + buffer.mixedDiagnostics() +
+            ",\"phases\":[${(0 until LocalTranscriptPhases.COUNT).joinToString(",") { phaseJson(it) }}]}}"
     }
 
     private fun nextJob(): Job? = condition.withLock {
         while (running && job == null && platform.elapsedRealtimeMs() < deadline) condition.awaitMs(250)
         if (platform.elapsedRealtimeMs() >= deadline) {
             running = false; ready = false; status = "inactivo"
-            buffer.reset(); result = null; job?.audio?.fill(0)
+            buffer.reset(); discardPendingResult(); job?.audio?.fill(0)
         }
         val next = if (running) job else null
         job = null
@@ -225,10 +341,10 @@ class LocalTranscriptSession(
         next
     }
 
-    private fun runWorker() {
+    private fun runWorker(language: LocalTranscriptLanguage) {
         var decoder: LocalTranscriptDecoder? = null
         try {
-            decoder = host.loadDecoder()
+            decoder = host.loadDecoder(language)
             condition.withLock {
                 if (running) {
                     ready = decoder != null
@@ -246,7 +362,7 @@ class LocalTranscriptSession(
                     val canDecode = condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }
                     if (canDecode) {
                         decodeStarted = platform.elapsedRealtimeMs()
-                        condition.withLock { decodeCalls++; decodedSamples += floats.size }
+                        condition.withLock { stats[next.phase].decodeCalls++; stats[next.phase].decodedSamples += floats.size }
                     }
                     val decoded = if (canDecode) try {
                         decoder?.decode(floats)
@@ -255,25 +371,37 @@ class LocalTranscriptSession(
                         throw failure
                     } finally {
                         val elapsed = maxOf(0L, platform.elapsedRealtimeMs() - decodeStarted!!)
-                        condition.withLock { decodeTotalMs += elapsed; decodeMaxMs = maxOf(decodeMaxMs, elapsed) }
+                        condition.withLock {
+                            val s = stats[next.phase]
+                            s.decodeTotalMs += elapsed; s.decodeMaxMs = maxOf(s.decodeMaxMs, elapsed)
+                        }
                     } else null
                     val text = if (decoded != null) acceptedLocalText(decoded) else ""
                     val post = condition.withLock {
+                        val s = stats[next.phase]
                         if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) {
-                            if (canDecode) invalidatedDecodes++
+                            if (canDecode) s.invalidatedDecodes++
                             false
                         } else {
-                            when (decoded?.language) { "es" -> languageEs++; "ca" -> languageCa++; else -> languageOther++ }
+                            when {
+                                decoded == null -> s.languageOther++
+                                decoded.forced -> if (decoded.language == "es") s.languageForced++ else s.forcedMismatch++
+                                decoded.language == "es" -> s.languageEs++
+                                decoded.language == "ca" -> s.languageCa++
+                                else -> s.languageOther++
+                            }
                             when (decoded?.let { localTextRejection(it) }) {
-                                LocalTextRejection.LANGUAGE -> rejectedLanguage++
-                                LocalTextRejection.EMPTY -> rejectedEmpty++
-                                LocalTextRejection.STRUCTURE -> rejectedStructure++
+                                LocalTextRejection.LANGUAGE -> s.rejectedLanguage++
+                                LocalTextRejection.EMPTY -> s.rejectedEmpty++
+                                LocalTextRejection.STRUCTURE -> s.rejectedStructure++
                                 else -> Unit
                             }
-                            if (text.isEmpty()) { abstentions++; false }
+                            if (text.isEmpty()) { s.abstentions++; false }
                             else {
-                                accepted++
-                                result = Result(next.generation, text, decoded!!.language)
+                                s.accepted++
+                                // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
+                                discardPendingResult()
+                                result = Result(next.generation, text, decoded!!.language, next.phase)
                                 true
                             }
                         }
@@ -281,10 +409,11 @@ class LocalTranscriptSession(
                     if (post) publish(next.generation)
                 } catch (_: Throwable) {
                     condition.withLock {
+                        val s = stats[next.phase]
                         if (running && generation == next.generation && platform.elapsedRealtimeMs() < deadline) {
-                            abstentions++
-                            if (decodeFailed) decodeErrors++ else processingErrors++
-                        } else if (decodeStarted != null) invalidatedDecodes++
+                            s.abstentions++
+                            if (decodeFailed) s.decodeErrors++ else s.processingErrors++
+                        } else if (decodeStarted != null) s.invalidatedDecodes++
                     }
                     // No error popup, transcript dump or fallback recognizer.
                 } finally {
@@ -297,7 +426,7 @@ class LocalTranscriptSession(
         } finally {
             try { decoder?.release() } catch (_: Throwable) { /* no content in diagnostics */ }
             condition.withLock {
-                buffer.reset(); job?.audio?.fill(0); job = null; result = null
+                buffer.reset(); job?.audio?.fill(0); job = null; discardPendingResult()
                 activeInputBytes = 0; busy = false; ready = false; running = false; worker = false
             }
         }
@@ -307,10 +436,20 @@ class LocalTranscriptSession(
         host.dispatcher.post {
             val delivery = condition.withLock {
                 val current = result
-                if (running && generation == token && current?.generation == token && platform.elapsedRealtimeMs() < deadline) {
-                    if (listener != null) delivered++
-                    result = null; Pair(listener, current)
-                } else null
+                if (current == null || current.generation != token) null // Already counted or a newer generation.
+                else {
+                    result = null
+                    val target = listener
+                    if (running && generation == token && platform.elapsedRealtimeMs() < deadline && target != null) {
+                        stats[current.phase].delivered++
+                        stats[current.phase].deliveredChars += current.text.length.toLong()
+                        Pair(target, current)
+                    } else {
+                        // Invalid publication or consumption without a listener is never a delivery.
+                        stats[current.phase].deliveryDiscarded++
+                        null
+                    }
+                }
             }
             delivery?.first?.onText(delivery.second.text, delivery.second.language)
         }

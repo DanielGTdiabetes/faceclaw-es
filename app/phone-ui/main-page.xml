@@ -25,7 +25,18 @@
             <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
             <Button text="{{ voiceProfileButton }}" tap="{{ onVoiceProfileTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
             <Button text="{{ conversationTextButton }}" tap="{{ onConversationTextTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="{{ conversationDiagnosticsButton }}" tap="{{ onConversationDiagnosticsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
             <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
+            <StackLayout visibility="{{ conversationPhaseVisibility }}">
+                <Label text="{{ conversationPhaseLabel }}" textWrap="true" fontSize="11" />
+                <GridLayout columns="*,*,*,*">
+                    <Button col="0" text="Otra persona" tap="{{ onPhaseOtherTap }}" />
+                    <Button col="1" text="Yo" tap="{{ onPhaseMeTap }}" />
+                    <Button col="2" text="Referencia" tap="{{ onPhaseReferenceTap }}" />
+                    <Button col="3" text="Fin" tap="{{ onPhaseEndTap }}" />
+                </GridLayout>
+            </StackLayout>
             <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
             <Label text="{{ localTranscript }}" textWrap="true" maxLines="4" fontSize="13" />
             <Button text="Opciones · Mi perfil y modos locales" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />

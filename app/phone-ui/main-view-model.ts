@@ -29,8 +29,12 @@ import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
-import { conversationDetail, conversationStartPlan } from "../conversation-detection/conversation-ui";
-import { conversationTextSelected, setConversationTextSelected, onConversationTextSelected } from "../conversation-detection/session-controls";
+import { conversationDetail, conversationStartPlan, textLanguageLabel } from "../conversation-detection/conversation-ui";
+import {
+  conversationDiagnosticsSelected, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
+  setConversationDiagnosticsSelected, setConversationTextLanguage, setConversationTextSelected,
+} from "../conversation-detection/session-controls";
+import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -157,6 +161,10 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
     this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
     this.notifyPropertyChange("conversationTextButton", this.conversationTextButton);
+    this.notifyPropertyChange("conversationLanguageButton", this.conversationLanguageButton);
+    this.notifyPropertyChange("conversationDiagnosticsButton", this.conversationDiagnosticsButton);
+    this.notifyPropertyChange("conversationPhaseLabel", this.conversationPhaseLabel);
+    this.notifyPropertyChange("conversationPhaseVisibility", this.conversationPhaseVisibility);
     this.notifyPropertyChange("localTranscript", this.localTranscript);
     this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
     this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
@@ -183,8 +191,53 @@ export class MainViewModel extends RemoteControlsViewModel {
   private get conversationPlan() {
     const detector = dashboardController.conversationDetector;
     return conversationStartPlan(detector.snapshot(), detector.ownProfileState(),
-      micModelState("speaker-embedding").status, asrModelState("whisper-base-es").status, this.conversationWithText);
+      micModelState("speaker-embedding").status, asrModelState("whisper-base-es").status, this.conversationWithText,
+      conversationTextLanguage());
   }
+
+  /** RAM selector, OFF only; the running session keeps the language it started with. */
+  get conversationLanguageButton(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const language = snapshot.enabled ? snapshot.languageMode : conversationTextLanguage();
+    const label = language === "es" ? "castellano (forzado)" : language === "auto" ? "automático" : "sin texto";
+    return `Idioma del texto: ${label} · ${snapshot.enabled ? "sesión en curso" : "tocar para cambiar"}`;
+  }
+
+  onConversationLanguageTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    setConversationTextLanguage(conversationTextLanguage() === "es" ? "auto" : "es");
+  }
+
+  get conversationDiagnosticsButton(): string {
+    return `Diagnóstico por fases: ${conversationDiagnosticsSelected() ? "ON" : "OFF"} · ${this.localTranscriptionCanStart ? "tocar para cambiar" : "sesión en curso"}`;
+  }
+
+  onConversationDiagnosticsTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    setConversationDiagnosticsSelected(!conversationDiagnosticsSelected());
+  }
+
+  /** Phase marks exist only during a session started with diagnostics; they are the user's marks. */
+  get conversationPhaseVisibility(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return snapshot.enabled && snapshot.phases ? "visible" : "collapsed";
+  }
+
+  get conversationPhaseLabel(): string {
+    const phases = dashboardController.conversationDetector.snapshot().phases;
+    const names: Record<DiagnosticPhase, string> = { "sin-marcar": "sin marcar", "otra-persona": "otra persona",
+      yo: "yo", referencia: "referencia (nadie habla)", fin: "fin" };
+    return phases ? `Fase marcada por ti: ${names[phases.current]} · ${phases.marks} marcas` : "";
+  }
+
+  private markPhase(phase: DiagnosticPhase): void {
+    dashboardController.conversationDetector.markPhase(phase);
+    this.notifyPropertyChange("conversationPhaseLabel", this.conversationPhaseLabel);
+  }
+  onPhaseOtherTap(): void { this.markPhase("otra-persona"); }
+  onPhaseMeTap(): void { this.markPhase("yo"); }
+  onPhaseReferenceTap(): void { this.markPhase("referencia"); }
+  onPhaseEndTap(): void { this.markPhase("fin"); }
 
   get conversationDetectorButton(): string {
     return this.conversationPlan.button;
@@ -233,7 +286,11 @@ export class MainViewModel extends RemoteControlsViewModel {
   onConversationDetectorMetricsTap(): void {
     const detector = dashboardController.conversationDetector;
     if (detector.snapshot().enabled) return; // Aggregate inspection after OFF, not during capture.
-    void Dialogs.alert({ title: "Métricas locales", message: JSON.stringify(detector.snapshot(), null, 2)
+    const snapshot = detector.snapshot();
+    const draining = snapshot.transcription?.worker || snapshot.transcription?.busy
+      || snapshot.participation?.worker || snapshot.participation?.busy;
+    const note = draining ? "Drenando motores locales: cifras todavía no finales. Vuelve a abrir en unos segundos.\n" : "";
+    void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 
@@ -241,12 +298,13 @@ export class MainViewModel extends RemoteControlsViewModel {
   get localTranscriptionCanStart(): boolean { return !dashboardController.conversationDetector.snapshot().enabled; }
   get localTranscriptionLabel(): string {
     const state = dashboardController.conversationDetector.snapshot().transcription;
-    return state?.enabled ? `Texto provisional es/valencià · ${state.status} · se borra al parar o ceder audio.` : "";
+    const language = dashboardController.conversationDetector.snapshot().languageMode;
+    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${state.status} · se borra al parar o ceder audio.` : "";
   }
   get localTranscriptionButton(): string {
     const model = asrModelState("whisper-base-es");
     if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
-    return model.status === "ready" ? "Transcribir localmente (es/valencià, 2 min máx.)" : "Descargar modelo local (161 MB)";
+    return model.status === "ready" ? `Transcribir localmente (${textLanguageLabel(conversationTextLanguage())}, 2 min máx.)` : "Descargar modelo local (161 MB)";
   }
   onLocalTranscriptionTap(): void {
     if (!this.localTranscriptionCanStart) return;

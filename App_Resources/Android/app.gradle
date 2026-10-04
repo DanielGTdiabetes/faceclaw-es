@@ -285,7 +285,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.5-conversation.g3.4.2"
+    versionName "${faceclawVersionName}-es.5-conversation.c1"
     
     generatedDensities = []
   }

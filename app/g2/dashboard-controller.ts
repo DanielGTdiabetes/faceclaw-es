@@ -50,11 +50,11 @@ import { type GlanceEvent } from "./glance-state";
 import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
-import { ConversationCaptureCoordinator, type DetectorEnvironment } from "../conversation-detection/coordinator";
+import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
 import { LocalTranscription } from "../native/local-transcription";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions } from "../conversation-detection/session-controls";
 import { asrModelState } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
@@ -379,7 +379,7 @@ class DashboardController {
   constructor() {
     bindConversationSession({
       detector: this.conversationDetector,
-      setEnabled: (enabled, text, participation) => this.setConversationCaptureEnabled(enabled, text, participation),
+      setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
       voiceModel: () => micModelState("speaker-embedding").status,
       textModel: () => asrModelState("whisper-base-es").status,
     });
@@ -2053,8 +2053,10 @@ class DashboardController {
     participation: new LocalParticipation(),
   });
 
-  setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off"): void {
-    this.conversationDetector.setEnabled(enabled, transcribe, participation);
+  /** Session options (language, diagnostics) default to the RAM selectors, read once at ON. */
+  setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
+    options: SessionOptions = conversationSessionOptions()): void {
+    this.conversationDetector.setEnabled(enabled, transcribe, participation, options);
     // Capture needs a fresh wear report even when the optional lock screen is off.
     // Request on ON and on ready sessions, never from the 500 ms refresh loop.
     if (enabled) this.ensureWearStateTracking();

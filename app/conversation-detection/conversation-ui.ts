@@ -1,8 +1,14 @@
 import { type DetectorSnapshot } from "./coordinator";
+import { type TextLanguage } from "./transcription";
+
+/** Forced Spanish is always shown as forced: never as a detected language or with a confidence. */
+export function textLanguageLabel(language: TextLanguage | undefined): string {
+  return language === "es" ? "castellano (forzado)" : "es/valencià";
+}
 
 /** Session-only choices. Readiness checks never download weights or replace a profile. */
 export function conversationStartPlan(snapshot: DetectorSnapshot, profile: string,
-  voiceModel: string, textModel: string, withText: boolean) {
+  voiceModel: string, textModel: string, withText: boolean, language: TextLanguage = "auto") {
   const mode = profile === "guardado" ? "conversation" as const : "off" as const;
   const base = { transcribe: withText, mode };
   const blocked = (button: string, hint: string) => ({ ...base, canStart: false, button, hint });
@@ -21,8 +27,8 @@ export function conversationStartPlan(snapshot: DetectorSnapshot, profile: strin
   }
   return { ...base, canStart: true, button: "Iniciar conversación local (2 min máx.)",
     hint: mode === "conversation"
-      ? `Mi perfil guardado · comparación y alternancia provisionales · ${withText ? "texto local es/valencià" : "sin transcripción"}.`
-      : `${withText ? "Texto local es/valencià" : "Solo actividad de voz"} · sin perfil no se evalúa participación.` };
+      ? `Mi perfil guardado · comparación y alternancia provisionales · ${withText ? `texto local ${textLanguageLabel(language)}` : "sin transcripción"}.`
+      : `${withText ? `Texto local ${textLanguageLabel(language)}` : "Solo actividad de voz"} · sin perfil no se evalúa participación.` };
 }
 
 /** includeTime=false lets a view that already shows the deadline on its own line avoid repeating it. */

@@ -16,6 +16,8 @@ function harness(lockEnabled = false) {
     lockScreenEnabledSetting: { get: () => lockEnabled }, getGlassesPresence: () => presence,
     hasMicrophonePermission: () => true, voiceActivity: { isActive: () => false },
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },
+    // C1: default RAM session options read once at ON.
+    conversationSessionOptions: () => ({ language: 'auto', diagnostics: false }),
   };
   vm.runInNewContext(ts.transpileModule(`export class Harness { ${methods.join('\n')} }`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },

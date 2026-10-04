@@ -1,5 +1,6 @@
 import { LocalEnergyVad, type LocalVadSnapshot } from "./local-vad";
-import { type DetectorTranscription, type LocalTranscriptionSnapshot } from "./transcription";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot, type TextLanguage } from "./transcription";
+import { PhaseDiagnostics, type DiagnosticPhase, type PhaseDiagnosticsSnapshot } from "./phase-diagnostics";
 import { type DetectorParticipation, type LocalParticipationSnapshot, type ParticipationMode } from "./participation";
 
 /** Local capture, optional own-profile comparison and ASR; no network or assistant actions. */
@@ -15,10 +16,16 @@ export type DetectorSnapshot = {
   transcription?: LocalTranscriptionSnapshot;
   participation?: LocalParticipationSnapshot;
   participationMode: ParticipationMode;
+  /** Language frozen for the last session that used ASR; kept after OFF until the next ON. */
+  languageMode?: TextLanguage;
+  /** C1 acoustics per user-marked phase; present only when diagnostics were chosen before ON. */
+  phases?: PhaseDiagnosticsSnapshot;
   enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
   stopReason: "none" | "manual" | "expired" | "saved" | "error";
   remainingMs: number;
 };
+/** RAM-only choices made while OFF and frozen for the session. */
+export type SessionOptions = { language?: TextLanguage; diagnostics?: boolean };
 export type DetectorLease = { stop(): void; diagnostics(): string };
 export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
 export type DetectorHost = {
@@ -51,6 +58,9 @@ export class ConversationCaptureCoordinator {
   private enabledAt = 0;
   private lastDiagnostics = "";
   private transcribing = false;
+  private language: TextLanguage | null = null;
+  private phases: PhaseDiagnostics | null = null;
+  private gapCounted = false;
   private participationMode: ParticipationMode = "off";
   private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
   private stopReason: DetectorSnapshot["stopReason"] = "none";
@@ -62,6 +72,8 @@ export class ConversationCaptureCoordinator {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
       metrics: { ...this.metrics }, vad: this.vad.snapshot(), participationMode: this.participationMode,
       enrollmentOutcome: this.enrollmentOutcome,
+      ...(this.language ? { languageMode: this.language } : {}),
+      ...(this.phases ? { phases: this.phases.snapshot() } : {}),
       stopReason: this.stopReason,
       remainingMs: this.enabled ? Math.max(0, 120_000 - (this.host.now() - this.enabledAt)) : 0,
       resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
@@ -85,6 +97,17 @@ export class ConversationCaptureCoordinator {
   }
   deleteOwnProfile(): boolean { this.setEnabled(false); return this.host.participation?.deleteProfile() ?? false; }
 
+  /**
+   * Diagnostic mark from an explicit user control. Same thread as PCM delivery: the mark applies to
+   * the next chunk in both the acoustic accumulator and the native ASR session. Not a speaker label.
+   */
+  markPhase(phase: DiagnosticPhase): boolean {
+    if (!this.enabled || !this.phases || !this.phases.mark(phase)) return false;
+    this.host.transcription?.setPhase?.(this.phases.index());
+    this.emit();
+    return true;
+  }
+
   /** Original native array, after accept() validated PCM/epoch/expiry; avoids a second JS copy. */
   acceptNativePcm(pcm: unknown): void {
     if (this.enabled && this.lease && this.state === "escuchando") {
@@ -94,7 +117,7 @@ export class ConversationCaptureCoordinator {
     }
   }
 
-  setEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off"): void {
+  setEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off", options: SessionOptions = {}): void {
     if (this.enabled === enabled) return;
     if (!enabled && this.participationMode === "enrollment" && this.enrollmentOutcome === "none") this.enrollmentOutcome = "canceled";
     if (enabled && participation === "enrollment") this.enrollmentOutcome = "none";
@@ -113,11 +136,15 @@ export class ConversationCaptureCoordinator {
     this.enabledAt = this.host.now();
     this.vad = new LocalEnergyVad();
     this.lastDiagnostics = "";
+    this.gapCounted = false;
+    this.language = this.transcribing ? (options.language === "es" ? "es" : "auto") : null;
+    this.phases = options.diagnostics ? new PhaseDiagnostics(() => this.host.now()) : null;
+    this.vad.setObserver(this.phases);
     if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment")) {
       this.fail("El perfil local no está disponible. Revisa el modelo de voz o espera al cierre anterior.");
       return;
     }
-    if (this.transcribing && !this.host.transcription?.start()) {
+    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto")) {
       this.fail("Transcripción local no disponible. Revisa el modelo Whisper base local o espera al cierre anterior.");
       return;
     }
@@ -176,7 +203,7 @@ export class ConversationCaptureCoordinator {
     }
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
-      if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
+      if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
       if (now - (this.lastPcm || this.startedAt) > 2_000) {
         this.fail("No llega PCM válido desde hace 2 s. Captura OFF; puedes reintentar cuando termine el cierre.");
       } else {
@@ -224,8 +251,10 @@ export class ConversationCaptureCoordinator {
     if (now - this.enabledAt >= 120_000) { this.expire(); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
-    if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
+    if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
     this.lastPcm = now;
+    this.gapCounted = false;
+    this.phases?.chunk();
     let sum = 0;
     for (let i = 0; i < pcm.length; i += 2) {
       const unsigned = pcm[i]! | (pcm[i + 1]! << 8);
@@ -252,6 +281,7 @@ export class ConversationCaptureCoordinator {
   private preempt(epoch: number): void {
     if (epoch !== this.epoch) return;
     this.metrics.preemptions++;
+    this.phases?.preemption();
     this.release();
     this.state = "suspendido";
     this.reason = "Audio cedido a Hey Even, PTT, asistente u otra función.";
@@ -298,6 +328,15 @@ export class ConversationCaptureCoordinator {
     this.release();
     this.host.transcription?.stop();
     this.host.participation?.stop();
+    // After the acoustic reset above, so a pending candidate is settled as interrupted.
+    this.phases?.stop();
+  }
+
+  /** One gap counts once, whether the 500 ms tick or the next PCM chunk notices it first. */
+  private countGap(): void {
+    if (this.gapCounted) return;
+    this.gapCounted = true;
+    this.phases?.gapReset();
   }
 
   private resetAcousticStream(): void {

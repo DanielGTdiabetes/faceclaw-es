@@ -1,9 +1,9 @@
 import { GrayImage } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText, wrapText } from "../../graphics/textwrap";
-import { conversationDetail } from "../../conversation-detection/conversation-ui";
+import { conversationDetail, textLanguageLabel } from "../../conversation-detection/conversation-ui";
 import {
-  conversationSession, conversationTextSelected, lensConversationPlan,
+  conversationSession, conversationTextLanguage, conversationTextSelected, lensConversationPlan,
   onConversationTextSelected, setConversationTextSelected, toggleLensConversation,
   type ConversationSessionPort,
 } from "../../conversation-detection/session-controls";
@@ -103,7 +103,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
         else if (!session.detector.snapshot().enabled) toggleLensConversation(session);
       } },
       { label: `Texto local: ${textShown ? "ON" : "OFF"}${stopping ? " · sesión en curso" : ""}`,
-        description: "Cambiar solo en OFF. Texto temporal es/valencià, sin envío al asistente.",
+        description: `Cambiar solo en OFF. Texto temporal ${textLanguageLabel(conversationTextLanguage())}, sin envío al asistente.`,
         onSelect: (ctx) => { ctx.stack.pop(); if (!stopping) setConversationTextSelected(!conversationTextSelected()); } },
       { label: "Detener (OFF)", onSelect: (ctx) => { ctx.stack.pop(); session.setEnabled(false); } },
       ];

@@ -14,7 +14,8 @@ class FaceclawLocalTranscriber(context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val session = LocalTranscriptSession(object : LocalTranscriptHost {
         override val dispatcher = CallbackDispatcher { action -> handler.post { action() } }
-        override fun loadDecoder(): LocalTranscriptDecoder? {
+        /** `language` comes from the accepted start that owns this worker; it is never re-read later. */
+        override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? {
             val files = mapOf(
                 "base-encoder.int8.onnx" to "0b8fb1304b6109976038efff5ace81720e00386f3ff6b54ee8c75291ca0a1e11",
                 "base-decoder.int8.onnx" to "9759d217388a01b3a4c7c15533201067b48ae819c4daafc8624e64b9409dc02d",
@@ -37,7 +38,7 @@ class FaceclawLocalTranscriber(context: Context) {
                 if (digest.digest().joinToString("") { "%02x".format(it) } != expected) return null
             }
             val recognizer = OfflineRecognizer(AndroidSpeechEngines.recognizerConfig(
-                directory, VoiceModelKind.WHISPER, ""))
+                directory, VoiceModelKind.WHISPER, if (language == LocalTranscriptLanguage.ES) "es" else ""))
             return object : LocalTranscriptDecoder {
                 override fun decode(samples: FloatArray): LocalDecodedText {
                     val stream = recognizer.createStream()
@@ -45,7 +46,8 @@ class FaceclawLocalTranscriber(context: Context) {
                         stream.acceptWaveform(samples, 16000)
                         recognizer.decode(stream)
                         val result = recognizer.getResult(stream)
-                        return LocalDecodedText(result.text, result.lang)
+                        // Forced Spanish is labelled as forced, never as a detected language.
+                        return localDecodedText(result.text, result.lang, language)
                     } finally { stream.release() }
                 }
                 override fun release() { recognizer.release() }
@@ -53,7 +55,9 @@ class FaceclawLocalTranscriber(context: Context) {
         }
     })
     fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)
-    fun start(): Boolean = session.start()
+    /** "es" forces Spanish for this session only; anything else keeps automatic detection. */
+    fun start(language: String): Boolean = session.start(LocalTranscriptLanguage.fromWire(language))
+    fun setPhase(phase: Int) = session.setPhase(phase)
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()
     fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)

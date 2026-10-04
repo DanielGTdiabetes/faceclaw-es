@@ -68,7 +68,7 @@ class LocalTranscriptSessionTest {
         val texts = mutableListOf<String>()
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { it() }
-            override fun loadDecoder(): LocalTranscriptDecoder {
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder {
                 loaded.countDown()
                 return object : LocalTranscriptDecoder {
                     override fun decode(samples: FloatArray): LocalDecodedText {
@@ -105,7 +105,7 @@ class LocalTranscriptSessionTest {
         val texts = mutableListOf<String>()
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { callbacks.add(it); callbackReady.countDown() }
-            override fun loadDecoder(): LocalTranscriptDecoder {
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder {
                 loaded.countDown()
                 return object : LocalTranscriptDecoder {
                     override fun decode(samples: FloatArray): LocalDecodedText {
@@ -142,7 +142,7 @@ class LocalTranscriptSessionTest {
         var calls = 0
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { it() }
-            override fun loadDecoder(): LocalTranscriptDecoder = object : LocalTranscriptDecoder {
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder = object : LocalTranscriptDecoder {
                 override fun decode(samples: FloatArray): LocalDecodedText {
                     calls++; decoding.countDown(); finish.await(2000); return LocalDecodedText("", "es")
                 }
@@ -164,7 +164,7 @@ class LocalTranscriptSessionTest {
     @Test fun missingDecoderExitsSilentlyWithoutRetainingAudio() {
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { error("no callback is expected") }
-            override fun loadDecoder(): LocalTranscriptDecoder? = null
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? = null
         }, testPlatform())
         assertTrue(session.start()); waitStopped(session)
         assertTrue(session.diagnostics().contains("modelo no disponible"))
@@ -180,7 +180,7 @@ class LocalTranscriptSessionTest {
         val callbacks = mutableListOf<() -> Unit>(); val texts = mutableListOf<String>()
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { callbacks.add(it); callbackReady.countDown() }
-            override fun loadDecoder(): LocalTranscriptDecoder = object : LocalTranscriptDecoder {
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder = object : LocalTranscriptDecoder {
                 override fun decode(samples: FloatArray) = LocalDecodedText("Bon dia", "ca")
                 override fun release() { released.countDown() }
             }
@@ -249,7 +249,7 @@ class LocalTranscriptSessionTest {
         var calls = 0
         val session = LocalTranscriptSession(object : LocalTranscriptHost {
             override val dispatcher = CallbackDispatcher { it() }
-            override fun loadDecoder(): LocalTranscriptDecoder {
+            override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder {
                 loading.countDown(); loaded.await(2000)
                 return object : LocalTranscriptDecoder {
                     override fun decode(samples: FloatArray): LocalDecodedText {

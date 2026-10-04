@@ -1,6 +1,6 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
-import { type DetectorTranscription, type LocalTranscriptionSnapshot } from "../conversation-detection/transcription";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot, type TextLanguage } from "../conversation-detection/transcription";
 
 declare const com: any;
 
@@ -12,7 +12,7 @@ export class LocalTranscription implements DetectorTranscription {
   private lines: string[] = [];
   private status = "inactivo";
 
-  start(): boolean {
+  start(language: TextLanguage = "auto"): boolean {
     this.lines = [];
     if (!global.isAndroid || !isAsrModelReady("whisper-base-es")) {
       this.status = "modelo no disponible";
@@ -30,7 +30,8 @@ export class LocalTranscription implements DetectorTranscription {
         });
         this.engine.setListener(this.listener);
       }
-      this.enabled = Boolean(this.engine.start());
+      // Kotlin captures the language only if this start is accepted; a rejected start changes nothing.
+      this.enabled = Boolean(this.engine.start(language === "es" ? "es" : "auto"));
       this.status = this.enabled ? "cargando" : "ocupado";
       return this.enabled;
     } catch {
@@ -41,6 +42,7 @@ export class LocalTranscription implements DetectorTranscription {
   }
 
   resetStream(): void { this.lines = []; this.engine?.resetStream(); }
+  setPhase(phase: number): void { if (this.enabled) this.engine?.setPhase(phase); }
   stop(): void { this.enabled = false; this.lines = []; this.engine?.stop(); this.status = "inactivo"; }
   acceptNative(pcm: unknown, vadState: string): void {
     if (this.enabled) this.engine?.acceptPcm(pcm, vadState);

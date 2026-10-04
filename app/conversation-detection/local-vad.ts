@@ -9,6 +9,21 @@ export type LocalVadSnapshot = {
   frameRms: number; noiseFloor: number; threshold: number;
 };
 
+/**
+ * Optional C1 instrumentation, called once per valid 10 ms frame after the VAD decided it.
+ * `onsetThreshold` always uses the onset formula (also during an episode) so bins stay comparable.
+ * `event`: "open" when this frame opens an episode, "abort" when a candidate run ends without opening.
+ */
+export type VadFrame = {
+  rms: number; onsetThreshold: number; clipped: boolean; positive: boolean;
+  state: LocalVadSnapshot["state"]; event: "open" | "abort" | null;
+};
+export interface VadObserver {
+  frame(frame: VadFrame): void;
+  /** A pending candidate was cut by a stream reset (gap, preemption, OFF, expiry): not an abort. */
+  candidateInterrupted(): void;
+}
+
 const FRAME_SAMPLES = 160; // 10 ms at 16 kHz, five frames per BLE chunk.
 const MIN_NOISE = 0.001;
 const INITIAL_NOISE = 0.0015;
@@ -28,6 +43,10 @@ export class LocalEnergyVad {
   private onsetMs = 0;
   private quietMs = 0;
   private active = false;
+  private observer: VadObserver | null = null;
+
+  /** Observation only: decisions, thresholds and noise tracking are identical with or without it. */
+  setObserver(observer: VadObserver | null): void { this.observer = observer; }
 
   snapshot(): LocalVadSnapshot {
     return { state: this.state, frames: this.frames, positiveMs: this.positiveMs,
@@ -38,6 +57,7 @@ export class LocalEnergyVad {
   /** End a stream without interpreting OFF/preemption/lost packets as silence. */
   resetStream(): void {
     if (this.active) this.interrupted++;
+    else if (this.onsetMs > 0) this.observer?.candidateInterrupted();
     this.active = false;
     this.onsetMs = 0;
     this.quietMs = 0;
@@ -61,18 +81,21 @@ export class LocalEnergyVad {
       // Remove each frame's DC component, including a constant saturated input.
       const mean = sum / FRAME_SAMPLES;
       this.frameRms = Math.sqrt(Math.max(0, squares / FRAME_SAMPLES - mean * mean)) / 32768;
+      const onsetThreshold = Math.max(0.003, this.noiseFloor * 3);
       this.threshold = Math.max(this.active ? 0.002 : 0.003, this.noiseFloor * (this.active ? 1.8 : 3));
       const positive = clipped < 2 && this.frameRms >= this.threshold;
+      let event: VadFrame["event"] = null;
       this.frames++;
       if (positive) {
         this.positiveMs += 10;
         this.quietMs = 0;
         if (!this.active) {
           this.onsetMs += 10;
-          if (this.onsetMs >= ONSET_MS) { this.active = true; this.episodes++; }
+          if (this.onsetMs >= ONSET_MS) { this.active = true; this.episodes++; event = "open"; }
         }
         this.state = this.active ? "posible voz" : "candidato";
       } else {
+        if (!this.active && this.onsetMs > 0) event = "abort";
         this.onsetMs = 0;
         if (this.active) {
           this.quietMs += 10;
@@ -87,6 +110,8 @@ export class LocalEnergyVad {
         }
         this.state = this.active ? "pausa" : "sin actividad";
       }
+      this.observer?.frame({ rms: this.frameRms, onsetThreshold, clipped: clipped >= 2, positive,
+        state: this.state, event });
     }
   }
 }

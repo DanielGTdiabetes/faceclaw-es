@@ -29,6 +29,9 @@ function harness() {
       if (name === '../conversation-detection/session-controls') return {
         conversationTextSelected: () => selectedText,
         setConversationTextSelected: value => { if (!snapshot.enabled) selectedText = value; },
+        // C1 RAM selectors (defaults): automatic language, diagnostics off.
+        conversationTextLanguage: () => 'auto', setConversationTextLanguage: () => {},
+        conversationDiagnosticsSelected: () => false, setConversationDiagnosticsSelected: () => {},
       };
       if (name === '../conversation-detection/profile-guide') return guide;
       return {};
