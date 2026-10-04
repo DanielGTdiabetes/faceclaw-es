@@ -28,3 +28,17 @@ Actualiza `notes/diseno-claude-conversacion-proactiva-hermes-2026-10-04.md` en e
 Actualiza AGENTS/continuidad con «dirección aceptada, contratos corregidos pendientes de revisión Codex», sin dar C1 implementado ni G3.4.2 aprobada. Commit/publicación documental en rama autorizada, sin secretos, PR ni fusiones. Entrega commit y ruta para Codex.
 
 Sin implementación, build, instalación, ensayo, consulta al móvil ni conexión real. Preserva perfil, firma, 33 ajustes, Hermes habitual, GPS/bloqueo, Wear desconectado y firmware /36. No tocar otros proyectos o servicios. Ninguna prueba general nueva. Al quedar revisada esta entrega, el siguiente encargo será implementar C1 acotado, no otra ronda de diseño general.
+
+## Apunte posterior del usuario: aprovechar la referencia Mentra Merge
+
+El usuario pregunta si estudiar cómo funciona Merge puede ayudarnos. Codex ha consultado código público de `Mentra-Community/Merge-Legacy`, commit `935cf3eebe2e3df78611649d444364079bb6e062` (main comprobado el 04-10-2026). El repositorio está archivado: es una referencia concreta de una versión anterior, no una prueba del comportamiento actual de Merge distribuido.
+
+Contrasta brevemente estas piezas con la política de Hermes, sin otra auditoría general ni adoptar MentraOS:
+
+- [User.ts](https://github.com/Mentra-Community/Merge-Legacy/blob/935cf3eebe2e3df78611649d444364079bb6e062/src/server/session/User.ts): recibe `session.events.onTranscription`; procesa al `isFinal` o tras un timeout de 2 s desde la primera actualización de la intervención. No describir ese timeout como 2 s de silencio. En esta capa no hay perfil propio ni condición de alternancia antes de procesar texto.
+- [initial-agent.ts](https://github.com/Mentra-Community/Merge-Legacy/blob/935cf3eebe2e3df78611649d444364079bb6e062/src/server/mastra/agents/initial-agent.ts): decide `insight/silent/route`, modos de frecuencia, respuestas a preguntas explícitas y curiosidad indirecta, evita repetir información y recurre a especialistas cuando necesita herramientas. Adaptar estas ideas al Hermes existente, sin imponer varios agentes nuevos. Evaluar cómo priorizar preguntas útiles sin anular límites de coste/salida.
+- [response-handler.ts](https://github.com/Mentra-Community/Merge-Legacy/blob/935cf3eebe2e3df78611649d444364079bb6e062/src/server/mastra/agents/response-handler.ts): contexto reciente de texto y ayudas previas, deduplicación y bloqueo temporal de pantalla. [config.ts](https://github.com/Mentra-Community/Merge-Legacy/blob/935cf3eebe2e3df78611649d444364079bb6e062/src/server/config.ts): timeout2s, similitud0,7 y tarjeta10s. Son valores de esa implementación, no calibración para Faceclaw.
+
+Esta referencia sí ayuda a la selección y presentación proactiva. Merge consume texto ya producido por MentraOS; no aporta en estos archivos una solución para la captación local del interlocutor ni detección fiable de participación. No asumir que su STT equivale a nuestro Whisper local. No copiar sus logs de transcripciones/contexto, conservación de historial, callbacks tardíos o bypasses de frecuencia: mantener los contratos de privacidad/cancelación actuales. Si se reutiliza código literalmente, verificar licencia/avisos del archivo y sus dependencias; estudiar patrones no exige importar su stack.
+
+Añade al diseño una comparación corta: qué patrón sirve, adaptación a Faceclaw/Hermes y qué problema nuestro queda fuera. C1 y sus correcciones siguen siendo el siguiente incremento; el estudio no bloquea avanzar ni exige sustituir la arquitectura.
