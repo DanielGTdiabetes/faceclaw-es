@@ -32,6 +32,8 @@ function harness() {
         // C1 RAM selectors (defaults): automatic language, diagnostics off.
         conversationTextLanguage: () => 'auto', setConversationTextLanguage: () => {},
         conversationDiagnosticsSelected: () => false, setConversationDiagnosticsSelected: () => {},
+        // Local engine here: these cases cover Whisper readiness; Soniox has its own test file.
+        conversationTextEngine: () => 'local', setConversationTextEngine: () => {},
       };
       if (name === '../conversation-detection/profile-guide') return guide;
       return {};
