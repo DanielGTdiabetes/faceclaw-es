@@ -16,6 +16,8 @@ data class LocalDecodedText(val text: String, val language: String, val forced: 
 interface LocalTranscriptDecoder {
     fun decode(samples: FloatArray): LocalDecodedText
     fun release()
+    /** Model label for diagnostics only (e.g. "whisper-small"); never a path. */
+    val engine: String get() = "whisper"
 }
 interface LocalTranscriptHost {
     val dispatcher: CallbackDispatcher
@@ -25,7 +27,7 @@ interface FaceclawLocalTranscriptListener {
     fun onText(text: String, language: String)
 }
 
-enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE }
+enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE, HALLUCINATION }
 
 /** Forced Spanish: an empty or "es" engine label becomes forced Spanish; any other explicit label is kept. */
 fun normalizeForcedLanguage(raw: String?): String {
@@ -49,6 +51,7 @@ fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
     if (text.length > 600 || !text.any { it.isLetter() }) return LocalTextRejection.STRUCTURE
     if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return LocalTextRejection.STRUCTURE
     if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return LocalTextRejection.STRUCTURE
+    if (isKnownWhisperHallucination(text)) return LocalTextRejection.HALLUCINATION
     return LocalTextRejection.NONE
 }
 fun acceptedLocalText(result: LocalDecodedText): String =
@@ -264,12 +267,14 @@ class LocalTranscriptBuffer(
 class LocalTranscriptSession(
     private val host: LocalTranscriptHost,
     private val platform: ProtocolPlatform = protocolPlatform(),
+    /** A3: lift quiet speech in the ASR copy only. Off by default so fixtures see raw PCM. */
+    private val conditionAudio: Boolean = false,
 ) {
     /** Per-phase scalar counters. They never hold text, audio or model paths. */
     private class LocalTranscriptPhaseStats {
         var pcmChunks = 0L; var loadingChunks = 0L; var dropped = 0L
         var decodeCalls = 0L; var decodedSamples = 0L; var decodeTotalMs = 0L; var decodeMaxMs = 0L
-        var rejectedLanguage = 0L; var rejectedEmpty = 0L; var rejectedStructure = 0L
+        var rejectedLanguage = 0L; var rejectedEmpty = 0L; var rejectedStructure = 0L; var rejectedHallucination = 0L
         var decodeErrors = 0L; var processingErrors = 0L; var invalidatedDecodes = 0L
         var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
         var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
@@ -295,6 +300,8 @@ class LocalTranscriptSession(
     private var languageMode = LocalTranscriptLanguage.AUTO
     private var stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
     private var listener: FaceclawLocalTranscriptListener? = null
+    private val levels = LocalAsrLevelStats()
+    private var engine = ""
     private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it }) { audio ->
         // Called under condition by acceptPcm; do not acquire its non-reentrant lock again.
         if (!running || !ready || busy) { audio.fill(0); stats[pendingSegmentPhase].dropped++ }
@@ -314,6 +321,7 @@ class LocalTranscriptSession(
             buffer.resetMetrics(segmentation)
             inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
+            levels.reset(); engine = ""
         }
         val config = language
         startThread("FaceclawLocalTranscript", true) { runWorker(config) }
@@ -368,7 +376,7 @@ class LocalTranscriptSession(
             ",\"dropped\":${s.dropped},\"decodeCalls\":${s.decodeCalls},\"decodedAudioMs\":${s.decodedSamples / 16}," +
             "\"decodeTotalMs\":${s.decodeTotalMs},\"decodeMaxMs\":${s.decodeMaxMs}," +
             "\"rejectedLanguage\":${s.rejectedLanguage},\"rejectedEmpty\":${s.rejectedEmpty}," +
-            "\"rejectedStructure\":${s.rejectedStructure},\"decodeErrors\":${s.decodeErrors}," +
+            "\"rejectedStructure\":${s.rejectedStructure},\"rejectedHallucination\":${s.rejectedHallucination},\"decodeErrors\":${s.decodeErrors}," +
             "\"processingErrors\":${s.processingErrors},\"invalidatedDecodes\":${s.invalidatedDecodes}," +
             "\"languageEs\":${s.languageEs},\"languageCa\":${s.languageCa},\"languageOther\":${s.languageOther}," +
             "\"languageForced\":${s.languageForced},\"forcedMismatch\":${s.forcedMismatch}," +
@@ -385,13 +393,14 @@ class LocalTranscriptSession(
             buffer.diagnostics() + ",\"decodeCalls\":${sum { it.decodeCalls }},\"decodedAudioMs\":${sum { it.decodedSamples } / 16}," +
             "\"decodeTotalMs\":${sum { it.decodeTotalMs }},\"decodeMaxMs\":${stats.maxOf { it.decodeMaxMs }}," +
             "\"rejectedLanguage\":${sum { it.rejectedLanguage }},\"rejectedEmpty\":${sum { it.rejectedEmpty }}," +
-            "\"rejectedStructure\":${sum { it.rejectedStructure }},\"decodeErrors\":${sum { it.decodeErrors }}," +
+            "\"rejectedStructure\":${sum { it.rejectedStructure }},\"rejectedHallucination\":${sum { it.rejectedHallucination }},\"decodeErrors\":${sum { it.decodeErrors }}," +
             "\"processingErrors\":${sum { it.processingErrors }}," +
             "\"invalidatedDecodes\":${sum { it.invalidatedDecodes }},\"languageEs\":${sum { it.languageEs }}," +
             "\"languageCa\":${sum { it.languageCa }},\"languageOther\":${sum { it.languageOther }},\"delivered\":${sum { it.delivered }}," +
             "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
             "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
-            "\"languageMode\":\"${languageMode.wire}\"," + buffer.mixedDiagnostics() +
+            "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":$conditionAudio," +
+            levels.json() + "," + buffer.mixedDiagnostics() +
             ",\"phases\":[${(0 until LocalTranscriptPhases.COUNT).joinToString(",") { phaseJson(it) }}]}}"
     }
 
@@ -414,6 +423,7 @@ class LocalTranscriptSession(
             condition.withLock {
                 if (running) {
                     ready = decoder != null
+                    engine = decoder?.engine ?: ""
                     status = if (ready) "listo" else "modelo no disponible"
                     if (!ready) running = false
                 }
@@ -422,6 +432,10 @@ class LocalTranscriptSession(
                 val next = nextJob() ?: break
                 val floats = FloatArray(next.audio.size) { next.audio[it] / 32768f }
                 next.audio.fill(0)
+                if (conditionAudio) {
+                    val level = LocalAsrConditioner.condition(floats)
+                    condition.withLock { levels.add(level) }
+                }
                 var decodeStarted: Long? = null
                 var decodeFailed = false
                 try {
@@ -460,6 +474,7 @@ class LocalTranscriptSession(
                                 LocalTextRejection.LANGUAGE -> s.rejectedLanguage++
                                 LocalTextRejection.EMPTY -> s.rejectedEmpty++
                                 LocalTextRejection.STRUCTURE -> s.rejectedStructure++
+                                LocalTextRejection.HALLUCINATION -> s.rejectedHallucination++
                                 else -> Unit
                             }
                             if (text.isEmpty()) { s.abstentions++; false }

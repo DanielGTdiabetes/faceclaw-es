@@ -185,6 +185,24 @@ export function asrModelState(id: AsrModelId): AsrModelState {
   };
 }
 
+/**
+ * A3: conversation text uses Whisper small when its weights are present (native side verifies
+ * hashes and falls back to base), otherwise base. Ready if either is downloaded.
+ */
+export function conversationTextModelStatus(): AsrModelState["status"] {
+  const small = asrModelState("whisper-small-es");
+  const base = asrModelState("whisper-base-es");
+  if (small.status === "ready" || base.status === "ready") return "ready";
+  return small.status === "downloading" || base.status === "downloading" ? "downloading" : "absent";
+}
+
+/** Short label for the options menu describing the precise model. */
+export function preciseTextModelLabel(): string {
+  const small = asrModelState("whisper-small-es");
+  if (small.status === "downloading") return `Modelo preciso (small): ${Math.floor(small.bytesDownloaded * 100 / small.totalBytes)} %`;
+  return small.status === "ready" ? "Modelo preciso (small): listo, en uso" : "Modelo preciso (small): descargar 375 MB";
+}
+
 export function onAsrModelStateChanged(id: AsrModelId, listener: (state: AsrModelState) => void): () => void {
   const runtime = runtimes[id];
   runtime.stateListeners.add(listener);

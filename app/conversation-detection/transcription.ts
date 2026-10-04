@@ -31,6 +31,10 @@ export type LocalTranscriptionSnapshot = {
     /** C1: forced-Spanish labels, mismatches, delivery accounting and per-phase attribution. */
     languageForced?: number; forcedMismatch?: number; deliveredChars?: number; deliveryDiscarded?: number;
     languageMode?: TextLanguage; mixedAudioMsByPhase?: number[]; phases?: TranscriptPhaseAnalysis[];
+    /** A3: model in use, ASR-copy level conditioning and aggregate window-level histograms (dBFS). */
+    engine?: string; conditioned?: boolean; rejectedHallucination?: number;
+    levels?: { windows: number; bucketsDbfs: string; loudWindows: number[]; quietActiveWindows: number[];
+      avgNoiseDb: number; avgGainDb: number; maxGainDb: number };
   };
 };
 export interface DetectorTranscription {

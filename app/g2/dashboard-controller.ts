@@ -55,7 +55,7 @@ import { LocalTranscription } from "../native/local-transcription";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
 import { bindConversationSession, conversationSessionOptions } from "../conversation-detection/session-controls";
-import { asrModelState } from "../native/asr-model";
+import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
@@ -381,7 +381,7 @@ class DashboardController {
       detector: this.conversationDetector,
       setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
       voiceModel: () => micModelState("speaker-embedding").status,
-      textModel: () => asrModelState("whisper-base-es").status,
+      textModel: () => conversationTextModelStatus(),
     });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {

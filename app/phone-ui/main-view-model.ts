@@ -26,7 +26,7 @@ import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
-import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
+import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, preciseTextModelLabel, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, textLanguageLabel } from "../conversation-detection/conversation-ui";
@@ -144,10 +144,12 @@ export class MainViewModel extends RemoteControlsViewModel {
       if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
       this.localCloseTimer = null;
     });
-    this.unsubscribers.push(onAsrModelStateChanged("whisper-base-es", () => {
-      this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
-      this.refreshConversationUi();
-    }));
+    for (const id of ["whisper-base-es", "whisper-small-es"] as const) {
+      this.unsubscribers.push(onAsrModelStateChanged(id, () => {
+        this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+        this.refreshConversationUi();
+      }));
+    }
     this.unsubscribers.push(onMicModelStateChanged((id) => {
       if (id !== "speaker-embedding") return;
       this.refreshConversationUi();
@@ -191,7 +193,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   private get conversationPlan() {
     const detector = dashboardController.conversationDetector;
     return conversationStartPlan(detector.snapshot(), detector.ownProfileState(),
-      micModelState("speaker-embedding").status, asrModelState("whisper-base-es").status, this.conversationWithText,
+      micModelState("speaker-embedding").status, conversationTextModelStatus(), this.conversationWithText,
       conversationTextLanguage());
   }
 
@@ -304,13 +306,13 @@ export class MainViewModel extends RemoteControlsViewModel {
   get localTranscriptionButton(): string {
     const model = asrModelState("whisper-base-es");
     if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
-    return model.status === "ready" ? `Transcribir localmente (${textLanguageLabel(conversationTextLanguage())}, 2 min máx.)` : "Descargar modelo local (161 MB)";
+    return conversationTextModelStatus() === "ready" ? `Transcribir localmente (${textLanguageLabel(conversationTextLanguage())}, 2 min máx.)` : "Descargar modelo local (161 MB)";
   }
   onLocalTranscriptionTap(): void {
     if (!this.localTranscriptionCanStart) return;
     const model = asrModelState("whisper-base-es");
     if (model.status === "downloading") return;
-    if (model.status !== "ready") {
+    if (conversationTextModelStatus() !== "ready") {
       startAsrModelDownload("whisper-base-es");
       return; // Weights only; download completion never starts capture.
     }
@@ -325,8 +327,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     const textAction = this.conversationTextButton;
     const languageAction = this.conversationLanguageButton;
     const diagnosticsAction = this.conversationDiagnosticsButton;
+    const preciseAction = preciseTextModelLabel();
     const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
-      actions: [textAction, languageAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
+      actions: [textAction, languageAction, preciseAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
         "Métricas tras OFF", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
     if (choice === textAction) { this.onConversationTextTap(); return; }
@@ -334,6 +337,11 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (choice === diagnosticsAction) { this.onConversationDiagnosticsTap(); return; }
     if (choice === "Mi perfil") { this.onVoiceProfileTap(); return; }
     if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
+    if (choice === preciseAction) {
+      // Weights only, explicit user choice; download completion never starts capture.
+      if (asrModelState("whisper-small-es").status === "absent") startAsrModelDownload("whisper-small-es");
+      return;
+    }
     if (choice === "Solo transcripción") { this.onLocalTranscriptionTap(); return; }
     if (choice === "Solo actividad de voz") { dashboardController.setConversationCaptureEnabled(true); return; }
     if (choice !== ownAction) return;

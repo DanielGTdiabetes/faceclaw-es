@@ -25,9 +25,10 @@ internal object AndroidSpeechEngines {
     private const val FEATURE_DIM = 80
 
     /** Sherpa-onnx configuration for the on-device model files in [modelDir]. */
-    fun recognizerConfig(modelDir: File, kind: VoiceModelKind, whisperLanguage: String = "es"): OfflineRecognizerConfig {
+    fun recognizerConfig(modelDir: File, kind: VoiceModelKind, whisperLanguage: String = "es",
+        numThreads: Int = 1): OfflineRecognizerConfig {
         val modelConfig = OfflineModelConfig.builder()
-            .setNumThreads(1)
+            .setNumThreads(numThreads)
         if (kind.isWhisper) {
             val prefix = if (kind == VoiceModelKind.WHISPER_SMALL) "small" else "base"
             modelConfig
