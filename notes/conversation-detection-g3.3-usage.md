@@ -1,6 +1,6 @@
 # G3.3 — uso integrado con el perfil existente, 04-10-2026
 
-**Estado posterior vigente: G3.3 instalada junto a Faceclaw0.8.2, firma original/código805,33ajustes idénticos y perfil guardado/OFF observados.** Leer [integración0.8.2](faceclaw-0.8.2-integration-2026-10-04.md). El usuario aclaró que actualizar la APK sí está autorizado. Las gafas notifican /35 y requieren /36; el usuario realiza la actualización con el actualizador de Faceclaw, sin modificaciones propias del firmware por el agente.
+**Estado posterior vigente: G3.3 instalada junto a Faceclaw0.8.2, firma original/código805,33ajustes idénticos y perfil guardado/OFF observados.** Leer [integración0.8.2](faceclaw-0.8.2-integration-2026-10-04.md). El usuario aclaró que actualizar la APK sí está autorizado. El usuario ya ha actualizado las gafas a /36 y confirma que todo parece funcionar como antes, sin modificaciones propias del firmware por el agente. Retomar desde el [prompt de continuidad](prompt-continuidad-g3.3-2026-10-04.md); no hay una nueva validación del detector ni del perfil.
 
 El resto de este informe conserva la instantánea de preparación previa a la instalación. Continuación de `1a23f42` en `codex/conversation-detection-g0`: G3.3 se preparó primero sobre0.8.1 y luego se integró con0.8.2, sin instalación intermedia. Las referencias inferiores a «no instalada» y «no exportados» son históricas y quedan superadas por el informe0.8.2.
 

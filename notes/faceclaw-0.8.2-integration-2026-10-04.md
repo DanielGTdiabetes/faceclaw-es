@@ -12,7 +12,7 @@
 
 ## Firmware
 
-La app oficial0.8.2 requiere `Faceclaw/36`; introduce un cambio real del protocolo de dibujo. No se baja artificialmente el requisito. El patchset y el protocolo integrados son idénticos a los de la versión oficial, sin modificaciones propias de firmware. Tras desbloquear, observado el aviso: revisión35, baseL/R2.3.0.24, requisito36. El usuario decide desconectar el Pixel y realizar la actualización con el actualizador incluido en Faceclaw. El agente no flashea ni consulta el móvil durante ese proceso. Pendiente confirmar finalización en ambas lentes y retorno conectado/OFF; no afirmar /36 instalada todavía.
+La app oficial0.8.2 requiere `Faceclaw/36`; introduce un cambio real del protocolo de dibujo. No se baja artificialmente el requisito. El patchset y el protocolo integrados son idénticos a los de la versión oficial, sin modificaciones propias de firmware. Tras desbloquear, observado el aviso: revisión35, baseL/R2.3.0.24, requisito36. El usuario desconectó el Pixel y realizó la actualización con el actualizador incluido en Faceclaw. Después confirmó: «Las gafas están actualizadas con el nuevo firmware y todo parece funcionar como antes». La actualización /36 requerida y el funcionamiento general quedan confirmados por el usuario; no son una lectura posterior de versión ni una batería física del agente. Este no flasheó/modificó firmware ni consultó el móvil durante el proceso. Último OFF observado anterior; comprobar OFF/conexión al retomar si se requiere UI.
 
 ## Verificación
 
@@ -35,6 +35,6 @@ Integración publicada en GitHub: `5cfe1af`, fusión con dos padres `bf3a37a`/`6
 
 ## Continuación
 
-Cerrar la compatibilidad de firmware oficial conservando conversaciónOFF. No repetir el registro del perfil ni la evaluación inicial. La interfaz de conversación aún está en el móvil: falta una entrada propia y estado/texto en lentes. G4 solo ante errores concretos; G5 estabilidad/autonomía prolongadas pendientes; G6 requiere decisión posterior, sin conectar audio/texto experimental a Hermes.
+Actualización de firmware terminada según el usuario; retomar G3.3 desde el [prompt de continuidad](prompt-continuidad-g3.3-2026-10-04.md). No repetir el registro del perfil ni la evaluación inicial. La interfaz de conversación aún está en el móvil: falta una entrada propia y estado/texto en lentes. G4 solo ante errores concretos; G5 estabilidad/autonomía prolongadas pendientes; G6 requiere decisión posterior, sin conectar audio/texto experimental a Hermes.
 
 Los huecos/pérdidas de audio históricos siguen abiertos (492ms/siete descartes; lectura posterior UI1046ms/21drops). Esperar la carga de motores corrige una pérdida inicial posible en código, no demuestra resolver esos incidentes. No cambiar modelos/umbrales por defecto ni iniciar nuevas baterías físicas.

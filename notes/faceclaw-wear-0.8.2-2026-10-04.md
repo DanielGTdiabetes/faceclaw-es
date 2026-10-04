@@ -1,6 +1,6 @@
 # Faceclaw Wear 0.8.2 — 04-10-2026
 
-**Instalada `0.8.2-es.1`, código3, con nuestra firma original, mediante `adb install -r` (`Success`).** El usuario pidió actualizar el Pixel Watch 4 por ADB en `192.168.0.38:45015` y aportó `D:\Descargas\Faceclaw-Wear-0.8.2.apk`. No se toca el móvil, que el usuario había desconectado para actualizar el firmware de las gafas; ese proceso sigue sin acreditarse como terminado.
+**Instalada `0.8.2-es.1`, código3, con nuestra firma original, mediante `adb install -r` (`Success`).** El usuario pidió actualizar el Pixel Watch 4 por ADB en `192.168.0.38:45015` y aportó `D:\Descargas\Faceclaw-Wear-0.8.2.apk`. No se toca el móvil, que el usuario había desconectado para actualizar el firmware de las gafas; ese proceso estaba pendiente al instalar Wear. Cierre posterior: el usuario confirma gafas actualizadas y funcionamiento general como antes; ver el prompt de continuidad G3.3.
 
 ## Compatibilidad con nuestra app del móvil
 
