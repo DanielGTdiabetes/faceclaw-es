@@ -18,6 +18,10 @@ export type TranscriptPhaseAnalysis = {
 export type LocalTranscriptionSnapshot = {
   enabled: boolean; status: string; worker: boolean; busy: boolean; inputBufferedBytes: number;
   accepted: number; abstentions: number; dropped: number;
+  /** "soniox" (cloud), "local" or "local (sin red)" after a Soniox fallback. */
+  engine?: string;
+  /** Scalar Soniox counters; never text or key. */
+  soniox?: { sentMs: number; finalTokens: number; messages: number; speakers: number; fallbacks: number; errors: number; lastError: string };
   /** Aggregate RAM-only diagnostics; no transcript, per-segment timeline or confidence. */
   analysis?: {
     /** Windows include overlap, so decodedAudioMs can exceed unique PCM time. */

@@ -17,7 +17,7 @@ import { dashboardController, type MirrorTouchKind } from "../g2/dashboard-contr
 import {
   mirrorTouchSetting,
   onAnySettingChanged,
-  showBleBandwidthSetting,
+  showBleBandwidthSetting, sonioxApiKeySetting,
 } from "../ui/dashboard-settings";
 import { sampleBleTraffic } from "../native/ble-traffic";
 import { isValidMacAddress, loadDeviceAddresses } from "../g2/device-addresses";
@@ -31,8 +31,8 @@ import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-m
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, textLanguageLabel } from "../conversation-detection/conversation-ui";
 import {
-  conversationDiagnosticsSelected, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
-  setConversationDiagnosticsSelected, setConversationTextLanguage, setConversationTextSelected,
+  conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
+  setConversationDiagnosticsSelected, setConversationTextEngine, setConversationTextLanguage, setConversationTextSelected,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 
@@ -193,7 +193,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   private get conversationPlan() {
     const detector = dashboardController.conversationDetector;
     return conversationStartPlan(detector.snapshot(), detector.ownProfileState(),
-      micModelState("speaker-embedding").status, conversationTextModelStatus(), this.conversationWithText,
+      micModelState("speaker-embedding").status, this.conversationTextReady, this.conversationWithText,
       conversationTextLanguage());
   }
 
@@ -296,6 +296,18 @@ export class MainViewModel extends RemoteControlsViewModel {
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 
+  /** Soniox needs only its key; the local engine needs downloaded Whisper weights. */
+  private get conversationTextReady(): string {
+    return conversationTextEngine() === "soniox" && sonioxApiKeySetting.get().trim() ? "ready" : conversationTextModelStatus();
+  }
+
+  get conversationEngineButton(): string {
+    if (conversationTextEngine() === "local") return "Motor de texto: local (Whisper, sin red) · tocar para Soniox";
+    return sonioxApiKeySetting.get().trim()
+      ? "Motor de texto: Soniox (nube, separa voces) · tocar para local"
+      : "Motor de texto: Soniox sin clave (usará local) · añade la clave en Ajustes";
+  }
+
   /** A4: the phone label is line-limited, so show the newest tail instead of the oldest head. */
   get localTranscript(): string {
     const text = dashboardController.conversationDetector.transcriptText();
@@ -308,7 +320,8 @@ export class MainViewModel extends RemoteControlsViewModel {
   get localTranscriptionLabel(): string {
     const state = dashboardController.conversationDetector.snapshot().transcription;
     const language = dashboardController.conversationDetector.snapshot().languageMode;
-    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${state.status} · puede equivocarse con ruido. Se borra al parar.` : "";
+    const engine = state?.engine === "soniox" ? "Soniox (nube)" : state?.engine ?? "local";
+    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${engine} · ${state.status} · puede equivocarse con ruido. Se borra al parar.` : "";
   }
   get localTranscriptionButton(): string {
     const model = asrModelState("whisper-base-es");
@@ -335,8 +348,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     const languageAction = this.conversationLanguageButton;
     const diagnosticsAction = this.conversationDiagnosticsButton;
     const preciseAction = preciseTextModelLabel();
+    const engineAction = this.conversationEngineButton;
     const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
-      actions: [textAction, languageAction, preciseAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
+      actions: [textAction, engineAction, languageAction, preciseAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
         "Métricas tras OFF", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
     if (choice === textAction) { this.onConversationTextTap(); return; }
@@ -344,6 +358,11 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (choice === diagnosticsAction) { this.onConversationDiagnosticsTap(); return; }
     if (choice === "Mi perfil") { this.onVoiceProfileTap(); return; }
     if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
+    if (choice === engineAction) {
+      setConversationTextEngine(conversationTextEngine() === "soniox" ? "local" : "soniox");
+      this.refreshConversationUi();
+      return;
+    }
     if (choice === preciseAction) {
       // Weights only, explicit user choice; download completion never starts capture.
       if (asrModelState("whisper-small-es").status === "absent") startAsrModelDownload("whisper-small-es");

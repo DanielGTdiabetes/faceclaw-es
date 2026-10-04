@@ -18,6 +18,7 @@
     "../app/conversation-detection/session-controls.ts",
     "../app/conversation-detection/profile-guide.ts",
     "../app/native/audio-capture-arbiter.ts",
+    "../app/native/soniox-conversation.ts",
     "../app/assistant/audio-priority.ts",
     "../app/remote/protocol.ts",
     "../app/remote/listeners.ts",

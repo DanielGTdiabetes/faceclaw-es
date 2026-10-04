@@ -16,6 +16,8 @@ let withText = true;
 /** Spanish-first product default, including after process restart. RAM only; assistant settings unchanged. */
 let textLanguage: TextLanguage = "es";
 let diagnostics = false;
+/** Soniox (cloud, diarized) by default; local Whisper on demand. RAM only. */
+let textEngine: "soniox" | "local" = "soniox";
 const listeners = new Set<() => void>();
 
 export function bindConversationSession(value: ConversationSessionPort): void { port = value; }
@@ -40,6 +42,12 @@ export function conversationDiagnosticsSelected(): boolean { return diagnostics;
 export function setConversationDiagnosticsSelected(value: boolean): void {
   if (port?.detector.snapshot().enabled || diagnostics === value) return;
   diagnostics = value;
+  for (const listener of listeners) listener();
+}
+export function conversationTextEngine(): "soniox" | "local" { return textEngine; }
+export function setConversationTextEngine(value: "soniox" | "local"): void {
+  if (port?.detector.snapshot().enabled || textEngine === value) return;
+  textEngine = value;
   for (const listener of listeners) listener();
 }
 /** Options read once at start; every entry point (phone, lenses, "Solo transcripción") uses them. */

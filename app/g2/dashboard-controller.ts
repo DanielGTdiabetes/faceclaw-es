@@ -52,9 +52,10 @@ import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
 import { LocalTranscription } from "../native/local-transcription";
+import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine } from "../conversation-detection/session-controls";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
@@ -381,7 +382,7 @@ class DashboardController {
       detector: this.conversationDetector,
       setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
       voiceModel: () => micModelState("speaker-embedding").status,
-      textModel: () => conversationTextModelStatus(),
+      textModel: () => conversationTextEngine() === "soniox" && sonioxApiKeySetting.get().trim() ? "ready" : conversationTextModelStatus(),
     });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {
@@ -2049,7 +2050,16 @@ class DashboardController {
       const timer = setInterval(callback, ms);
       return () => clearInterval(timer);
     },
-    transcription: new LocalTranscription(),
+    transcription: new SonioxConversationTranscription(new LocalTranscription(), {
+      apiKey: () => sonioxApiKeySetting.get(),
+      engine: () => conversationTextEngine(),
+      connect: androidSonioxSocket,
+      now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+      every: (callback, ms) => {
+        const timer = setInterval(callback, ms);
+        return () => clearInterval(timer);
+      },
+    }),
     participation: new LocalParticipation(),
   });
 
