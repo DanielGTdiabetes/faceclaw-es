@@ -37,7 +37,8 @@ export class LocalConversationLayer implements Layer {
     image.drawText(font, inset, y, truncateText(font,
       `Mi perfil: ${profile} · Texto: ${(snapshot.enabled ? snapshot.transcription?.enabled : conversationTextSelected()) ? "ON" : "OFF"}`, available), 180);
     y += step;
-    const detail = conversationDetail(snapshot, plan.hint);
+    // The deadline has its own line below; the detail must not repeat it.
+    const detail = conversationDetail(snapshot, plan.hint, false);
     const lines = wrapText(font, detail, available);
     // Keep the deadline visible independently of a long reason or error message.
     if (snapshot.enabled) {
@@ -89,16 +90,21 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     title: "Conversación local", iconLetter: "C", icon: "message-circle", closeable: true,
     actions: options.actions, baseLayer: new LocalConversationLayer(session),
     menuItems: () => {
-      const stopping = session.detector.snapshot().enabled;
+      const opened = session.detector.snapshot();
+      const stopping = opened.enabled;
+      // While ON show the engine really active, as the phone does; the shared choice applies to the next start.
+      const textShown = stopping ? opened.transcription?.enabled === true : conversationTextSelected();
       return [
       { label: lensConversationPlan(session).button, onSelect: (ctx) => {
         ctx.stack.pop();
-        // A stop menu opened before expiry must never start a new session after expiry.
-        if (stopping) session.setEnabled(false); else toggleLensConversation(session);
+        // A menu acts as it was labelled when opened: a stop menu retained across expiry never
+        // starts, and a start menu retained while another input started a session never stops it.
+        if (stopping) session.setEnabled(false);
+        else if (!session.detector.snapshot().enabled) toggleLensConversation(session);
       } },
-      { label: `Texto local: ${conversationTextSelected() ? "ON" : "OFF"}`,
+      { label: `Texto local: ${textShown ? "ON" : "OFF"}${stopping ? " · sesión en curso" : ""}`,
         description: "Cambiar solo en OFF. Texto temporal es/valencià, sin envío al asistente.",
-        onSelect: (ctx) => { ctx.stack.pop(); setConversationTextSelected(!conversationTextSelected()); } },
+        onSelect: (ctx) => { ctx.stack.pop(); if (!stopping) setConversationTextSelected(!conversationTextSelected()); } },
       { label: "Detener (OFF)", onSelect: (ctx) => { ctx.stack.pop(); session.setEnabled(false); } },
       ];
     },

@@ -25,19 +25,20 @@ export function conversationStartPlan(snapshot: DetectorSnapshot, profile: strin
       : `${withText ? "Texto local es/valencià" : "Solo actividad de voz"} · sin perfil no se evalúa participación.` };
 }
 
-export function conversationDetail(snapshot: DetectorSnapshot, hint: string): string {
+/** includeTime=false lets a view that already shows the deadline on its own line avoid repeating it. */
+export function conversationDetail(snapshot: DetectorSnapshot, hint: string, includeTime = true): string {
   if (snapshot.state === "error") return `OFF · Error: ${snapshot.reason}\n${hint}`;
   if (!snapshot.enabled) {
     return snapshot.stopReason === "expired" || snapshot.stopReason === "saved"
       ? `${snapshot.reason}\n${hint}` : hint;
   }
-  const time = `${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo 2 min, incluidas las esperas).`;
+  const time = includeTime ? `\n${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo 2 min, incluidas las esperas).` : "";
   if (snapshot.participationMode === "enrollment") {
     const part = snapshot.participation;
-    return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.\n${time}`;
+    return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.${time}`;
   }
   if (snapshot.participationMode === "conversation" && snapshot.state === "escuchando") {
-    return `${snapshot.participation?.voice ?? "insuficiente"} · ${snapshot.participation?.participation ?? "evidencia insuficiente"}\nIndicios provisionales; no confirman participación ni voz en vivo.\n${time}`;
+    return `${snapshot.participation?.voice ?? "insuficiente"} · ${snapshot.participation?.participation ?? "evidencia insuficiente"}\nIndicios provisionales; no confirman participación ni voz en vivo.${time}`;
   }
-  return `${snapshot.reason}\n${time}`;
+  return `${snapshot.reason}${time}`;
 }

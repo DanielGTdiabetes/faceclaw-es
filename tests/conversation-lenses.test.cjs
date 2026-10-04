@@ -112,3 +112,34 @@ test('a stop menu retained across expiry cannot accidentally start another sessi
   stop.onSelect({ stack: { pop() {} } });
   assert.deepEqual(h.starts, [[false]]); h.options.onClosed();
 });
+
+test('a start menu retained while another input starts a session cannot stop it', () => {
+  const h = harness(); const start = h.options.menuItems()[0];
+  h.patch({ enabled: true, state: 'suspendido' });
+  start.onSelect({ stack: { pop() {} } });
+  assert.deepEqual(h.starts, []); h.options.onClosed();
+});
+
+test('text menu shows the active engine during a session and never changes the next-start choice', () => {
+  const h = harness();
+  h.patch({ enabled: true, state: 'escuchando', remainingMs: 60000, transcription: { enabled: false } });
+  const item = h.options.menuItems()[1];
+  assert.match(item.label, /Texto local: OFF · sesión en curso/);
+  item.onSelect({ stack: { pop() {} } });
+  assert.equal(controls.conversationTextSelected(), true);
+  h.patch({ enabled: false, state: 'desactivado' });
+  assert.match(h.options.menuItems()[1].label, /^Texto local: ON$/); h.options.onClosed();
+});
+
+test('the deadline is painted once, leaving the detail lines for state and text', () => {
+  const h = harness();
+  for (const patch of [
+    { enabled: true, state: 'suspendido', reason: 'Preparando sesión de audio', remainingMs: 90000, participationMode: 'off' },
+    { enabled: true, state: 'escuchando', remainingMs: 30000, participationMode: 'conversation',
+      transcription: { enabled: true }, participation: { voice: 'compatible', participation: 'conversación candidata' } },
+  ]) {
+    h.patch(patch);
+    assert.equal((h.paint().match(/s restantes/g) ?? []).length, 1);
+  }
+  h.options.onClosed();
+});

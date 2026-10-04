@@ -52,6 +52,9 @@ test('candidate evidence remains provisional and waiting time counts towards the
   const suspended = conversationDetail({ ...candidate, state: 'suspendido', reason: 'Audio cedido al asistente' }, '');
   assert.match(suspended, /Audio cedido/);
   assert.doesNotMatch(suspended, /conversación candidata/);
+  // Views with their own deadline line (lenses) omit it; the phone default keeps it.
+  assert.doesNotMatch(conversationDetail(candidate, '', false), /restantes/);
+  assert.match(conversationDetail({ ...candidate, state: 'suspendido', reason: 'Audio cedido al asistente' }, '', false), /^Audio cedido al asistente$/);
 });
 
 test('expired and failed sessions retain their cause after OFF', () => {
