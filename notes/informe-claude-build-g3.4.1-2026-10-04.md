@@ -57,3 +57,9 @@ No se inició captura, registro ni sesión ON. Perfil existente sin tocar ni exp
 - **Pendiente:** ver la ventana en las lentes estando OFF. Las correcciones son de interfaz: no acreditan reconocimiento, participación, autonomía ni resuelven los incidentes 492 ms/siete descartes y UI 1046 ms/21 drops.
 
 Reloj: desconectado, no se tocó. Firmware /36: no se tocó.
+
+## Observación posterior en lentes, 04-10-2026 ~09:51
+
+Tras el aviso del usuario («listo»), comprobado por ADB: Pixel desbloqueado, Faceclaw en primer plano y «Conectado». El log de Faceclaw registra la ventana `window:local-conversation` en primer plano en las gafas (640×452 bajo la barra del shell) con huella de imagen constante entre envíos. A las 09:51:21 se apagó la pantalla de las gafas («G2 screen wake lock released»). La vista previa del móvil estaba negra en la captura, así que **el contenido de la lente no se ha leído visualmente**.
+
+La UI móvil muestra «Conversación local · OFF» y **«OFF · Tiempo agotado (2 min)»**. Este mensaje no aparecía en la observación posterior a la instalación (09:24), por lo que entre medias hubo una sesión ON que el coordinador cerró al llegar al máximo de 120 s. El log disponible del proceso empieza a las 09:50 y no muestra qué entrada la inició: queda sin atribuir, pendiente de confirmar con el usuario. El agente no inició ninguna sesión. Estado final: OFF, `Wake Locks: size=1` solo de GMS, ninguno de Faceclaw. Perfil «guardado», texto opcional ON.
