@@ -8,7 +8,7 @@ const { AudioCaptureArbiter } = require('../.test-build/app/native/audio-capture
 const { ConversationCaptureCoordinator } = require('../.test-build/app/conversation-detection/coordinator.js');
 const { assistantAudioPriority } = require('../.test-build/app/assistant/audio-priority.js');
 
-function harness({ prepare, transcription } = {}) {
+function harness({ prepare, transcription, participation } = {}) {
   let now = 1000, starts = 0, stops = 0, timer = null;
   let environment = { available: true, reason: '', session: {} };
   const leases = [];
@@ -24,9 +24,10 @@ function harness({ prepare, transcription } = {}) {
     now: () => now,
     every(cb) { timer = cb; return () => { timer = null; }; },
     transcription,
+    participation,
   });
   return { detector, leases,
-    async on(transcribe = false) { detector.setEnabled(true, transcribe); await Promise.resolve(); },
+    async on(transcribe = false, mode = 'off') { detector.setEnabled(true, transcribe, mode); await Promise.resolve(); },
     tick(ms = 500) { now += ms; timer?.(); },
     env(patch) { environment = { ...environment, ...patch }; detector.refresh(); },
     counts: () => ({ starts, stops, timer: !!timer }),
@@ -43,6 +44,74 @@ function transcriptPort(ready = true) {
       inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 }; },
   };
 }
+
+function participationPort() {
+  const events = [];
+  const state = { status: 'listo', worker: false, profileSaved: false };
+  let profile = true;
+  return { events, state,
+    start(enrollment) { events.push(enrollment ? 'enroll' : 'compare'); return true; },
+    stop() { events.push('stop'); }, resetStream() { events.push('reset'); },
+    acceptNative(_pcm, vad) { events.push(`pcm:${vad}`); }, snapshot: () => ({ ...state }),
+    hasProfile: () => profile, deleteProfile() { events.push('delete'); profile = false; return true; },
+  };
+}
+
+test('profile comparison is optional and enrollment never starts ASR', async () => {
+  const participation = participationPort(), transcription = transcriptPort();
+  const h = harness({ participation, transcription });
+  await h.on(true);
+  assert.equal(participation.events.includes('compare'), false);
+  assert.equal(participation.events.includes('enroll'), false);
+  h.detector.setEnabled(false); transcription.events.length = 0;
+  await h.on(true, 'enrollment');
+  assert.equal(participation.events.includes('enroll'), true);
+  assert.equal(transcription.events.includes('start'), false);
+  h.detector.setEnabled(false);
+});
+
+test('voice model loads before capture and a missing compatible profile fails closed', async () => {
+  const participation = participationPort(); participation.state.status = 'cargando';
+  const h = harness({ participation }); await h.on(false, 'conversation');
+  assert.equal(h.counts().starts, 0);
+  participation.state.status = 'sin perfil compatible'; h.tick();
+  assert.equal(h.detector.snapshot().state, 'error');
+  assert.deepEqual(h.counts(), { starts: 0, stops: 0, timer: false });
+});
+
+test('completed enrollment stops audio, timer and text automatically', async () => {
+  const participation = participationPort(); const h = harness({ participation });
+  await h.on(false, 'enrollment'); h.leases[0].pcm(new Uint8Array(1600));
+  participation.state.profileSaved = true; h.tick();
+  assert.equal(h.detector.snapshot().enabled, false);
+  assert.equal(h.detector.snapshot().participationMode, 'off');
+  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+  assert.match(h.detector.snapshot().reason, /perfil se ha guardado/);
+});
+
+test('integrated mode resets both engines at audio gaps and assistant preemption', async () => {
+  const participation = participationPort(), transcription = transcriptPort();
+  const h = harness({ participation, transcription }); await h.on(true, 'conversation');
+  h.leases[0].pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.equal(participation.events.filter(e => e.startsWith('pcm:')).length, 1);
+  const resets = participation.events.filter(e => e === 'reset').length;
+  h.tick(251); h.leases[0].pcm(new Uint8Array(1600));
+  assert.ok(participation.events.filter(e => e === 'reset').length > resets);
+  h.leases[0].revoked(); h.detector.acceptNativePcm({});
+  assert.equal(participation.events.filter(e => e.startsWith('pcm:')).length, 1);
+  h.tick(120000); assert.equal(h.detector.snapshot().enabled, false);
+  assert.equal(transcription.snapshot().enabled, false);
+});
+
+test('profile deletion closes the session before removing the stored vector', async () => {
+  const participation = participationPort(); const h = harness({ participation });
+  await h.on(false, 'conversation');
+  participation.events.length = 0;
+  assert.equal(h.detector.deleteOwnProfile(), true);
+  assert.equal(h.detector.hasOwnProfile(), false);
+  assert.equal(h.detector.snapshot().enabled, false);
+  assert.ok(participation.events.indexOf('stop') < participation.events.indexOf('delete'));
+});
 
 test('local transcription is opt-in, and diagnostics never contain its temporary text', async () => {
   const transcription = transcriptPort(); const h = harness({ transcription });

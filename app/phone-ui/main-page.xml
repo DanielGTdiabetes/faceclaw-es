@@ -25,7 +25,7 @@
             <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
             <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
             <Label text="{{ localTranscript }}" textWrap="true" maxLines="4" fontSize="13" />
-            <Button text="{{ localTranscriptionButton }}" tap="{{ onLocalTranscriptionTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="Opciones · Mi perfil y modos locales" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
         </StackLayout>
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
             <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">

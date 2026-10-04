@@ -27,6 +27,7 @@ import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
+import { micModelState, onMicModelStateChanged, startMicModelDownload } from "../apps/microphones/mic-models";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -136,31 +137,65 @@ export class MainViewModel extends RemoteControlsViewModel {
     }));
     this.unsubscribers.push(onAsrModelStateChanged("whisper-base-es", () => {
       this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    }));
+    this.unsubscribers.push(onMicModelStateChanged((id) => {
+      if (id === "speaker-embedding") this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
     }));
   }
 
   get conversationDetectorLabel(): string {
-    return `VAD local · experimental · ${dashboardController.conversationDetector.snapshot().state}`;
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return `Conversación local · ${snapshot.enabled ? snapshot.state : "OFF"}`;
   }
 
   get conversationDetectorDetail(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
-    const metrics = snapshot.metrics;
-    return `${snapshot.reason}\nActividad: ${snapshot.vad.state} · ${snapshot.vad.episodes} episodios provisionales\n${metrics.chunks} chunks · ${(metrics.samples / 16000).toFixed(1)} s PCM · hueco máx. ${metrics.maxGapMs} ms · ${metrics.preemptions} cesiones`;
+    if (snapshot.state === "error") return snapshot.reason;
+    if (!snapshot.enabled) return snapshot.reason.includes("perfil se ha guardado") ? snapshot.reason
+      : dashboardController.conversationDetector.hasOwnProfile() ? "Mi perfil guardado en este móvil · texto temporal es/valencià."
+      : "Texto temporal es/valencià. Mi perfil es opcional: sin él no se evalúa participación.";
+    if (snapshot.participationMode === "enrollment") {
+      const profile = snapshot.participation;
+      return `${snapshot.reason}\nMi perfil: ${profile?.status} · ${profile?.enrollmentSegments ?? 0}/3 frases · ${((profile?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.`;
+    }
+    return snapshot.participationMode === "conversation" && snapshot.state === "escuchando"
+      ? `${snapshot.participation?.voice} · ${snapshot.participation?.participation}\nIndicios provisionales; puede aceptar una voz reproducida.` : snapshot.reason;
   }
 
   get conversationDetectorButton(): string {
-    return dashboardController.conversationDetector.snapshot().enabled ? "Desactivar captura (OFF)" : "Activar ensayo local (ON, 2 min máx.)";
+    const detector = dashboardController.conversationDetector;
+    if (detector.snapshot().enabled) return "Detener (OFF)";
+    const asr = asrModelState("whisper-base-es");
+    if (asr.status === "downloading") return `Descargando transcripción: ${Math.floor(asr.bytesDownloaded * 100 / asr.totalBytes)} %`;
+    if (asr.status !== "ready") return "Descargar transcripción local (161 MB)";
+    if (detector.hasOwnProfile()) {
+      const voice = micModelState("speaker-embedding");
+      if (voice.status === "downloading") return `Descargando modelo de voz: ${Math.floor(voice.bytesDownloaded * 100 / voice.totalBytes)} %`;
+      if (voice.status !== "ready") return "Descargar modelo de mi voz (29 MB)";
+    }
+    return "Iniciar conversación local (2 min máx.)";
   }
 
   onConversationDetectorTap(): void {
     const detector = dashboardController.conversationDetector;
-    dashboardController.setConversationCaptureEnabled(!detector.snapshot().enabled);
+    if (detector.snapshot().enabled) { dashboardController.setConversationCaptureEnabled(false); return; }
+    const asr = asrModelState("whisper-base-es");
+    if (asr.status !== "ready") {
+      if (asr.status !== "downloading") startAsrModelDownload("whisper-base-es");
+      return;
+    }
+    const profile = detector.hasOwnProfile();
+    if (profile && micModelState("speaker-embedding").status !== "ready") {
+      startMicModelDownload("speaker-embedding"); return;
+    }
+    dashboardController.setConversationCaptureEnabled(true, true, profile ? "conversation" : "off");
   }
 
   onConversationDetectorMetricsTap(): void {
     const detector = dashboardController.conversationDetector;
-    void Dialogs.alert({ title: "Métricas técnicas G2/VAD/ASR", message: JSON.stringify(detector.snapshot(), null, 2)
+    if (detector.snapshot().enabled) return; // Aggregate inspection after OFF, not during capture.
+    void Dialogs.alert({ title: "Métricas locales", message: JSON.stringify(detector.snapshot(), null, 2)
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 
@@ -184,6 +219,39 @@ export class MainViewModel extends RemoteControlsViewModel {
       return; // Weights only; download completion never starts capture.
     }
     dashboardController.setConversationCaptureEnabled(true, true);
+  }
+
+  async onConversationOptionsTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const detector = dashboardController.conversationDetector;
+    const profile = detector.hasOwnProfile();
+    const ownAction = profile ? "Borrar mi perfil" : "Crear mi perfil";
+    const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
+      actions: [ownAction, "Solo transcripción", "Solo actividad de voz", "Métricas tras OFF"] });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
+    if (choice === "Solo transcripción") { this.onLocalTranscriptionTap(); return; }
+    if (choice === "Solo actividad de voz") { dashboardController.setConversationCaptureEnabled(true); return; }
+    if (choice !== ownAction) return;
+    if (profile) {
+      const deleted = detector.deleteOwnProfile();
+      this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      await Dialogs.alert({ title: "Mi perfil", message: deleted ? "Perfil borrado de este móvil." : "No se pudo borrar el perfil. Reintenta desde Opciones.", okButtonText: "Cerrar" });
+      return;
+    }
+    const model = micModelState("speaker-embedding");
+    if (model.status !== "ready") {
+      if (model.status !== "downloading") {
+        const download = await Dialogs.confirm({ title: "Mi perfil opcional", message: "Necesita descargar un modelo de voz de 29 MB. La descarga no activa el micrófono ni crea un perfil.", okButtonText: "Descargar modelo", cancelButtonText: "Cancelar" });
+        if (download) startMicModelDownload("speaker-embedding");
+      }
+      return;
+    }
+    const consent = await Dialogs.confirm({ title: "Crear mi perfil local",
+      message: "Se guardará solo un vector de tu voz, cifrado en este móvil y excluido de copias de seguridad. Las muestras permanecen en RAM y se borran; no se guardan frases ni voces de otras personas. Puedes borrarlo desde Opciones.\n\nCon las gafas puestas, habla solo tú en un lugar tranquilo: al menos tres frases diferentes de 4–8 segundos, con pausas entre ellas. Al reunir 10 segundos de posible voz coherente se guarda y pasa a OFF. OFF antes de terminar cancela. La similitud es provisional y no protege frente a una voz reproducida.",
+      okButtonText: "Crear y guardar mi perfil", cancelButtonText: "Cancelar" });
+    if (consent && this.localTranscriptionCanStart) dashboardController.setConversationCaptureEnabled(true, false, "enrollment");
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */

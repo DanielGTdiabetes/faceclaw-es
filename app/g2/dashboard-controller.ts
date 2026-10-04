@@ -52,6 +52,8 @@ import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment } from "../conversation-detection/coordinator";
 import { LocalTranscription } from "../native/local-transcription";
+import { LocalParticipation } from "../native/local-participation";
+import { type ParticipationMode } from "../conversation-detection/participation";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
@@ -2028,10 +2030,11 @@ class DashboardController {
       return () => clearInterval(timer);
     },
     transcription: new LocalTranscription(),
+    participation: new LocalParticipation(),
   });
 
-  setConversationCaptureEnabled(enabled: boolean, transcribe = false): void {
-    this.conversationDetector.setEnabled(enabled, transcribe);
+  setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off"): void {
+    this.conversationDetector.setEnabled(enabled, transcribe, participation);
     // Capture needs a fresh wear report even when the optional lock screen is off.
     // Request on ON and on ready sessions, never from the 500 ms refresh loop.
     if (enabled) this.ensureWearStateTracking();

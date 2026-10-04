@@ -29,7 +29,10 @@ fun acceptedLocalText(result: LocalDecodedText): String =
     if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
 
 /** Segments the existing provisional VAD. Copies PCM only into bounded, erasable RAM. */
-class LocalTranscriptBuffer(private val submit: (ShortArray) -> Unit) {
+class LocalTranscriptBuffer(
+    private val segmentInfo: (Int) -> Unit = {},
+    private val submit: (ShortArray) -> Unit,
+) {
     companion object {
         const val MAX_SAMPLES = 16000 * 8
         const val PRE_SAMPLES = 16000 / 5
@@ -98,10 +101,11 @@ class LocalTranscriptBuffer(private val submit: (ShortArray) -> Unit) {
     private fun finish(atLimit: Boolean) {
         if (atLimit) limitClosures++ else silenceClosures++
         val audio = if (voiced >= MIN_VOICED_SAMPLES) samples.copyOf(count) else null
+        val voicedSamples = voiced
         if (audio == null) shortSegments++ else submittedSamples += count
         // Erase before handing a completed segment to an asynchronous consumer.
         clearAudio()
-        if (audio != null) submit(audio)
+        if (audio != null) { segmentInfo(voicedSamples); submit(audio) }
     }
 }
 
