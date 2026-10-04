@@ -1,4 +1,6 @@
-# Continuar Faceclaw desde GitHub — S2.3, 04-10-2026
+# Continuar Faceclaw desde GitHub — S2.3 y base de episodios, 04-10-2026
+
+**Cierre solicitado para mañana desde el PC del trabajo.** Leer primero `notes/episodios-codex-2026-10-04.md`: nuevo gestor aislado, 13/13 pruebas nuevas, TS/lint correctos, todavía sin integración en app/Hermes ni nueva APK. S2.2 instalada y candidata S2.3 conservadas. Pregunta sobre enviar intercambios candidatos a evaluación Hermes aún sin respuesta; no asumir autorización. Valores de política de pruebas no aprobados. Recuperar también este último avance desde el HEAD remoto, además de la publicación anterior `e995946`.
 
 Retoma el proyecto `faceclaw-es` desde la rama **`codex/conversation-detection-g0`** del repositorio `DanielGTdiabetes/faceclaw-es`. El usuario autorizó a Codex a asumir implementación y verificación, no solo revisión y prompts para Claude. Conserva decisiones, trabajo local y todos los cambios de S2/S2.1/S2.2/S2.3. Sin reset/clean/stash automático ni sustitución de un árbol con cambios por una copia remota.
 
@@ -33,6 +35,6 @@ El usuario pide **aviso antes de necesitar el móvil**. No acceder al dispositiv
 
 ## Próxima fase y decisiones del producto
 
-Después se retomará con el usuario el diseño de episodios y proactividad Hermes. Leer `notes/soniox-capacidades-conversacion-hermes-2026-10-04.md` y `notes/aclaracion-activacion-hermes-conversacion-2026-10-04.md`. Distinguir saludo de conversación temática y contexto de respuesta; analizar texto con un LLM ya supone enviarlo. No reutilizar el `utterance` que cancela el agente para todas las voces ni parchear continuidad con reinicios automáticos cada120s.
+Se ha iniciado el diseño e implementación de episodios; seguir desde `notes/episodios-codex-2026-10-04.md`, sin rehacer el gestor aislado. Resolver la evaluación semántica pendiente, concretar política y contrato del canal de conversación y después integrar proactividad/visualización Hermes. Leer `notes/soniox-capacidades-conversacion-hermes-2026-10-04.md` y `notes/aclaracion-activacion-hermes-conversacion-2026-10-04.md`. Distinguir saludo de conversación temática y contexto de respuesta; analizar texto con un LLM ya supone enviarlo. No reutilizar el `utterance` que cancela el agente para todas las voces ni parchear continuidad con reinicios automáticos cada120s.
 
 **Producto final: lentes apagadas durante la escucha, sin conversación/transcripción visible; mostrar únicamente los mensajes de Hermes cuando intervenga.** S2.3 mantiene interfaz diagnóstica y aún no implementa ese requisito. Soniox por defecto/Whisper reserva, castellano actual, TV sin filtros, perfil existente sin reenrolar, GPS/bloqueo/Hermes habitual/firma conservados. Tope120s absoluto, incluido silencio, sin reactivación automática. Sin envío experimental de conversaciones a Hermes, firmware ni Wear por defecto.
