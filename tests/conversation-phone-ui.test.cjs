@@ -9,6 +9,7 @@ const guide = require('../.test-build/app/conversation-detection/profile-guide.j
 function harness() {
   let snapshot = { enabled: false, state: 'desactivado', stopReason: 'none', reason: '', remainingMs: 0 };
   let textModel = 'ready', downloads = 0;
+  let selectedText = true;
   const starts = [], alerts = [], timers = new Map();
   const detector = { snapshot: () => snapshot, ownProfileState: () => 'guardado', transcriptText: () => '' };
   const exports = {};
@@ -25,6 +26,10 @@ function harness() {
       if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), startAsrModelDownload: () => downloads++ };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
+      if (name === '../conversation-detection/session-controls') return {
+        conversationTextSelected: () => selectedText,
+        setConversationTextSelected: value => { if (!snapshot.enabled) selectedText = value; },
+      };
       if (name === '../conversation-detection/profile-guide') return guide;
       return {};
     },
@@ -55,6 +60,14 @@ test('ON exposes stop and cannot change the selected ASR mode', () => {
   assert.equal(h.view.conversationWithText, true);
   h.view.onConversationDetectorTap();
   assert.deepEqual(h.starts, [[false]]);
+});
+
+test('the phone reports the running text engine when another control started a different mode', () => {
+  const h = harness(); h.view.onConversationTextTap();
+  h.snapshot({ enabled: true, transcription: { enabled: true } });
+  assert.match(h.view.conversationTextButton, /ON · sesión en curso/);
+  h.snapshot({ transcription: { enabled: false } });
+  assert.match(h.view.conversationTextButton, /OFF · sesión en curso/);
 });
 
 test('the phone refreshes a draining worker after OFF and polling ends on completion or at 30 seconds', () => {

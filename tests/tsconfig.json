@@ -15,6 +15,7 @@
   "include": [
     "../app/conversation-detection/coordinator.ts",
     "../app/conversation-detection/conversation-ui.ts",
+    "../app/conversation-detection/session-controls.ts",
     "../app/conversation-detection/profile-guide.ts",
     "../app/native/audio-capture-arbiter.ts",
     "../app/assistant/audio-priority.ts",

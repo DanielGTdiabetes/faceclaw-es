@@ -30,6 +30,7 @@ import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "..
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan } from "../conversation-detection/conversation-ui";
+import { conversationTextSelected, setConversationTextSelected, onConversationTextSelected } from "../conversation-detection/session-controls";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -70,7 +71,8 @@ export class MainViewModel extends RemoteControlsViewModel {
   private _previewMode = false;
   private _evenHubPhoneUi: PhoneUiButton | null = null;
   private _phase: "disconnected" | "connecting" | "connected" | "charging" | "disconnecting" = "disconnected";
-  private conversationWithText = true; // RAM only: preserves the existing 33 settings.
+  private get conversationWithText(): boolean { return conversationTextSelected(); }
+  private set conversationWithText(value: boolean) { setConversationTextSelected(value); }
   private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
   // A new view model is built on every navigation to the main page; these
@@ -133,6 +135,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
       this.refreshConversationUi();
     }));
+    this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
     this.unsubscribers.push(() => {
       if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
       this.localCloseTimer = null;
@@ -153,6 +156,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
     this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
     this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    this.notifyPropertyChange("conversationTextButton", this.conversationTextButton);
     this.notifyPropertyChange("localTranscript", this.localTranscript);
     this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
     this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
@@ -187,7 +191,9 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   get conversationTextButton(): string {
-    return `Texto local opcional: ${this.conversationWithText ? "ON" : "OFF"} · tocar para cambiar`;
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const selected = snapshot.enabled ? snapshot.transcription?.enabled : this.conversationWithText;
+    return `Texto local opcional: ${selected ? "ON" : "OFF"} · ${snapshot.enabled ? "sesión en curso" : "tocar para cambiar"}`;
   }
 
   onConversationTextTap(): void {

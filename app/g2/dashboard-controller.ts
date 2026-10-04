@@ -54,6 +54,9 @@ import { ConversationCaptureCoordinator, type DetectorEnvironment } from "../con
 import { LocalTranscription } from "../native/local-transcription";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
+import { bindConversationSession } from "../conversation-detection/session-controls";
+import { asrModelState } from "../native/asr-model";
+import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
@@ -374,6 +377,12 @@ class DashboardController {
   private haltedDisconnectPending = false;
 
   constructor() {
+    bindConversationSession({
+      detector: this.conversationDetector,
+      setEnabled: (enabled, text, participation) => this.setConversationCaptureEnabled(enabled, text, participation),
+      voiceModel: () => micModelState("speaker-embedding").status,
+      textModel: () => asrModelState("whisper-base-es").status,
+    });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {
         voiceControlBridge.setAudioPriority("voice-modal", active);
