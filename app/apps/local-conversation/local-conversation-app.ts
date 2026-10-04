@@ -108,6 +108,9 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
       { label: "Detener (OFF)", onSelect: (ctx) => { ctx.stack.pop(); session.setEnabled(false); } },
       ];
     },
+    // While a session is ON (at most 120 s) the idle timeout must not blank the lenses mid-conversation,
+    // as Transcribe does for its capture. OFF keeps the normal screen timeout.
+    keepsScreenOn: () => !closed && session.detector.snapshot().enabled,
     submitFrame: options.submitFrame, setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface, reconfigureSurface: options.reconfigureSurface,
     onForegroundChanged: (foreground) => { if (foreground && !closed) app.requestRender(); },

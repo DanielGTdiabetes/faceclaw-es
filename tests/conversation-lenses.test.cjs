@@ -143,3 +143,11 @@ test('the deadline is painted once, leaving the detail lines for state and text'
   }
   h.options.onClosed();
 });
+
+test('the lenses stay on only while a session is ON, never while OFF or after closing', () => {
+  const h = harness(); assert.equal(h.options.keepsScreenOn(), false);
+  h.patch({ enabled: true, state: 'escuchando' }); assert.equal(h.options.keepsScreenOn(), true);
+  h.patch({ enabled: false, state: 'desactivado', stopReason: 'expired' }); assert.equal(h.options.keepsScreenOn(), false);
+  h.patch({ enabled: true, state: 'suspendido' }); h.options.onClosed();
+  assert.equal(h.options.keepsScreenOn(), false);
+});
