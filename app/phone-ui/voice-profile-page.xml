@@ -1,0 +1,22 @@
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" navigatingFrom="navigatingFrom" unloaded="unloaded">
+    <ActionBar title="Asistente · Mi perfil">
+        <NavigationButton text="Volver" android.systemIcon="ic_menu_back" tap="{{ onCloseTap }}" />
+    </ActionBar>
+    <GridLayout rows="*,auto" class="p-16">
+        <ScrollView row="0">
+            <StackLayout>
+                <Label text="{{ state }}" fontSize="23" textWrap="true" class="m-b-12" />
+                <Label text="{{ hint }}" fontSize="17" textWrap="true" class="m-b-16" />
+                <Label text="{{ phrase }}" fontSize="22" textWrap="true" class="m-b-16" />
+                <Progress value="{{ progress }}" maxValue="100" />
+                <Label text="{{ progressText }}" fontSize="14" textWrap="true" class="m-t-8 m-b-16" />
+                <StackLayout visibility="{{ privacyVisibility }}">
+                    <Label text="Cómo funciona" fontSize="19" class="m-b-8" />
+                    <Label text="Ponte las gafas y busca un lugar tranquilo. Al empezar, espera a «Habla ahora». Lee la frase que aparezca a ritmo natural y después guarda silencio. Avanzaré cuando pueda aprovechar la muestra; si hace falta repetir, te lo indicaré. Son dos frases en castellano y dos en valenciano para un único perfil de tu voz." textWrap="true" fontSize="16" class="m-b-12" />
+                    <Label text="Al completar las muestras, guardaré solo un vector de tu voz cifrado en este móvil, excluido de copias de seguridad. El audio se borra y no se envía. Puedes borrar el perfil desde Opciones. El registro tiene un máximo de 2 minutos; cancelar o volver atrás antes de terminar no guarda un perfil nuevo. La comparación de voz es provisional y puede aceptar una voz reproducida." textWrap="true" fontSize="14" class="m-b-12" />
+                </StackLayout>
+            </StackLayout>
+        </ScrollView>
+        <Button row="1" text="{{ button }}" isEnabled="{{ buttonEnabled }}" tap="{{ onButtonTap }}" class="-primary m-t-12" />
+    </GridLayout>
+</Page>

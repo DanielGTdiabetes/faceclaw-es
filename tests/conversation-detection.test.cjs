@@ -87,6 +87,20 @@ test('completed enrollment stops audio, timer and text automatically', async () 
   assert.equal(h.detector.snapshot().participationMode, 'off');
   assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
   assert.match(h.detector.snapshot().reason, /perfil se ha guardado/);
+  assert.equal(h.detector.snapshot().enrollmentOutcome, 'saved');
+});
+
+test('enrollment retains distinct canceled, expired and error outcomes after OFF', async () => {
+  for (const ending of ['canceled', 'expired', 'error']) {
+    const participation = participationPort(); const h = harness({ participation });
+    await h.on(false, 'enrollment');
+    if (ending === 'canceled') h.detector.setEnabled(false);
+    if (ending === 'expired') h.tick(120000);
+    if (ending === 'error') { participation.state.status = 'error'; h.tick(); h.detector.setEnabled(false); }
+    assert.equal(h.detector.snapshot().enrollmentOutcome, ending);
+    assert.equal(h.detector.snapshot().enabled, false);
+    assert.equal(h.counts().timer, false);
+  }
 });
 
 test('integrated mode resets both engines at audio gaps and assistant preemption', async () => {

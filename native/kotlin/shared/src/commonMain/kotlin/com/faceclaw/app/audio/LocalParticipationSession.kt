@@ -86,27 +86,33 @@ class LocalParticipationSession(
     private var abstentions = 0
     private var dropped = 0
     private var profileSaved = false
+    private var requiredSegments = 3
+    private var enrollmentFeedback = "esperando"
     private val turns = LocalParticipationTurns()
     private val buffer = LocalTranscriptBuffer(segmentInfo = { segmentVoiced = it }) { audio ->
-        if (!running || !ready || busy) { audio.fill(0); dropped++ }
+        if (!running || !ready || busy) { audio.fill(0); dropped++; if (enrolling) enrollmentFeedback = "ocupado" }
         else { job = Job(generation, audio, segmentVoiced); busy = true; condition.signalAll() }
     }
 
     /** enrollment=true is only called after the explicit local-profile consent screen. */
-    fun start(enrollment: Boolean): Boolean {
+    fun start(enrollment: Boolean, segments: Int = 3): Boolean {
         condition.withLock {
             if (worker) return false
             running = true; worker = true; ready = false; busy = false; enrolling = enrollment
             generation++; deadline = platform.elapsedRealtimeMs() + 120000; status = "cargando"
             eraseVectors(); buffer.resetMetrics(); turns.reset()
             profileSaved = false; comparisons = 0; abstentions = 0; dropped = 0
+            requiredSegments = segments.coerceIn(3, 6); enrollmentFeedback = "esperando"
         }
         startThread("FaceclawLocalParticipation", true) { runWorker() }
         return true
     }
     fun resetStream() {
         condition.withLock {
+            val interrupted = enrollmentSamples > 0 || buffer.bufferedBytes() > 0 || busy
             generation++; buffer.reset(); turns.reset(); clearEnrollment()
+            if (running && enrolling && !profileSaved && interrupted) enrollmentFeedback = "reiniciado"
+            if (running && ready && !profileSaved) status = "listo"
             job?.audio?.fill(0); job = null
             if (activeBytes == 0) busy = false
             condition.signalAll()
@@ -131,6 +137,7 @@ class LocalParticipationSession(
             "\"inputBufferedBytes\":${buffer.bufferedBytes() + (job?.audio?.size ?: 0) * 2 + activeBytes}," +
             "\"profileSaved\":$profileSaved,\"enrollmentMs\":${enrollmentSamples / 16}," +
             "\"enrollmentSegments\":$enrollmentSegments,\"comparisons\":$comparisons," +
+            "\"requiredSegments\":$requiredSegments,\"enrollmentFeedback\":\"$enrollmentFeedback\"," +
             "\"abstentions\":$abstentions,\"dropped\":$dropped," +
             "\"voice\":\"${if (running && now < deadline && turns.state(now) != "evidencia insuficiente") turns.voice else "insuficiente"}\"," +
             "\"participation\":\"${if (running && now < deadline) turns.state(now) else "evidencia insuficiente"}\"}"
@@ -176,22 +183,31 @@ class LocalParticipationSession(
                     condition.withLock {
                         if (!valid(next.generation)) return@withLock
                         val vector = embedding
-                        if (vector == null) { abstentions++; turns.reset(); return@withLock }
+                        if (vector == null) {
+                            abstentions++; turns.reset()
+                            if (enrolling) enrollmentFeedback = if (usable) "sin resultado" else "calidad insuficiente"
+                            return@withLock
+                        }
                         if (!enrolling) {
                             val profileVector = own
                             comparisons++
                             turns.accept(profileVector?.let { localVoiceSimilarity(it, vector) }, platform.elapsedRealtimeMs())
                         } else {
                             val previous = centroid
-                            if (previous != null && localVoiceSimilarity(previous, vector) < 0.70) { abstentions++; return@withLock }
+                            if (previous != null && localVoiceSimilarity(previous, vector) < 0.70) {
+                                abstentions++; enrollmentFeedback = "muestra inconsistente"; return@withLock
+                            }
                             val merged = if (previous == null) vector.copyOf() else FloatArray(vector.size) {
                                 previous[it] * enrollmentSegments + vector[it]
                             }
                             centroid = normalizeLocalVoice(merged, decoder.dimension)
                             previous?.fill(0f)
-                            if (centroid == null) { clearEnrollment(); abstentions++; return@withLock }
+                            if (centroid == null) { clearEnrollment(); abstentions++; enrollmentFeedback = "sin resultado"; return@withLock }
                             enrollmentSamples += next.voiced; enrollmentSegments++
-                            if (enrollmentSegments >= 3 && enrollmentSamples >= 160000) saveVector = centroid!!.copyOf()
+                            enrollmentFeedback = "aceptada"
+                            if (enrollmentSegments >= requiredSegments && enrollmentSamples >= 160000) {
+                                saveVector = centroid!!.copyOf(); status = "guardando"
+                            }
                         }
                     }
                     val save = saveVector
@@ -209,6 +225,7 @@ class LocalParticipationSession(
                     condition.withLock {
                         if (valid(next.generation)) {
                             abstentions++; turns.reset()
+                            if (enrolling) enrollmentFeedback = "error de muestra"
                             if (saveVector != null) { status = "error"; running = false; ready = false }
                         }
                     }

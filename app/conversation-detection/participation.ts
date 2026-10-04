@@ -3,6 +3,8 @@ export type LocalParticipationSnapshot = {
   status: string; worker: boolean; busy: boolean; inputBufferedBytes: number;
   enrolling: boolean; profileSaved: boolean; enrollmentMs: number; enrollmentSegments: number;
   comparisons: number; abstentions: number; dropped: number; voice: string; participation: string;
+  enrollmentFeedback?: string;
+  requiredSegments?: number;
 };
 export interface DetectorParticipation {
   start(enrollment: boolean): boolean;
@@ -11,5 +13,6 @@ export interface DetectorParticipation {
   acceptNative(pcm: unknown, vadState: string): void;
   snapshot(): LocalParticipationSnapshot;
   hasProfile(): boolean;
+  profileState?(): string;
   deleteProfile(): boolean;
 }

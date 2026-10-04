@@ -113,6 +113,15 @@ class LocalParticipationSessionTest {
         assertTrue(session.diagnostics().contains("\"abstentions\":3"))
         session.stop(); stopped(session)
     }
+    @Test fun guidedEnrollmentCannotSaveBeforeFourAcceptedSamples() {
+        val host = Host(); val session = LocalParticipationSession(host, testPlatform())
+        assertTrue(session.start(true, 4)); ready(session)
+        repeat(3) { phrase(session); idle(session) }
+        assertEquals(0, host.commits) // Twelve seconds are insufficient until the fourth guided sample.
+        assertTrue(session.diagnostics().contains("\"enrollmentSegments\":3"))
+        phrase(session); stopped(session)
+        assertEquals(1, host.commits); assertTrue(session.diagnostics().contains("\"profileSaved\":true"))
+    }
     @Test fun offDuringEmbeddingDrainsWithoutPublishingAndNeverQueuesAudio() {
         val platform = testPlatform(); val embedded = Latch(1, platform); val finish = Latch(1, platform)
         val host = Host().apply { beforeEmbedding = { embedded.countDown(); finish.await(3000) } }

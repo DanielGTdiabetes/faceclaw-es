@@ -28,6 +28,7 @@ import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged, startMicModelDownload } from "../apps/microphones/mic-models";
+import { profileGuide } from "../conversation-detection/profile-guide";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -182,12 +183,12 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   get voiceProfileSetupLabel(): string {
     const detector = dashboardController.conversationDetector;
-    if (detector.snapshot().enabled) return "";
-    const model = micModelState("speaker-embedding");
-    if (model.status === "downloading") return "Descargando el modelo de 29 MB. Al terminar, entra en Opciones → Crear mi perfil. El micrófono sigue OFF.";
-    if (model.status === "error") return "No se pudo descargar el modelo de mi voz. Reintenta desde Opciones → Crear mi perfil.";
-    if (model.status === "ready" && !detector.hasOwnProfile()) return "Modelo de mi voz listo. Siguiente paso: Opciones → Crear mi perfil.";
-    return "";
+    return profileGuide(detector.snapshot(), detector.ownProfileState(), micModelState("speaker-embedding").status).state;
+  }
+
+  onVoiceProfileTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    Frame.topmost()?.navigate("phone-ui/voice-profile-page");
   }
 
   onConversationDetectorTap(): void {
@@ -255,22 +256,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       await Dialogs.alert({ title: "Mi perfil", message: deleted ? "Perfil borrado de este móvil." : "No se pudo borrar el perfil. Reintenta desde Opciones.", okButtonText: "Cerrar" });
       return;
     }
-    const model = micModelState("speaker-embedding");
-    if (model.status !== "ready") {
-      if (model.status === "downloading") {
-        await Dialogs.alert({ title: "Descargando mi voz", message: `Descarga del modelo: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %. El progreso aparece en la pantalla principal. Al terminar, vuelve a Crear mi perfil.`, okButtonText: "Cerrar" });
-      } else {
-        const message = model.status === "error" ? "La descarga anterior no se pudo completar. Puedes reintentar los 29 MB; la descarga no activa el micrófono ni crea un perfil."
-          : "Necesita descargar un modelo de voz de 29 MB. El progreso aparecerá en la pantalla principal. Al terminar, vuelve a Crear mi perfil. La descarga no activa el micrófono ni crea un perfil.";
-        const download = await Dialogs.confirm({ title: "Mi perfil opcional", message, okButtonText: model.status === "error" ? "Reintentar descarga" : "Descargar modelo", cancelButtonText: "Cancelar" });
-        if (download) startMicModelDownload("speaker-embedding");
-      }
-      return;
-    }
-    const consent = await Dialogs.confirm({ title: "Crear mi perfil local",
-      message: "Se guardará solo un vector de tu voz, cifrado en este móvil y excluido de copias de seguridad. Las muestras permanecen en RAM y se borran; no se guardan frases ni voces de otras personas. Puedes borrarlo desde Opciones.\n\nCon las gafas puestas, habla solo tú en un lugar tranquilo: al menos tres frases diferentes de 4–8 segundos, con pausas entre ellas. Al reunir 10 segundos de posible voz coherente se guarda y pasa a OFF. OFF antes de terminar cancela. La similitud es provisional y no protege frente a una voz reproducida.",
-      okButtonText: "Crear y guardar mi perfil", cancelButtonText: "Cancelar" });
-    if (consent && this.localTranscriptionCanStart) dashboardController.setConversationCaptureEnabled(true, false, "enrollment");
+    this.onVoiceProfileTap();
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */

@@ -123,8 +123,10 @@ class FaceclawLocalParticipation(context: Context) {
         override fun prepareProfile(vector: FloatArray): PreparedLocalVoiceProfile = store.prepare(vector)
     })
     fun hasProfile(): Boolean = store.exists()
+    /** Presence only; never exposes a vector, filename, audio or key. Compatibility checked on activation. */
+    fun profileState(): String = if (store.exists()) "guardado" else "sin perfil"
     fun deleteProfile(): Boolean { session.stop(); return try { store.delete() } catch (_: Throwable) { false } }
-    fun start(enrollment: Boolean): Boolean = session.start(enrollment)
+    fun start(enrollment: Boolean, requiredSegments: Int): Boolean = session.start(enrollment, requiredSegments)
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()
     fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)

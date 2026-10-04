@@ -15,6 +15,7 @@ export type DetectorSnapshot = {
   transcription?: LocalTranscriptionSnapshot;
   participation?: LocalParticipationSnapshot;
   participationMode: ParticipationMode;
+  enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
 };
 export type DetectorLease = { stop(): void; diagnostics(): string };
 export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
@@ -49,6 +50,7 @@ export class ConversationCaptureCoordinator {
   private lastDiagnostics = "";
   private transcribing = false;
   private participationMode: ParticipationMode = "off";
+  private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
   private readonly listeners = new Set<(snapshot: DetectorSnapshot) => void>();
 
   constructor(private readonly host: DetectorHost) {}
@@ -56,6 +58,7 @@ export class ConversationCaptureCoordinator {
   snapshot(): DetectorSnapshot {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
       metrics: { ...this.metrics }, vad: this.vad.snapshot(), participationMode: this.participationMode,
+      enrollmentOutcome: this.enrollmentOutcome,
       resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
       ...(this.host.transcription ? { transcription: this.host.transcription.snapshot() } : {}),
       ...(this.host.participation ? { participation: this.host.participation.snapshot() } : {}) };
@@ -72,6 +75,9 @@ export class ConversationCaptureCoordinator {
 
   transcriptText(): string { return this.host.transcription?.text() ?? ""; }
   hasOwnProfile(): boolean { return this.host.participation?.hasProfile() ?? false; }
+  ownProfileState(): string {
+    return this.host.participation?.profileState?.() ?? (this.hasOwnProfile() ? "guardado" : "sin perfil");
+  }
   deleteOwnProfile(): boolean { this.setEnabled(false); return this.host.participation?.deleteProfile() ?? false; }
 
   /** Original native array, after accept() validated PCM/epoch/expiry; avoids a second JS copy. */
@@ -85,6 +91,8 @@ export class ConversationCaptureCoordinator {
 
   setEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off"): void {
     if (this.enabled === enabled) return;
+    if (!enabled && this.participationMode === "enrollment" && this.enrollmentOutcome === "none") this.enrollmentOutcome = "canceled";
+    if (enabled && participation === "enrollment") this.enrollmentOutcome = "none";
     this.enabled = enabled;
     this.cleanup();
     this.transcribing = enabled && transcribe && participation !== "enrollment";
@@ -117,10 +125,14 @@ export class ConversationCaptureCoordinator {
   refresh(): void {
     if (!this.enabled || this.state === "error") return;
     const now = this.host.now();
-    if (now - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
+    if (now - this.enabledAt >= 120_000) {
+      if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
+      this.setEnabled(false); return;
+    }
     if (this.participationMode !== "off") {
       const participation = this.host.participation?.snapshot();
       if (this.participationMode === "enrollment" && participation?.profileSaved) {
+        this.enrollmentOutcome = "saved";
         this.setEnabled(false);
         this.reason = "OFF · Mi perfil se ha guardado localmente. Ya puedes iniciar conversación.";
         this.emit();
@@ -167,7 +179,7 @@ export class ConversationCaptureCoordinator {
     this.emit();
     void this.host.prepare().then((ready) => {
       if (epoch !== this.epoch || !this.enabled) return;
-      if (this.host.now() - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
+      if (this.host.now() - this.enabledAt >= 120_000) { this.expire(); return; }
       this.preparing = false;
       const current = this.host.environment();
       if (!current.available || current.session !== this.session) { this.refresh(); return; }
@@ -195,7 +207,7 @@ export class ConversationCaptureCoordinator {
     // Existing LC3 decoder: 5 x 10 ms, 800 samples, mono 16 kHz signed PCM16 LE.
     if (pcm.length !== 1600) { this.fail("Formato PCM inesperado: se requieren 800 muestras / 1600 B por chunk."); return; }
     const now = this.host.now();
-    if (now - this.enabledAt >= 120_000) { this.setEnabled(false); return; }
+    if (now - this.enabledAt >= 120_000) { this.expire(); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
     if (this.lastPcm && now - this.lastPcm > 250) this.resetAcousticStream();
@@ -214,7 +226,7 @@ export class ConversationCaptureCoordinator {
     this.vad.accept(pcm);
     this.state = "escuchando";
     this.reason = this.participationMode === "enrollment"
-      ? "Habla solo tú: tres frases diferentes de 4–8 s, dejando una pausa entre ellas. OFF cancela."
+      ? "Registro guiado: lee la frase visible cuando indique Habla ahora. OFF cancela."
       : this.participationMode === "conversation"
       ? "Comparación de mi voz y turnos provisionales; texto local temporal."
       : this.transcribing
@@ -232,7 +244,13 @@ export class ConversationCaptureCoordinator {
     this.emit();
   }
 
+  private expire(): void {
+    if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
+    this.setEnabled(false);
+  }
+
   private fail(reason: string): void {
+    if (this.participationMode === "enrollment") this.enrollmentOutcome = "error";
     this.cleanup();
     this.state = "error";
     this.reason = reason;

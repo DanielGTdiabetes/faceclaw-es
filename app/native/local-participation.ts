@@ -13,10 +13,14 @@ export class LocalParticipation implements DetectorParticipation {
     return this.engine;
   }
   hasProfile(): boolean { try { return Boolean(this.native()?.hasProfile()); } catch { return false; } }
+  profileState(): string {
+    try { return this.native() ? String(this.native().profileState()) : "no disponible"; }
+    catch { return "error"; }
+  }
   deleteProfile(): boolean { try { return Boolean(this.native()?.deleteProfile()); } catch { return false; } }
   start(enrollment: boolean): boolean {
     if (!isMicModelReady("speaker-embedding")) { this.status = "modelo no disponible"; return false; }
-    try { const started = Boolean(this.native()?.start(enrollment)); this.status = started ? "cargando" : "ocupado"; return started; }
+    try { const started = Boolean(this.native()?.start(enrollment, enrollment ? 4 : 3)); this.status = started ? "cargando" : "ocupado"; return started; }
     catch { this.status = "error"; return false; }
   }
   stop(): void { this.engine?.stop(); this.status = "inactivo"; }
