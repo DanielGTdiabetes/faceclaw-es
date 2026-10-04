@@ -15,8 +15,8 @@ android {
         applicationId = "com.faceclaw.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.0-es"
+        versionCode = 3
+        versionName = "0.8.2-es.1"
     }
 
     buildTypes {
