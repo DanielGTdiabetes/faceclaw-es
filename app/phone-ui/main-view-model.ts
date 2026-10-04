@@ -134,13 +134,16 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
       this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
       this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
+      this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
     }));
     this.unsubscribers.push(onAsrModelStateChanged("whisper-base-es", () => {
       this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
       this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
     }));
     this.unsubscribers.push(onMicModelStateChanged((id) => {
-      if (id === "speaker-embedding") this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      if (id !== "speaker-embedding") return;
+      this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
     }));
   }
 
@@ -166,20 +169,31 @@ export class MainViewModel extends RemoteControlsViewModel {
   get conversationDetectorButton(): string {
     const detector = dashboardController.conversationDetector;
     if (detector.snapshot().enabled) return "Detener (OFF)";
+    const voice = micModelState("speaker-embedding");
+    if (voice.status === "downloading") return `Descargando modelo de mi voz: ${Math.floor(voice.bytesDownloaded * 100 / voice.totalBytes)} %`;
     const asr = asrModelState("whisper-base-es");
     if (asr.status === "downloading") return `Descargando transcripción: ${Math.floor(asr.bytesDownloaded * 100 / asr.totalBytes)} %`;
     if (asr.status !== "ready") return "Descargar transcripción local (161 MB)";
     if (detector.hasOwnProfile()) {
-      const voice = micModelState("speaker-embedding");
-      if (voice.status === "downloading") return `Descargando modelo de voz: ${Math.floor(voice.bytesDownloaded * 100 / voice.totalBytes)} %`;
       if (voice.status !== "ready") return "Descargar modelo de mi voz (29 MB)";
     }
     return "Iniciar conversación local (2 min máx.)";
   }
 
+  get voiceProfileSetupLabel(): string {
+    const detector = dashboardController.conversationDetector;
+    if (detector.snapshot().enabled) return "";
+    const model = micModelState("speaker-embedding");
+    if (model.status === "downloading") return "Descargando el modelo de 29 MB. Al terminar, entra en Opciones → Crear mi perfil. El micrófono sigue OFF.";
+    if (model.status === "error") return "No se pudo descargar el modelo de mi voz. Reintenta desde Opciones → Crear mi perfil.";
+    if (model.status === "ready" && !detector.hasOwnProfile()) return "Modelo de mi voz listo. Siguiente paso: Opciones → Crear mi perfil.";
+    return "";
+  }
+
   onConversationDetectorTap(): void {
     const detector = dashboardController.conversationDetector;
     if (detector.snapshot().enabled) { dashboardController.setConversationCaptureEnabled(false); return; }
+    if (micModelState("speaker-embedding").status === "downloading") return;
     const asr = asrModelState("whisper-base-es");
     if (asr.status !== "ready") {
       if (asr.status !== "downloading") startAsrModelDownload("whisper-base-es");
@@ -237,13 +251,18 @@ export class MainViewModel extends RemoteControlsViewModel {
       const deleted = detector.deleteOwnProfile();
       this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
       this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+      this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
       await Dialogs.alert({ title: "Mi perfil", message: deleted ? "Perfil borrado de este móvil." : "No se pudo borrar el perfil. Reintenta desde Opciones.", okButtonText: "Cerrar" });
       return;
     }
     const model = micModelState("speaker-embedding");
     if (model.status !== "ready") {
-      if (model.status !== "downloading") {
-        const download = await Dialogs.confirm({ title: "Mi perfil opcional", message: "Necesita descargar un modelo de voz de 29 MB. La descarga no activa el micrófono ni crea un perfil.", okButtonText: "Descargar modelo", cancelButtonText: "Cancelar" });
+      if (model.status === "downloading") {
+        await Dialogs.alert({ title: "Descargando mi voz", message: `Descarga del modelo: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %. El progreso aparece en la pantalla principal. Al terminar, vuelve a Crear mi perfil.`, okButtonText: "Cerrar" });
+      } else {
+        const message = model.status === "error" ? "La descarga anterior no se pudo completar. Puedes reintentar los 29 MB; la descarga no activa el micrófono ni crea un perfil."
+          : "Necesita descargar un modelo de voz de 29 MB. El progreso aparecerá en la pantalla principal. Al terminar, vuelve a Crear mi perfil. La descarga no activa el micrófono ni crea un perfil.";
+        const download = await Dialogs.confirm({ title: "Mi perfil opcional", message, okButtonText: model.status === "error" ? "Reintentar descarga" : "Descargar modelo", cancelButtonText: "Cancelar" });
         if (download) startMicModelDownload("speaker-embedding");
       }
       return;

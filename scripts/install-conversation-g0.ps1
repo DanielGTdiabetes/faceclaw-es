@@ -4,8 +4,8 @@ param(
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$JavaDirectory = $env:JAVA_HOME,
     [string]$Serial = '',
-    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0')]
-    [string]$ExpectedVersion = '0.8.1-es.5-conversation.g3.0',
+    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1')]
+    [string]$ExpectedVersion = '0.8.1-es.5-conversation.g3.1',
     [switch]$Install
 )
 $ErrorActionPreference = 'Stop'

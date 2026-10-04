@@ -22,6 +22,7 @@
         <StackLayout row="1" class="p-10">
             <Label text="{{ conversationDetectorLabel }}" textWrap="true" tap="{{ onConversationDetectorMetricsTap }}" />
             <Label text="{{ conversationDetectorDetail }}" textWrap="true" fontSize="11" />
+            <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
             <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
             <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
             <Label text="{{ localTranscript }}" textWrap="true" maxLines="4" fontSize="13" />

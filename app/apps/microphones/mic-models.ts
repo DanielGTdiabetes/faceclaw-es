@@ -69,13 +69,14 @@ export const MIC_MODELS: MicModel[] = [
 ];
 
 export type MicModelState = {
-  status: "absent" | "downloading" | "ready";
+  status: "absent" | "downloading" | "ready" | "error";
   bytesDownloaded: number;
   totalBytes: number;
 };
 
 const downloaders = new Map<MicModelId, any>();
 const progress = new Map<MicModelId, number>();
+const downloadErrors = new Set<MicModelId>();
 const stateListeners = new Set<(id: MicModelId, state: MicModelState) => void>();
 
 function model(id: MicModelId): MicModel {
@@ -122,7 +123,7 @@ export function micModelState(id: MicModelId): MicModelState {
     };
   }
   return {
-    status: isMicModelReady(id) ? "ready" : "absent",
+    status: isMicModelReady(id) ? "ready" : downloadErrors.has(id) ? "error" : "absent",
     bytesDownloaded: 0,
     totalBytes: model(id).totalBytes,
   };
@@ -142,6 +143,8 @@ function notifyStateChanged(id: MicModelId): void {
 
 export function startMicModelDownload(id: MicModelId): void {
   if (!global.isAndroid || downloaders.has(id) || isMicModelReady(id)) return;
+  downloadErrors.delete(id);
+  progress.delete(id);
   downloadNextFile(id);
   notifyStateChanged(id);
 }
@@ -151,6 +154,8 @@ function downloadNextFile(id: MicModelId): void {
   const nextFile = definition.files.find((file) => !isFilePresent(id, file));
   if (!nextFile) {
     downloaders.delete(id);
+    progress.delete(id);
+    downloadErrors.delete(id);
     notifyStateChanged(id);
     return;
   }
@@ -168,6 +173,7 @@ function downloadNextFile(id: MicModelId): void {
     onError: (message: string) => {
       console.error(`Mic model download failed (${id}/${nextFile.name}): ${message}`);
       downloaders.delete(id);
+      downloadErrors.add(id);
       notifyStateChanged(id);
     },
   });
@@ -193,6 +199,7 @@ export function cancelMicModelDownload(id: MicModelId): void {
 export function deleteMicModel(id: MicModelId): void {
   if (!global.isAndroid) return;
   cancelMicModelDownload(id);
+  downloadErrors.delete(id);
   try {
     for (const file of model(id).files) {
       new java.io.File(filePath(id, file)).delete();
