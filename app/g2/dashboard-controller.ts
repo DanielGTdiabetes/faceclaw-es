@@ -2160,7 +2160,11 @@ class DashboardController {
     const optionalIdentity = assistantBridge.conversation.supportsOptionalIdentity();
     const profile = this.conversationDetector.hasOwnProfile();
     if (!optionalIdentity && !profile) return "Falta tu perfil de voz guardado. Configúralo antes de iniciar.";
-    const environment = this.detectorEnvironment();
+    // The wear report is only requested once capture is ON (ensureWearStateTracking), so with the
+    // lock screen off `worn` stays null until then. Refusing here on that alone never lets ON start.
+    // An explicit ON waits instead: the coordinator stays «suspendido» until a fresh ON_HEAD arrives.
+    // Every other blocker (disconnected, charging, CFW, permission, audio priority) still refuses.
+    const environment = this.detectorEnvironment(true);
     if (!environment.available) return environment.reason;
     const snapshot = this.conversationDetector.snapshot();
     if (snapshot.transcription?.worker || snapshot.transcription?.busy || snapshot.participation?.worker || snapshot.participation?.busy) {
@@ -2174,7 +2178,8 @@ class DashboardController {
     return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
   }
 
-  private detectorEnvironment(): DetectorEnvironment {
+  /** `ignoreWear` only for the manual ON gate; capture itself always requires a fresh ON_HEAD. */
+  private detectorEnvironment(ignoreWear = false): DetectorEnvironment {
     const presence = getGlassesPresence();
     const session = this.communicator;
     let reason = "";
@@ -2182,7 +2187,7 @@ class DashboardController {
     else if (this.phase !== "connected" || !session) reason = "Gafas desconectadas; sin captura.";
     else if (!this.customFirmwareConfirmed) reason = "Esperando confirmación del firmware Faceclaw.";
     else if (presence.charging) reason = "Gafas en carga; sin captura.";
-    else if (presence.worn !== true) reason = "Esperando un estado nuevo de gafas puestas.";
+    else if (!ignoreWear && presence.worn !== true) reason = "Esperando un estado nuevo de gafas puestas.";
     else if (!hasMicrophonePermission()) reason = "Falta permiso de micrófono. Concédelo desde Permisos.";
     else if (voiceActivity.isActive() || assistantAudioPriority.isActive() || this.keyboardInput) reason = "Interacción explícita con prioridad sobre el detector.";
     else if (!voiceControlBridge.experimentalAudioAvailable(true)) reason = "Audio reservado por otra función.";
