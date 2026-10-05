@@ -39,14 +39,24 @@ function makeLoader(mocks, globals = {}) {
   return (relative) => load(path.join(ROOT, relative));
 }
 
+/**
+ * Records draw calls only. The real pixel → shell-scene encoder path, with its 64 KiB resource
+ * limit, is covered by conversation-hermes-lens.test.cjs; these tests check presentation logic.
+ */
 class FakeImage {
-  constructor(width, height) { this.width = width; this.height = height; this.text = []; this.fills = []; }
+  constructor(width, height) {
+    this.width = width; this.height = height; this.text = []; this.fills = []; this.lists = [];
+    FakeImage.created.push(this);
+  }
   fillRect(x, y, w, h, v) { this.fills.push([x, y, w, h, v]); }
   drawRect() {}
   drawText(_font, _x, _y, text) { this.text.push(text); }
   drawTextWrapped({ text }) { this.text.push(text); }
+  drawDisplayList(list) { this.lists.push(list); }
+  withDrawsBaked() { return { width: this.width, height: this.height, pixels: new Uint8Array(this.width * this.height) }; }
   dimmed() { return this; }
 }
+FakeImage.created = [];
 const font = { lineHeight: 20, measureText: (t) => [...t].length * 10, getGlyph: () => ({ dwidthX: 10 }) };
 
 function fakeTimers() {
@@ -207,9 +217,12 @@ test('glasses system menu starts from any app and a stale ON menu cannot restart
   action.onSelect({ stack: h.shell.stack });
   assert.equal(enabled, false); assert.deepEqual(calls, [true, false]);
 });
+/** Text drawn by one paint of the top layer, on any image it creates (the layer paints its band apart). */
 function overlayText(shell) {
   const layer = topLayer(shell);
-  return layer.paint({ stack: shell.stack, actions: { requestRender() {} } }, () => new FakeImage(640, 480)).text.join('\n');
+  FakeImage.created = [];
+  layer.paint({ stack: shell.stack, actions: { requestRender() {} } }, () => new FakeImage(640, 480));
+  return FakeImage.created.flatMap((image) => image.text).join('\n');
 }
 
 test('selection OFF/ON is RAM-only, never starts capture, and a refusal keeps OFF with a notice', () => {
@@ -277,6 +290,24 @@ test('a final contribution wakes once, shows one overlay, then retires and re-sl
   f.say('');
   assert.ok(h.shell.stack.isAtBase());
   assert.deepEqual(h.screen, [false, true, false], 'expiry returns to dark listening');
+});
+
+test('presentation counts follow the real shell path, reset on arming and never carry text', () => {
+  const h = realShell();
+  const f = fakeController();
+  h.ui.bindHermesConversationUi(f.controller);
+  f.arm();
+  f.say('Primera aportación');
+  f.say('Segunda aportación');
+  f.say('');
+  const counts = h.ui.hermesPresentationDiagnostics();
+  assert.equal(JSON.stringify(counts), JSON.stringify({ presented: 1, woke: 1, replaced: 1, refused: 0, retired: 1, released: 0 }));
+  assert.doesNotMatch(JSON.stringify(counts), /aportación/);
+  h.shell.wake('window'); h.shell.openEscapeMenu(); // An explicit menu has priority: refused.
+  f.say('Tercera');
+  assert.equal(h.ui.hermesPresentationDiagnostics().refused, 1);
+  f.off(); f.arm();
+  assert.equal(h.ui.hermesPresentationDiagnostics().presented, 0, 'a new armed session starts from zero');
 });
 
 test('a newer contribution replaces the text in place without a second wake', () => {

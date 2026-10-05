@@ -33,7 +33,8 @@ function harness() {
       if (name === '@nativescript/core') return { Dialogs: { alert: data => alerts.push(data),
         action: data => { actionLists.push(data.actions); return Promise.resolve(actionChoice); } } };
       if (name === '../g2/dashboard-controller') return { dashboardController: { conversationDetector: detector,
-        setConversationCaptureEnabled: (...args) => starts.push(args) } };
+        setConversationCaptureEnabled: (...args) => starts.push(args), shellRenderDiagnostics: () => ({ total: 0, resourceLimit: 0 }) } };
+      if (name === '../ui/shell/conversation-hermes-ui') return { hermesPresentationDiagnostics: () => ({ presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 }) };
       if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), conversationTextModelStatus: () => textModel, preciseTextModelLabel: () => 'Modelo preciso (small): descargar 375 MB', startAsrModelDownload: () => downloads++ };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
@@ -118,6 +119,7 @@ test('S2 phone: wearer button only while ON with Soniox; actions run once; metri
   h.view.onConversationDetectorMetricsTap();
   assert.match(h.alerts.at(-1).message, /Última sesión Soniox \(sin texto\)/);
   assert.match(h.alerts.at(-1).message, /cancelado-off/);
+  assert.match(h.alerts.at(-1).message, /Lentes Hermes \(recuentos, sin texto\): \{"presented":0[^\n]*"shellRenderFailures":\{"total":0,"resourceLimit":0\}\}/);
 });
 
 test('phrase is directly accessible on the phone without opening a voice list, and OFF/local cannot start it', () => {

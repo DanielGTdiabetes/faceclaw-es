@@ -2,6 +2,14 @@ import { encodePresentation } from "./presentation-wire"
 import { GrayImage, type PlacedImage } from './image'
 import type { Plane } from './plane'
 
+/** A shell surface whose ink box needs more than one 64 KiB firmware resource. Carries only sizes. */
+export class ShellResourceLimitError extends Error {
+  constructor(readonly shellKey: number, readonly width: number, readonly height: number) {
+    super(`Shell surface ${shellKey} exceeds 64 KiB (${width}×${height})`)
+    this.name = 'ShellResourceLimitError'
+  }
+}
+
 /**
  * Crop one independently owned, opaque shell surface; never split it into
  * tiles. A fractional rect (TTF-measured layout) widens to the whole pixels it
@@ -32,7 +40,7 @@ export function encodeShellScene(planes: readonly Plane[], screenDepth = 0): Uin
     }
     if (right < left) continue
     const w = right - left + 1, h = bottom - top + 1
-    if (5 + Math.ceil(w / 2) * h > 65536) throw new Error(`Shell surface ${plane.shellKey} exceeds 64 KiB (${w}×${h})`)
+    if (5 + Math.ceil(w / 2) * h > 65536) throw new ShellResourceLimitError(plane.shellKey!, w, h)
     const cropped = shellCrop(image, left, top, w, h, plane.shellKey!)
     const selections = plane.image.draws
       .filter((d): d is PlacedImage => d.kind === "image" && !!d.presentation)

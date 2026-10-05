@@ -63,6 +63,7 @@ import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
+import { ShellResourceLimitError } from "../graphics/shell-scene";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
@@ -351,6 +352,8 @@ class DashboardController {
   private lastSys = "none yet";
   private shellRenderInProgress = false;
   private shellRenderQueued = false;
+  /** Aggregate shell render failures (counts only); see shellRenderDiagnostics. */
+  private readonly shellRenderFailures = { total: 0, resourceLimit: 0 };
   /** Input frame that requested the next shell render; see requestShellRender. */
   private pendingShellRenderCauseFrameId = 0;
   private nextShellRenderWantsFreshData = false;
@@ -2827,6 +2830,11 @@ class DashboardController {
    * overlays). Coalesces like requestRender: one render in flight, at most
    * one queued.
    */
+  /** Shell render failures since app start, as counts (for the phone metrics dialog). */
+  shellRenderDiagnostics(): { total: number; resourceLimit: number } {
+    return { ...this.shellRenderFailures };
+  }
+
   requestShellRender(causeFrameId = 0): void {
     // Remember the input frame that asked for this chrome repaint so
     // renderShell can nest its frame under it; without that link an input
@@ -2847,6 +2855,13 @@ class DashboardController {
           await this.renderShell();
         } while (this.shellRenderQueued);
       } catch (error) {
+        this.shellRenderFailures.total++;
+        const resourceLimit = error instanceof ShellResourceLimitError;
+        if (resourceLimit) this.shellRenderFailures.resourceLimit++;
+        // Always reaches logcat, unlike appendLog: a failed shell render drops every shell overlay
+        // (Hermes included) without any other trace. Only the error class or the surface size is
+        // printed, never content.
+        console.warn(`shell render failed: ${resourceLimit ? error.message : error instanceof Error ? error.name : typeof error}`);
         this.appendLog(`shell render failed: ${this.formatError(error)}`);
       } finally {
         this.shellRenderInProgress = false;

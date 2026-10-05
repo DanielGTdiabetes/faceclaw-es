@@ -30,6 +30,7 @@ import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, pre
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
+import { hermesPresentationDiagnostics } from "../ui/shell/conversation-hermes-ui";
 import {
   conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
   setConversationDiagnosticsSelected, setConversationTextEngine, setConversationTextLanguage, setConversationTextSelected,
@@ -367,6 +368,8 @@ export class MainViewModel extends RemoteControlsViewModel {
     void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
       + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
       + "\nHermes (recuentos, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
+      + "\nLentes Hermes (recuentos, sin texto): " + JSON.stringify({ ...hermesPresentationDiagnostics(),
+        shellRenderFailures: dashboardController.shellRenderDiagnostics() })
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 

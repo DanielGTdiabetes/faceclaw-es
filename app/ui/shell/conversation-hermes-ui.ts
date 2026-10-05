@@ -53,8 +53,22 @@ export function sanitizeHermesText(raw: unknown): string {
   return text;
 }
 
+/**
+ * Presentation counts for the phone metrics dialog, reset when Hermes is armed for a session.
+ * Counts only: no text, timing or identity. `presented` means the overlay was pushed and a shell
+ * render requested, not that the frame reached the glasses or was seen.
+ */
+export type HermesPresentationCounts = {
+  presented: number; woke: number; replaced: number; refused: number; retired: number; released: number;
+};
+
+function emptyCounts(): HermesPresentationCounts {
+  return { presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 };
+}
+
 /** Deduplicated presentation state machine. One instance per binding. */
 export class HermesConversationPresenter {
+  private counts = emptyCounts();
   private layer: (Layer & { retire(): void }) | null = null;
   private woke = false;
   /** Last controller message already handled (shown, refused or dismissed); "" after a clear. */
@@ -74,6 +88,7 @@ export class HermesConversationPresenter {
     if (snapshot.enabled !== this.armed) {
       this.armed = snapshot.enabled;
       this.darkPending = snapshot.enabled;
+      if (snapshot.enabled) this.counts = emptyCounts();
       this.armedChanged();
     }
     if (this.armed && this.darkPending && snapshot.listening) {
@@ -101,6 +116,7 @@ export class HermesConversationPresenter {
     if (this.layer) {
       // A newer validated contribution replaces the text in place: one overlay, one wake.
       this.display.repaint(this.layer);
+      this.counts.replaced++;
       return;
     }
     const layer = this.createLayer(() => this.liveText(), {
@@ -109,7 +125,9 @@ export class HermesConversationPresenter {
     });
     this.layer = layer;
     const shown = this.display.present(layer, () => this.released(layer));
-    if (!shown) { this.layer = null; return; }
+    if (!shown) { this.layer = null; this.counts.refused++; return; }
+    this.counts.presented++;
+    if (shown.woke) this.counts.woke++;
     if (this.layer === layer) this.woke = shown.woke;
   }
 
@@ -117,6 +135,7 @@ export class HermesConversationPresenter {
   ignoreExisting(): void { this.handled = this.source.conversationHermesMessage; }
 
   isArmed(): boolean { return this.armed; }
+  diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
   hasOverlay(): boolean { return this.layer !== null; }
 
   dispose(): void {
@@ -148,6 +167,7 @@ export class HermesConversationPresenter {
     const woke = this.woke;
     this.layer = null;
     this.woke = false;
+    this.counts.retired++;
     layer.retire();
     this.display.retire(layer, restoreSleep && woke);
   }
@@ -165,6 +185,7 @@ export class HermesConversationPresenter {
     if (this.layer !== layer) return;
     this.layer = null;
     this.woke = false;
+    this.counts.released++;
     layer.retire();
     this.source.dismissConversationHermesMessage();
   }
@@ -181,6 +202,11 @@ export function hermesConversationPresentation(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Presentation counts of the bound presenter (last armed session), or null when unbound. */
+export function hermesPresentationDiagnostics(): HermesPresentationCounts | null {
+  return current ? current.presenter.diagnostics() : null;
 }
 
 /** Notified on arming/disarming edges only (never per chunk or metric). */
