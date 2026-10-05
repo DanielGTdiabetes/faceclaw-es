@@ -22,6 +22,7 @@
         <StackLayout row="1" class="p-10">
             <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
             <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
+            <Label text="{{ conversationHermesHistory }}" visibility="{{ conversationHermesHistoryVisibility }}" textWrap="true" fontSize="12" />
             <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
             <Button text="Opciones de conversación" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
         </StackLayout>

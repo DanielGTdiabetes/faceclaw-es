@@ -51,7 +51,7 @@ import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
-import { ConversationHermesRuntime } from "../conversation-detection/conversation-hermes";
+import { ConversationHermesRuntime, HERMES_MESSAGE_MAX_MS } from "../conversation-detection/conversation-hermes";
 import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
@@ -2072,7 +2072,10 @@ class DashboardController {
     this.emitConversationHermes();
     return true;
   }
-  dismissConversationHermesMessage(): void { this.setConversationHermesMessage(null); }
+  dismissConversationHermesMessage(): void {
+    this.conversationHermes.dismissOutput();
+    this.setConversationHermesMessage(null);
+  }
   private emitConversationHermes(): void {
     const key = JSON.stringify([this.hermesSelected, this.hermesMessage, this.conversationHermes?.snapshot()]);
     if (key === this.hermesUiKey) return;
@@ -2084,7 +2087,8 @@ class DashboardController {
     if (this.hermesMessageTimer) clearTimeout(this.hermesMessageTimer);
     this.hermesMessageTimer = null;
     this.hermesMessage = text ?? "";
-    if (text) this.hermesMessageTimer = setTimeout(() => this.setConversationHermesMessage(null), 8000);
+    // Backstop only: the runtime retires the message itself (minimum 12 s, maximum 30 s).
+    if (text) this.hermesMessageTimer = setTimeout(() => this.setConversationHermesMessage(null), HERMES_MESSAGE_MAX_MS);
     this.emitConversationHermes();
   }
 

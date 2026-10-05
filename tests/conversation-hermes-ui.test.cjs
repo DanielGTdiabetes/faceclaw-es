@@ -169,7 +169,7 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
 
 /** Structural controller fake with the documented contract only. */
 function fakeController({ supported = true } = {}) {
-  let selected = false, message = '', detectorOn = false, captureStarts = 0, channelCalls = 0;
+  let selected = false, message = '', detectorOn = false, captureStarts = 0, channelCalls = 0, history = [];
   let runtime = { enabled: false, busy: false, requests: 0, listening: false, episode: { state: 'off' } };
   const listeners = new Set();
   const emit = () => { for (const listener of [...listeners]) listener(); };
@@ -182,13 +182,14 @@ function fakeController({ supported = true } = {}) {
     get conversationHermesMessage() { return message; },
     dismissConversationHermesMessage() { message = ''; emit(); },
     onConversationHermesChange(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    conversationHermes: { snapshot: () => runtime },
+    conversationHermes: { snapshot: () => runtime, history: () => history },
     setConversationCaptureEnabled() { captureStarts++; },
   };
   return { controller, emit, listeners,
     arm(listening = true) { detectorOn = true; runtime = { ...runtime, enabled: true, listening, episode: { state: 'esperando' } }; emit(); },
     listening(value) { runtime = { ...runtime, listening: value }; emit(); },
-    off() { detectorOn = false; runtime = { ...runtime, enabled: false, listening: false, episode: { state: 'off' } }; message = ''; emit(); },
+    off() { detectorOn = false; runtime = { ...runtime, enabled: false, listening: false, episode: { state: 'off' } }; message = ''; history = []; emit(); },
+    deliver(text, at) { message = text; history = [{ at, text }, ...history].slice(0, 5); emit(); },
     tick(patch) { runtime = { ...runtime, ...patch }; emit(); },
     say(text) { message = text; emit(); },
     setMessageSilently(text) { message = text; },
@@ -623,7 +624,7 @@ function phoneHarness(f) {
   }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
   const { MainViewModel } = load('app/phone-ui/main-view-model.ts');
   const view = Object.create(MainViewModel.prototype);
-  Object.assign(view, { unsubscribers: [], hermesNotice: '', hermesShown: { button: '', status: '' },
+  Object.assign(view, { unsubscribers: [], hermesNotice: '', hermesShown: { button: '', status: '', history: '' },
     notifyPropertyChange: (name, value) => notified.push([name, value]), syncBleBandwidthPolling() {}, stopBleBandwidthPolling() {} });
   view.attach();
   return { view, captureCalls, notified, unsubscribed, bridgeListeners, bridgeChanged: () => { for (const fn of bridgeListeners) fn({}); } };
@@ -645,8 +646,15 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   assert.equal(captureCalls[0][3].manualConversation, true);
   assert.equal(captureCalls[0][3].language, 'auto');
   assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus']);
+  notified.length = 0;
+  f.deliver('Aportación de prueba', new Date(2026, 9, 5, 16, 7).getTime());
+  assert.equal(view.conversationHermesHistory, 'Mensajes de Hermes (esta sesión):\n16:07 · Aportación de prueba');
+  assert.equal(view.conversationHermesHistoryVisibility, 'visible');
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesHistory', 'conversationHermesHistoryVisibility']);
   view.onConversationHermesTap();
   assert.equal(view.conversationHermesButton, 'Hermes en conversación: OFF · iniciar');
+  assert.equal(view.conversationHermesHistory, '', 'OFF clears the RAM list');
+  assert.equal(view.conversationHermesHistoryVisibility, 'collapsed');
   assert.equal(captureCalls.at(-1)[0], false);
   assert.equal(f.counts().captureStarts, 0);
   view.dispose();

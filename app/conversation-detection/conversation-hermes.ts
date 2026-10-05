@@ -15,8 +15,18 @@ export type ConversationHermesCounters = {
 };
 const emptyCounters = (): ConversationHermesCounters => ({ turnsAccepted: 0, turnsIgnored: 0, candidates: 0,
   assessments: 0, assists: 0, topics: 0, abstentions: 0, messages: 0, delivered: 0, failures: 0 });
+/** A delivered message is kept at least this long even while the conversation goes on. */
+export const HERMES_MESSAGE_MIN_MS = 12_000;
+/** Upper bound for a delivered message on the lenses. */
+export const HERMES_MESSAGE_MAX_MS = 30_000;
+/** Phone-only RAM list of the current session; cleared on OFF and never persisted. */
+export const HERMES_HISTORY_MAX = 5;
+export type ConversationHermesHistoryEntry = { at: number; text: string };
+
 export type ConversationHermesHost = {
   now(): number;
+  /** Wall-clock time for the phone history; defaults to Date.now(). */
+  wallClock?(): number;
   every(callback: () => void, ms: number): () => void;
   onOutput(text: string | null): void;
   changed(): void;
@@ -31,6 +41,10 @@ export class ConversationHermesRuntime {
   private associationVersion = 0;
   private flight: { ref: EpisodeRef; mode: "assess" | "assist" } | null = null;
   private outputRef: EpisodeRef | null = null;
+  private outputAt = 0;
+  /** The conversation moved on after delivery: retire once HERMES_MESSAGE_MIN_MS has elapsed. */
+  private outputStale = false;
+  private messageHistory: ConversationHermesHistoryEntry[] = [];
   private cancelTimer: (() => void) | null = null;
   private lastTextAt = 0;
   private lastRequestAt = -Infinity;
@@ -78,14 +92,22 @@ export class ConversationHermesRuntime {
     this.tracker.stop(); this.current = null; this.attempted = "";
     this.associationVersion = 0;
     this.clearOutput();
+    this.messageHistory = [];
     if (wasEnabled) this.host.onStopped?.();
     this.host.changed();
   }
 
   dispose(): void { this.stop(); for (const unsubscribe of this.unsubscribe) unsubscribe(); }
 
+  /** Explicit dismissal (tap on the lens overlay). */
+  dismissOutput(): void { if (this.outputRef) this.clearOutput(); }
+
+  /** Last delivered messages of the current session, newest first. Empty after OFF. */
+  history(): readonly ConversationHermesHistoryEntry[] { return this.messageHistory; }
+
   snapshot() {
     return { enabled: this.enabled, busy: this.flight !== null, requests: this.requests, modality: this.modality,
+      delivered: this.counters.delivered,
       listening: this.enabled && this.source.snapshot().state === "escuchando", episode: this.tracker.snapshot() };
   }
 
@@ -117,7 +139,7 @@ export class ConversationHermesRuntime {
     const live = this.source.wearerActionRef();
     if (!live || live.sessionId !== event.sessionId || live.streamId !== event.streamId || live.version !== event.version) return;
     if (this.current?.sessionId !== event.sessionId || this.current.streamId !== event.streamId) {
-      this.interrupt();
+      this.interrupt(); this.clearOutput();
       this.current = { sessionId: event.sessionId, streamId: event.streamId };
       this.tracker.start(event.sessionId, event.streamId, this.modality);
       this.associationVersion = 0;
@@ -143,24 +165,36 @@ export class ConversationHermesRuntime {
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
     } else this.counters.turnsIgnored++;
     if (accepted || (before.chars > 0 && this.tracker.snapshot().chars === 0)) {
-      // Old evaluations and contributions are invalid after any newer complete turn.
-      this.flight = null; this.channel.cancel(); this.clearOutput();
+      // A newer complete turn invalidates the pending evaluation only. A delivered message stays
+      // readable: people keep talking while it is shown (retired by tick after the minimum).
+      this.flight = null; this.channel.cancel();
+      if (this.outputRef) this.outputStale = true;
     }
     this.host.changed();
   }
 
+  /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
     this.flight = null; this.channel.cancel(); this.tracker.interrupt();
-    this.attempted = ""; this.clearOutput();
+    this.attempted = "";
+    if (this.outputRef) this.outputStale = true;
   }
 
-  private clearOutput(): void { this.outputRef = null; this.host.onOutput(null); }
+  private clearOutput(): void { this.outputRef = null; this.outputStale = false; this.host.onOutput(null); }
+
+  private expireOutput(): void {
+    if (!this.outputRef) return;
+    const age = this.host.now() - this.outputAt;
+    if (age >= HERMES_MESSAGE_MAX_MS
+      || (age >= HERMES_MESSAGE_MIN_MS && (this.outputStale || !this.tracker.acceptsOutput(this.outputRef)))) this.clearOutput();
+  }
 
   private tick(): void {
     if (!this.enabled) return;
     const snapshot = this.source.snapshot();
     this.observe(snapshot);
     if (!this.enabled) return;
+    this.expireOutput();
     // A disconnected channel does not re-arm this runtime when the bridge returns.
     if (!this.channel.isEnabled()) { this.stop(); return; }
     if (!this.channel.isReady()) { this.interrupt(); return; }
@@ -169,7 +203,6 @@ export class ConversationHermesRuntime {
     if (this.flight && state !== (this.flight.mode === "assess" ? "candidata" : "activa")) {
       this.flight = null; this.channel.cancel();
     }
-    if (this.outputRef && !this.tracker.acceptsOutput(this.outputRef)) this.clearOutput();
     if (snapshot.state !== "escuchando" || this.flight || this.requests >= this.maxRequests
       || this.host.now() - this.lastTextAt < 2000 || this.host.now() - this.lastRequestAt < 5000) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
@@ -210,6 +243,10 @@ export class ConversationHermesRuntime {
     } else if (this.tracker.acceptsOutput(result.ref) && result.text) {
       this.counters.delivered++;
       this.outputRef = { ...result.ref };
+      this.outputAt = this.host.now();
+      this.outputStale = false;
+      this.messageHistory = [{ at: this.host.wallClock?.() ?? Date.now(), text: result.text },
+        ...this.messageHistory].slice(0, HERMES_HISTORY_MAX);
       this.host.onOutput(result.text);
     }
     this.host.changed();

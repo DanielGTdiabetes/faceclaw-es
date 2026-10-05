@@ -29,7 +29,7 @@ import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, preciseTextModelLabel, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
-import { conversationDetail, conversationStartPlan, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
+import { conversationDetail, conversationStartPlan, hermesHistoryText, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
 import { hermesPresentationDiagnostics } from "../ui/shell/conversation-hermes-ui";
 import {
   conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
@@ -83,7 +83,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Brief refusal notice for «Hermes en conversación»; cleared by the next tap or bridge change. */
   private hermesNotice = "";
-  private hermesShown = { button: "", status: "" };
+  private hermesShown = { button: "", status: "", history: "" };
 
   // A new view model is built on every navigation to the main page; these
   // module-level subscriptions must die with it (see dispose) or each
@@ -149,7 +149,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     // Hermes selection/runtime and bridge capability: labels only, never audio or channel calls.
     this.unsubscribers.push(dashboardController.onConversationHermesChange(() => this.refreshHermesUi()));
     this.unsubscribers.push(assistantBridge.onStateChange(() => { this.hermesNotice = ""; this.refreshHermesUi(); }));
-    this.hermesShown = { button: "", status: "" };
+    this.hermesShown = { button: "", status: "", history: "" };
     this.refreshHermesUi();
     this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
     this.unsubscribers.push(() => {
@@ -198,10 +198,14 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   /** Notifies only on a changed label: runtime ticks (500 ms) never flood the binding. */
   private refreshHermesUi(): void {
-    const button = this.conversationHermesButton, status = this.conversationHermesStatus;
+    const button = this.conversationHermesButton, status = this.conversationHermesStatus, history = this.conversationHermesHistory;
     if (button !== this.hermesShown.button) this.notifyPropertyChange("conversationHermesButton", button);
     if (status !== this.hermesShown.status) this.notifyPropertyChange("conversationHermesStatus", status);
-    this.hermesShown = { button, status };
+    if (history !== this.hermesShown.history) {
+      this.notifyPropertyChange("conversationHermesHistory", history);
+      this.notifyPropertyChange("conversationHermesHistoryVisibility", this.conversationHermesHistoryVisibility);
+    }
+    this.hermesShown = { button, status, history };
   }
 
   get conversationHermesButton(): string {
@@ -215,6 +219,14 @@ export class MainViewModel extends RemoteControlsViewModel {
     return manualHermesStatus(dashboardController.conversationDetector.snapshot(), runtime, {
       supported: conversation.isSupported(), optionalIdentity: conversation.supportsOptionalIdentity?.() ?? false });
   }
+
+  /** Last Hermes messages of this session (RAM only), visible while ON. */
+  get conversationHermesHistory(): string {
+    return hermesHistoryText(dashboardController.conversationDetector.snapshot().enabled,
+      dashboardController.conversationHermes.history());
+  }
+
+  get conversationHermesHistoryVisibility(): string { return this.conversationHermesHistory ? "visible" : "collapsed"; }
 
   /** The same explicit session ON/OFF as the glasses system menu. */
   onConversationHermesTap(): void {

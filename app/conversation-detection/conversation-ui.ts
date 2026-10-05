@@ -118,3 +118,17 @@ function manualVoiceNote(detector: DetectorSnapshot, modality: string | undefine
     default: return "voz aún sin reconocer (opcional)";
   }
 }
+
+/**
+ * Phone-only list of the current session's Hermes messages (RAM, newest first), shown while the
+ * conversation is ON. Empty when OFF: the runtime clears it and this never shows a stale list.
+ */
+export function hermesHistoryText(detectorOn: boolean, entries: readonly { at: number; text: string }[]): string {
+  if (!detectorOn || entries.length === 0) return "";
+  const time = (at: number) => {
+    const date = new Date(at);
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  };
+  return ["Mensajes de Hermes (esta sesión):",
+    ...entries.map((entry) => `${time(entry.at)} · ${entry.text.replace(/\s+/g, " ").trim()}`)].join("\n");
+}

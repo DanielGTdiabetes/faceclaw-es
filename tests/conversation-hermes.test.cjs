@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
 
-function harness() {
+function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }) {
   let now = 1000, seq = 0, ref = null;
   const state = { enabled: false, state: 'desactivado', transcription: { engine: 'soniox' } };
   const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set();
@@ -16,8 +16,8 @@ function harness() {
   const channel = new ConversationChannel({ now: () => now, send: frame => { frames.push(frame); return true; },
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
-    every: (cb, ms) => timer(cb, ms, true), onOutput: text => outputs.push(text), changed() {} },
-    { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 });
+    every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
+    policy);
   const notify = () => { for (const cb of [...observers]) cb(state); };
   function association(patch = {}, live = true) {
     const event = { v: 1, sessionId: 's1', streamId: 1, version: 1, kind: 'manual', speaker: '1', knownOthers: ['2'], ...patch };
@@ -45,6 +45,9 @@ function harness() {
     begin(budget) { channel.negotiate(['conv/1']); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
+    deliver() { this.begin(); this.candidate(); this.reply('assess'); this.reply('assist'); },
+    /** Advance in 500 ms runtime ticks. */
+    ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
 
@@ -137,4 +140,79 @@ test('candidate expiry, silence and the eight-request session budget are enforce
     if (last && h.runtime.snapshot().busy) h.reply(last.type, { verdict: 'incierto' });
   }
   assert.equal(h.runtime.snapshot().requests, 8); assert.equal(h.sent().length, 8); h.runtime.dispose();
+});
+
+// ---------------------------------------------------------------- delivered message lifetime (S2.6.4)
+
+const TEXT = 'Una aportación útil';
+
+test('a turn after delivery cancels pending work but keeps the message for the 12 s minimum', () => {
+  const h = harness(); h.deliver();
+  assert.equal(h.outputs.at(-1), TEXT);
+  h.advance(1000); h.turn('2'); h.turn('1');
+  assert.equal(h.outputs.at(-1), TEXT, 'people keep talking: the message stays');
+  h.ticks(10500);
+  assert.equal(h.outputs.at(-1), TEXT, 'still readable at 11.5 s');
+  assert.equal(h.outputs.slice(h.outputs.indexOf(TEXT)).filter(o => o === null).length, 0);
+  h.ticks(500);
+  assert.equal(h.outputs.at(-1), null, 'retired once the minimum has elapsed after the conversation moved on');
+  h.runtime.dispose();
+});
+
+test('a newer Hermes message replaces the shown one without clearing first', () => {
+  const h = harness(); h.deliver();
+  h.turn('1'); h.turn('2'); h.advance(5000);
+  assert.equal(h.sent().at(-1).type, 'assist');
+  h.reply('assist', { text: 'Otra aportación' });
+  assert.deepEqual(h.outputs.slice(h.outputs.indexOf(TEXT)), [TEXT, 'Otra aportación']);
+  assert.deepEqual(h.runtime.history().map(e => e.text), ['Otra aportación', TEXT], 'newest first');
+  h.runtime.dispose();
+});
+
+test('a tap retires the message at once; OFF retires it and clears the RAM history', () => {
+  const tap = harness(); tap.deliver();
+  tap.runtime.dismissOutput();
+  assert.equal(tap.outputs.at(-1), null);
+  assert.equal(tap.runtime.history().length, 1, 'the phone list keeps it while ON');
+  tap.runtime.dispose();
+  const off = harness(); off.deliver();
+  assert.equal(off.runtime.history().length, 1);
+  off.update({ enabled: false, state: 'desactivado' });
+  assert.equal(off.outputs.at(-1), null);
+  assert.deepEqual(off.runtime.history(), []);
+  off.runtime.dispose();
+});
+
+test('without any other retirement the message is withdrawn at 30 s', () => {
+  const h = harness({ candidateMs: 15000, silenceMs: 120000, maxTurns: 12, maxChars: 6000 }); h.deliver();
+  h.ticks(29500);
+  assert.equal(h.outputs.at(-1), TEXT);
+  h.ticks(500);
+  assert.equal(h.outputs.at(-1), null);
+  h.runtime.dispose();
+});
+
+test('identity changes still retire a delivered message immediately', () => {
+  const h = harness(); h.deliver();
+  h.association({ version: 2, kind: 'borrado' });
+  assert.equal(h.outputs.at(-1), null);
+  h.runtime.dispose();
+});
+
+test('phone history: last five of this session with time, only while ON', () => {
+  const { hermesHistoryText } = require('../.test-build/app/conversation-detection/conversation-ui.js');
+  const h = harness(); h.deliver();
+  for (let i = 0; i < 6; i++) {
+    h.turn('1'); h.turn('2'); h.advance(5000); h.reply('assist', { text: `Mensaje ${i}` });
+  }
+  const history = h.runtime.history();
+  assert.equal(history.length, 5);
+  assert.deepEqual(history.map(e => e.text), ['Mensaje 5', 'Mensaje 4', 'Mensaje 3', 'Mensaje 2', 'Mensaje 1']);
+  const shown = hermesHistoryText(true, history).split('\n');
+  assert.equal(shown.length, 6);
+  assert.match(shown[1], /^\d\d:\d\d · Mensaje 5$/);
+  assert.equal(hermesHistoryText(false, history), '');
+  h.update({ enabled: false, state: 'desactivado' });
+  assert.equal(hermesHistoryText(true, h.runtime.history()), '');
+  h.runtime.dispose();
 });
