@@ -7,11 +7,11 @@
 | Estado | Resultado |
 | --- | --- |
 | Implementado | Sí, en este checkout (`app/`, `tests/`). Copia de trabajo en la nube sobre `origin/codex/conversation-detection-g0` @ `44ff5b5` + cambios locales sin commit del relevo. |
-| Probado | Sí, en la nube (Linux, Node 22). Ver abajo. **Sin repetir en Windows.** |
-| Compilado (APK) | **No.** Requiere la firma original y el SDK del PC. |
-| Instalado | **No.** S2.6.1/805 `923c4c08…` sigue en el Pixel. |
-| Observado en lentes | **No.** |
-| Commit/push | **No.** Hacerlo desde el PC (credenciales GitHub locales). |
+| Probado | Sí, en la nube (Linux, Node 22) y en Windows (Node 24): 36/36 de las tres suites Hermes, `tsc` app/tests y oxlint correctos. |
+| Compilado (APK) | Sí. `0.8.2-es.5-conversation.s2.6.2-manual-context`/805, firma original `57aaa887…`, zipalign 16 KB, 7/7 `.so` y `package.json` idénticos a S2.6.1. SHA-256 `d4bec9d258f1a312519d81a5b43bbbe541d1c82e6978fce5046f95610f740060`. |
+| Instalado | Sí, con `adb install -r` desde OFF (sin captura ni wakelocks Faceclaw). Hash extraído igual. 34 ajustes idénticos antes/después (respaldo privado en `.tools/s2.6.2-private/`). Reversión: `dist/conversation-g0/before-update-s2.6.2-manual-context.apk` (`923c4c08…`, S2.6.1). |
+| Observado en lentes | **No.** Pendiente comprobación coordinada. |
+| Commit/push | Sí: `04e553f` en `origin/codex/conversation-detection-g0`. |
 | Puente BMAX/NAS | Sin tocar. |
 
 ## Causa reproducida con la capa real
@@ -50,7 +50,17 @@ Diagnóstico agregado, solo recuentos:
 
 No validado: firmware real con `CLEAR` sin clip dentro de una presentación del shell (el renderizador Kotlin y el preview lo soportan, `icon-grid`/`chrome-layer` ya usan `CLEAR` con clip), ancho de banda BLE de ~75 KB por mensaje largo, óptica.
 
+## Compilación e instalación (Claude Code local, 05-10-2026)
+
+- Entorno: Node de `~/.cache/codex-runtimes/.../node/bin` y `.tools/bin` (npm) en PATH, `JAVA_HOME=.tools/jdk-21…`, `ANDROID_HOME=.tools/android-sdk`, `JAVA_TOOL_OPTIONS=-Duser.home=.tools/android-home` (quitarlo antes de firmar: el script trata su aviso por stderr como error).
+- `ns prepare` exigía `emulator` en el SDK (comprobación de NativeScript doctor): instalado el paquete oficial `emulator` con sdkmanager en `.tools/android-sdk`, solo para esa comprobación.
+- Gradle: `assembleRelease -Prelease -PfaceclawUnsigned -x prepareFaceclawNativeLibs -x prepareFaceclawLlama` (no hay NDK local; las `.so` propias de `platforms/android/app/src/main/jniLibs` se reutilizan y el APK resultante tiene las 7 `.so` idénticas a S2.6.1).
+- Firma: `scripts/install-conversation-g0.ps1` sin `-Install`. `check-conversation-s2.6.ps1` requiere PowerShell 7 (`ToHexString`), no instalado aquí: comprobaciones equivalentes hechas a mano (aapt, apksigner, zipalign, hashes de `.so`, marcadores del bundle).
+
 ## Siguiente paso (sesión local en el PC)
+
+Pasos 1–4 hechos (ver arriba). Pendiente: 5 (comprobación óptica coordinada) y 6 (NAS).
+
 
 1. `git status`, `git diff --check`. Repetir en Windows: `npx tsc -p tests/tsconfig.json`, `node --test tests/conversation-hermes-lens.test.cjs tests/conversation-hermes-ui.test.cjs tests/conversation-phone-ui.test.cjs`, `./lint.sh` o equivalente.
 2. Commit con rutas explícitas (código, pruebas, notas, helper y `integrations/hermes/*` pendientes del relevo) y push a `origin codex/conversation-detection-g0`. Comprobar HEAD remoto.
