@@ -20,28 +20,10 @@
 
     <GridLayout rows="*,auto">
         <StackLayout row="1" class="p-10">
-            <Label text="{{ conversationDetectorLabel }}" textWrap="true" tap="{{ onConversationDetectorMetricsTap }}" />
-            <Label text="{{ conversationDetectorDetail }}" textWrap="true" fontSize="11" />
-            <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
-            <Label text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" textWrap="true" fontSize="11" />
-            <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
             <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
             <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
-            <Label text="{{ conversationWearerLabel }}" textWrap="true" fontSize="12" />
-            <Button text="{{ conversationWearerPhraseButton }}" tap="{{ onConversationWearerPhraseTap }}" visibility="{{ conversationWearerVisibility }}" />
-            <Button text="Mi voz · identificar o corregir" tap="{{ onConversationWearerTap }}" visibility="{{ conversationWearerVisibility }}" />
-            <StackLayout visibility="{{ conversationPhaseVisibility }}">
-                <Label text="{{ conversationPhaseLabel }}" textWrap="true" fontSize="11" />
-                <GridLayout columns="*,*,*,*">
-                    <Button col="0" text="Otra persona" tap="{{ onPhaseOtherTap }}" />
-                    <Button col="1" text="Yo" tap="{{ onPhaseMeTap }}" />
-                    <Button col="2" text="Referencia" tap="{{ onPhaseReferenceTap }}" />
-                    <Button col="3" text="Fin" tap="{{ onPhaseEndTap }}" />
-                </GridLayout>
-            </StackLayout>
-            <Label text="{{ localTranscriptionLabel }}" textWrap="true" fontSize="11" />
-            <Label text="{{ localTranscript }}" textWrap="true" maxLines="7" fontSize="13" />
-            <Button text="Opciones · Mi perfil y modos locales" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
+            <Button text="Opciones de conversación" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
         </StackLayout>
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
             <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">

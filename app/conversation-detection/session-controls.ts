@@ -7,6 +7,8 @@ import { type SpeakerRef } from "./wearer-identity";
 export type ConversationSessionPort = {
   detector: ConversationCaptureCoordinator;
   setEnabled(enabled: boolean, transcribe?: boolean, participation?: ParticipationMode, options?: SessionOptions): void;
+  /** The product ON/OFF; legacy diagnostic controls remain available separately. */
+  setManualEnabled?(enabled: boolean): string;
   voiceModel(): string;
   textModel(): string;
 };

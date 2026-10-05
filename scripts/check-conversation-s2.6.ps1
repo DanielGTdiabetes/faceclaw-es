@@ -1,11 +1,16 @@
-param([string]$Candidate='dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.6-manual-context.apk')
+param(
+  [string]$Candidate='dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.6.1-manual-context.apk',
+  [ValidateSet('0.8.2-es.5-conversation.s2.6-manual-context','0.8.2-es.5-conversation.s2.6.1-manual-context')]
+  [string]$ExpectedVersion='0.8.2-es.5-conversation.s2.6.1-manual-context'
+)
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
 $env:JAVA_HOME=Join-Path $taskRoot '.tools/jdk-21.0.12.1+1'
 $taskTools=Join-Path $taskRoot '.tools/android-sdk/build-tools/35.0.0'
 $taskCandidate=Join-Path $taskRoot $Candidate
 $taskBadging=@(& "$taskTools/aapt.exe" dump badging $taskCandidate 2>&1)
-if($LASTEXITCODE -ne 0 -or !($taskBadging -match "^package: name='com.faceclaw.app' versionCode='805' versionName='0.8.2-es.5-conversation.s2.6-manual-context'")){throw 'Identidad inesperada en la candidata.'}
+$taskVersionPattern=[regex]::Escape($ExpectedVersion)
+if($LASTEXITCODE -ne 0 -or !($taskBadging -match "^package: name='com.faceclaw.app' versionCode='805' versionName='$taskVersionPattern'")){throw 'Identidad inesperada en la candidata.'}
 $taskCert=@(& "$taskTools/apksigner.bat" verify --verbose --print-certs $taskCandidate 2>&1)
 if($LASTEXITCODE -ne 0 -or !($taskCert -match 'certificate SHA-256 digest: 57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435')){throw 'Firma inesperada o inválida.'}
 & "$taskTools/zipalign.exe" -c -P 16 4 $taskCandidate

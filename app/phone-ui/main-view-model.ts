@@ -419,14 +419,16 @@ export class MainViewModel extends RemoteControlsViewModel {
     const profile = detector.hasOwnProfile();
     const ownAction = profile ? "Borrar mi perfil" : "Crear mi perfil";
     const textAction = this.conversationTextButton;
+    const localDiagnosticsAction = "Diagnóstico local · " + this.conversationDetectorButton;
     const languageAction = this.conversationLanguageButton;
     const diagnosticsAction = this.conversationDiagnosticsButton;
     const preciseAction = preciseTextModelLabel();
     const engineAction = this.conversationEngineButton;
     const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
-      actions: [textAction, engineAction, languageAction, preciseAction, "Mi perfil", "Solo transcripción", "Solo actividad de voz",
+      actions: ["Mi perfil", localDiagnosticsAction, textAction, engineAction, languageAction, preciseAction, "Solo transcripción", "Solo actividad de voz",
         "Métricas tras OFF", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
+    if (choice === localDiagnosticsAction) { this.onConversationDetectorTap(); return; }
     if (choice === textAction) { this.onConversationTextTap(); return; }
     if (choice === languageAction) { this.onConversationLanguageTap(); return; }
     if (choice === diagnosticsAction) { this.onConversationDiagnosticsTap(); return; }

@@ -29,6 +29,7 @@ export const HERMES_LISTENING_LINE = "Hermes en conversación · lentes apagadas
 export class LocalConversationLayer implements Layer {
   private scrollBack = 0;
   private lastEpoch = -1;
+  private notice = "";
   constructor(private readonly session: ConversationSessionPort) {}
 
   paint(ctx: LayerContext): GrayImage {
@@ -38,6 +39,19 @@ export class LocalConversationLayer implements Layer {
     const step = lineStep(font), inset = 8, available = width - 2 * inset;
     const snapshot = this.session.detector.snapshot();
     if (snapshot.epoch !== this.lastEpoch) { this.scrollBack = 0; this.lastEpoch = snapshot.epoch; }
+    if (this.session.setManualEnabled) {
+      const state = snapshot.enabled ? "ON" : "OFF";
+      image.drawText(titleFont, inset, inset, `Conversación · ${state}`, 255);
+      const detail = snapshot.enabled ? HERMES_LISTENING_LINE : this.notice ||
+        "Activa para escuchar con Hermes. Máximo 20 min; termina tras más de 5 min sin voz. Español y valenciano automáticos. Reconocer tu voz es opcional.";
+      let y = inset + lineStep(titleFont) + 4;
+      for (const line of wrapText(font, detail, available).slice(0, Math.max(1, Math.floor((height - y - 2 * step - inset) / step)))) {
+        image.drawText(font, inset, y, line, 180); y += step;
+      }
+      image.drawText(font, inset, height - 2 * step - inset, snapshot.enabled ? "Toque: detener" : "Toque: iniciar conversación", 220);
+      image.drawText(font, inset, height - step - inset, "Doble toque: detener y salir", 140);
+      return image;
+    }
     const plan = lensConversationPlan(this.session);
     const state = snapshot.enabled ? snapshot.state : snapshot.state === "error" ? "OFF · error" : "OFF";
     image.drawText(titleFont, inset, inset, truncateText(titleFont, `Conversación local · ${state}`, available), 255);
@@ -96,7 +110,11 @@ export class LocalConversationLayer implements Layer {
   }
 
   handleInput(event: InputEvent): void {
-    if (event.type === "click") { toggleLensConversation(this.session); this.scrollBack = 0; }
+    if (event.type === "click") {
+      this.notice = this.session.setManualEnabled
+        ? this.session.setManualEnabled(!this.session.detector.snapshot().enabled) : toggleLensConversation(this.session);
+      this.scrollBack = 0;
+    }
     else if (event.type === "double-click") {
       this.session.setEnabled(false);
       shell.yieldFocusToSidebar();
@@ -136,11 +154,15 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
   const cancelPoll = () => { if (closeTimer !== null) clearTimeout(closeTimer); closeTimer = null; };
   const app = createInProcessWindow({
     appId: "local-conversation", windowId: CONVERSATION_WINDOW_ID,
-    title: "Conversación local", iconLetter: "C", icon: "message-circle", closeable: true,
+    title: "Conversación", iconLetter: "C", icon: "message-circle", closeable: true,
     actions: options.actions, baseLayer: new LocalConversationLayer(session),
     menuItems: () => {
       const opened = session.detector.snapshot();
       const stopping = opened.enabled;
+      if (session.setManualEnabled) return [{
+        label: `Hermes en conversación: ${stopping ? "ON · detener" : "OFF · iniciar"}`,
+        onSelect: (ctx) => { ctx.stack.pop(); session.setManualEnabled!(!stopping); },
+      }];
       // While ON show the engine really active, as the phone does; the shared choice applies to the next start.
       const textShown = stopping ? opened.transcription?.enabled === true : conversationTextSelected();
       return [
@@ -161,7 +183,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     // While a session is ON (at most 120 s) the idle timeout must not blank the lenses mid-conversation,
     // as Transcribe does for its capture. OFF keeps the normal screen timeout. With Hermes armed the
     // lenses must stay dark while listening, so capture never holds the screen on.
-    keepsScreenOn: () => !closed && session.detector.snapshot().enabled && !hermesArmed(),
+    keepsScreenOn: () => !closed && !session.setManualEnabled && session.detector.snapshot().enabled && !hermesArmed(),
     submitFrame: options.submitFrame, setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface, reconfigureSurface: options.reconfigureSurface,
     onForegroundChanged: (foreground) => { if (foreground && !closed) app.requestRender(); },

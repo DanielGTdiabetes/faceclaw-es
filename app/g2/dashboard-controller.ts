@@ -385,6 +385,7 @@ class DashboardController {
     bindConversationSession({
       detector: this.conversationDetector,
       setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
+      setManualEnabled: (enabled) => this.setManualConversationEnabled(enabled),
       voiceModel: () => micModelState("speaker-embedding").status,
       textModel: () => conversationTextEngine() === "soniox" && sonioxApiKeySetting.get().trim() ? "ready" : conversationTextModelStatus(),
     });

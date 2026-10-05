@@ -3,7 +3,7 @@ import { createLocalConversationWindow, CONVERSATION_WINDOW_ID, CONVERSATION_SUR
 
 const localConversationApp: AppDefinition = {
   appId: "local-conversation",
-  title: "Conversación local",
+  title: "Conversación",
   icon: "message-circle",
   launch: (ctx) => ctx.launchInProcessApp(CONVERSATION_WINDOW_ID, CONVERSATION_SURFACE_ID, createLocalConversationWindow),
 };

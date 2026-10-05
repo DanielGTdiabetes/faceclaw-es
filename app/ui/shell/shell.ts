@@ -1863,11 +1863,6 @@ class Shell {
           }
         },
       });
-      if (conversation.enabled()) {
-        for (const action of [...conversation.wearerActions(), ...conversation.wearerChoices()]) {
-          items.push({ label: action.label, onSelect: (ctx) => { ctx.stack.pop(); action.run(); } });
-        }
-      }
     }
     items.push({
       label: "Debug",

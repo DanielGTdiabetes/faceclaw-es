@@ -463,7 +463,7 @@ test('dispose releases the subscription and removes a showing overlay without re
 });
 
 /** Local conversation window with Hermes armed: no transcript read, no screen hold, no capture on restore. */
-function localConversation(armed) {
+function localConversation(armed, manual = false) {
   let snapshot = { enabled: true, state: 'escuchando', reason: '', epoch: 1, stopReason: 'none', remainingMs: 90_500,
     participationMode: 'conversation', transcription: { enabled: true, engine: 'soniox' } };
   let reads = 0, renders = 0, detectorListener = null, hermesListener = null;
@@ -473,6 +473,7 @@ function localConversation(armed) {
     wearerActionRef: () => null, observedSpeakers: () => [],
     subscribe(fn) { detectorListener = fn; return () => { detectorListener = null; }; },
   }, voiceModel: () => 'ready', textModel: () => 'ready', setEnabled: (...args) => starts.push(args) };
+  if (manual) session.setManualEnabled = enabled => { starts.push(['manual', enabled]); return ''; };
   let options;
   const timers = fakeTimers();
   const load = makeLoader({
@@ -521,6 +522,29 @@ test('local conversation without Hermes keeps the classic transcript view and sc
   const h = localConversation(false);
   assert.match(h.paint(), /texto privado/);
   assert.equal(h.options.keepsScreenOn(), true);
+});
+
+test('glasses product conversation uses the shared manual owner, one menu control and no legacy transcript', () => {
+  const h = localConversation(false, true);
+  h.patch({ enabled: false, state: 'desactivado' });
+  assert.match(h.paint(), /Máximo 20 min/);
+  assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
+  assert.equal(h.counts().reads, 0);
+  assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');
+  assert.equal(h.options.menuItems().length, 1);
+  h.options.baseLayer.handleInput({ type: 'click' });
+  assert.deepEqual(h.starts, [['manual', true]], 'same controller entry point as phone/system menu');
+  h.patch({ enabled: true, state: 'escuchando' });
+  assert.equal(h.options.keepsScreenOn(), false);
+  assert.equal(h.counts().reads, 0);
+});
+
+test('a glasses manual stop menu retained after expiry cannot restart capture', () => {
+  const h = localConversation(true, true);
+  const stop = h.options.menuItems()[0];
+  h.patch({ enabled: false, state: 'desactivado' });
+  stop.onSelect({ stack: { pop() {} } });
+  assert.deepEqual(h.starts, [['manual', false]]);
 });
 
 function phoneHarness(f) {

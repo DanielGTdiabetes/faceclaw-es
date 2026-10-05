@@ -1,4 +1,12 @@
-# Continuidad S2.6: Hermes manual con identidad opcional
+# Continuidad S2.6.1: Hermes manual con identidad opcional
+
+**Estado vigente: puente y móvil actualizados, 05-10-2026.** Usuario autorizó «hazlo» después de revisión/publicación S2.6. Puente `conv/2` desplegado con copia de reversión y capacidad autenticada conv/1+conv/2 verificada mientras Faceclaw estaba cerrado. Ambos servicios activos/habilitados. S2.6 se instaló primero; el usuario detectó después controles antiguos en móvil/gafas. Corregidos en S2.6.1, compilada/firmada original e instalada con `adb install -r`. Hash extraído del móvil idéntico `923c4c081d77292d319299beb453b29933bcf6bf37755a71837fa74cc3e3c88f`, versión `0.8.2-es.5-conversation.s2.6.1-manual-context`/805; lastUpdateTime del móvil2026-10-05 11:07:00.34ajustes idénticos en ambas actualizaciones y perfil guardado observado, sin reenrolar/leerlo.
+
+**Interfaz vigente:** móvil con un único control «Hermes en conversación: OFF · iniciar», estado20min/>5min/es-ca/voz opcional, perfil y «Opciones de conversación». Antiguo inicio2min, selector castellano diagnóstico, transcripción, identificación/frase y fases retirados de pantalla principal; diagnóstico local solo en Opciones. App de gafas renombrada «Conversación», inicia mediante el mismo `setManualConversationEnabled` del controller y presenta20min/es-ca; no lectura de transcripción ni keepScreenOn en la ruta manual. Menú del sistema ya no ofrece identificación por frase/elección de voz. Captura solo por acción explícita, no abrir/renderizar; menú de STOP antiguo no reactiva tras caducar.42/42 del incremento UI/manual, TS/oxlint/prepare/build/lintVital correctos, original certificado/zipalign16KB/7nativas/runtime conservados. Presentación óptica física y aportación real Hermes todavía no ensayadas.
+
+**Última observación móvil:** Conectado, un selector principal, cero controles antiguos de inicio, perfil guardado, voz opcional y OFF;0wakelocks experimentales activos. No se inició audio ni conversación para comprobar instalación. Respaldo privado fresco `.tools/s2.6-private/before.xml,after.xml`; copia NAS en `/volume1/home/Dani/Faceclaw/connection-backups/2026-10-05-s2.6/`,700/600 y comparación remota idéntica. Reversión fresca S2.6 `before-update-s2.6.1-manual-context.apk`, hash `62c6f594…`. Candidata final y reversión se archivan en NAS `apk-builds/0.8.2-conversation-s2.6.1-manual-context/`; ambos hashes remotos coinciden con los locales, carpeta700/archivos600.
+
+**Próximo trabajo:** usar la versión ya instalada; no repetir despliegue/instalación/build/auditoría por rutina. Preparar únicamente ensayo breve coordinado desde ON con una voz y tema comprensible, sin frase/selección/perfil obligatorio, y observar métricas de Hermes/lentes físicas; finalOFF. La revisión y artefactos S2.6 inferiores se conservan como evidencia anterior.
 
 05-10-2026, PC del trabajo. Rama `codex/conversation-detection-g0`. El usuario pidió revisar la entrega Claude, compilar la APK, publicar los cambios en GitHub y preparar continuidad. Este documento es la referencia para retomar; las notas históricas conservan sus estados anteriores.
 
@@ -24,6 +32,8 @@ No repetida auditoría G0/G1/G2 ni suites nativas sin cambios. No mide reconocim
 
 | Artefacto | SHA-256 |
 | --- | --- |
+| APK final instalada S2.6.1 `faceclaw-0.8.2-es.5-conversation.s2.6.1-manual-context.apk` | `923c4c081d77292d319299beb453b29933bcf6bf37755a71837fa74cc3e3c88f` |
+| Reversión fresca S2.6 `before-update-s2.6.1-manual-context.apk` | `62c6f594c48c666aea77540162d876ae377d3e1dbe91bef439d96f348c120415` |
 | APK S2.6 original firmada `faceclaw-0.8.2-es.5-conversation.s2.6-manual-context.apk` | `62c6f594c48c666aea77540162d876ae377d3e1dbe91bef439d96f348c120415` |
 | Reversión S2.5 firmada `faceclaw-0.8.2-es.5-conversation.s2.5-manual.apk` | `f8c704ff600d49de13ea9dc24651e989ccc09e1c15d0c980e8c6972ec67ff840` |
 | Puente candidato completo `hermes-conv2-candidate-20261005.zip` | `8e3d24488af88aeda36891f6f70ac03b49479d58f98cba84af1c7edd541f395b` |
@@ -36,11 +46,11 @@ Local: APKs en `D:\Proyectos\Faceclaw_spanish\dist\conversation-g0\`, ZIP y carp
 
 ## Estado instalado y servicios
 
-**No se instaló S2.6 ni se desplegó conv/2 en esta revisión.** Último estado comprobado del móvil: S2.5/805 instalada,34ajustes/perfil conservados, detector/HermesOFF. No se consultó ni activó el móvil para compilar/publicar. Último estado comprobado de Jarvis: producción conv/1 y servicios activos; no se hizo un probe autenticado ni un reinicio en esta revisión.
+**Actualización posterior a la revisión completada:** móvil S2.6.1/805 instalada/OFF,34ajustes/perfil conservados. Producción conv/2 (`bridge.py` `be530122…`, `conversation.py` `0fd16f25…`), ambos servicios activos/habilitados y handshake autenticado conv/1+conv/2 comprobado con móvil cerrado. Solo se reinició `faceclaw-hermes.service`; gateway/token/modelo/configuración privada intactos. Respaldo `/home/dani/faceclaw-hermes-bridge/rollback-20261005-conv2/`,700/600. No ejecutar nuevamente deploy sobre esta versión: exige la base conv/1 y ausencia de ese respaldo.
 
-Producción esperada en `/home/dani/faceclaw-hermes-bridge/`: `bridge.py` SHA256 `2563695d3166ef7206d7553f92c1fe189bcfe0cfd0a76510206faeb9aa91676e`, `conversation.py` `3b6809182c87018cabb27f3258e6d30d9a1e1bcbaf1c08f04a3a801934ab0d2f`. Drop-in `40-conversation.conf` ya activa `FACECLAW_CONVERSATION=1`. Comprobar estos hashes antes de actualizar; el helper falla si difieren o ya existe reversión conv/2. No reutilizar el helper antiguo de S2.5 sobre producción actual.
+Base conv/1 respaldada en `/home/dani/faceclaw-hermes-bridge/rollback-20261005-conv2/`: `bridge.py` SHA256 `2563695d3166ef7206d7553f92c1fe189bcfe0cfd0a76510206faeb9aa91676e`, `conversation.py` `3b6809182c87018cabb27f3258e6d30d9a1e1bcbaf1c08f04a3a801934ab0d2f`. Drop-in `40-conversation.conf` ya activa `FACECLAW_CONVERSATION=1`. Comprobar estos hashes antes de actualizar; el helper falla si difieren o ya existe reversión conv/2. No reutilizar el helper antiguo de S2.5 sobre producción actual.
 
-## Siguiente paso desde otro PC
+## Procedimiento de actualización ya ejecutado (referencia)
 
 1. Sincronizar `codex/conversation-detection-g0` de GitHub, conservando cualquier cambio local. Leer esta nota y el informe Claude. Recuperar del NAS las candidatas exactas y verificar los hashes; no recompilar por rutina. Desde el trabajo estamos fuera de LAN: Hermes `100.65.212.74` y NAS `100.64.237.87` por Tailscale. No copiar credenciales al prompt/notas ni imprimir ajustes/perfiles.
 2. Coordinar actualización con conversaciónOFF. **Primero puente, después APK.** Revisar nuevamente producción y crear `/home/dani/faceclaw-hermes-bridge/conversation-candidate-conv2-20261005/`; copiar `bridge.py`, `conversation.py` y helper público del candidato. Ejecutar `python3 deploy-hermes-conv2.py` en Jarvis. Respaldo `/home/dani/faceclaw-hermes-bridge/rollback-20261005-conv2/`,700/600; solo reinicia `faceclaw-hermes.service`, no gateway/modelo/token/configuración privada. Reversión con `--rollback`. Por defecto no hace probe autenticado; `--probe` solo si el móvil está desconectado, pues puede desplazar su conexión.
@@ -49,4 +59,4 @@ Producción esperada en `/home/dani/faceclaw-hermes-bridge/`: `bridge.py` SHA256
 
 ### Texto breve para retomar
 
-«Retoma Faceclaw en `codex/conversation-detection-g0`. Lee `AGENTS.md` y `notes/continuidad-s2.6-manual-context-2026-10-05.md`. S2.6 está revisada, compilada y firmada; S2.5 sigue instalada y producción sigue en conv/1 según la última comprobación. Recupera candidatas exactas del NAS, verifica hashes y prepara actualización conservadora puente conv/2 primero y APK después. Conserva datos/firma/perfil/Hermes normal y cambios locales; no exijas identidad, frase, dos voces ni saludo en manual. No repitas auditorías/build ya acreditados. Comprueba estado actual antes de instalar, coordina ensayo breve y deja OFF. Documenta únicamente lo realmente ejecutado.»
+«Retoma Faceclaw en `codex/conversation-detection-g0`. Lee `AGENTS.md` y `notes/continuidad-s2.6-manual-context-2026-10-05.md`. S2.6.1 ya está instalada con firma original y34ajustes/perfil conservados; conv/2 ya está desplegado y verificado. Hay un único control principal y voz opcional. No repitas instalación/despliegue/build/auditorías ni continúes con NInfer (enlace retirado). Comprueba el estado actual y coordina únicamente ensayo breve de evaluación/aportación Hermes y lentes físicas, sin frase/selección/identidad obligatoria, finalOFF. Conserva datos y documenta evidencia real.»
