@@ -1,0 +1,55 @@
+# Canal conversacional Hermes: avance desde el PC del trabajo
+
+**Actualización de instalación:** [S2.4-Hermes](instalacion-s2.4-hermes-2026-10-05.md) compilada y actualizada con firma original/805 por petición del usuario. 34 ajustes idénticos, detector/HermesOFF observados, APK/reversión/ajustes verificados en NAS. Puente aún candidato aislado, sin conv/1 activo ni captura. Estados «sin APK/instalación/NAS» inferiores describen el avance previo; código sigue sin publicar.
+
+Fecha: 05-10-2026, Europe/Madrid. Checkout `D:\Proyectos\Faceclaw_spanish`, rama `codex/conversation-detection-g0`, GitHub recuperado por fast-forward hasta `038eae0`. Cambios de este incremento locales, todavía sin commit/publicación/APK/instalación.
+
+**UI integrada después de revisar la entrega de Claude:** [revisión Codex](revision-codex-ui-hermes-2026-10-05.md). Binding conectado al controller, corregido repintado de texto inválido bajo alertas y estado móvil sin afirmar apagado físico; 81/81 de ocho suites, TS/lint correctos. Sin APK/instalación/prueba física/despliegue. Las menciones a «UI pendiente» inferiores corresponden al avance previo a la entrega; pasar a preparación de candidata y ensayo coordinado conservando esta implementación.
+
+## Decisión y estado comprobado
+
+El usuario autoriza **evaluar intercambios candidatos con Hermes**, que debe permanecer callado ante saludos/cortesía/incertidumbre o cuando no aporte nada. La conversación puede comenzar directamente por un tema o pregunta, **sin saludo obligatorio**. Confirma límites iniciales: candidata15s, cierre por30s sin nuevos turnos, máximo12turnos/6000caracteres en RAM. El tope absoluto de escucha120s sigue intacto, sin reactivación automática. No volver a preguntar estas decisiones.
+
+Pixel conectado por USB, serie `61161FDCG0013L`: ADB confirma `0.8.2-es.5-conversation.s2.2`, código 805, actualización 04-10-2026 18:31:54. No aparecen wakelocks experimentales activos en `dumpsys power`; no se ha leído la UI ni iniciado captura. Esta comprobación no acredita OFF visible, recursos internos ni hash de la APK instalada. S2.3 no está instalada; su candidata exacta del PC de casa no existe en este checkout (no se ha reconstruido ni transferido).
+
+Estamos fuera de las redes LAN de NAS y Jarvis. Usar **Tailscale**: Hermes `dani@100.65.212.74`, NAS `Dani@100.64.237.87`. No probar direcciones LAN desde el PC del trabajo. Acceso SSH a Hermes comprobado después de que el usuario corrigiera el dato de autenticación; no guardar ni publicar ese dato.
+
+## Implementación local y límites
+
+`app/assistant/conversation-channel.ts` implementa un transporte `conv/1` independiente de `chat` y MCP. El cliente real `bridge-client.ts` anuncia soporte, exige capacidad anunciada en el `hello-ack` autenticado y mantiene el canal OFF hasta una activación explícita en RAM. Reconfiguración/desconexión eliminan activación y solicitudes; reconectar no repite ni reactiva la anterior. Un chat normal cancela la evaluación conversacional y bloquea nuevas solicitudes mientras está activo; el canal conversacional nunca cancela chat.
+
+Cada evaluación transmite una copia acotada del contexto textual con atribución provisional, referencia completa de sesión/stream/asociación/episodio/revisión e identificador único de solicitud. No transmite audio, vectores, secretos ni historial del chat. Una sola solicitud pendiente; sustitución/OFF/timeout cancelan selectivamente. Se valida el plazo monotónico también al recibir, aunque se retrase el temporizador. La respuesta debe coincidir con todos los identificadores; el propietario del episodio debe volver a contrastarla con el gestor vivo antes de aplicar el veredicto o mostrar texto.
+
+Evaluación `assess`: `tema`/`cortesia`/`incierto`. Asistencia `assist`: mensaje final o `nada`. Progresos/herramientas no se muestran. Transporte rechazado/excepción/error/veredicto inválido producen abstención silenciosa. No hay escritura de historial, reproducción ni pantalla desde el canal.
+
+`app/conversation-detection/conversation-hermes.ts` conecta el gestor al coordinador y al canal: ON explícito antes de captura, comprobación de identidad vigente, recepción de turnos completos y contexto retirado por OFF/cortes/frase-identidad/chat/suspensión/fallback/desconexión/caducidad. Desconexión no lo rearma al volver. Ni constructor ni selector inician audio. Evalúa después de2s sin turno nuevo, una solicitud cada5s salvo el par inmediato clasificación/asistencia, timeout5s y **máximo8 solicitudes por sesión**; incluye clasificación y asistencia, sin bucle por tokens ni reintento de la misma referencia. Este presupuesto conservador adicional no alarga la escucha. Una respuesta solo se entrega si episodio, revisión e identidad siguen vigentes; nada/error/cortesía/incertidumbre nunca producen mensaje.
+
+El controller aporta selección únicamente RAM/OFF por defecto, habilitable solo con detector OFF y capacidad `conv/1`, API de mensaje final y listeners deduplicados. Arma el runtime solo con selección explícita, texto Soniox y modo distinto de enrolamiento; política confirmada15s/30s/12/6000. El mensaje caduca a8s y se retira antes por cambios de contexto. No modifica historial ni prioridad del chat. **La interfaz aún no está integrada:** [prompt para Claude](prompt-claude-ui-hermes-2026-10-05.md) delimita móvil/layer/shell sin editar lógica/controller/puente ni tocar dispositivos. Revisar su entrega e integrar el binding antes de APK. No añadir envío directo por `utterance`. Lentes físicamente apagadas durante escucha y solo Hermes visibles siguen pendientes de implementación y prueba física.
+
+Verificación final local: **39/39** (13 gestor de episodios, 13 canal, 5 cliente real del puente con socket sintético, 8 runtime con gestor/canal reales y fuente sintética), TypeScript de pruebas y app correctos, oxlint correcto. Incluye inicio temático sin saludo, rechazos tardíos por cambios de texto/identidad/corte/OFF/suspensión, caducidad, chat prioritario, reconexión sin activación, fallback y presupuesto8. No se repite revisión S2.2 ni suites/build/ensayo físico completos.
+
+## Contrato propuesto para el puente
+
+El protocolo externo sigue v1. `hello-ack.capabilities` debe incluir `conv/1` solo cuando el servidor implemente la separación de agente/historia, cancelación, límites y retención verificada. El puente actual no anuncia esa capacidad.
+
+- Móvil → servidor: `{v:1, chan:"conv", type:"assess"|"assist", requestId, ref, timeoutMs, turns}`. Cada turno contiene únicamente `seq`, etiqueta `speaker`, `relation`, `text`, `startMs`, `endMs`. `timeoutMs` es elegido por el propietario (máximo de transporte 30000 ms); no es una nueva duración de escucha.
+- Servidor → móvil: `{v:1, chan:"conv", type:"result", requestId, ref, mode:"assess", verdict:"tema"|"cortesia"|"incierto"}` o `mode:"assist", kind:"mensaje"|"nada", text`.
+- Cancelación: `{v:1, chan:"conv", type:"cancel", requestId, ref}`. Idempotente, solo esa solicitud. Un error correlacionado produce abstención, sin mostrar texto técnico del servidor.
+
+Una solicitud contiene una ventana completa acotada (máximo40turnos/6000caracteres a nivel de transporte; runtime12turnos; salida máxima1200); no acumula segmentos indefinidamente en el servidor. Contrato nuevo implementado y probado en candidata, **no desplegado en el puente activo**. Límites de transporte y modelo separados de política de episodios y mediciones físicas.
+
+## Puente candidato y motor Hermes inspeccionado
+
+`integrations/hermes/` contiene módulo conversacional público, generador de integración por hash de origen y pruebas; no configuración/credenciales. Candidata remota aislada en `/home/dani/faceclaw-hermes-bridge/conversation-candidate-20261005/`. Producción permanece con su fuente/hash original. El generador anuncia `conv/1` únicamente tras inicialización de la fábrica y con `FACECLAW_CONVERSATION=1`; por defecto mantiene el puente anterior.
+
+Agente separado del chat, historial vacío por petición, sin memoria/contexto persistente ni archivos de sesión por las rutas inspeccionadas. Allowlist de herramientas vacía; denegación comprobada en cuatro puntos de dispatch de la clase real. No búsqueda/GPS/acciones en conv inicial; el chat habitual conserva sus herramientas. Una inferencia activa y una pendiente reemplazable como máximo, cancelación selectiva y espera de salida real del hilo antes de reutilizar el agente. Las huellas de cinco fuentes internas inspeccionadas quedan fijadas; una actualización incompatible deshabilita el anuncio de conv y mantiene chat. Esto no acredita retención del proveedor externo ni todos los metadatos de dependencias.
+
+Pruebas remotas finales de candidata: **13/13** (10 módulo,3 integración real de Bridge con sockets loopback/modelo sintético), además del test público previo de autenticación/MCP/stream/cancelación/reconexión en la copia. Guardas de herramientas/persistencia comprobadas sobre la clase Hermes instalada e inicialización de agente real sin inferencia. Dos llamadas sintéticas reales adicionales con proveedor/modelo configurados: saludos → `cortesia` en2780ms; tema de viaje en tren sin saludo → `tema` en1506ms, sin herramientas. No se envió audio/conversación real ni se midió precisión acústica, identidad o utilidad general. No repetir llamadas reales por rutina.
+
+## Fuente recuperada y reinicio completado
+
+Descargados únicamente `bridge.py`, `test_bridge.py` y `README.md` a `.tools/hermes-source-20261005/` (excluido de Git); no se abrió ni copió `private.json`. SHA-256 de la fuente remota recuperada `bridge.py`: `c6fcbf814aa9afaed8878d62b07747c4790b48164133f741512e03252400a705`. No confundirla con el hash histórico previo a GPS.
+
+El usuario observó el aviso de Ubuntu. Consulta SSH inicial confirma `/var/run/reboot-required`, paquetes `linux-image-7.0.0-31-generic`, `linux-image-7.0.0-34-generic`, `linux-base`, `libc6`; kernel previo `7.0.0-30-generic`, arranque anterior 29-08-2026. El usuario autorizó expresamente reiniciar. Ejecutado `sudo systemctl reboot` por Tailscale; regreso verificado: **kernel `7.0.0-34-generic`, arranque 05-10-2026 06:38:50 Europe/Madrid, sin `/var/run/reboot-required`**. `faceclaw-hermes.service` y `hermes-gateway.service`: active/running/enabled; `Linger=yes` y puerto 8791 LISTEN. No se instalaron actualizaciones ni se modificaron configuraciones o fuente de los servicios para reiniciar. No se ha ensayado todavía una conversación real desde las gafas tras el arranque.
+
+Continuar sobre el código local existente: revisar entrega de Claude y enlazar UI al controller; verificar prioridades/sleep sin asumir apagado físico por pintar negro. Después preparar despliegue reversible del puente y APK con firma original/ajustes, coordinando móvil/OFF y ensayo breve. Hasta entonces no modificar el puente activo ni instalar una APK intermedia. No reiniciar G0/G1 ni repetir pruebas humanas por defecto. Las incidencias reales de envío y «Yo» sin identidad siguen abiertas; este canal no las demuestra resueltas. Notas/código todavía sin publicación ni copia actualizada al NAS.

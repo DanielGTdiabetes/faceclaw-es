@@ -25,6 +25,8 @@
             <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
             <Label text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" textWrap="true" fontSize="11" />
             <Button text="{{ conversationDetectorButton }}" tap="{{ onConversationDetectorTap }}" />
+            <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
+            <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
             <Label text="{{ conversationWearerLabel }}" textWrap="true" fontSize="12" />
             <Button text="{{ conversationWearerPhraseButton }}" tap="{{ onConversationWearerPhraseTap }}" visibility="{{ conversationWearerVisibility }}" />
             <Button text="Mi voz · identificar o corregir" tap="{{ onConversationWearerTap }}" visibility="{{ conversationWearerVisibility }}" />

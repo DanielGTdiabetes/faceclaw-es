@@ -7,12 +7,14 @@ export type LocalParticipationSnapshot = {
   requiredSegments?: number;
 };
 export interface DetectorParticipation {
-  start(enrollment: boolean): boolean;
+  start(enrollment: boolean, durationMs?: number): boolean;
   stop(): void;
   resetStream(): void;
-  acceptNative(pcm: unknown, vadState: string): void;
+  acceptNative(pcm: unknown, vadState: string, audioStartMs?: number): void;
+  drainProfileMatches?(): ProfileVoiceMatch[];
   snapshot(): LocalParticipationSnapshot;
   hasProfile(): boolean;
   profileState?(): string;
   deleteProfile(): boolean;
 }
+import { type ProfileVoiceMatch } from "./profile-speaker-matcher";

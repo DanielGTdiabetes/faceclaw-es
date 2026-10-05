@@ -180,6 +180,12 @@ export type ShellWindow = {
 export type ShellConfig = {
   /** Hosts without microphone support hide and reject voice entry points. */
   voiceInputEnabled?: boolean;
+  conversationControl?: {
+    enabled(): boolean;
+    setEnabled(enabled: boolean): string;
+    wearerActions(): { label: string; run(): boolean }[];
+    wearerChoices(): { label: string; run(): boolean }[];
+  };
   /** Actions handed to shell overlay layers; requestRender must re-render the shell surface. */
   actions: LayerActions;
   getScreenTimeoutMs: () => number | null;
@@ -400,6 +406,13 @@ class Shell {
   private readonly trayIcons = new Map<string, GrayImage>();
   private activeVoiceLayer: VoiceInputLayer | null = null;
   private activeKeyboardLayer: KeyboardInputLayer | null = null;
+  /**
+   * An overlay independent of the assistant (the Hermes conversation contribution, see
+   * conversation-hermes-ui.ts) and its yield callback. Explicit interactions take priority over it.
+   */
+  private independentOverlay: { layer: Layer; onYield: () => void } | null = null;
+  /** Retired independent overlays still buried under another layer; dropped once they surface. */
+  private readonly retiredOverlays = new WeakSet<Layer>();
   private conversations: AssistantConversations | null = null;
   private get assistantSession(): AssistantSession | null {
     return this.conversations?.current().session ?? null;
@@ -448,6 +461,7 @@ class Shell {
     this.config = {
       ...config,
       requestShellRender: () => {
+        this.sweepRetiredOverlays();
         this.syncInputFocus();
         config.requestShellRender();
       },
@@ -716,6 +730,7 @@ class Shell {
     this.returnFromNotification();
     this.cancelEscapeMenuTimer();
     this.screenOn = false;
+    this.independentOverlay = null;
     this.stack.clearToBase();
     for (const window of this.windows) {
       window.setScreenOn?.(false);
@@ -829,6 +844,7 @@ class Shell {
     try {
       return await this.routeInput(event, frameId);
     } finally {
+      this.sweepRetiredOverlays();
       // Whatever the input did (opened an overlay, moved focus, slept the
       // screen), windows learn about the resulting input-focus change.
       this.syncInputFocus();
@@ -845,6 +861,12 @@ class Shell {
         return { shell: false, window: true };
       }
       return { shell: false, window: false };
+    }
+    // Explicit controls outrank an independent overlay: they remove it and then act as usual
+    // (taps and scrolls still reach it, to dismiss or page the contribution).
+    if (event.type === "long-press" || event.type === "short-then-long-press"
+      || (event.type === "wakeword" && wakeWordActionSetting.get() !== "off")) {
+      this.yieldIndependentOverlay();
     }
     const previous = this.lastInput;
     this.lastInput = event;
@@ -1403,6 +1425,7 @@ class Shell {
   startKeyboardInput(): KeyboardInputSession | null {
     if (this.activeKeyboardLayer) return this.activeKeyboardLayer;
     if (this.activeVoiceLayer || this.foregroundWindow()?.isVoiceCapturing?.()) return null;
+    this.yieldIndependentOverlay();
     if (!this.screenOn) this.wake("sidebar");
     const assistantLayer = this.assistantLayer;
     const assistantSession = this.assistantSession;
@@ -1527,6 +1550,7 @@ class Shell {
   sendToAssistant(text: string, showOverlay = true): void {
     text = text.trim();
     if (!text) return;
+    this.yieldIndependentOverlay();
     const session = this.ensureAssistantSession();
     if (!session) {
       this.showAlert(
@@ -1639,6 +1663,89 @@ class Shell {
     return closed;
   }
 
+  /**
+   * Whether an explicit interaction owns the display: voice/keyboard dialogs, the assistant overlay
+   * or a turn in flight, push-to-talk/voice capture, or the chat window focused on screen.
+   */
+  private independentDisplayBlocked(): boolean {
+    return !!(this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantLayer || this.voiceDialogPending
+      || this.assistantSession?.isTurnActive() || voiceActivity.isActive() || assistantAudioPriority.isActive()
+      || this.foregroundWindow()?.isVoiceCapturing?.() || this.isWindowFocused("ai-chat"));
+  }
+
+  /**
+   * Turn the lenses off with the real sleep path (compositor blank), for a listening mode that must
+   * not show anything. Refused while an explicit interaction or any shell overlay is open, so it
+   * never closes a chat, dialog or menu. Returns whether the screen went off.
+   */
+  blankForIndependentListening(): boolean {
+    if (!this.screenOn || !this.stack.isAtBase() || this.independentDisplayBlocked()) return false;
+    this.sleep();
+    return true;
+  }
+
+  /**
+   * Show an overlay independent of the assistant (never an AssistantLayer, history or audio).
+   * Wakes a dark screen with the regular wake path. Refused (null) while an explicit interaction or
+   * another shell overlay is open. `onYield` runs if a higher-priority interaction removes it.
+   */
+  presentIndependentOverlay(layer: Layer, onYield: () => void): { woke: boolean } | null {
+    if (this.independentOverlay?.layer === layer) return { woke: false };
+    if (this.independentOverlay) this.retireIndependentOverlay(this.independentOverlay.layer, false);
+    if (!this.stack.isAtBase() || this.independentDisplayBlocked()) return null;
+    const woke = !this.screenOn && this.wake(this.focus);
+    this.independentOverlay = { layer, onYield };
+    this.stack.push(layer);
+    this.config.requestShellRender();
+    return { woke };
+  }
+
+  /** Repaint a showing independent overlay (its content changed); no wake, no new layer. */
+  repaintIndependentOverlay(layer: Layer): void {
+    if (this.screenOn && this.independentOverlay?.layer === layer) this.config.requestShellRender();
+  }
+
+  /**
+   * Remove an independent overlay. With restoreSleep (the caller woke the screen for it) the screen
+   * goes back to sleep only if the overlay was on top and nothing explicit opened meanwhile; a
+   * buried overlay is dropped later, once whatever covers it closes, without re-sleeping.
+   */
+  retireIndependentOverlay(layer: Layer, restoreSleep: boolean): void {
+    if (this.independentOverlay?.layer === layer) this.independentOverlay = null;
+    if (!this.stack.popIfTop((top) => top === layer)) {
+      this.retiredOverlays.add(layer);
+      // A transparent alert may still show the retained contribution below it.
+      // Recompose now; waiting for the alert to close would leave invalid text visible.
+      this.config.requestShellRender();
+      return;
+    }
+    if (restoreSleep && this.screenOn && this.stack.isAtBase() && !this.independentDisplayBlocked()) {
+      this.sleep();
+      return;
+    }
+    this.config.requestShellRender();
+  }
+
+  /** An explicit interaction takes the display: drop the independent overlay without re-sleeping. */
+  private yieldIndependentOverlay(): void {
+    const current = this.independentOverlay;
+    if (!current) return;
+    this.independentOverlay = null;
+    if (!this.stack.popIfTop((top) => top === current.layer)) this.retiredOverlays.add(current.layer);
+    try {
+      current.onYield();
+    } catch (error) {
+      console.warn("independent overlay yield failed", error);
+    }
+    this.config.requestShellRender();
+  }
+
+  private sweepRetiredOverlays(): void {
+    while (this.stack.topMatches((top) => this.retiredOverlays.has(top))) {
+      this.stack.pop();
+    }
+  }
+
   /** Show a brief text popup on the lenses (assistant show_alert / notices). */
   showAlert(text: string): void {
     if (!this.screenOn) this.wake("sidebar");
@@ -1739,6 +1846,28 @@ class Shell {
           this.config.requestShellRender();
         },
       });
+    }
+    const conversation = this.config.conversationControl;
+    if (conversation) {
+      const wanted = !conversation.enabled();
+      items.push({
+        label: `Hermes en conversación: ${wanted ? "OFF · iniciar" : "ON · detener"}`,
+        onSelect: (ctx) => {
+          // Re-read the owner at the moment of the action: an expired session cannot be stopped
+          // or resurrected by a stale menu label. Both controls operate the same live session.
+          ctx.stack.pop();
+          const notice = conversation.setEnabled(wanted);
+          if (notice) {
+            ctx.stack.push(new ShellOverlayMenuLayer([{ label: notice, onSelect: (inner) => { inner.stack.pop(); } }], undefined, () => this.yieldFocusToSidebar()));
+            this.config.requestShellRender();
+          }
+        },
+      });
+      if (conversation.enabled()) {
+        for (const action of [...conversation.wearerActions(), ...conversation.wearerChoices()]) {
+          items.push({ label: action.label, onSelect: (ctx) => { ctx.stack.pop(); action.run(); } });
+        }
+      }
     }
     items.push({
       label: "Debug",

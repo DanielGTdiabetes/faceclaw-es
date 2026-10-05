@@ -16,10 +16,19 @@ export type EpisodeRef = {
   revision: number;
 };
 export type EpisodeAssessment = "tema" | "cortesia" | "incierto";
+/**
+ * How attribution gates a session, captured once at ON for its whole duration.
+ * - `identidad-requerida` (default, diagnostic/legacy): only labelled wearer+other candidates qualify.
+ * - `identidad-opcional` (manual ON): any comprehensible valid turn may be assessed; recognition of the
+ *   wearer only improves attribution. Unknown relations stay unknown and are never promoted.
+ */
+export type EpisodeModality = "identidad-requerida" | "identidad-opcional";
+export const EPISODE_MODALITIES: readonly EpisodeModality[] = ["identidad-requerida", "identidad-opcional"];
 export type EpisodeEnd = "off" | "silencio" | "caducidad" | "interrupcion" | "identidad" | "cortesia" | "incierto";
-export type EpisodeContext = { ref: EpisodeRef; turns: ConversationTurn[] };
+export type EpisodeContext = { ref: EpisodeRef; modality: EpisodeModality; turns: ConversationTurn[] };
 export type EpisodeSnapshot = {
   state: "off" | "esperando" | "candidata" | "activa";
+  modality: EpisodeModality;
   turns: number;
   chars: number;
   eligible: boolean;
@@ -30,12 +39,14 @@ export type EpisodeSnapshot = {
 
 /**
  * Pure, RAM-only episode lifecycle. No timers, capture, storage, network or display operations.
- * Two labelled voices make a candidate eligible for assessment, never confirm a topic. The caller
+ * With required identity, two labelled voices make a candidate eligible; with optional identity any
+ * valid, consistently attributed turn does. Eligibility never confirms a topic. The caller
  * must explicitly request a text context and return a semantic verdict before a confirmed context
  * exists. That caller owns authorization to send text to any evaluator, including Hermes.
  */
 export class ConversationEpisodeTracker {
   private session: { sessionId: string; streamId: number } | null = null;
+  private modality: EpisodeModality = "identidad-requerida";
   private version = 0;
   private wearer: string | null = null;
   private state: EpisodeSnapshot["state"] = "off";
@@ -61,10 +72,12 @@ export class ConversationEpisodeTracker {
   }
 
   /** Called explicitly for an accepted stream, never starts or extends a capture session. */
-  start(sessionId: string, streamId: number): void {
+  start(sessionId: string, streamId: number, modality: EpisodeModality = "identidad-requerida"): void {
     if (!sessionId || !Number.isInteger(streamId) || streamId < 1) throw new Error("Invalid stream");
+    if (!EPISODE_MODALITIES.includes(modality)) throw new Error("Invalid modality");
     this.stop();
     this.session = { sessionId, streamId };
+    this.modality = modality;
     this.state = "esperando";
     this.version = 0;
     this.lastSeq = 0;
@@ -88,7 +101,7 @@ export class ConversationEpisodeTracker {
 
   accept(turn: ConversationTurn): boolean {
     this.tick();
-    if (!this.session || !this.wearer || turn.sessionId !== this.session.sessionId
+    if (!this.session || (this.modality === "identidad-requerida" && !this.wearer) || turn.sessionId !== this.session.sessionId
       || turn.streamId !== this.session.streamId || turn.associationVersion !== this.version
       || turn.seq <= this.lastSeq) { this.ignored++; return false; }
     this.lastSeq = turn.seq;
@@ -98,10 +111,12 @@ export class ConversationEpisodeTracker {
       else this.end("interrupcion");
       return false;
     }
-    const labelled = turn.relation === "portador" ? turn.speaker === this.wearer
-      : turn.relation === "otro" ? !!turn.speaker && turn.speaker !== this.wearer
-      : turn.relation === "desconocido";
-    if (!labelled || turn.timing !== "valido" || !turn.text.trim() || turn.text.length > this.policy.maxChars) {
+    // Relations must agree with the live association: no relation is invented or promoted here.
+    const labelled = turn.relation === "portador" ? !!this.wearer && turn.speaker === this.wearer
+      : turn.relation === "otro" ? !!this.wearer && !!turn.speaker && turn.speaker !== this.wearer
+      : turn.relation === "desconocido" && (turn.speaker === null || turn.speaker !== this.wearer);
+    if (!labelled || this.contradicts(turn) || turn.timing !== "valido" || !turn.text.trim()
+      || turn.text.length > this.policy.maxChars) {
       this.ignored++;
       return false;
     }
@@ -127,6 +142,7 @@ export class ConversationEpisodeTracker {
     this.end("off");
     this.session = null;
     this.wearer = null;
+    this.modality = "identidad-requerida";
     this.state = "off";
   }
 
@@ -168,12 +184,17 @@ export class ConversationEpisodeTracker {
 
   snapshot(): EpisodeSnapshot {
     this.tick();
-    return { state: this.state, turns: this.buffer.length, chars: this.chars(), eligible: this.eligible(),
+    return { state: this.state, modality: this.modality, turns: this.buffer.length, chars: this.chars(), eligible: this.eligible(),
       accepted: this.accepted, ignored: this.ignored, lastEnd: this.lastEnd };
   }
 
   private eligible(): boolean {
+    if (this.modality === "identidad-opcional") return this.buffer.length > 0;
     return this.buffer.some((t) => t.relation === "portador") && this.buffer.some((t) => t.relation === "otro");
+  }
+  /** One speaker label keeps one relation inside a context; a mixed attribution is never sent. */
+  private contradicts(turn: ConversationTurn): boolean {
+    return turn.speaker !== null && this.buffer.some((t) => t.speaker === turn.speaker && t.relation !== turn.relation);
   }
   private chars(): number { return this.buffer.reduce((n, t) => n + t.text.length, 0); }
   private ref(): EpisodeRef {
@@ -183,7 +204,9 @@ export class ConversationEpisodeTracker {
     return a.sessionId === b.sessionId && a.streamId === b.streamId && a.associationVersion === b.associationVersion
       && a.episodeId === b.episodeId && a.revision === b.revision;
   }
-  private context(): EpisodeContext { return { ref: this.ref(), turns: this.buffer.map((t) => ({ ...t })) }; }
+  private context(): EpisodeContext {
+    return { ref: this.ref(), modality: this.modality, turns: this.buffer.map((t) => ({ ...t })) };
+  }
   private end(reason: EpisodeEnd): void {
     if (this.buffer.length || this.state === "activa") this.lastEnd = reason;
     this.buffer = [];

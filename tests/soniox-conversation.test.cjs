@@ -42,6 +42,27 @@ function harness({ key = 'sk-test', engine = 'soniox' } = {}) {
 
 const msg = (tokens, extra = {}) => JSON.stringify({ tokens, ...extra });
 
+test('saved-profile matches automatically associate finalized labels without a phrase or manual choice', () => {
+  const h = harness(); h.engine.start('auto', true); h.sockets[0].listener.onOpen();
+  const events = []; h.engine.subscribeAssociation(e => events.push(e));
+  for (let seq = 1; seq <= 4; seq++) {
+    const startMs = (seq - 1) * 4000, endMs = seq * 4000;
+    for (let i = 0; i < 80; i++) h.engine.acceptNative({}, 'posible voz');
+    const speaker = seq <= 2 ? '1' : '2';
+    h.sockets[0].listener.onTextMessage(msg([{ text: ' Texto sintético', is_final: true, speaker, start_ms: startMs + 200, end_ms: startMs + 3200 }], { final_audio_proc_ms: endMs }));
+    h.engine.acceptProfileMatch({ seq, startMs, endMs, voicedMs: 3000, similarity: seq <= 2 ? 0.9 : 0.3 });
+  }
+  const identity = h.engine.snapshot().identity;
+  assert.equal(identity.source, 'perfil'); assert.equal(identity.speaker, '1'); assert.equal(identity.knownOthers, 1);
+  assert.equal(h.engine.lastSessionSummary(), null);
+  assert.equal(events.at(-1).kind, 'perfil'); assert.deepEqual(events.at(-1).knownOthers, ['2']);
+  h.engine.resetStream(); assert.equal(h.engine.snapshot().identity.speaker, undefined);
+  h.engine.acceptProfileMatch({ seq: 5, startMs: 0, endMs: 4000, voicedMs: 3000, similarity: 0.99 });
+  assert.equal(h.engine.snapshot().identity.speaker, undefined);
+  h.engine.stop(); h.sockets[0].listener.onTextMessage(msg([]));
+  assert.equal(h.engine.snapshot().identity.speaker, undefined);
+});
+
 test('without a key or with the local engine it starts on-device Whisper and opens no socket', () => {
   for (const options of [{ key: '' }, { engine: 'local' }]) {
     const h = harness(options);

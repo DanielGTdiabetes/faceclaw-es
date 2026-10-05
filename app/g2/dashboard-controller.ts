@@ -51,11 +51,12 @@ import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
+import { ConversationHermesRuntime } from "../conversation-detection/conversation-hermes";
 import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, setConversationTextEngine, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
@@ -65,6 +66,7 @@ import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphi
 import { prepareFrameDraws } from "../graphics/glyph-wire";
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
+import { bindHermesConversationUi } from "../ui/shell/conversation-hermes-ui";
 import { type InputEvent } from "../ui/gestures";
 import { registerSystemTools } from "../assistant/system-tools";
 import { getGlassesPresence, onGlassesPresenceChanged, updateGlassesPresence } from "./glasses-presence";
@@ -376,6 +378,8 @@ class DashboardController {
   // underneath it, so it waits for this to clear.
   private connectRunning = false;
   private haltedDisconnectPending = false;
+  /** Process-lifetime UI binding; release on a future controller teardown. */
+  readonly releaseHermesUi: () => void;
 
   constructor() {
     bindConversationSession({
@@ -439,6 +443,12 @@ class DashboardController {
         this.glassesLocked ? LOCK_SCREEN_TIMEOUT_MS : screenTimeoutSettingToMs(screenTimeoutSetting.get()),
       requestShellRender: () => this.requestShellRender(),
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
+      conversationControl: {
+        enabled: () => this.conversationDetector.snapshot().enabled,
+        setEnabled: (enabled) => this.setManualConversationEnabled(enabled),
+        wearerActions: () => wearerActions(this.conversationDetector),
+        wearerChoices: () => wearerChoices(this.conversationDetector),
+      },
       onKeyboardInputChanged: (session) => {
         this.keyboardInput = session;
         if (global.isAndroid) voiceControlBridge.setAudioPriority("keyboard", session !== null);
@@ -524,6 +534,7 @@ class DashboardController {
       }),
       appendLog: (line) => this.appendLog(line),
     });
+    this.releaseHermesUi = bindHermesConversationUi(this);
   }
 
   // Bridge settings changes re-dial the connection; unrelated setting changes
@@ -2038,12 +2049,48 @@ class DashboardController {
   private pttCaptureGeneration = 0;
 
   /** Session-only ON: a process restart always starts this experiment OFF. */
+  private hermesSelected = false;
+  private hermesMessage = "";
+  private hermesMessageTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly hermesListeners = new Set<() => void>();
+  private hermesUiKey = "";
+
+  conversationHermesSelected(): boolean { return this.hermesSelected; }
+  get conversationHermesMessage(): string { return this.hermesMessage; }
+  onConversationHermesChange(listener: () => void): () => void {
+    this.hermesListeners.add(listener);
+    return () => this.hermesListeners.delete(listener);
+  }
+  setConversationHermesSelected(enabled: boolean): boolean {
+    if (this.conversationDetector.snapshot().enabled || (enabled && !assistantBridge.conversation.isSupported())) return false;
+    this.hermesSelected = enabled;
+    if (!enabled) this.conversationHermes.stop();
+    this.emitConversationHermes();
+    return true;
+  }
+  dismissConversationHermesMessage(): void { this.setConversationHermesMessage(null); }
+  private emitConversationHermes(): void {
+    const key = JSON.stringify([this.hermesSelected, this.hermesMessage, this.conversationHermes?.snapshot()]);
+    if (key === this.hermesUiKey) return;
+    this.hermesUiKey = key;
+    for (const listener of this.hermesListeners) { try { listener(); } catch { /* A UI listener cannot break capture. */ } }
+  }
+  private setConversationHermesMessage(text: string | null): void {
+    if ((text ?? "") === this.hermesMessage) return;
+    if (this.hermesMessageTimer) clearTimeout(this.hermesMessageTimer);
+    this.hermesMessageTimer = null;
+    this.hermesMessage = text ?? "";
+    if (text) this.hermesMessageTimer = setTimeout(() => this.setConversationHermesMessage(null), 8000);
+    this.emitConversationHermes();
+  }
+
   readonly conversationDetector = new ConversationCaptureCoordinator({
     environment: () => this.detectorEnvironment(),
     prepare: () => this.prepareDetectorAudioSession(),
     acquire: (pcm, revoked, failed) => voiceControlBridge.acquireExperimentalRaw(
       this.communicator?.getNativeCommunicator(), pcm, revoked, failed,
       (nativePcm) => this.conversationDetector.acceptNativePcm(nativePcm),
+      Math.max(1, this.conversationDetector.snapshot().remainingMs),
     ),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => {
@@ -2063,13 +2110,64 @@ class DashboardController {
     participation: new LocalParticipation(),
   });
 
+  readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
+    onOutput: (text) => this.setConversationHermesMessage(text),
+    onStopped: () => {
+      const snapshot = this.conversationDetector.snapshot();
+      if (snapshot.enabled && snapshot.manualConversation) this.conversationDetector.setEnabled(false);
+    },
+    changed: () => this.emitConversationHermes(),
+  }, { candidateMs: 15_000, silenceMs: 30_000, maxTurns: 12, maxChars: 6000 });
+
   /** Session options (language, diagnostics) default to the RAM selectors, read once at ON. */
   setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
     options: SessionOptions = conversationSessionOptions()): void {
+    if (enabled && !this.conversationDetector.snapshot().enabled) {
+      if (this.hermesSelected && transcribe && participation !== "enrollment" && conversationTextEngine() === "soniox") {
+        // Optional identity only for the manual ON that asked for it; diagnostics keep required identity.
+        const armed = this.conversationHermes.begin(options.manualConversation ? 80 : 8,
+          options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida");
+        if (!armed && options.manualConversation) return;
+      }
+    } else if (!enabled) this.conversationHermes.stop();
     this.conversationDetector.setEnabled(enabled, transcribe, participation, options);
     // Capture needs a fresh wear report even when the optional lock screen is off.
     // Request on ON and on ready sessions, never from the 500 ms refresh loop.
     if (enabled) this.ensureWearStateTracking();
+  }
+
+  /** One explicit ON/OFF shared by the phone and the glasses system menu. No persisted auto-start. */
+  toggleManualConversation(): string {
+    return this.setManualConversationEnabled(!this.conversationDetector.snapshot().enabled);
+  }
+
+  setManualConversationEnabled(enabled: boolean): string {
+    if (!enabled) {
+      this.setConversationCaptureEnabled(false);
+      return "";
+    }
+    if (this.conversationDetector.snapshot().enabled) return "";
+    if (!assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
+    if (!sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
+    // conv/2 bridge: recognising the wearer is optional. An old conv/1 bridge only accepts
+    // wearer+other contexts, so it keeps the previous requirement of a saved profile.
+    const optionalIdentity = assistantBridge.conversation.supportsOptionalIdentity();
+    const profile = this.conversationDetector.hasOwnProfile();
+    if (!optionalIdentity && !profile) return "Falta tu perfil de voz guardado. Configúralo antes de iniciar.";
+    const environment = this.detectorEnvironment();
+    if (!environment.available) return environment.reason;
+    const snapshot = this.conversationDetector.snapshot();
+    if (snapshot.transcription?.worker || snapshot.transcription?.busy || snapshot.participation?.worker || snapshot.participation?.busy) {
+      return "Espera a que termine el cierre de la sesión anterior.";
+    }
+    setConversationTextEngine("soniox");
+    if (!this.setConversationHermesSelected(true)) return "No se pudo activar Hermes. La conversación sigue OFF.";
+    this.setConversationCaptureEnabled(true, true, profile ? "conversation" : "off", { ...conversationSessionOptions(),
+      language: "auto", diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity });
+    if (!this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
+    return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
   }
 
   private detectorEnvironment(): DetectorEnvironment {

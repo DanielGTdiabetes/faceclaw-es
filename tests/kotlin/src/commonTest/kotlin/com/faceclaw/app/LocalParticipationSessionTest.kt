@@ -7,6 +7,46 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LocalParticipationSessionTest {
+    @Test fun longComparisonSurvivesTwoMinutesButEnrollmentRetainsItsOldDeadline() {
+        var now = 1000L
+        val clock = object : ProtocolPlatform by testPlatform() { override fun elapsedRealtimeMs(): Long = now }
+        val comparison = LocalParticipationSession(Host(), clock)
+        assertTrue(comparison.start(false, durationMs = 1200000)); ready(comparison)
+        now += 120001
+        phrase(comparison); idle(comparison)
+        assertTrue(comparison.diagnostics().contains("\"comparisons\":1"))
+        comparison.stop(); stopped(comparison)
+        val enrollment = LocalParticipationSession(Host(), clock)
+        assertTrue(enrollment.start(true, durationMs = 1200000)); ready(enrollment)
+        now += 120001
+        stopped(enrollment)
+        assertTrue(enrollment.diagnostics().contains("\"comparisons\":0"))
+    }
+    @Test fun timedComparisonsUseAcceptedAudioAndResetErasesPendingEvidence() {
+        val session = LocalParticipationSession(Host())
+        assertTrue(session.start(false, durationMs = 1200000)); ready(session)
+        repeat(40) { session.acceptTimedPcm(pcm(), "posible voz", it * 50) }
+        session.acceptTimedPcm(pcm(0), "sin actividad", 2000); idle(session)
+        val evidence = session.drainMatches()
+        assertTrue(evidence.contains("\"startMs\":0"))
+        assertTrue(evidence.contains("\"endMs\":2050"))
+        assertTrue(evidence.contains("\"voicedMs\":2000"))
+        assertEquals("[]", session.drainMatches())
+        repeat(40) { session.acceptTimedPcm(pcm(), "posible voz", 2050 + it * 50) }
+        session.acceptTimedPcm(pcm(0), "sin actividad", 4050); idle(session)
+        session.resetStream(); assertEquals("[]", session.drainMatches())
+        session.stop(); stopped(session); assertEquals("[]", session.drainMatches())
+    }
+
+    @Test fun resetDuringTimedEmbeddingCannotPublishOldIdentityEvidence() {
+        val host = Host(); val session = LocalParticipationSession(host)
+        host.beforeEmbedding = { session.resetStream() }
+        assertTrue(session.start(false)); ready(session)
+        repeat(40) { session.acceptTimedPcm(pcm(), "posible voz", it * 50) }
+        session.acceptTimedPcm(pcm(0), "sin actividad", 2000); idle(session)
+        assertEquals("[]", session.drainMatches())
+        session.stop(); stopped(session)
+    }
     private fun pcm(value: Int = 2000): ByteArray = ByteArray(1600).also { bytes ->
         repeat(800) { bytes[it * 2] = value.toByte(); bytes[it * 2 + 1] = (value shr 8).toByte() }
     }

@@ -29,13 +29,14 @@ import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, preciseTextModelLabel, startAsrModelDownload } from "../native/asr-model";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
-import { conversationDetail, conversationStartPlan, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
+import { conversationDetail, conversationStartPlan, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
 import {
   conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
   setConversationDiagnosticsSelected, setConversationTextEngine, setConversationTextLanguage, setConversationTextSelected,
   wearerActions, wearerChoices,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
+import { assistantBridge } from "../assistant/bridge-client";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
@@ -79,6 +80,9 @@ export class MainViewModel extends RemoteControlsViewModel {
   private get conversationWithText(): boolean { return conversationTextSelected(); }
   private set conversationWithText(value: boolean) { setConversationTextSelected(value); }
   private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Brief refusal notice for «Hermes en conversación»; cleared by the next tap or bridge change. */
+  private hermesNotice = "";
+  private hermesShown = { button: "", status: "" };
 
   // A new view model is built on every navigation to the main page; these
   // module-level subscriptions must die with it (see dispose) or each
@@ -139,7 +143,13 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
     this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
       this.refreshConversationUi();
+      this.refreshHermesUi();
     }));
+    // Hermes selection/runtime and bridge capability: labels only, never audio or channel calls.
+    this.unsubscribers.push(dashboardController.onConversationHermesChange(() => this.refreshHermesUi()));
+    this.unsubscribers.push(assistantBridge.onStateChange(() => { this.hermesNotice = ""; this.refreshHermesUi(); }));
+    this.hermesShown = { button: "", status: "" };
+    this.refreshHermesUi();
     this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
     this.unsubscribers.push(() => {
       if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
@@ -183,6 +193,32 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (!snapshot.enabled && draining && pollsLeft > 0) {
       this.localCloseTimer = setTimeout(() => this.refreshConversationUi(pollsLeft - 1), 500);
     }
+  }
+
+  /** Notifies only on a changed label: runtime ticks (500 ms) never flood the binding. */
+  private refreshHermesUi(): void {
+    const button = this.conversationHermesButton, status = this.conversationHermesStatus;
+    if (button !== this.hermesShown.button) this.notifyPropertyChange("conversationHermesButton", button);
+    if (status !== this.hermesShown.status) this.notifyPropertyChange("conversationHermesStatus", status);
+    this.hermesShown = { button, status };
+  }
+
+  get conversationHermesButton(): string {
+    return `Hermes en conversación: ${dashboardController.conversationDetector.snapshot().enabled ? "ON · detener" : "OFF · iniciar"}`;
+  }
+
+  get conversationHermesStatus(): string {
+    const runtime = dashboardController.conversationHermes.snapshot();
+    if (this.hermesNotice) return this.hermesNotice;
+    const conversation = assistantBridge.conversation;
+    return manualHermesStatus(dashboardController.conversationDetector.snapshot(), runtime, {
+      supported: conversation.isSupported(), optionalIdentity: conversation.supportsOptionalIdentity?.() ?? false });
+  }
+
+  /** The same explicit session ON/OFF as the glasses system menu. */
+  onConversationHermesTap(): void {
+    this.hermesNotice = dashboardController.toggleManualConversation();
+    this.refreshHermesUi();
   }
 
   get conversationDetectorLabel(): string {
@@ -330,6 +366,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     const summary = detector.lastSessionSummary();
     void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
       + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
+      + "\nHermes (recuentos, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
   }
 

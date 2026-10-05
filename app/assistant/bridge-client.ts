@@ -1,6 +1,7 @@
 import { AssistantMcpServer } from "./mcp-server";
 import { toolRegistry } from "./tool-registry";
 import type { AssistantContext, AssistantTurnCallbacks, AssistantTurnHandle } from "./types";
+import { ConversationChannel, CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY } from "./conversation-channel";
 
 declare const com: any;
 
@@ -49,6 +50,14 @@ type ActiveTurn = {
 };
 
 export class AssistantBridgeClient {
+  readonly conversation = new ConversationChannel({
+    send: (frame) => this.phase === "connected" && this.send(frame),
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    after: (callback, ms) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    },
+  });
   private options: AssistantBridgeOptions | null = null;
   private ws: any = null;
   private listenerProxy: any = null;
@@ -98,6 +107,7 @@ export class AssistantBridgeClient {
   /** Disconnect and stay down until the next configure(). */
   stop(): void {
     this.stopped = true;
+    this.conversation.reset();
     this.clearReconnectTimer();
     this.failActiveTurn("Bridge connection closed");
     if (this.unsubscribeToolsChanged) {
@@ -132,6 +142,7 @@ export class AssistantBridgeClient {
       return { cancel: () => {} };
     }
     this.failActiveTurn("Superseded by a new request");
+    this.conversation.setChatActive(true);
     const turnId = `t${++this.turnSeq}`;
     this.activeTurn = {
       turnId,
@@ -167,7 +178,7 @@ export class AssistantBridgeClient {
           version: PROTOCOL_VERSION,
           token: this.options!.token,
           deviceName: this.options!.deviceName,
-          capabilities: ["chat", "mcp"],
+          capabilities: ["chat", "mcp", CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY],
         });
       },
       onTextMessage: (message: string) => {
@@ -213,6 +224,9 @@ export class AssistantBridgeClient {
       case "mcp":
         this.mcpServer?.handleMessage(frame.msg);
         return;
+      case "conv":
+        this.conversation.handle(frame);
+        return;
       default:
         return;
     }
@@ -221,6 +235,7 @@ export class AssistantBridgeClient {
   private handleCtl(frame: any): void {
     if (frame.type === "hello-ack") {
       this.reconnectDelayMs = RECONNECT_MIN_MS;
+      this.conversation.negotiate(frame.capabilities);
       this.setState("connected", `Connected to ${String(frame.serverName ?? "bridge")}`);
       return;
     }
@@ -267,6 +282,7 @@ export class AssistantBridgeClient {
   }
 
   private handleConnectionLost(status: string): void {
+    this.conversation.reset();
     this.ws = null;
     this.listenerProxy = null;
     // Keep a ctl-error status (e.g. "invalid token") in preference to the
@@ -298,6 +314,7 @@ export class AssistantBridgeClient {
     if (!this.activeTurn) return;
     clearTimeout(this.activeTurn.timer);
     this.activeTurn = null;
+    this.conversation.setChatActive(false);
   }
 
   private failActiveTurn(message: string): void {
@@ -307,12 +324,13 @@ export class AssistantBridgeClient {
     turn.callbacks.onError(message);
   }
 
-  private send(frame: object): void {
-    if (!this.ws) return;
+  private send(frame: object): boolean {
+    if (!this.ws) return false;
     try {
-      this.ws.sendText(JSON.stringify({ v: PROTOCOL_VERSION, ...frame }));
+      return this.ws.sendText(JSON.stringify({ v: PROTOCOL_VERSION, ...frame })) === true;
     } catch {
       // A send on a dying socket; the close/failure callback handles recovery.
+      return false;
     }
   }
 

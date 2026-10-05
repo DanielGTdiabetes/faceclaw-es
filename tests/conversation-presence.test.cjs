@@ -26,6 +26,8 @@ function harness(lockEnabled = false) {
   Object.assign(instance, { phase: 'connected', customFirmwareConfirmed: true, keyboardInput: false,
     communicator: { enableWearDetectionAndRequestState: () => { queries++; return Promise.resolve(); } },
     appendLog: () => {},
+    // Hermes is not selected in these presence checks; the owner still exists on the controller.
+    hermesSelected: false, conversationHermes: { begin: () => true, stop() {} },
   });
   instance.conversationDetector = new ConversationCaptureCoordinator({
     environment: () => instance.detectorEnvironment(), prepare: () => Promise.resolve(true),

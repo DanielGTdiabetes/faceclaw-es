@@ -264,6 +264,7 @@ export class FaceclawVoiceControlBridge {
   acquireExperimentalRaw(
     communicator: any, pcm: RawPcmListener, revoked: () => void, failed: () => void,
     nativePcm?: (pcm: unknown) => void,
+    sessionLimitMs = 120_000,
   ): DetectorLease | null {
     if (!global.isAndroid || !this.experimentalAudioAvailable() || communicator?.isAudioCaptureActive()) return null;
     let lastDiagnostics = "";
@@ -287,6 +288,8 @@ export class FaceclawVoiceControlBridge {
     this.experimentalNativePcm = nativePcm ?? null;
     this.experimentalFailure = failed;
     try {
+      this.ensureController();
+      this.controller?.setExperimentalSessionLimitMs(Math.max(1, Math.min(1_200_000, Math.floor(sessionLimitMs))));
       if (!this.beginRawCapture(communicator, true)) {
         this.stopExperimentalRaw(id);
         return null;

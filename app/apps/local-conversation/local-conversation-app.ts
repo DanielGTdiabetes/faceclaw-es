@@ -13,9 +13,17 @@ import { type Layer, type LayerContext } from "../../ui/layers";
 import { lineStep } from "../../ui/metrics";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
+import { hermesConversationPresentation, onHermesConversationPresentation } from "../../ui/shell/conversation-hermes-ui";
 
 export const CONVERSATION_WINDOW_ID = "local-conversation";
 export const CONVERSATION_SURFACE_ID = "window:local-conversation";
+/** Hermes armed for this session. Fail-safe: an unavailable presentation module keeps the classic view. */
+function hermesArmed(): boolean {
+  try { return hermesConversationPresentation(); } catch { return false; }
+}
+
+/** Hermes mode on the lenses: no transcript, no verdicts; only Hermes' final contributions appear (shell overlay). */
+export const HERMES_LISTENING_LINE = "Hermes en conversación · lentes apagadas mientras escucha · solo verás sus aportaciones";
 
 /** Reads the current epoch directly; never caches or attributes transcript text. */
 export class LocalConversationLayer implements Layer {
@@ -50,7 +58,7 @@ export class LocalConversationLayer implements Layer {
     const lines = wrapText(font, detail, available);
     // Keep the deadline visible independently of a long reason or error message.
     if (snapshot.enabled) {
-      image.drawText(font, inset, y, `${Math.ceil(snapshot.remainingMs / 1000)} s restantes · máximo 2 min`, 220);
+      image.drawText(font, inset, y, `${Math.ceil(snapshot.remainingMs / 1000)} s restantes · máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min`, 220);
       y += step;
     }
     const footerY = height - 2 * step - inset;
@@ -59,6 +67,15 @@ export class LocalConversationLayer implements Layer {
       image.drawText(font, inset, y, line, 180); y += step;
     }
     y += 4;
+    if (snapshot.enabled && hermesArmed()) {
+      // Hermes armed: the transcript is never read nor drawn on the lenses.
+      for (const line of wrapText(font, HERMES_LISTENING_LINE, available).slice(0, Math.max(1, Math.floor((footerY - y - 4) / step)))) {
+        image.drawText(font, inset, y, line, 180); y += step;
+      }
+      image.drawText(font, inset, footerY, truncateText(font, "Toque: OFF · doble toque: OFF y salir", available), 220);
+      image.drawText(font, inset, footerY + step, truncateText(font, "Menú: identificación de voz y controles", available), 140);
+      return image;
+    }
     const text = snapshot.enabled && snapshot.state === "escuchando" && snapshot.transcription?.enabled
       ? this.session.detector.transcriptText() : "";
     const emptyText = !snapshot.enabled ? "Abrir esta app mantiene la captura OFF."
@@ -113,7 +130,9 @@ export function wearerMenuItems(session: ConversationSessionPort): MenuItem[] {
 export function createLocalConversationWindow(options: InProcessAppOptions): InProcessWindow {
   const session = conversationSession();
   let closed = false, closeTimer: ReturnType<typeof setTimeout> | null = null;
-  let unsubscribe = () => {}, unsubscribeChoice = () => {};
+  let unsubscribe = () => {}, unsubscribeChoice = () => {}, unsubscribeHermes = () => {};
+  /** Hermes mode paints only on visible changes (state, seconds, wearer line), never per text chunk. */
+  let hermesPaintKey = "";
   const cancelPoll = () => { if (closeTimer !== null) clearTimeout(closeTimer); closeTimer = null; };
   const app = createInProcessWindow({
     appId: "local-conversation", windowId: CONVERSATION_WINDOW_ID,
@@ -140,13 +159,14 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
       ];
     },
     // While a session is ON (at most 120 s) the idle timeout must not blank the lenses mid-conversation,
-    // as Transcribe does for its capture. OFF keeps the normal screen timeout.
-    keepsScreenOn: () => !closed && session.detector.snapshot().enabled,
+    // as Transcribe does for its capture. OFF keeps the normal screen timeout. With Hermes armed the
+    // lenses must stay dark while listening, so capture never holds the screen on.
+    keepsScreenOn: () => !closed && session.detector.snapshot().enabled && !hermesArmed(),
     submitFrame: options.submitFrame, setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface, reconfigureSurface: options.reconfigureSurface,
     onForegroundChanged: (foreground) => { if (foreground && !closed) app.requestRender(); },
     onClosed: () => {
-      closed = true; cancelPoll(); unsubscribe(); unsubscribeChoice();
+      closed = true; cancelPoll(); unsubscribe(); unsubscribeChoice(); unsubscribeHermes();
       session.setEnabled(false);
       options.onClosed();
     },
@@ -155,6 +175,12 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     if (closed) return;
     cancelPoll();
     const snapshot = session.detector.snapshot();
+    if (snapshot.enabled && hermesArmed()) {
+      const key = `${snapshot.epoch}|${snapshot.state}|${Math.ceil(snapshot.remainingMs / 1000)}|${wearerLine(snapshot)}`;
+      if (key !== hermesPaintKey) { hermesPaintKey = key; app.requestRender(); }
+      return;
+    }
+    hermesPaintKey = "";
     // Clear old text on every invalidation even when hidden; no periodic paint in OFF.
     if (!snapshot.enabled || snapshot.state !== "escuchando" || shell.isWindowVisible(CONVERSATION_WINDOW_ID)) app.requestRender();
     const draining = snapshot.participation?.worker || snapshot.participation?.busy || snapshot.transcription?.worker || snapshot.transcription?.busy;
@@ -162,5 +188,8 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
   };
   unsubscribe = session.detector.subscribe(() => refresh());
   unsubscribeChoice = onConversationTextSelected(() => refresh());
+  try {
+    unsubscribeHermes = onHermesConversationPresentation(() => { hermesPaintKey = ""; refresh(); });
+  } catch { /* Classic view without Hermes presentation; nothing to release. */ }
   return app;
 }

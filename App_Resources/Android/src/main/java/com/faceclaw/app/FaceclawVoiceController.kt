@@ -152,6 +152,11 @@ class FaceclawVoiceController(context: Context) {
 
     private val session = VoiceCaptureSession(host)
     private var experimentalWakeLock: PowerManager.WakeLock? = null
+    private var experimentalSessionLimitMs = 120_000L
+
+    fun setExperimentalSessionLimitMs(durationMs: Int) {
+        experimentalSessionLimitMs = durationMs.toLong().coerceIn(1L, 1_200_000L)
+    }
 
     fun setExperimentalRawMode(enabled: Boolean) {
         releaseExperimentalWakeLock()
@@ -160,7 +165,7 @@ class FaceclawVoiceController(context: Context) {
             val manager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
             experimentalWakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Faceclaw:ConversationG0").apply {
                 setReferenceCounted(false)
-                acquire(125_000L) // Bound independently of the JS two-minute session limit.
+                acquire(experimentalSessionLimitMs + 5_000L) // Independent bounded safety timeout.
             }
         }
     }

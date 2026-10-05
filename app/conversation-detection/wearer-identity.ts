@@ -30,7 +30,7 @@ export type IdentityState = "no-disponible" | "sin-identificar" | "escuchando-fr
 export type IdentityOutcome = "ninguno" | "aceptado" | "frase-no-reconocida" | "frase-ambigua" | "voces-solapadas"
   | "tiempos-invalidos" | "tiempos-implausibles" | "frase-fuera-de-ventana" | "audio-insuficiente" | "sin-resultado"
   | "audio-interrumpido" | "cancelado-manual" | "cancelado-off" | "motor-local";
-export type IdentitySource = "frase" | "manual";
+export type IdentitySource = "frase" | "manual" | "perfil";
 
 /** One final Soniox token after timing validation (see SonioxConversationTranscription). */
 export type FinalToken = {
@@ -62,7 +62,7 @@ export type WearerAssociationEvent = {
   sessionId: string | null;
   streamId: number | null;
   version: number;
-  kind: "estado-inicial" | "frase" | "manual" | "borrado" | "fin-sesion";
+  kind: "estado-inicial" | "frase" | "manual" | "perfil" | "borrado" | "fin-sesion";
   speaker: string | null;
   knownOthers: string[];
 };
@@ -440,6 +440,20 @@ export class WearerIdentity {
       this.association = null; this.version++;
       this.publish("borrado");
     } else this.associate(ref.speaker, "manual");
+    return true;
+  }
+
+  /** The caller has joined finalized diarization with local profile evidence for this live stream. */
+  associateProfile(speaker: string | null, others: string[]): boolean {
+    if (!this.available || (speaker !== null && !this.seenValid.has(speaker))) return false;
+    if (this.attempt || (this.association && this.association.source !== "perfil")) return false;
+    const knownOthers = new Set(others.filter(label => label !== speaker && this.seenValid.has(label)));
+    const old = this.association;
+    if (!speaker && !old) return true;
+    if (old?.speaker === speaker && old.knownOthers.size === knownOthers.size && [...knownOthers].every(label => old.knownOthers.has(label))) return true;
+    this.association = speaker ? { speaker, source: "perfil", knownOthers } : null;
+    this.version++;
+    this.publish(speaker ? "perfil" : "borrado");
     return true;
   }
 

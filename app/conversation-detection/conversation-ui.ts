@@ -36,10 +36,10 @@ export function conversationStartPlan(snapshot: DetectorSnapshot, profile: strin
 export function conversationDetail(snapshot: DetectorSnapshot, hint: string, includeTime = true): string {
   if (snapshot.state === "error") return `OFF · Error: ${snapshot.reason}\n${hint}`;
   if (!snapshot.enabled) {
-    return snapshot.stopReason === "expired" || snapshot.stopReason === "saved"
+    return snapshot.stopReason === "expired" || snapshot.stopReason === "silence" || snapshot.stopReason === "saved"
       ? `${snapshot.reason}\n${hint}` : hint;
   }
-  const time = includeTime ? `\n${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo 2 min, incluidas las esperas).` : "";
+  const time = includeTime ? `\n${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min, incluidas las esperas).` : "";
   if (snapshot.participationMode === "enrollment") {
     const part = snapshot.participation;
     return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.${time}`;
@@ -80,8 +80,41 @@ export function wearerLine(snapshot: DetectorSnapshot): string {
     case "esperando-resultado":
       return "Portador: comprobando la frase…";
     case "identificado":
-      return `Portador: «Yo» = voz ${identity.speaker} (${identity.source === "manual" ? "elegida" : "frase"})${note}`;
+      return `Portador: «Yo» = voz ${identity.speaker} (${identity.source === "manual" ? "elegida" : identity.source === "perfil" ? "perfil local" : "frase"})${note}`;
     default:
       return `Portador: sin identificar${note}`;
+  }
+}
+
+export type ManualHermesRuntimeView = { enabled: boolean; listening: boolean; requests: number; modality?: string };
+const MANUAL_BASE = "Manual · máximo 20 min · cierre tras más de 5 min sin voz · español/valenciano automáticos";
+
+/**
+ * Phone status for manual «Hermes en conversación». Recognising the wearer is optional on a conv/2
+ * bridge: the line never claims recognition without a live association from the local profile.
+ */
+export function manualHermesStatus(detector: DetectorSnapshot, runtime: ManualHermesRuntimeView,
+  bridge: { supported: boolean; optionalIdentity: boolean }): string {
+  if (detector.enabled && runtime.enabled) {
+    const head = `Activo · ${runtime.listening ? "escuchando" : "en pausa"} · ${Math.ceil(detector.remainingMs / 60_000)} min restantes · ${runtime.requests} evaluaciones`;
+    return `${head} · ${manualVoiceNote(detector, runtime.modality)}`;
+  }
+  if (detector.enabled) return "Sesión diagnóstica activa. Toca para detenerla.";
+  if (!bridge.supported) return "Hermes no disponible en el puente actual.";
+  return bridge.optionalIdentity
+    ? `${MANUAL_BASE} · reconocer tu voz es opcional.`
+    : `${MANUAL_BASE} · puente anterior: Hermes solo actúa si reconoce tu voz.`;
+}
+
+function manualVoiceNote(detector: DetectorSnapshot, modality: string | undefined): string {
+  const identity = detector.transcription?.identity;
+  const recognised = identity?.state === "identificado";
+  if (modality !== "identidad-opcional") return recognised ? "tu voz reconocida" : "esperando reconocer tu voz";
+  if (recognised) return identity?.source === "perfil" ? "tu voz reconocida por tu perfil" : "tu voz identificada";
+  switch (detector.voiceProfile) {
+    case "cargando": return "cargando tu perfil (opcional)";
+    case "sin-perfil": return "sin perfil · voces sin identificar";
+    case "no-disponible": return "perfil no disponible · voces sin identificar";
+    default: return "voz aún sin reconocer (opcional)";
   }
 }

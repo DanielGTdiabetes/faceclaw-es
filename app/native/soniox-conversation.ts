@@ -2,6 +2,7 @@ import { type DetectorTranscription, type LocalTranscriptionSnapshot, type Obser
   type TextLanguage, type SonioxTransportDiagnostics } from "../conversation-detection/transcription";
 import { ConversationTurns, type ConversationTurn } from "../conversation-detection/conversation-turns";
 import { WearerIdentity, type FinalToken, type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } from "../conversation-detection/wearer-identity";
+import { ProfileSpeakerMatcher, type ProfileVoiceMatch } from "../conversation-detection/profile-speaker-matcher";
 
 /**
  * Conversation text through Soniox real-time STT with speaker diarization, falling back to the
@@ -116,19 +117,23 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   private summaryValue: SonioxSessionSummary | null = null;
   private readonly identity: WearerIdentity;
   private readonly turnLog: ConversationTurns;
+  private profileMatcher: ProfileSpeakerMatcher | null = null;
 
   constructor(private readonly local: DetectorTranscription, private readonly host: SonioxConversationHost) {
     this.identity = new WearerIdentity({ now: () => host.now(), every: (callback, ms) => host.every(callback, ms) });
     this.turnLog = new ConversationTurns(this.identity);
   }
 
-  start(language: TextLanguage = "es"): boolean {
+  start(language: TextLanguage = "es", profileAssociation = false): boolean {
     if (this.mode !== "off") return false;
     this.language = language;
     this.reset();
     this.summaryValue = null;
     this.ending = false;
     this.identity.clear();
+    this.profileMatcher = profileAssociation ? new ProfileSpeakerMatcher((speaker, others) => {
+      return this.sonioxLive() && this.identity.associateProfile(speaker, others);
+    }) : null;
     this.sessionId = newSessionId(this.host.now());
     this.streamId = 0;
     const key = this.host.apiKey().trim();
@@ -192,6 +197,10 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     this.turnLog.audio(this.stats.sentMs);
   }
 
+  acceptProfileMatch(match: ProfileVoiceMatch): void {
+    if (this.sonioxLive() && match?.endMs <= this.stats.sentMs) this.profileMatcher?.accept(match);
+  }
+
   /** A transport gap or yield: ask Soniox to finalize what it heard; the socket stays open. */
   resetStream(): void {
     if (this.mode === "local") { this.local.resetStream(); return; }
@@ -203,6 +212,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     }
     // The coordinator's own OFF cleanup also resets the stream; that is not an audio gap.
     if (!this.ending) {
+      this.profileMatcher?.reset(this.stats.sentMs);
       this.identity.interrupt();
       this.identity.observeMarker();
       // §4.1: the capture boundary is the audio sent so far; finals that arrive later are split by it.
@@ -234,6 +244,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     if (this.mode === "local") this.local.stop();
     this.closeSocket();
     this.mode = "off";
+    this.profileMatcher = null;
     this.status = "inactivo";
     this.reset();
   }
@@ -389,6 +400,8 @@ export class SonioxConversationTranscription implements DetectorTranscription {
             endMs: timing?.endMs ?? null, valid: timing !== null };
           if (final.speaker) this.sessionSpeakers.add(final.speaker);
           this.identity.observeFinal(final);
+          if (timing) this.profileMatcher?.token(final.speaker, timing.startMs, timing.endMs);
+          else this.profileMatcher?.reset(this.stats.sentMs);
           this.turnLog.accept(final);
         }
       } else {
@@ -409,6 +422,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
         this.lastProgress = progress;
         this.turnLog.progress(progress);
         this.identity.progress(progress);
+        this.profileMatcher?.finalized(progress);
       }
     }
     if (typeof message?.total_audio_proc_ms === "number" && Number.isFinite(message.total_audio_proc_ms)) {
@@ -458,6 +472,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       speakersSeen: this.sessionSpeakers.size, invalidTimingTokens: this.invalidTimingTokens,
       invalidProgress: this.invalidProgress, fallbacks: this.stats.fallbacks, errors: this.stats.errors,
       lastErrorCategory: this.lastErrorCategory, identity: this.identity.summary(),
+      ...(this.profileMatcher ? { profile: this.profileMatcher.summary() } : {}),
       ...(this.transportFailure ? { transportFailure: { ...this.transportFailure } } : {}),
     };
   }

@@ -1,4 +1,5 @@
 import { type ConversationTurn } from "./conversation-turns";
+import { type ProfileVoiceMatch, type ProfileMatcherSummary } from "./profile-speaker-matcher";
 import { type IdentitySnapshot, type IdentitySummary, type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } from "./wearer-identity";
 
 /** RAM-only session selector. "es" forces Spanish (reported as forced, never detected). */
@@ -58,6 +59,7 @@ export type SonioxSessionSummary = {
   invalidTimingTokens: number; invalidProgress: number;
   fallbacks: number; errors: number; lastErrorCategory: string | null;
   identity: IdentitySummary;
+  profile?: ProfileMatcherSummary;
   /** Redacted socket state at the failure, if the platform exposes it; no payload or exception text. */
   transportFailure?: SonioxTransportDiagnostics;
   /** Filled by the coordinator from its stopReason after OFF. */
@@ -75,7 +77,8 @@ export type ObservedSpeaker = SpeakerRef & { speaker: string; preview: string };
 
 export interface DetectorTranscription {
   /** The language is captured by an accepted start and stays fixed for that session. */
-  start(language?: TextLanguage): boolean;
+  start(language?: TextLanguage, profileAssociation?: boolean): boolean;
+  acceptProfileMatch?(match: ProfileVoiceMatch): void;
   stop(): void;
   resetStream(): void;
   /** Diagnostic mark (0..4). Applies from the next PCM chunk; ignored when unsupported. */

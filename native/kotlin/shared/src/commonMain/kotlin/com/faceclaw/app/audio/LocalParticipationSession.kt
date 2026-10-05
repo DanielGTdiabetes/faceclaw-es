@@ -65,7 +65,11 @@ class LocalParticipationSession(
     private val host: LocalParticipationHost,
     private val platform: ProtocolPlatform = protocolPlatform(),
 ) {
-    private data class Job(val generation: Long, val audio: ShortArray, val voiced: Int)
+    private data class Job(val generation: Long, val audio: ShortArray, val voiced: Int, val startMs: Long?, val endMs: Long?)
+    private data class Match(val seq: Long, val startMs: Long, val endMs: Long, val voicedMs: Int, val similarity: Double)
+    private val matches = ArrayDeque<Match>()
+    private var matchSeq = 0L
+    private var timedEndMs: Long? = null
     private val condition = platform.createCondition()
     private var running = false
     private var worker = false
@@ -91,15 +95,16 @@ class LocalParticipationSession(
     private val turns = LocalParticipationTurns()
     private val buffer = LocalTranscriptBuffer(segmentInfo = { segmentVoiced = it }) { audio ->
         if (!running || !ready || busy) { audio.fill(0); dropped++; if (enrolling) enrollmentFeedback = "ocupado" }
-        else { job = Job(generation, audio, segmentVoiced); busy = true; condition.signalAll() }
+        else { job = Job(generation, audio, segmentVoiced, timedEndMs?.minus(audio.size / 16), timedEndMs); busy = true; condition.signalAll() }
     }
 
     /** enrollment=true is only called after the explicit local-profile consent screen. */
-    fun start(enrollment: Boolean, segments: Int = 3): Boolean {
+    fun start(enrollment: Boolean, segments: Int = 3, durationMs: Int = 120000): Boolean {
         condition.withLock {
             if (worker) return false
             running = true; worker = true; ready = false; busy = false; enrolling = enrollment
-            generation++; deadline = platform.elapsedRealtimeMs() + 120000; status = "cargando"
+            generation++; deadline = platform.elapsedRealtimeMs() + (if (enrollment) 120000 else durationMs.coerceIn(1, 1200000)); status = "cargando"
+            matches.clear(); matchSeq = 0; timedEndMs = null
             eraseVectors(); buffer.resetMetrics(); turns.reset()
             profileSaved = false; comparisons = 0; abstentions = 0; dropped = 0
             requiredSegments = segments.coerceIn(3, 6); enrollmentFeedback = "esperando"
@@ -111,6 +116,7 @@ class LocalParticipationSession(
         condition.withLock {
             val interrupted = enrollmentSamples > 0 || buffer.bufferedBytes() > 0 || busy
             generation++; buffer.reset(); turns.reset(); clearEnrollment()
+            matches.clear(); timedEndMs = null
             if (running && enrolling && !profileSaved && interrupted) enrollmentFeedback = "reiniciado"
             if (running && ready && !profileSaved) status = "listo"
             job?.audio?.fill(0); job = null
@@ -121,6 +127,7 @@ class LocalParticipationSession(
     fun stop() {
         condition.withLock {
             running = false; ready = false; generation++; status = "inactivo"
+            matches.clear(); timedEndMs = null
             buffer.reset(); turns.reset(); eraseVectors(); job?.audio?.fill(0); job = null
             if (activeBytes == 0) busy = false
             condition.signalAll()
@@ -130,6 +137,25 @@ class LocalParticipationSession(
         condition.withLock {
             if (running && ready && pcm != null && platform.elapsedRealtimeMs() < deadline) buffer.accept(pcm, vadState)
         }
+    }
+    /** Times belong to bytes accepted by Soniox, not wall-clock or BLE arrival time. */
+    fun acceptTimedPcm(pcm: ByteArray?, vadState: String, startMs: Int) {
+        condition.withLock {
+            if (!running || !ready || enrolling || pcm == null || pcm.size != 1600 || startMs < 0 || platform.elapsedRealtimeMs() >= deadline) return
+            if (timedEndMs != null && timedEndMs != startMs.toLong()) {
+                generation++; buffer.reset(); turns.reset(); matches.clear(); timedEndMs = null
+                job?.audio?.fill(0); job = null; if (activeBytes == 0) busy = false
+            }
+            timedEndMs = startMs.toLong() + 50
+            buffer.accept(pcm, vadState)
+        }
+    }
+    /** Internal, single-consumer evidence; no vectors or PCM, no persistence or logging. */
+    fun drainMatches(): String = condition.withLock {
+        val json = matches.joinToString(",", "[", "]") {
+            "{\"seq\":${it.seq},\"startMs\":${it.startMs},\"endMs\":${it.endMs},\"voicedMs\":${it.voicedMs},\"similarity\":${it.similarity}}"
+        }
+        matches.clear(); json
     }
     fun diagnostics(): String = condition.withLock {
         val now = platform.elapsedRealtimeMs()
@@ -191,7 +217,13 @@ class LocalParticipationSession(
                         if (!enrolling) {
                             val profileVector = own
                             comparisons++
-                            turns.accept(profileVector?.let { localVoiceSimilarity(it, vector) }, platform.elapsedRealtimeMs())
+                            val similarity = profileVector?.let { localVoiceSimilarity(it, vector) }
+                            turns.accept(similarity, platform.elapsedRealtimeMs())
+                            val startMs = next.startMs; val endMs = next.endMs
+                            if (similarity != null && similarity.isFinite() && startMs != null && endMs != null && startMs >= 0) {
+                                if (matches.size == 16) matches.removeFirst()
+                                matches.addLast(Match(++matchSeq, startMs, endMs, next.voiced / 16, similarity))
+                            }
                         } else {
                             val previous = centroid
                             if (previous != null && localVoiceSimilarity(previous, vector) < 0.70) {

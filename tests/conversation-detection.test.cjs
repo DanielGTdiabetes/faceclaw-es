@@ -27,7 +27,7 @@ function harness({ prepare, transcription, participation } = {}) {
     participation,
   });
   return { detector, leases,
-    async on(transcribe = false, mode = 'off') { detector.setEnabled(true, transcribe, mode); await Promise.resolve(); },
+    async on(transcribe = false, mode = 'off', options = {}) { detector.setEnabled(true, transcribe, mode, options); await Promise.resolve(); },
     tick(ms = 500) { now += ms; timer?.(); },
     env(patch) { environment = { ...environment, ...patch }; detector.refresh(); },
     counts: () => ({ starts, stops, timer: !!timer }),
@@ -56,6 +56,91 @@ function participationPort() {
     hasProfile: () => profile, deleteProfile() { events.push('delete'); profile = false; return true; },
   };
 }
+
+function manualPort() {
+  const transcription = transcriptPort();
+  const snapshot = transcription.snapshot;
+  transcription.snapshot = () => ({ ...snapshot(), engine: 'soniox' });
+  return transcription;
+}
+
+test('manual profile comparison receives exactly the successfully sent Soniox timeline and twenty-minute duration', async () => {
+  const participation = participationPort(), transcription = manualPort();
+  let sentMs = 0, duration, profiles = 0;
+  const deliveries = [];
+  const originalStart = participation.start;
+  participation.start = (enrollment, ms) => { duration = ms; return originalStart(enrollment); };
+  participation.acceptNative = (_pcm, _vad, startMs) => deliveries.push(startMs);
+  participation.drainProfileMatches = () => [{ seq: 1, startMs: 0, endMs: 50, voicedMs: 50, similarity: 0.9 }];
+  transcription.acceptNative = () => { sentMs += 50; };
+  transcription.snapshot = () => ({ engine: 'soniox', status: 'listo', soniox: { sentMs } });
+  transcription.acceptProfileMatch = () => { profiles++; };
+  const h = harness({ participation, transcription });
+  await h.on(true, 'conversation', { manualConversation: true });
+  assert.equal(duration, 1200000);
+  h.leases[0].pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.deepEqual(deliveries, [0]);
+  transcription.acceptNative = () => {}; // Rejected/not yet open: this chunk must not enter profile time.
+  h.detector.acceptNativePcm({}); assert.deepEqual(deliveries, [0]);
+  h.tick(50); assert.ok(profiles > 0);
+  h.detector.setEnabled(false);
+});
+
+async function quiet(h, ms) {
+  for (let elapsed = 0; elapsed < ms && h.detector.snapshot().enabled; elapsed += 50) {
+    h.tick(50); h.leases.at(-1).pcm(new Uint8Array(1600));
+  }
+}
+
+test('manual conversation has a twenty-minute deadline including priority suspension', async () => {
+  const h = harness({ transcription: manualPort() });
+  await h.on(true, 'off', { manualConversation: true, language: 'auto' });
+  assert.equal(h.detector.snapshot().remainingMs, 1200000);
+  h.env({ available: false, reason: 'PTT' });
+  h.tick(120000); assert.equal(h.detector.snapshot().enabled, true);
+  h.tick(1079999); assert.equal(h.detector.snapshot().remainingMs, 1);
+  h.tick(1); assert.equal(h.detector.snapshot().stopReason, 'expired');
+  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+});
+
+test('manual conversation closes only after MORE than five minutes of valid quiet audio', async () => {
+  const transcription = manualPort(), h = harness({ transcription });
+  await h.on(true, 'off', { manualConversation: true });
+  const lease = h.leases[0]; lease.pcm(new Uint8Array(1600));
+  await quiet(h, 300000); assert.equal(h.detector.snapshot().enabled, true);
+  h.tick(50); assert.equal(h.detector.snapshot().stopReason, 'silence');
+  assert.equal(transcription.snapshot().enabled, false);
+  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
+  lease.pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.equal(h.detector.snapshot().enabled, false);
+});
+
+test('voice resets silence; a delivery gap or priority pause is not silence', async () => {
+  const h = harness({ transcription: manualPort() });
+  await h.on(true, 'off', { manualConversation: true });
+  h.leases[0].pcm(new Uint8Array(1600)); await quiet(h, 240000);
+  const voice = new Uint8Array(1600);
+  for (let i = 0; i < voice.length; i += 2) { const value = (i % 4 ? -2000 : 2000) & 65535; voice[i] = value & 255; voice[i + 1] = value >> 8; }
+  h.tick(50); h.leases[0].pcm(voice); await quiet(h, 120000);
+  assert.equal(h.detector.snapshot().enabled, true);
+  h.env({ available: false, reason: 'Hey Even' }); h.tick(310000);
+  assert.equal(h.detector.snapshot().enabled, true);
+  h.env({ available: true }); await Promise.resolve();
+  h.leases.at(-1).pcm(new Uint8Array(1600)); await quiet(h, 300000);
+  assert.equal(h.detector.snapshot().enabled, true);
+  h.tick(50); assert.equal(h.detector.snapshot().stopReason, 'silence');
+});
+
+test('manual conversation fails closed on local fallback; enrollment keeps its two-minute limit', async () => {
+  const transcription = manualPort(), h = harness({ transcription });
+  await h.on(true, 'off', { manualConversation: true });
+  transcription.snapshot = () => ({ engine: 'local', status: 'listo' }); h.tick();
+  assert.equal(h.detector.snapshot().state, 'error'); assert.equal(h.counts().timer, false);
+  const enrollment = harness({ participation: participationPort(), transcription: manualPort() });
+  await enrollment.on(true, 'enrollment', { manualConversation: true });
+  assert.equal(enrollment.detector.snapshot().remainingMs, 120000);
+  enrollment.tick(120000); assert.equal(enrollment.detector.snapshot().enrollmentOutcome, 'expired');
+});
 
 test('profile comparison is optional and enrollment never starts ASR', async () => {
   const participation = participationPort(), transcription = transcriptPort();

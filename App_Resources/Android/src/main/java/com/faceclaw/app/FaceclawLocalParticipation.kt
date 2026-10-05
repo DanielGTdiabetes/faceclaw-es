@@ -127,8 +127,11 @@ class FaceclawLocalParticipation(context: Context) {
     fun profileState(): String = if (store.exists()) "guardado" else "sin perfil"
     fun deleteProfile(): Boolean { session.stop(); return try { store.delete() } catch (_: Throwable) { false } }
     fun start(enrollment: Boolean, requiredSegments: Int): Boolean = session.start(enrollment, requiredSegments)
+    fun startTimed(requiredSegments: Int, durationMs: Int): Boolean = session.start(false, requiredSegments, durationMs)
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()
     fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)
+    fun acceptTimedPcm(pcm: ByteArray?, vadState: String, startMs: Int) = session.acceptTimedPcm(pcm, vadState, startMs)
+    fun drainMatches(): String = session.drainMatches()
     fun diagnostics(): String = session.diagnostics()
 }
