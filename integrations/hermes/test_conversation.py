@@ -150,7 +150,7 @@ class ValidationTests(unittest.TestCase):
         for phrase in ("identity is opcional", "Never assume who said a desconocido turn",
                        "neither two voices, alternation nor a greeting is required",
                        "never obliges you to contribute", "witty, ironic and sarcastic", "Do not force jokes",
-                       "Never repeat, rephrase or translate"):
+                       "Do not repeat any of them", "keep participating as usual"):
             self.assertIn(phrase, STYLE)
 
     def test_dispatch_is_denied_and_persistence_entry_points_are_disabled(self):

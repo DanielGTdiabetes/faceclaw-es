@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 import time
+import logging
 import uuid
 from pathlib import Path
 
@@ -20,6 +21,7 @@ CAPABILITIES = (CAPABILITY, OPTIONAL_IDENTITY_CAPABILITY)
 REQUIRED_IDENTITY = "identidad-requerida"
 OPTIONAL_IDENTITY = "identidad-opcional"
 MODALITIES = (REQUIRED_IDENTITY, OPTIONAL_IDENTITY)
+LOG = logging.getLogger("faceclaw-hermes")
 MEMORY_SIZE = 6
 MEMORY_TTL = 2 * 60 * 60
 REF_KEYS = ("sessionId", "streamId", "associationVersion", "episodeId", "revision")
@@ -46,9 +48,9 @@ STYLE = (
     "Never assume who said a desconocido turn: do not attribute it to the wearer, do not address its speaker "
     "as the wearer and do not personalize on that assumption; comment on the topic itself. "
     "For mode assist return only JSON {\"kind\":\"mensaje\",\"text\":\"...\"} or {\"kind\":\"nada\"}. "
-    "alreadySaid lists your own recent contributions, oldest first. Never repeat, rephrase or translate any of "
-    "them, nor make the same point or joke again in other words or another language; build on them only with "
-    "something genuinely new. If you have nothing new to add, return {\"kind\":\"nada\"}. "
+    "alreadySaid lists your own recent contributions, oldest first. Do not repeat any of them, nor make the "
+    "same point or joke again in other words or another language. This only rules out repetition: keep "
+    "participating as usual, with a different angle on the same topic or a reaction to what was said since. "
     "When the supplied speech contains a question you can answer from its context "
     "or reliable general knowledge, prioritize a brief direct answer. The question need not name Hermes "
     "or be explicitly addressed to you. Answer only what you can support; do not invent missing details, "
@@ -303,6 +305,7 @@ class ConversationService:
             state, self.pending = self.pending, None
             self.active = state
             future = None
+            started, outcome = self.now(), "stale"
             try:
                 if not self._current(state):
                     continue
@@ -351,22 +354,30 @@ class ConversationService:
                     fields.update(kind="mensaje", text=value["text"].strip())
                 else:
                     raise ValueError("Invalid message")
+                outcome = fields.get("verdict") or fields.get("kind")
+                if not self._current(state):
+                    outcome = "late:" + outcome
                 if self._current(state):
                     await state["phone"].send("conv", **fields)
                     if fields.get("kind") == "mensaje":
                         self.said = (self._recent_said_entries() + [(self.now(), fields["text"])])[-MEMORY_SIZE:]
             except asyncio.CancelledError:
+                outcome = "cancelled"
                 state["cancelled"].set()
                 if future is not None and not future.done():
                     self.agent.interrupt(hard_cancel=True)
                     await asyncio.shield(future)
                 raise
-            except Exception:
+            except Exception as error:
+                outcome = "error:" + type(error).__name__
                 self.errors += 1
                 if self._current(state):
                     with contextlib.suppress(Exception):
                         await state["phone"].send("conv", type="error", requestId=state["requestId"], ref=state["ref"])
             finally:
+                # Diagnostics only: mode, outcome and timing, never speech or replies.
+                LOG.info("conv %s -> %s in %.1fs (memory %d)", state["mode"], outcome,
+                         self.now() - started, len(self.said))
                 state["turns"] = []
                 state["running"] = False
                 if self.active is state:
