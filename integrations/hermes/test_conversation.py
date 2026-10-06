@@ -149,7 +149,8 @@ class ValidationTests(unittest.TestCase):
     def test_style_never_assumes_the_wearer_and_keeps_the_tone(self):
         for phrase in ("identity is opcional", "Never assume who said a desconocido turn",
                        "neither two voices, alternation nor a greeting is required",
-                       "never obliges you to contribute", "lightly sarcastic", "never force a joke"):
+                       "never obliges you to contribute", "witty, ironic and sarcastic", "Do not force jokes",
+                       "Never repeat, rephrase or translate"):
             self.assertIn(phrase, STYLE)
 
     def test_dispatch_is_denied_and_persistence_entry_points_are_disabled(self):
@@ -243,6 +244,27 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         await self.wait(lambda: len(self.phone.frames) == 2)
         self.assertEqual(self.phone.frames[-1]["type"], "error")
         self.assertNotIn("message", self.phone.frames[-1])
+
+    async def test_short_memory_lists_only_own_delivered_texts_and_expires(self):
+        clock = [1000.0]
+        self.service = ConversationService(lambda: self.agent, now=lambda: clock[0])
+        await self.service.warmup()
+        self.agent.response = {"kind": "mensaje", "text": "Primera idea"}
+        self.service.submit(self.phone, request(mode="assist"))
+        await self.wait(lambda: len(self.phone.frames) == 1)
+        self.assertEqual(self.agent.calls[-1][0]["alreadySaid"], [])
+        self.service.submit(self.phone, request("c2", "assist"))
+        await self.wait(lambda: len(self.phone.frames) == 2)
+        self.assertEqual(self.agent.calls[-1][0]["alreadySaid"], ["Primera idea"], "never the speech itself")
+        self.agent.response = {"verdict": "tema"}
+        self.service.submit(self.phone, request("c3"))
+        await self.wait(lambda: len(self.phone.frames) == 3)
+        self.assertNotIn("alreadySaid", self.agent.calls[-1][0], "assessments carry no memory")
+        clock[0] += 2 * 60 * 60 + 1
+        self.agent.response = {"kind": "nada"}
+        self.service.submit(self.phone, request("c4", "assist"))
+        await self.wait(lambda: len(self.phone.frames) == 4)
+        self.assertEqual(self.agent.calls[-1][0]["alreadySaid"], [], "expired after two hours")
 
     async def test_cancel_is_selective_idempotent_and_drops_late_output(self):
         self.agent.gate.clear()
