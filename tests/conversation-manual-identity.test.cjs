@@ -257,11 +257,10 @@ test('runtime: courtesy, uncertainty, nada and errors stay silent and are counte
   }
 });
 
-test('runtime: new revision, suspension, OFF, episode close and reconnection invalidate old replies', () => {
-  for (const change of ['revision', 'suspend', 'off', 'close', 'reconnect']) {
+test('runtime: suspension, OFF, episode close and reconnection invalidate old replies', () => {
+  for (const change of ['suspend', 'off', 'close', 'reconnect']) {
     const h = runtimeHarness(); h.on(); h.say('1'); h.advance(2000); h.reply('assess');
     const assist = h.sent().at(-1);
-    if (change === 'revision') h.say('2');
     if (change === 'suspend') h.update({ state: 'suspendido' });
     if (change === 'off') { h.runtime.stop(); h.update({ enabled: false, state: 'desactivado' }); }
     if (change === 'close') h.advance(30000);

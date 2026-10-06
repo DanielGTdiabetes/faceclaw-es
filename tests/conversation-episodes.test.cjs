@@ -50,10 +50,20 @@ test('a current topic verdict confirms context; uncertainty does not', () => {
   }
 });
 
-test('new text, identity correction, interruption, OFF and a newer stream reject late verdicts', () => {
-  for (const change of ['text', 'identity', 'gap', 'off', 'stream']) {
+test('new text in the same episode keeps a late tema but not a late dismissal', () => {
+  const tema = harness(); const request = tema.candidate();
+  tema.tracker.accept(tema.turn('1', 'Otro tema'));
+  assert.equal(tema.tracker.assess(request.ref, 'tema'), true);
+  assert.equal(tema.tracker.confirmedContext().turns.length, 3, 'the newer turn is part of the context');
+  const dismissed = harness(); const stale = dismissed.candidate();
+  dismissed.tracker.accept(dismissed.turn('1', 'Otro tema'));
+  assert.equal(dismissed.tracker.assess(stale.ref, 'cortesia'), false);
+  assert.equal(dismissed.tracker.snapshot().state, 'candidata', 'unassessed newer turns keep the episode open');
+});
+
+test('identity correction, interruption, OFF and a newer stream reject late verdicts', () => {
+  for (const change of ['identity', 'gap', 'off', 'stream']) {
     const h = harness(); const request = h.candidate();
-    if (change === 'text') h.tracker.accept(h.turn('1', 'Otro tema'));
     if (change === 'identity') h.tracker.association(h.association({ version: 2, speaker: '2' }));
     if (change === 'gap') h.tracker.interrupt();
     if (change === 'off') h.tracker.stop();
@@ -154,6 +164,8 @@ test('snapshots exclude text and returned text objects cannot mutate retained co
   h.tracker.assess(fresh.ref, 'tema');
   const outputRef = h.tracker.confirmedContext().ref;
   h.tracker.accept(h.turn('1', 'new example'));
+  assert.equal(h.tracker.acceptsOutput(outputRef), true, 'a newer revision of the same episode still accepts it');
+  h.tracker.interrupt();
   assert.equal(h.tracker.acceptsOutput(outputRef), false);
   h.tracker.stop();
   assert.equal(h.tracker.snapshot().chars, 0);

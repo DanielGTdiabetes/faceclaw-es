@@ -60,9 +60,10 @@ test('courtesy and uncertainty are structured verdicts, never messages', () => {
   }
 });
 
-test('owner refuses a correctly correlated result when newer text has changed the episode', () => {
+test('owner keeps a late tema but refuses a late dismissal when newer text has changed the episode', () => {
   const h = harness(); h.ready(); h.request(); h.tracker.accept(h.turn('1')); h.reply();
-  assert.equal(h.tracker.assess(h.results[0].ref, h.results[0].verdict), false);
+  assert.equal(h.tracker.assess(h.results[0].ref, 'cortesia'), false);
+  assert.equal(h.tracker.assess(h.results[0].ref, 'tema'), true);
 });
 
 test('every reference coordinate and request id must match; chat/mcp frames cannot satisfy conv', () => {

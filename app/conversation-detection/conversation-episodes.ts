@@ -130,7 +130,7 @@ export class ConversationEpisodeTracker {
     this.buffer.push({ ...turn });
     while (this.buffer.length > this.policy.maxTurns || this.chars() > this.policy.maxChars) this.buffer.shift();
     this.revision++;
-    this.request = null;
+    // The pending assessment stays valid for this episode: a late "tema" may still promote it.
     this.accepted++;
     return true;
   }
@@ -163,9 +163,12 @@ export class ConversationEpisodeTracker {
   assess(ref: EpisodeRef, verdict: EpisodeAssessment): boolean {
     this.tick();
     if (this.state !== "candidata" || !this.request || !this.matches(ref, this.request)
-      || !this.matches(ref, this.ref()) || !this.eligible()) return false;
+      || !this.sameEpisode(ref, this.ref()) || !this.eligible()) return false;
+    // Speech kept arriving while Hermes evaluated: a stale "tema" still holds (the topic only grew),
+    // but a stale dismissal must not end an episode whose newer turns were never assessed.
     if (verdict === "tema") { this.state = "activa"; this.request = null; return true; }
     if (verdict !== "cortesia" && verdict !== "incierto") return false;
+    if (!this.matches(ref, this.ref())) return false;
     this.end(verdict);
     return true;
   }
@@ -176,10 +179,13 @@ export class ConversationEpisodeTracker {
     return this.state === "activa" ? this.context() : null;
   }
 
-  /** Late outputs must match the current context as well as the session and association. */
+  /**
+   * Late outputs must match the current episode as well as the session and association. A newer
+   * revision of the same episode (people kept talking while Hermes answered) is still accepted.
+   */
   acceptsOutput(ref: EpisodeRef): boolean {
     this.tick();
-    return this.state === "activa" && this.matches(ref, this.ref());
+    return this.state === "activa" && this.sameEpisode(ref, this.ref());
   }
 
   snapshot(): EpisodeSnapshot {
@@ -201,8 +207,11 @@ export class ConversationEpisodeTracker {
     return { ...this.session!, associationVersion: this.version, episodeId: this.episodeId, revision: this.revision };
   }
   private matches(a: EpisodeRef, b: EpisodeRef): boolean {
+    return this.sameEpisode(a, b) && a.revision === b.revision;
+  }
+  private sameEpisode(a: EpisodeRef, b: EpisodeRef): boolean {
     return a.sessionId === b.sessionId && a.streamId === b.streamId && a.associationVersion === b.associationVersion
-      && a.episodeId === b.episodeId && a.revision === b.revision;
+      && a.episodeId === b.episodeId;
   }
   private context(): EpisodeContext {
     return { ref: this.ref(), modality: this.modality, turns: this.buffer.map((t) => ({ ...t })) };

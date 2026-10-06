@@ -21,6 +21,11 @@ export const HERMES_MESSAGE_MIN_MS = 12_000;
 export const HERMES_MESSAGE_MAX_MS = 30_000;
 /** Phone-only RAM list of the current session; cleared on OFF and never persisted. */
 export const HERMES_HISTORY_MAX = 5;
+/**
+ * Bridge budget for one evaluation. Model latency alone is often 3-5 s, so a tighter budget left
+ * no turn able to finish; the bridge accepts up to 30 s.
+ */
+export const HERMES_REQUEST_TIMEOUT_MS = 15_000;
 export type ConversationHermesHistoryEntry = { at: number; text: string };
 
 export type ConversationHermesHost = {
@@ -164,9 +169,13 @@ export class ConversationHermesRuntime {
       const after = this.tracker.snapshot();
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
     } else this.counters.turnsIgnored++;
-    if (accepted || (before.chars > 0 && this.tracker.snapshot().chars === 0)) {
-      // A newer complete turn invalidates the pending evaluation only. A delivered message stays
-      // readable: people keep talking while it is shown (retired by tick after the minimum).
+    if (accepted) {
+      // A newer turn of the same episode lets the pending evaluation finish: the answer still fits
+      // the topic, and cancelling on every turn meant no answer ever arrived while people talked.
+      // A delivered message stays readable (retired by tick after the minimum).
+      if (this.outputRef) this.outputStale = true;
+    } else if (before.chars > 0 && this.tracker.snapshot().chars === 0) {
+      // The episode ended: its pending evaluation no longer applies.
       this.flight = null; this.channel.cancel();
       if (this.outputRef) this.outputStale = true;
     }
@@ -219,7 +228,7 @@ export class ConversationHermesRuntime {
     if (mode === "assess") this.counters.assessments++; else this.counters.assists++;
     const flight = { ref: { ...context.ref }, mode };
     this.flight = flight;
-    const accepted = this.channel.request(context, mode, 5000, (result) => this.result(flight, result));
+    const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result));
     if (!accepted && this.flight === flight) this.flight = null;
     this.host.changed();
   }

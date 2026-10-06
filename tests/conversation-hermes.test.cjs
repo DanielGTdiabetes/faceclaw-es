@@ -77,6 +77,20 @@ test('a topic can begin without any greeting, followed by one validated assistan
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
 
+test('speech during a pending evaluation does not cancel it; the late answer is still delivered', () => {
+  const h = harness(); h.begin(); h.candidate();
+  const assess = h.sent()[0];
+  assert.equal(assess.timeoutMs, 15000);
+  h.turn('1', 'Y además otra cosa'); h.advance(3000);
+  assert.equal(h.runtime.snapshot().busy, true, 'the assessment is still in flight');
+  h.reply('assess', {}, assess);
+  const assist = h.sent().at(-1); assert.equal(assist.type, 'assist');
+  h.turn('2', 'Seguimos hablando'); h.advance(3000);
+  h.reply('assist', {}, assist);
+  assert.deepEqual(h.outputs.filter(Boolean), ['Una aportación útil']);
+  h.runtime.dispose();
+});
+
 test('courtesy, uncertainty, nada and technical failures never deliver visible messages', () => {
   for (const verdict of ['cortesia', 'incierto']) {
     const h = harness(); h.begin(); h.candidate(); h.reply('assess', { verdict });
@@ -88,10 +102,9 @@ test('courtesy, uncertainty, nada and technical failures never deliver visible m
   }
 });
 
-test('new text, identity correction, OFF, suspension and capture boundary reject pending outputs', () => {
-  for (const change of ['text', 'identity', 'off', 'suspend', 'boundary']) {
+test('identity correction, OFF, suspension and capture boundary reject pending outputs', () => {
+  for (const change of ['identity', 'off', 'suspend', 'boundary']) {
     const h = harness(); h.begin(); h.candidate(); h.reply('assess'); const sent = h.sent().at(-1);
-    if (change === 'text') h.turn('1');
     if (change === 'identity') h.association({ version: 2 });
     if (change === 'off') h.update({ enabled: false, state: 'desactivado' });
     if (change === 'suspend') h.update({ state: 'suspendido' });
