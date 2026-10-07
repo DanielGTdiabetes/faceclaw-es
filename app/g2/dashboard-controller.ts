@@ -2460,12 +2460,19 @@ class DashboardController {
         event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP &&
         wakeWordActionSetting.get() !== "off";
       const displayShouldWake = event.kind === "display-wake";
+      // A retained, fully delivered layout can enable the microphone immediately.
+      // Do not make speech wait for the screen-on/unblank frame: that loses the
+      // first words of a question spoken directly after the wakeword. A cold or
+      // unfinished session still needs the complete display/session barrier.
+      const audioSessionReady = wakewordShouldWake && this.communicator
+        && !this.evenHubSessionSuspended && !this.evenHubResumePromise
+        && await this.communicator.awaitEvenHubSessionReady(0);
       let shellPreWoke = false;
       if (wakewordShouldWake || displayShouldWake) {
         if (!shell.isScreenOn()) {
           shellPreWoke = shell.wake("sidebar");
         }
-        if (shellPreWoke || this.evenHubSessionSuspended || this.evenHubResumePromise) {
+        if (!audioSessionReady && (shellPreWoke || this.evenHubSessionSuspended || this.evenHubResumePromise)) {
           const ready = await frameTimings.spanAsync(frameId, "wake-barrier", () =>
             this.ensureEvenHubSessionActive(frameId),
           );

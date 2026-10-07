@@ -146,10 +146,11 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(valid_request({**anonymous(), "timeoutMs": 30001}))
         self.assertFalse(valid_request({**anonymous(), "requestId": ""}))
 
-    def test_style_never_assumes_the_wearer_and_keeps_the_tone(self):
+    def test_style_never_assumes_the_wearer_and_keeps_balanced_tone(self):
         for phrase in ("identity is opcional", "Never assume who said a desconocido turn",
                        "neither two voices, alternation nor a greeting is required",
-                       "never obliges you to contribute", "witty, ironic and sarcastic", "Do not force jokes",
+                       "never obliges you to contribute", "Humor, irony and mild sarcasm are optional", "Do not force jokes",
+                       "Most contributions should be", "Prefer silence", "drop humor",
                        "Do not repeat any of them", "keep participating as usual"):
             self.assertIn(phrase, STYLE)
 

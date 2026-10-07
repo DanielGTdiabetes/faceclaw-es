@@ -1,4 +1,12 @@
-# Candidata conv/1 + conv/2 para el puente Hermes
+# Puente Faceclaw–Hermes
+
+**Estado comprobado, 07-10-2026:** las fuentes completas de producción están en `bridge.py`, `conversation.py` y `run_bridge.py`. Se conservaron conv/1+conv/2, herramientas, respaldo entre proveedores y memoria RAM `alreadySaid`. El chat usa razonamiento `low` por defecto (override `FACECLAW_CHAT_REASONING_EFFORT`) y pide aclaración si la frase actual está incompleta; el contexto no debe sustituirla. El modo conversación permite humor ocasional pertinente, sin exigir un chiste en cada intervención. [Auditoría y estado del proveedor](../../notes/auditoria-latencia-hermes-voz-2026-10-07.md).
+
+Despliegue del código revisado: [`scripts/deploy-hermes-latency.py`](../../scripts/deploy-hermes-latency.py), con hashes de origen/destino, escritura atómica, copia de reversión y recuperación ante fallo. No modifica proveedor ni credenciales. Ejecutar únicamente con audio OFF y tras las pruebas aisladas. Se comprobó en el intérprete administrado de Hermes: 24 pruebas y `test_bridge.protocol_tests()` correctas, sin consultas reales al modelo. El wrapper `run_bridge.py` carga `hermes_bootstrap` desde `HERMES_ROOT` usando el runtime existente.
+
+Los preparadores y despliegues anteriores fijan fuentes históricas: no usarlos sobre producción actual. Las entradas inferiores documentan esos estados anteriores.
+
+## Historial de integración
 
 **Criterio vigente desplegado, 05-10-2026:** [preguntas y participación](../../notes/hermes-preguntas-participacion-2026-10-05.md). `conversation.py` `a095e84e…` responde preguntas con información suficiente y permite comentarios breves pertinentes/ingeniosos; solo cambia el prompt. Puente intacto, reversión del módulo previo disponible y ambos servicios activos/habilitados. Helper específico [`scripts/deploy-hermes-participation.py`](../../scripts/deploy-hermes-participation.py), sin nueva APK ni ensayo físico posterior. Las fuentes/hashes conv/2 inferiores corresponden a la versión previa del criterio; no ejecutar el helper conv/2 antiguo sobre producción actual.
 

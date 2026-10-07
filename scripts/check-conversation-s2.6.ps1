@@ -1,7 +1,7 @@
 param(
-  [string]$Candidate='dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.6.5-manual-context.apk',
-  [ValidateSet('0.8.2-es.5-conversation.s2.6-manual-context','0.8.2-es.5-conversation.s2.6.1-manual-context','0.8.2-es.5-conversation.s2.6.2-manual-context','0.8.2-es.5-conversation.s2.6.3-manual-context','0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context')]
-  [string]$ExpectedVersion='0.8.2-es.5-conversation.s2.6.5-manual-context'
+  [string]$Candidate='dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.6.6-manual-context.apk',
+  [ValidateSet('0.8.2-es.5-conversation.s2.6-manual-context','0.8.2-es.5-conversation.s2.6.1-manual-context','0.8.2-es.5-conversation.s2.6.2-manual-context','0.8.2-es.5-conversation.s2.6.3-manual-context','0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context', '0.8.2-es.5-conversation.s2.6.6-manual-context')]
+  [string]$ExpectedVersion='0.8.2-es.5-conversation.s2.6.6-manual-context'
 )
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot

@@ -2,3 +2,4 @@
 integrations/hermes/*.py text eol=lf
 scripts/deploy-hermes-conv2.py text eol=lf
 scripts/deploy-hermes-participation.py text eol=lf
+scripts/deploy-hermes-latency.py text eol=lf
