@@ -21,7 +21,7 @@ test('manual ON → local profile → Soniox identity → Hermes contribution re
   channel.negotiate(['conv/1']);
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now, every, changed() {}, onOutput: text => outputs.push(text) },
     { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 });
-  assert.equal(runtime.begin(80), true);
+  assert.equal(runtime.begin(null), true);
   enabled = true; engine.start('auto', true); listener.onOpen();
   for (const cb of observers) cb(source.snapshot());
   let streamMs = 0;

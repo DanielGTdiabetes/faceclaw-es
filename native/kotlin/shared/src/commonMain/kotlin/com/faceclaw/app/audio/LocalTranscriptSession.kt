@@ -25,6 +25,8 @@ interface LocalTranscriptHost {
 }
 interface FaceclawLocalTranscriptListener {
     fun onText(text: String, language: String)
+    /** Capture-window bounds, not word alignment. Default preserves existing consumers. */
+    fun onSegment(text: String, language: String, startMs: Long, endMs: Long) = onText(text, language)
 }
 
 enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE, HALLUCINATION }
@@ -298,7 +300,8 @@ class LocalTranscriptSession(
         var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
     }
     private data class Job(val generation: Long, val audio: ShortArray, val phase: Int, val endChunk: Long)
-    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long)
+    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long,
+        val sampleCount: Int)
     private val condition = platform.createCondition()
     private var running = false
     private var worker = false
@@ -327,14 +330,15 @@ class LocalTranscriptSession(
     }
 
     fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
+    fun isWorkerActive(): Boolean = condition.withLock { worker }
 
     /** The language is captured only by an accepted start and handed to that worker as an immutable value. */
     fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO,
-        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD): Boolean {
+        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD, maxMs: Long = 120000): Boolean {
         condition.withLock {
             if (worker) return false // A non-interruptible previous JNI call must drain first.
             running = true; worker = true; ready = false; generation++
-            deadline = platform.elapsedRealtimeMs() + 120000
+            deadline = platform.elapsedRealtimeMs() + maxMs.coerceIn(1, 1200000)
             status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
             buffer.resetMetrics(segmentation)
             inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
@@ -500,7 +504,7 @@ class LocalTranscriptSession(
                                 s.accepted++
                                 // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
                                 discardPendingResult()
-                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk)
+                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk, next.audio.size)
                                 true
                             }
                         }
@@ -557,7 +561,10 @@ class LocalTranscriptSession(
                     }
                 }
             }
-            delivery?.first?.onText(delivery.second.text, delivery.second.language)
+            delivery?.let { (target, segment) ->
+                val endMs = segment.endChunk * 50
+                target.onSegment(segment.text, segment.language, maxOf(0L, endMs - segment.sampleCount / 16), endMs)
+            }
         }
     }
 }

@@ -182,7 +182,7 @@ function runtimeHarness(caps = CONV2) {
     for (const cb of associations) cb({ v: 1, sessionId: 's1', streamId: 1, version, kind, speaker, knownOthers: [] });
   }
   return { runtime, channel, frames, outputs, timers, state,
-    on(modality = OPTIONAL, budget = 80) {
+    on(modality = OPTIONAL, budget = null) {
       const armed = runtime.begin(budget, modality);
       if (armed) { state.enabled = true; state.state = 'escuchando'; notify(); association(0); }
       return armed;
@@ -272,7 +272,7 @@ test('runtime: suspension, OFF, episode close and reconnection invalidate old re
   }
 });
 
-test('runtime: 80-request budget, 5 s spacing and 2 s quiet wait are preserved in optional mode', () => {
+test('runtime: an explicit finite diagnostic budget preserves 5 s spacing and the 2 s quiet wait', () => {
   const h = runtimeHarness(); h.on(OPTIONAL, 80);
   h.say('1'); h.advance(1500); assert.equal(h.sent().length, 0, 'waits 2 s without new turns');
   h.advance(500); assert.equal(h.sent().length, 1);
@@ -286,6 +286,39 @@ test('runtime: 80-request budget, 5 s spacing and 2 s quiet wait are preserved i
   }
   assert.equal(h.runtime.snapshot().requests, 80); assert.equal(h.sent().length, 80);
   h.runtime.dispose();
+});
+
+test('runtime: manual listening can deliver after 80 abstentions while preserving cadence, one flight and OFF', () => {
+  const h = runtimeHarness(); assert.equal(h.on(OPTIONAL, null), true);
+  h.say('1'); h.advance(1500); assert.equal(h.sent().length, 0);
+  h.advance(500); h.reply('assess', { verdict: 'tema' });
+  h.reply('assist', { kind: 'nada' });
+  for (let i = 0; i < 80; i++) {
+    const count = h.sent().length;
+    h.say('1'); h.advance(1500);
+    assert.equal(h.sent().length, count, 'waits 2 s without a new turn');
+    h.advance(3500);
+    assert.equal(h.sent().length, count + 1, `evaluation ${i + 1} remains available`);
+    const flight = h.sent().at(-1);
+    h.say('2'); h.advance(5000);
+    assert.equal(h.sent().length, count + 1, 'speech cannot start a second concurrent request');
+    h.reply('assist', { kind: 'nada' }, flight);
+  }
+  assert.equal(h.channel.statistics().nada, 81);
+  assert.equal(h.runtime.snapshot().requests, 82);
+  h.say('1'); h.advance(5000);
+  h.reply('assist', { kind: 'mensaje', text: 'Una aportación después de ochenta abstenciones.' });
+  assert.deepEqual(h.outputs.filter(Boolean), ['Una aportación después de ochenta abstenciones.']);
+  h.say('2'); h.advance(5000);
+  const pending = h.sent().at(-1), beforeOff = h.sent().length;
+  h.update({ enabled: false, state: 'desactivado' });
+  h.reply('assist', { kind: 'mensaje', text: 'Respuesta posterior al OFF' }, pending);
+  h.say('1'); h.advance(5000);
+  assert.equal(h.sent().length, beforeOff);
+  assert.equal(h.runtime.snapshot().enabled, false);
+  assert.equal(h.outputs.at(-1), null);
+  assert.deepEqual(h.runtime.history(), []);
+  h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
 
 // ---------------------------------------------------------------- integration with real Soniox module
@@ -308,7 +341,7 @@ function sonioxStack(caps = CONV2) {
   let streamMs = 0;
   return { engine, channel, runtime, frames, outputs,
     on(modality = OPTIONAL) {
-      const armed = runtime.begin(80, modality);
+      const armed = runtime.begin(null, modality);
       enabled = true; engine.start('auto', true); listener.onOpen();
       for (const cb of observers) cb(source.snapshot());
       return armed;
@@ -446,19 +479,21 @@ test('coordinator: required identity keeps failing closed and the 20 min limit i
 
 // ---------------------------------------------------------------- controller decision and phone status
 
-function manualOwner({ optional, profile }) {
+function manualOwner({ optional, profile, local = false, hermes = true, ready = 'ready' }) {
   const file = ts.createSourceFile('c.ts', fs.readFileSync('app/g2/dashboard-controller.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const klass = file.statements.find(n => ts.isClassDeclaration(n) && n.name?.text === 'DashboardController');
   const methods = klass.members.filter(m => ['setManualConversationEnabled', 'setConversationCaptureEnabled'].includes(m.name?.getText(file)));
   const calls = [], begins = [];
   const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional } },
-    sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
-    conversationSessionOptions: () => ({ language: 'es', diagnostics: false }) };
+    sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
+    conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
+    conversationModel: () => 'whisper-medium-es',
+    conversationSessionOptions: () => ({ language: 'auto', diagnostics: false }) };
   vm.runInNewContext(ts.transpileModule(`export class Owner { ${methods.map(m => m.getText(file)).join('\n')} }`,
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, context);
   const owner = new context.exports.Owner();
   let enabled = false;
-  Object.assign(owner, { hermesSelected: false, setConversationHermesSelected() { this.hermesSelected = true; return true; },
+  Object.assign(owner, { hermesSelected: false, setConversationHermesSelected(value) { this.hermesSelected = value; return true; },
     detectorEnvironment: () => ({ available: true }), ensureWearStateTracking() {},
     conversationHermes: { begin: (budget, modality) => { begins.push([budget, modality]); return true; }, stop() {}, snapshot: () => ({ enabled: begins.length > 0 }) },
     conversationDetector: { hasOwnProfile: () => profile,
@@ -470,7 +505,7 @@ function manualOwner({ optional, profile }) {
 test('controller: conv/2 starts without a profile; conv/1 keeps the profile requirement', () => {
   const none = manualOwner({ optional: true, profile: false });
   assert.equal(none.owner.setManualConversationEnabled(true), '');
-  assert.deepEqual(none.begins, [[80, OPTIONAL]]);
+  assert.deepEqual(none.begins, [[null, OPTIONAL]]);
   assert.equal(none.calls[0][2], 'off');
   assert.equal(none.calls[0][3].optionalProfile, true);
   assert.equal(none.calls[0][3].manualConversation, true);
@@ -478,14 +513,28 @@ test('controller: conv/2 starts without a profile; conv/1 keeps the profile requ
   const withProfile = manualOwner({ optional: true, profile: true });
   withProfile.owner.setManualConversationEnabled(true);
   assert.equal(withProfile.calls[0][2], 'conversation');
-  assert.deepEqual(withProfile.begins, [[80, OPTIONAL]]);
+  assert.deepEqual(withProfile.begins, [[null, OPTIONAL]]);
   const old = manualOwner({ optional: false, profile: false });
   assert.match(old.owner.setManualConversationEnabled(true), /perfil de voz/);
   assert.equal(old.calls.length, 0);
   const oldWithProfile = manualOwner({ optional: false, profile: true });
   oldWithProfile.owner.setManualConversationEnabled(true);
-  assert.deepEqual(oldWithProfile.begins, [[80, REQUIRED]]);
+  assert.deepEqual(oldWithProfile.begins, [[null, REQUIRED]]);
   assert.equal(oldWithProfile.calls[0][3].optionalProfile, false);
+});
+
+test('controller: selected local model uses optional Hermes without a key/profile; missing weights and old bridge keep OFF', () => {
+  const local = manualOwner({ optional: true, profile: true, local: true });
+  local.owner.setManualConversationEnabled(true);
+  assert.equal(local.calls[0][2], 'off', 'no invented local speaker attribution');
+  assert.equal(local.calls[0][3].textEngine, 'local');
+  assert.deepEqual(local.begins, [[null, OPTIONAL]]);
+  for (const args of [{ optional: false, profile: true, local: true }, { optional: true, profile: true, local: true, ready: 'absent' }]) {
+    const rejected = manualOwner(args); assert.ok(rejected.owner.setManualConversationEnabled(true)); assert.equal(rejected.calls.length, 0);
+  }
+  const text = manualOwner({ optional: false, profile: false, local: true, hermes: false });
+  text.owner.setManualConversationEnabled(true);
+  assert.equal(text.calls[0][3].manualConversation, true); assert.deepEqual(text.begins, []);
 });
 
 test('phone status: recognition is optional, never claimed without a live profile association', () => {

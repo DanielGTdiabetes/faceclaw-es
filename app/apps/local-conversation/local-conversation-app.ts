@@ -6,6 +6,8 @@ import {
   conversationSession, conversationTextLanguage, conversationTextSelected, lensConversationPlan,
   onConversationTextSelected, setConversationTextSelected, toggleLensConversation, wearerActions, wearerChoices,
   type ConversationSessionPort,
+  CONVERSATION_MODELS, conversationModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
+  setConversationTextLanguage,
 } from "../../conversation-detection/session-controls";
 import { openModalMenu, type MenuItem } from "../../ui/menu";
 import { type InputEvent } from "../../ui/gestures";
@@ -14,6 +16,8 @@ import { lineStep } from "../../ui/metrics";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
 import { hermesConversationPresentation, onHermesConversationPresentation } from "../../ui/shell/conversation-hermes-ui";
+import { conversationModelLabel, conversationModelOption } from "../../native/conversation-model-options";
+import { asrModelState, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../../native/asr-model";
 
 export const CONVERSATION_WINDOW_ID = "local-conversation";
 export const CONVERSATION_SURFACE_ID = "window:local-conversation";
@@ -42,10 +46,16 @@ export class LocalConversationLayer implements Layer {
     if (this.session.setManualEnabled) {
       const state = snapshot.enabled ? "ON" : "OFF";
       image.drawText(titleFont, inset, inset, `Conversación · ${state}`, 255);
-      const detail = snapshot.enabled ? HERMES_LISTENING_LINE : this.notice ||
-        "Activa para escuchar con Hermes. Máximo 20 min; termina tras más de 5 min sin voz. Español y valenciano automáticos. Reconocer tu voz es opcional.";
+      const detail = snapshot.enabled ? conversationUsesHermes() ? HERMES_LISTENING_LINE
+        : snapshot.state === "escuchando" ? this.session.detector.transcriptText() || "Escuchando todas las voces…"
+        : snapshot.reason
+        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Máximo 20 min; termina tras más de 5 min sin voz.`;
       let y = inset + lineStep(titleFont) + 4;
-      for (const line of wrapText(font, detail, available).slice(0, Math.max(1, Math.floor((height - y - 2 * step - inset) / step)))) {
+      const lines = wrapText(font, detail, available);
+      const count = Math.max(1, Math.floor((height - y - 2 * step - inset) / step));
+      this.scrollBack = Math.min(this.scrollBack, Math.max(0, lines.length - count));
+      const end = snapshot.enabled && !conversationUsesHermes() ? Math.max(count, lines.length - this.scrollBack) : count;
+      for (const line of lines.slice(Math.max(0, end - count), end)) {
         image.drawText(font, inset, y, line, 180); y += step;
       }
       image.drawText(font, inset, height - 2 * step - inset, snapshot.enabled ? "Toque: detener" : "Toque: iniciar conversación", 220);
@@ -159,10 +169,32 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     menuItems: () => {
       const opened = session.detector.snapshot();
       const stopping = opened.enabled;
-      if (session.setManualEnabled) return [{
-        label: `Hermes en conversación: ${stopping ? "ON · detener" : "OFF · iniciar"}`,
-        onSelect: (ctx) => { ctx.stack.pop(); session.setManualEnabled!(!stopping); },
-      }];
+      if (session.setManualEnabled) {
+        const model = conversationModel();
+        return [{
+          label: `${conversationUsesHermes() ? "Hermes en conversación" : "Solo texto"}: ${stopping ? "ON · detener" : "OFF · iniciar"}`,
+          onSelect: (ctx) => { ctx.stack.pop();
+            if (stopping) session.setManualEnabled!(false);
+            else if (!session.detector.snapshot().enabled) session.setManualEnabled!(true);
+          },
+        }, ...(stopping ? [] : [{ label: `Motor: ${conversationModelLabel()}`, onSelect: (ctx: LayerContext) => {
+          ctx.stack.pop();
+          if (session.detector.snapshot().enabled) return;
+          openModalMenu(ctx, "Motor de conversación", CONVERSATION_MODELS.map((id) => ({
+            label: conversationModelOption(id), onSelect: (inner) => { inner.stack.pop(); setConversationModel(id); },
+          })));
+        } }, { label: `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`, onSelect: (ctx: LayerContext) => {
+          ctx.stack.pop(); setConversationUsesHermes(!conversationUsesHermes());
+        } }, { label: `Idioma: ${model === "android-system" ? "Español (Pixel)" : conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {
+          ctx.stack.pop(); if (model !== "android-system") setConversationTextLanguage(conversationTextLanguage() === "auto" ? "es" : "auto");
+        } }, ...(model === "soniox" || model === "android-system" || asrModelState(model).status === "ready" ? [] : [{
+          label: `${asrModelState(model).status === "downloading" ? "Pausar descarga" : "Descargar"}: ${conversationModelOption(model)}`,
+          onSelect: (ctx: LayerContext) => {
+            ctx.stack.pop(); if (session.detector.snapshot().enabled) return;
+            if (asrModelState(model).status === "downloading") cancelAsrModelDownload(model); else startAsrModelDownload(model);
+          },
+        }])])];
+      }
       // While ON show the engine really active, as the phone does; the shared choice applies to the next start.
       const textShown = stopping ? opened.transcription?.enabled === true : conversationTextSelected();
       return [
@@ -183,7 +215,8 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     // While a session is ON (at most 120 s) the idle timeout must not blank the lenses mid-conversation,
     // as Transcribe does for its capture. OFF keeps the normal screen timeout. With Hermes armed the
     // lenses must stay dark while listening, so capture never holds the screen on.
-    keepsScreenOn: () => !closed && !session.setManualEnabled && session.detector.snapshot().enabled && !hermesArmed(),
+    keepsScreenOn: () => !closed && session.detector.snapshot().enabled && !hermesArmed()
+      && (!session.setManualEnabled || !conversationUsesHermes()),
     submitFrame: options.submitFrame, setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface, reconfigureSurface: options.reconfigureSurface,
     onForegroundChanged: (foreground) => { if (foreground && !closed) app.requestRender(); },
@@ -210,6 +243,9 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
   };
   unsubscribe = session.detector.subscribe(() => refresh());
   unsubscribeChoice = onConversationTextSelected(() => refresh());
+  const modelSubscriptions = CONVERSATION_MODELS.flatMap((id) => id === "soniox" || id === "android-system" ? [] : [onAsrModelStateChanged(id, () => refresh())]);
+  const oldUnsubscribeChoice = unsubscribeChoice;
+  unsubscribeChoice = () => { oldUnsubscribeChoice(); for (const off of modelSubscriptions) off(); };
   try {
     unsubscribeHermes = onHermesConversationPresentation(() => { hermesPaintKey = ""; refresh(); });
   } catch { /* Classic view without Hermes presentation; nothing to release. */ }

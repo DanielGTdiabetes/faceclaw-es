@@ -7,6 +7,7 @@ export const CONVERSATION_CAPABILITY = "conv/1";
  * (unknown relations, association version 0). Without it the client sends only the conv/1 contract.
  */
 export const CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY = "conv/2";
+export const CONVERSATION_MEMORY_ACK_CAPABILITY = "conv/memory-ack/1";
 export type ConversationChannelStats = {
   sent: number; verdicts: number; tema: number; cortesia: number; incierto: number;
   mensajes: number; nada: number; errores: number; invalidos: number; caducados: number; cancelados: number;
@@ -14,9 +15,14 @@ export type ConversationChannelStats = {
 };
 const emptyStats = (): ConversationChannelStats => ({ sent: 0, verdicts: 0, tema: 0, cortesia: 0, incierto: 0,
   mensajes: 0, nada: 0, errores: 0, invalidos: 0, caducados: 0, cancelados: 0, rechazados: 0 });
-export type ConversationResult =
+export type ConversationTiming = {
+  queueMs?: number; primaryMs?: number; fallbackMs?: number; primaryFirstTextMs?: number;
+  fallbackFirstTextMs?: number; cancelWaitMs?: number; attempts?: number; apiCalls?: number;
+  fallbackReason?: "timeout" | "error" | "invalid";
+};
+export type ConversationResult = (
   | { ref: EpisodeRef; mode: "assess"; verdict: EpisodeAssessment }
-  | { ref: EpisodeRef; mode: "assist"; text: string | null };
+  | { ref: EpisodeRef; mode: "assist"; text: string | null; confirmPresented?: () => boolean }) & { timing?: ConversationTiming };
 export type ConversationChannelHost = {
   send(frame: object): boolean;
   now(): number;
@@ -34,6 +40,8 @@ type Pending = {
 export class ConversationChannel {
   private supported = false;
   private optionalIdentity = false;
+  private memoryAck = false;
+  private receiptEpoch = 0;
   private enabled = false;
   private stats = emptyStats();
   private chatActive = false;
@@ -48,12 +56,14 @@ export class ConversationChannel {
     this.reset();
     this.supported = Array.isArray(capabilities) && capabilities.includes(CONVERSATION_CAPABILITY);
     this.optionalIdentity = this.supported && (capabilities as unknown[]).includes(CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY);
+    this.memoryAck = this.supported && (capabilities as unknown[]).includes(CONVERSATION_MEMORY_ACK_CAPABILITY);
   }
 
   /** Explicit RAM-only choice, refused on an old/unsupported bridge. No automatic re-enable. */
   setEnabled(enabled: boolean): boolean {
     if (enabled && !this.supported) return false;
     this.enabled = enabled;
+    if (!enabled) this.receiptEpoch++;
     if (!enabled) this.cancel();
     return true;
   }
@@ -70,6 +80,7 @@ export class ConversationChannel {
   /** Normal chat always has priority. This never cancels or changes a chat request. */
   setChatActive(active: boolean): void {
     this.chatActive = active;
+    if (active) this.receiptEpoch++;
     if (active) this.cancel();
   }
 
@@ -78,6 +89,8 @@ export class ConversationChannel {
     this.enabled = false;
     this.supported = false;
     this.optionalIdentity = false;
+    this.memoryAck = false;
+    this.receiptEpoch++;
     this.chatActive = false;
     this.connection++;
     this.cancel(false);
@@ -100,6 +113,7 @@ export class ConversationChannel {
     try {
       // Required identity keeps the exact conv/1 frame; optional identity is always explicit on the wire.
       sent = this.host.send({ chan: "conv", type: mode, requestId: pending.requestId, ref: { ...pending.ref },
+        ...(this.memoryAck ? { memoryAck: true } : {}),
         ...(modality === "identidad-opcional" ? { modality } : {}),
         timeoutMs, turns: context.turns.map((turn) => ({ seq: turn.seq, speaker: turn.speaker,
           relation: turn.relation, text: turn.text, startMs: turn.startMs, endMs: turn.endMs })) });
@@ -144,16 +158,29 @@ export class ConversationChannel {
         this.stats.invalidos++; this.finish(null); return;
       }
       this.stats.verdicts++; this.stats[frame.verdict]++;
-      this.finish({ mode: "assess", ref: { ...pending.ref }, verdict: frame.verdict });
+      this.finish({ mode: "assess", ref: { ...pending.ref }, verdict: frame.verdict, timing: readTiming(frame.timing) });
     } else {
       // Only a final answer can reach the owner. Thinking/tool/status messages stay invisible.
       if (frame.kind !== "mensaje" && frame.kind !== "nada") { this.stats.invalidos++; this.finish(null); return; }
-      if (frame.kind === "nada") { this.stats.nada++; this.finish({ mode: "assist", ref: { ...pending.ref }, text: null }); return; }
+      if (frame.kind === "nada") { this.stats.nada++; this.finish({ mode: "assist", ref: { ...pending.ref }, text: null, timing: readTiming(frame.timing) }); return; }
       if (typeof frame.text !== "string" || !frame.text.trim() || frame.text.length > 1200) {
         this.stats.invalidos++; this.finish(null); return;
       }
       this.stats.mensajes++;
-      this.finish({ mode: "assist", ref: { ...pending.ref }, text: frame.text.trim() });
+      const deliveryId = frame.deliveryId, connection = this.connection, receiptEpoch = this.receiptEpoch;
+      const ref = { ...pending.ref }, requestId = pending.requestId, expiresAt = this.host.now() + 30_000;
+      let confirmed = false;
+      const confirmPresented = this.memoryAck && typeof deliveryId === "string" && deliveryId.length > 0 && deliveryId.length <= 128
+        ? () => {
+          if (confirmed || connection !== this.connection || receiptEpoch !== this.receiptEpoch
+            || !this.isReady() || this.host.now() >= expiresAt) return false;
+          try {
+            confirmed = this.host.send({ chan: "conv", type: "presented", deliveryId, requestId, ref });
+          } catch { /* A failed receipt cannot break display or normal chat; the next frame may retry. */ }
+          return confirmed;
+        } : undefined;
+      this.finish({ mode: "assist", ref, text: frame.text.trim(), timing: readTiming(frame.timing),
+        ...(confirmPresented ? { confirmPresented } : {}) });
     }
   }
 
@@ -172,6 +199,20 @@ export class ConversationChannel {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+/** Additive diagnostics from new bridges. Ignore malformed fields without losing a valid answer. */
+function readTiming(value: unknown): ConversationTiming | undefined {
+  if (!isRecord(value)) return undefined;
+  const result: ConversationTiming = {};
+  for (const key of ["queueMs", "primaryMs", "fallbackMs", "primaryFirstTextMs", "fallbackFirstTextMs",
+    "cancelWaitMs", "attempts", "apiCalls"] as const) {
+    const n = value[key], limit = key === "attempts" ? 2 : key === "apiCalls" ? 20 : 60_000;
+    if (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= limit) result[key] = n;
+  }
+  if (value.fallbackReason === "timeout" || value.fallbackReason === "error" || value.fallbackReason === "invalid") {
+    result.fallbackReason = value.fallbackReason;
+  }
+  return result;
 }
 /** Association version 0 (no identity yet) exists only in optional-identity contexts. */
 function validRef(value: unknown, minVersion = 1): value is EpisodeRef {
@@ -199,10 +240,12 @@ function validContext(context: EpisodeContext, optionalSupported: boolean): bool
   let wearer: string | null = null;
   const others = new Set<string>();
   const relations = new Map<string, string>();
+  const engine = context.turns[0]?.engine;
   for (const turn of context.turns) {
-    if (!turn || turn.sessionId !== context.ref.sessionId || turn.streamId !== context.ref.streamId
-      || turn.associationVersion !== context.ref.associationVersion || turn.engine !== "soniox"
-      || !Number.isSafeInteger(turn.seq) || turn.seq <= previousSeq || turn.timing !== "valido"
+    if (!turn || turn.engine !== engine || turn.sessionId !== context.ref.sessionId || turn.streamId !== context.ref.streamId
+      || turn.associationVersion !== context.ref.associationVersion
+      || !(turn.engine === "soniox" && turn.timing === "valido" || optional && isAnonymousLocalTurn(turn))
+      || !Number.isSafeInteger(turn.seq) || turn.seq <= previousSeq
       || typeof turn.text !== "string" || !turn.text.trim()
       || (turn.speaker !== null && (typeof turn.speaker !== "string" || turn.speaker.length > 32))
       || !["portador", "otro", "desconocido"].includes(turn.relation)
@@ -226,3 +269,4 @@ function validContext(context: EpisodeContext, optionalSupported: boolean): bool
   if (chars > 6000 || (wearer !== null && others.has(wearer))) return false;
   return optional || (!!wearer && others.size > 0);
 }
+import { isAnonymousLocalTurn } from "../conversation-detection/local-conversation-turns";

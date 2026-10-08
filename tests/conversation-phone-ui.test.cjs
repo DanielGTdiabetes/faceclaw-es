@@ -36,6 +36,7 @@ function harness() {
         setConversationCaptureEnabled: (...args) => starts.push(args), shellRenderDiagnostics: () => ({ total: 0, resourceLimit: 0 }) } };
       if (name === '../ui/shell/conversation-hermes-ui') return { hermesPresentationDiagnostics: () => ({ presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 }) };
       if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), conversationTextModelStatus: () => textModel, preciseTextModelLabel: () => 'Modelo preciso (small): descargar 375 MB', startAsrModelDownload: () => downloads++ };
+      if (name === '../native/conversation-model-options') return { conversationModelLabel: () => 'Whisper small', conversationModelOption: id => id };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
       if (name === '../conversation-detection/session-controls') return {
@@ -46,6 +47,8 @@ function harness() {
         conversationDiagnosticsSelected: () => false, setConversationDiagnosticsSelected: () => {},
         // Local engine here: these cases cover Whisper readiness; Soniox has its own test file.
         conversationTextEngine: () => 'local', setConversationTextEngine: () => {},
+        conversationLocalModel: () => 'whisper-small-es', conversationUsesHermes: () => true,
+        conversationModel: () => 'whisper-small-es',
         wearerActions: realControls.wearerActions, wearerChoices: realControls.wearerChoices,
       };
       if (name === '../conversation-detection/profile-guide') return guide;

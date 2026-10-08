@@ -19,6 +19,7 @@ function harness(lockEnabled = false) {
     // Manual ON prerequisites outside presence: conv/2 bridge (optional identity) and a Soniox key.
     assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => true } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
+    conversationUsesHermes: () => true,
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },
     // C1: default RAM session options read once at ON.
     conversationSessionOptions: () => ({ language: 'auto', diagnostics: false }),

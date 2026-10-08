@@ -1,0 +1,10 @@
+Prueba local con una frase sintética. Sin permiso de micrófono ni Internet.
+SDK=37
+syntheticSource=Microsoft-Helena-Desktop-offline
+syntheticInputMs=4265 format=PCM16-mono-16000
+productionStart=true source=installed-Faceclaw-native-adapter
+productionRecognized=el lunes iremos al mercado para comprar tomates y preparar la cena
+productionWindowMs=0..4450
+productionElapsedMs=4688
+finished=production-result
+productionAfterStop={"enabled":false,"status":"inactivo","engine":"pixel-system","worker":false,"busy":false,"inputBufferedBytes":0,"accepted":1,"abstentions":0,"dropped":0,"systemPcmMs":4450,"systemErrors":0,"systemError":""}

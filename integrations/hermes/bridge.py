@@ -20,7 +20,8 @@ import time
 import uuid
 
 from websockets.asyncio.server import serve
-from conversation import CAPABILITIES, ConversationService, create_conversation_agent, fallback_chain, valid_ref
+from conversation import (CAPABILITIES, ConversationService, create_conversation_agent,
+                          create_conversation_fallback_agent, fallback_chain, valid_ref)
 
 LOG = logging.getLogger("faceclaw-hermes")
 # Cumulative Hermes counters; the per-turn delta is logged (numbers only, never text).
@@ -98,7 +99,7 @@ class Phone:
 
 
 class Bridge:
-    def __init__(self, token, agent_factory=None, conversation_factory=None):
+    def __init__(self, token, agent_factory=None, conversation_factory=None, conversation_fallback_factory=None):
         if not isinstance(token, str) or not token:
             raise ValueError("A private authentication token is required")
         self.token = token
@@ -112,7 +113,8 @@ class Bridge:
         self.tasks = set()
         self.run_sequence = 0
         self.running_state = None
-        self.conversation = ConversationService(conversation_factory) if conversation_factory else None
+        self.conversation = ConversationService(conversation_factory,
+            fallback_factory=conversation_fallback_factory) if conversation_factory else None
 
     def phone_tool(self, method, params=None):
         # Hermes may execute a tool on a separate worker thread. The serial
@@ -303,7 +305,9 @@ class Bridge:
                         self.tasks.add(task)
                         task.add_done_callback(self.tasks.discard)
                 elif frame.get("chan") == "conv" and self.conversation:
-                    if frame.get("type") == "cancel":
+                    if frame.get("type") == "presented":
+                        self.conversation.presented(phone, frame)
+                    elif frame.get("type") == "cancel":
                         if isinstance(frame.get("requestId"), str) and valid_ref(frame.get("ref")):
                             self.conversation.cancel(phone, frame["requestId"], frame["ref"])
                     else:
@@ -465,6 +469,8 @@ async def main():
     private = Path(os.environ.get("FACECLAW_SECRET_FILE", "/home/dani/faceclaw-hermes-bridge/private.json"))
     token = json.loads(private.read_text())["token"]
     bridge = Bridge(token, conversation_factory=create_conversation_agent
+                    if os.environ.get("FACECLAW_CONVERSATION") == "1" else None,
+                    conversation_fallback_factory=create_conversation_fallback_agent
                     if os.environ.get("FACECLAW_CONVERSATION") == "1" else None)
     await bridge.warmup()
     try:

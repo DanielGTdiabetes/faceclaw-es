@@ -42,7 +42,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
   return { runtime, channel, frames, outputs, timers, source, state, ref: () => ref, association, turn, advance, reply,
-    begin(budget) { channel.negotiate(['conv/1']); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
+    begin(budget, receipts = false) { channel.negotiate(['conv/1', ...(receipts ? ['conv/memory-ack/1'] : [])]); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
     deliver() { this.begin(); this.candidate(); this.reply('assess'); this.reply('assist'); },
@@ -51,13 +51,76 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
 
+test('metrics follow listening, concurrent transcription and native sent without retaining speech', () => {
+  const h = harness(); h.begin(undefined, true);
+  h.state.metrics = { chunks: 40 };
+  h.state.transcription.soniox = { sentMs: 2000, finalTokens: 4 };
+  h.candidate();
+  h.turn('1', 'PRIVATE_MARKER'); h.advance(1000, false);
+  h.state.metrics.chunks += 20;
+  h.state.transcription.soniox.sentMs += 1000;
+  h.state.transcription.soniox.finalTokens += 3;
+  h.reply('assess', { timing: { primaryMs: 6000, fallbackMs: 500, attempts: 2, apiCalls: 2, fallbackReason: 'timeout' } });
+  h.advance(500, false); h.reply('assist', { deliveryId: 'd' });
+  h.advance(250, false);
+  const presented = h.runtime.capturePresentation(); presented(); presented();
+  h.update({ state: 'suspendido' }); h.advance(5000); h.runtime.stop();
+  const metrics = h.runtime.diagnostics().metrics;
+  assert.equal(metrics.listeningMs, 3750);
+  assert.equal(metrics.busyMs, 1500);
+  assert.equal(metrics.turnsDuringInference, 1);
+  assert.equal(metrics.chunksDuringInference, 20);
+  assert.equal(metrics.sentAudioMsDuringInference, 1000);
+  assert.equal(metrics.finalTokensDuringInference, 3);
+  assert.equal(metrics.assessRoundTrip.meanMs, 1000);
+  assert.equal(metrics.assistRoundTrip.meanMs, 500);
+  assert.equal(metrics.resultToNativeSent.meanMs, 250);
+  assert.equal(metrics.turnToNativeSent.meanMs, 1750);
+  assert.equal(metrics.nativeSent, 1);
+  assert.equal(metrics.fallbacks, 1);
+  assert.equal(metrics.providerAttempts, 2);
+  assert.equal(metrics.requestsPerListeningMinute, 32);
+  assert.equal(JSON.stringify(metrics).includes('PRIVATE_MARKER'), false);
+  h.begin(); assert.equal(h.runtime.diagnostics().metrics.nativeSent, 0);
+  h.runtime.dispose();
+});
+
+test('canceled evaluations preserve their continuity measurements and ignore late results', () => {
+  const h = harness(); h.begin(); h.state.metrics = { chunks: 40 }; h.candidate();
+  h.state.metrics.chunks += 20; h.advance(1000, false); h.runtime.stop();
+  const before = h.runtime.diagnostics(); h.reply('assess');
+  assert.equal(before.metrics.chunksDuringInference, 20);
+  assert.equal(before.metrics.busyMs, 1000);
+  assert.deepEqual(h.runtime.diagnostics(), before);
+  assert.equal(h.outputs.filter(Boolean).length, 0);
+  h.runtime.dispose();
+});
+
 test('explicit ON and capability are required; constructor/restore cannot start evaluation or capture', () => {
   const h = harness(); h.association(); h.turn('1'); h.turn('2'); h.advance(3000);
   assert.equal(h.frames.length, 0); assert.equal(h.runtime.begin(), false); assert.equal(h.state.enabled, false);
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
 
-test('a long manual session continues after eight requests with its own bounded budget', () => {
+test('runtime acknowledges only the captured current output; replacement, pause and OFF invalidate it', () => {
+  for (const reason of ['current', 'replacement', 'pause', 'off', 'dismiss']) {
+    const h = harness(); h.begin(undefined, true); h.candidate(); h.reply('assess');
+    h.reply('assist', { deliveryId: 'first' });
+    const confirm = h.runtime.capturePresentation(); assert.equal(typeof confirm, 'function');
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, 0);
+    if (reason === 'replacement') {
+      h.turn('1', 'Otro detalle'); h.advance(5000); h.reply('assist', { text: 'Otra idea', deliveryId: 'second' });
+    }
+    if (reason === 'pause') h.update({ state: 'suspendido' });
+    if (reason === 'off') h.runtime.stop();
+    if (reason === 'dismiss') h.runtime.dismissOutput();
+    confirm(); confirm();
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, reason === 'current' ? 1 : 0, reason);
+    h.runtime.dispose();
+  }
+});
+
+test('an explicit diagnostic budget can allow more than eight requests and remains bounded', () => {
   const h = harness(); h.begin(12);
   for (let i = 0; i < 20; i++) {
     h.turn('1'); h.turn('2'); h.advance(5000);

@@ -56,7 +56,8 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, setConversationTextEngine, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
@@ -67,7 +68,7 @@ import { ShellResourceLimitError } from "../graphics/shell-scene";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
-import { bindHermesConversationUi } from "../ui/shell/conversation-hermes-ui";
+import { bindHermesConversationUi, captureHermesPresentation } from "../ui/shell/conversation-hermes-ui";
 import { type InputEvent } from "../ui/gestures";
 import { registerSystemTools } from "../assistant/system-tools";
 import { getGlassesPresence, onGlassesPresenceChanged, updateGlassesPresence } from "./glasses-presence";
@@ -390,7 +391,8 @@ class DashboardController {
       setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
       setManualEnabled: (enabled) => this.setManualConversationEnabled(enabled),
       voiceModel: () => micModelState("speaker-embedding").status,
-      textModel: () => conversationTextEngine() === "soniox" && sonioxApiKeySetting.get().trim() ? "ready" : conversationTextModelStatus(),
+      textModel: () => conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
+        : conversationModel() === "android-system" ? (isSystemTranscriptionReady() ? "ready" : "absent") : conversationTextModelStatus(conversationLocalModel()),
     });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {
@@ -2133,9 +2135,11 @@ class DashboardController {
   setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
     options: SessionOptions = conversationSessionOptions()): void {
     if (enabled && !this.conversationDetector.snapshot().enabled) {
-      if (this.hermesSelected && transcribe && participation !== "enrollment" && conversationTextEngine() === "soniox") {
+      if (this.hermesSelected && transcribe && participation !== "enrollment"
+        && (conversationTextEngine() === "soniox" || options.manualConversation && options.optionalProfile)) {
         // Optional identity only for the manual ON that asked for it; diagnostics keep required identity.
-        const armed = this.conversationHermes.begin(options.manualConversation ? 80 : 8,
+        // Manual Hermes stays available for the full capture session; diagnostic sessions keep their budget.
+        const armed = this.conversationHermes.begin(options.manualConversation ? null : 8,
           options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida");
         if (!armed && options.manualConversation) return;
       }
@@ -2157,12 +2161,17 @@ class DashboardController {
       return "";
     }
     if (this.conversationDetector.snapshot().enabled) return "";
-    if (!assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
-    if (!sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
+    const withHermes = conversationUsesHermes();
+    const local = conversationTextEngine() === "local";
+    if (withHermes && !assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
+    if (!local && !sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
+    if (local && conversationModel() === "android-system" && !isSystemTranscriptionReady()) return "El motor local del Pixel no está disponible en este móvil.";
+    if (local && conversationModel() !== "android-system" && conversationTextModelStatus(conversationLocalModel()) !== "ready") return "Descarga el modelo seleccionado antes de iniciar.";
     // conv/2 bridge: recognising the wearer is optional. An old conv/1 bridge only accepts
     // wearer+other contexts, so it keeps the previous requirement of a saved profile.
-    const optionalIdentity = assistantBridge.conversation.supportsOptionalIdentity();
-    const profile = this.conversationDetector.hasOwnProfile();
+    const optionalIdentity = !withHermes || assistantBridge.conversation.supportsOptionalIdentity();
+    if (local && withHermes && !optionalIdentity) return "El puente Hermes necesita identidad opcional para usar Whisper.";
+    const profile = !local && this.conversationDetector.hasOwnProfile();
     if (!optionalIdentity && !profile) return "Falta tu perfil de voz guardado. Configúralo antes de iniciar.";
     // The wear report is only requested once capture is ON (ensureWearStateTracking), so with the
     // lock screen off `worn` stays null until then. Refusing here on that alone never lets ON start.
@@ -2174,11 +2183,11 @@ class DashboardController {
     if (snapshot.transcription?.worker || snapshot.transcription?.busy || snapshot.participation?.worker || snapshot.participation?.busy) {
       return "Espera a que termine el cierre de la sesión anterior.";
     }
-    setConversationTextEngine("soniox");
-    if (!this.setConversationHermesSelected(true)) return "No se pudo activar Hermes. La conversación sigue OFF.";
+    if (!this.setConversationHermesSelected(withHermes)) return "No se pudo activar Hermes. La conversación sigue OFF.";
     this.setConversationCaptureEnabled(true, true, profile ? "conversation" : "off", { ...conversationSessionOptions(),
-      language: "auto", diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity });
-    if (!this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
+      diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity,
+      textEngine: local ? "local" : "soniox" });
+    if (withHermes && !this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
     return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
   }
 
@@ -2908,6 +2917,7 @@ class DashboardController {
     if (wantFreshData) frameTimings.logFrame(frameId, "follow-up repaint that must not use cached data");
     beginRenderPass(!wantFreshData);
     const paintStartedAtMs = Date.now();
+    const confirmHermes = captureHermesPresentation();
     const planes = frameTimings.span(frameId, "paint", () =>
       frameTimings.runWithFrame(frameId, () => shell.paintScene()),
     );
@@ -2934,6 +2944,9 @@ class DashboardController {
     // so in the frame rather than leaving a silent stall. (The preview target
     // resolves immediately; nothing transmits.)
     const outcome = await display.waitForFrameFinished(frameId, FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS);
+    // `sent` follows the last native BLE acknowledgement; previews, failures and superseded frames
+    // cannot mark an unseen contribution as said. The captured receipt also checks current output.
+    if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) confirmHermes?.();
     if (outcome === null) {
       frameTimings.logFrame(
         frameId,

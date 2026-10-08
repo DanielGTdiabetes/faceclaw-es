@@ -6,12 +6,12 @@ export type ConversationTurn = {
   sessionId: string;
   streamId: number;
   seq: number;
-  engine: "soniox";
+  engine: "soniox" | "android-system" | "whisper-base-es" | "whisper-small-es" | "whisper-medium-es";
   speaker: string | null;
   relation: Relation;
   associationVersion: number;
   text: string;
-  timing: "valido" | "parcial" | "invalido";
+  timing: "valido" | "parcial" | "invalido" | "ventana";
   startMs: number | null;
   endMs: number | null;
   closedBy: "cambio-hablante" | "endpoint" | "finalize" | "frontera" | "pausa" | "limite" | "fin-sesion";

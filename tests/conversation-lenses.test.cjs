@@ -45,6 +45,8 @@ function harness() {
       if (name === '../../ui/metrics') return { lineStep: f => f.lineHeight + 2 };
       if (name === '../../conversation-detection/conversation-ui') return ui;
       if (name === '../../conversation-detection/session-controls') return controls;
+      if (name === '../../native/asr-model') return { onAsrModelStateChanged: () => () => {}, asrModelState: () => ({ status: 'ready' }) };
+      if (name === '../../native/conversation-model-options') return { conversationModelLabel: () => 'Soniox', conversationModelOption: id => id };
       if (name === '../../ui/menu') return { openModalMenu: (ctx, title, items) => modals.push({ title, items }) };
       if (name === '../../ui/shell/shell') return { shell: { isWindowVisible: () => true, yieldFocusToSidebar: () => yields++ } };
       if (name === '../../ui/shell/in-process-window') return { createInProcessWindow: value => {
@@ -69,8 +71,8 @@ test('launch and paint stay OFF; one explicit start uses the saved profile and s
   h.model('ready', 'missing'); h.input('click'); assert.deepEqual(h.starts, []);
   h.options.menuItems()[1].onSelect({ stack: { pop() {} } });
   assert.equal(controls.conversationTextSelected(), false);
-  // C1: the lens start passes the RAM session options, default Spanish language and diagnostics off.
-  h.input('click'); assert.deepEqual(h.starts, [[true, false, 'conversation', { language: 'es', diagnostics: false }]]);
+  // The lens start passes the RAM session options, automatic language and diagnostics off.
+  h.input('click'); assert.deepEqual(h.starts, [[true, false, 'conversation', { language: 'auto', diagnostics: false }]]);
   controls.setConversationTextSelected(true); assert.equal(controls.conversationTextSelected(), false);
   h.input('click'); assert.deepEqual(h.starts.at(-1), [false]); h.options.onClosed();
 });
@@ -80,7 +82,7 @@ test('unavailable profile and draining engines never fall back or restart captur
   h.profile('guardado'); h.patch({ participation: { worker: true } }); h.input('click');
   assert.equal(h.starts.length, 0); assert.equal(h.timers.size, 1);
   h.patch({ participation: { worker: false } }); assert.equal(h.timers.size, 0);
-  h.input('click'); assert.deepEqual(h.starts, [[true, true, 'conversation', { language: 'es', diagnostics: false }]]); h.options.onClosed();
+  h.input('click'); assert.deepEqual(h.starts, [[true, true, 'conversation', { language: 'auto', diagnostics: false }]]); h.options.onClosed();
 });
 
 test('lenses show only current listening text; suspension, error, expiry and OFF hide stale text', () => {

@@ -20,11 +20,21 @@
 
     <GridLayout rows="*,auto">
         <StackLayout row="1" class="p-10">
+            <GridLayout columns="*,auto">
+                <Button col="0" text="{{ conversationEngineButton }}" tap="{{ onConversationEngineTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+                <Button col="1" text="{{ conversationDownloadButton }}" tap="{{ onConversationDownloadTap }}" visibility="{{ conversationDownloadVisibility }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            </GridLayout>
+            <Label text="{{ conversationModelStatus }}" textWrap="true" fontSize="11" />
+            <GridLayout columns="*,*">
+                <Button col="0" text="{{ conversationModeButton }}" tap="{{ onConversationModeTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+                <Button col="1" text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            </GridLayout>
             <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
             <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
             <Label text="{{ conversationHermesHistory }}" visibility="{{ conversationHermesHistoryVisibility }}" textWrap="true" fontSize="12" />
+            <Label text="{{ localTranscript }}" visibility="{{ conversationTranscriptVisibility }}" textWrap="true" fontSize="12" maxLines="5" />
             <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
-            <Button text="Opciones de conversación" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
+            <Button text="Opciones avanzadas" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
         </StackLayout>
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
             <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">

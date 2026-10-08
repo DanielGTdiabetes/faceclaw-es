@@ -15,6 +15,8 @@ export type DetectorMetrics = {
 export type DetectorSnapshot = {
   enabled: boolean; state: DetectorState; reason: string; epoch: number;
   metrics: DetectorMetrics; vad: LocalVadSnapshot;
+  /** Monotonic completion of local VAD release, not the exact physical end of speech. */
+  lastVadStopAtMs?: number | null;
   resources: { lease: boolean; timer: boolean; bufferedBytes: number };
   transcription?: LocalTranscriptionSnapshot;
   participation?: LocalParticipationSnapshot;
@@ -40,6 +42,7 @@ export type VoiceProfileUse = "no-aplica" | "sin-perfil" | "cargando" | "activo"
 export const OPTIONAL_PROFILE_LOAD_MS = 10_000;
 /** RAM-only choices made while OFF and frozen for the session. */
 export type SessionOptions = { language?: TextLanguage; diagnostics?: boolean; manualConversation?: boolean;
+  textEngine?: "soniox" | "local";
   /** Manual only: own-profile comparison improves attribution but its absence/failure never blocks. */
   optionalProfile?: boolean };
 export type DetectorLease = { stop(): void; diagnostics(): string };
@@ -65,6 +68,7 @@ export class ConversationCaptureCoordinator {
   private epoch = 0;
   private metrics = emptyMetrics();
   private vad = new LocalEnergyVad();
+  private lastVadStopAtMs: number | null = null;
   private lease: DetectorLease | null = null;
   private cancelTimer: (() => void) | null = null;
   private preparing = false;
@@ -74,6 +78,7 @@ export class ConversationCaptureCoordinator {
   private enabledAt = 0;
   private sessionLimitMs = 120_000;
   private manualConversation = false;
+  private expectedTextEngine: "soniox" | "local" = "soniox";
   private optionalProfile = false;
   private voiceProfile: VoiceProfileUse = "no-aplica";
   private silenceSince: number | null = null;
@@ -91,7 +96,8 @@ export class ConversationCaptureCoordinator {
 
   snapshot(): DetectorSnapshot {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
-      metrics: { ...this.metrics }, vad: this.vad.snapshot(), participationMode: this.participationMode,
+      metrics: { ...this.metrics }, vad: this.vad.snapshot(), lastVadStopAtMs: this.lastVadStopAtMs,
+      participationMode: this.participationMode,
       enrollmentOutcome: this.enrollmentOutcome,
       ...(this.language ? { languageMode: this.language } : {}),
       ...(this.phases ? { phases: this.phases.snapshot() } : {}),
@@ -200,6 +206,7 @@ export class ConversationCaptureCoordinator {
     this.cleanup();
     this.transcribing = enabled && transcribe && participation !== "enrollment";
     this.manualConversation = enabled && this.transcribing && options.manualConversation === true;
+    this.expectedTextEngine = options.textEngine === "local" ? "local" : "soniox";
     this.optionalProfile = this.manualConversation && options.optionalProfile === true;
     if (enabled) this.sessionLimitMs = this.manualConversation ? 1_200_000 : 120_000;
     this.participationMode = enabled ? participation : "off";
@@ -214,6 +221,7 @@ export class ConversationCaptureCoordinator {
     this.metrics = emptyMetrics();
     this.enabledAt = this.host.now();
     this.vad = new LocalEnergyVad();
+    this.lastVadStopAtMs = null;
     this.lastDiagnostics = "";
     this.gapCounted = false;
     this.language = this.transcribing ? (options.language === "auto" ? "auto" : "es") : null;
@@ -226,8 +234,8 @@ export class ConversationCaptureCoordinator {
         return;
       }
     }
-    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto", this.manualConversation)) {
-      this.fail("Transcripción local no disponible. Revisa el modelo Whisper base local o espera al cierre anterior.");
+    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto", this.manualConversation, this.sessionLimitMs)) {
+      this.fail("El motor seleccionado no está disponible. Revisa su descarga o espera al cierre anterior.");
       return;
     }
     this.state = "suspendido";
@@ -270,8 +278,8 @@ export class ConversationCaptureCoordinator {
       } else if (this.optionalProfile) this.voiceProfile = "activo";
     }
     if (this.transcribing) {
-      if (this.manualConversation && this.host.transcription?.snapshot().engine !== "soniox") {
-        this.fail("Soniox no está disponible. Conversación manual OFF; puedes reintentar.");
+      if (this.manualConversation && this.host.transcription?.snapshot().engine !== this.expectedTextEngine) {
+        this.fail("El motor seleccionado no está disponible. Conversación OFF; puedes reintentar.");
         return;
       }
       const status = this.host.transcription?.snapshot().status ?? "error";
@@ -360,8 +368,10 @@ export class ConversationCaptureCoordinator {
     this.metrics.chunks++;
     this.metrics.samples += 800;
     this.metrics.bytes += pcm.length;
-    const positiveBefore = this.vad.snapshot().positiveMs;
+    const vadBefore = this.vad.snapshot();
+    const positiveBefore = vadBefore.positiveMs;
     this.vad.accept(pcm);
+    if (this.vad.snapshot().completed > vadBefore.completed) this.lastVadStopAtMs = now;
     if (this.manualConversation) {
       // Acoustic activity is conservative: noise/TV can extend the session. Missing audio and
       // priority suspensions never prove silence; resetAcousticStream clears this interval.
@@ -454,6 +464,7 @@ export class ConversationCaptureCoordinator {
   }
 
   private resetAcousticStream(): void {
+    this.lastVadStopAtMs = null;
     this.silenceSince = null;
     this.vad.resetStream();
     this.host.transcription?.resetStream();

@@ -92,6 +92,21 @@ async function quiet(h, ms) {
   }
 }
 
+test('VAD completion timestamp measures release and is cleared at capture boundaries', async () => {
+  const h = harness(); await h.on();
+  const pcm = new Uint8Array(1600), view = new DataView(pcm.buffer);
+  for (let i = 0; i < 800; i++) view.setInt16(i * 2, Math.round(1000 * Math.sin(2 * Math.PI * 300 * i / 16000)), true);
+  const feed = (bytes, chunks) => { for (let i = 0; i < chunks; i++) { h.tick(50); h.leases.at(-1).pcm(bytes); } };
+  feed(pcm, 4);
+  assert.equal(h.detector.snapshot().lastVadStopAtMs, null);
+  feed(new Uint8Array(1600), 12);
+  assert.equal(h.detector.snapshot().vad.completed, 1);
+  assert.equal(h.detector.snapshot().lastVadStopAtMs, 1800);
+  h.leases.at(-1).revoked();
+  assert.equal(h.detector.snapshot().lastVadStopAtMs, null);
+  h.detector.setEnabled(false);
+});
+
 test('manual conversation has a twenty-minute deadline including priority suspension', async () => {
   const h = harness({ transcription: manualPort() });
   await h.on(true, 'off', { manualConversation: true, language: 'auto' });

@@ -26,15 +26,18 @@ import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
-import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, preciseTextModelLabel, startAsrModelDownload } from "../native/asr-model";
+import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
+import { conversationModelOption } from "../native/conversation-model-options";
+import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, hermesHistoryText, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
 import { hermesPresentationDiagnostics } from "../ui/shell/conversation-hermes-ui";
 import {
   conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
-  setConversationDiagnosticsSelected, setConversationTextEngine, setConversationTextLanguage, setConversationTextSelected,
+  setConversationDiagnosticsSelected, setConversationTextLanguage, setConversationTextSelected,
   wearerActions, wearerChoices,
+  CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
@@ -156,7 +159,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
       this.localCloseTimer = null;
     });
-    for (const id of ["whisper-base-es", "whisper-small-es"] as const) {
+    for (const id of ["whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const) {
       this.unsubscribers.push(onAsrModelStateChanged(id, () => {
         this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
         this.refreshConversationUi();
@@ -183,6 +186,13 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationWearerVisibility", this.conversationWearerVisibility);
     this.notifyPropertyChange("conversationWearerPhraseButton", this.conversationWearerPhraseButton);
     this.notifyPropertyChange("localTranscript", this.localTranscript);
+    this.notifyPropertyChange("conversationEngineButton", this.conversationEngineButton);
+    this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
+    this.notifyPropertyChange("conversationDownloadButton", this.conversationDownloadButton);
+    this.notifyPropertyChange("conversationDownloadVisibility", this.conversationDownloadVisibility);
+    this.notifyPropertyChange("conversationModelStatus", this.conversationModelStatus);
+    this.notifyPropertyChange("conversationTranscriptVisibility", this.conversationTranscriptVisibility);
+    this.notifyPropertyChange("conversationHermesButton", this.conversationHermesButton);
     this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
     this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
     this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
@@ -209,10 +219,14 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   get conversationHermesButton(): string {
-    return `Hermes en conversación: ${dashboardController.conversationDetector.snapshot().enabled ? "ON · detener" : "OFF · iniciar"}`;
+    return `${conversationUsesHermes() ? "Hermes en conversación" : "Solo texto"}: ${dashboardController.conversationDetector.snapshot().enabled ? "ON · detener" : "OFF · iniciar"}`;
   }
 
   get conversationHermesStatus(): string {
+    if (!conversationUsesHermes()) {
+      const snapshot = dashboardController.conversationDetector.snapshot();
+      return this.hermesNotice || (snapshot.enabled ? `Solo transcripción · ${snapshot.reason}` : "Solo texto, sin consultas a Hermes. Máximo 20 min; OFF borra el texto.");
+    }
     const runtime = dashboardController.conversationHermes.snapshot();
     if (this.hermesNotice) return this.hermesNotice;
     const conversation = assistantBridge.conversation;
@@ -253,13 +267,17 @@ export class MainViewModel extends RemoteControlsViewModel {
   /** RAM selector, OFF only; the running session keeps the language it started with. */
   get conversationLanguageButton(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
-    const language = snapshot.enabled ? snapshot.languageMode : conversationTextLanguage();
-    const label = language === "es" ? "castellano (forzado)" : language === "auto" ? "automático" : "sin texto";
-    return `Idioma del texto: ${label} · ${snapshot.enabled ? "sesión en curso" : "tocar para cambiar"}`;
+    const language = snapshot.enabled ? snapshot.languageMode : conversationModel() === "android-system" ? "es" : conversationTextLanguage();
+    const label = language === "es" ? "Solo español" : language === "auto" ? "Automático" : "Sin texto";
+    return `Idioma: ${label}`;
   }
 
   onConversationLanguageTap(): void {
     if (!this.localTranscriptionCanStart) return;
+    if (conversationModel() === "android-system") {
+      void Dialogs.alert({ title: "Idioma del motor del Pixel", message: "Esta prueba usa español instalado. El servicio no anunció catalán/valenciano; para probar ambos idiomas elige Whisper o Soniox.", okButtonText: "Cerrar" });
+      return;
+    }
     setConversationTextLanguage(conversationTextLanguage() === "es" ? "auto" : "es");
   }
 
@@ -379,7 +397,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     const summary = detector.lastSessionSummary();
     void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
       + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
-      + "\nHermes (recuentos, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
+      + "\nHermes (métricas, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
       + "\nLentes Hermes (recuentos, sin texto): " + JSON.stringify({ ...hermesPresentationDiagnostics(),
         shellRenderFailures: dashboardController.shellRenderDiagnostics() })
       + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
@@ -387,14 +405,67 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   /** Soniox needs only its key; the local engine needs downloaded Whisper weights. */
   private get conversationTextReady(): string {
-    return conversationTextEngine() === "soniox" && sonioxApiKeySetting.get().trim() ? "ready" : conversationTextModelStatus();
+    return conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
+      : conversationModel() === "android-system" ? (isSystemTranscriptionReady() ? "ready" : "absent") : conversationTextModelStatus(conversationLocalModel());
   }
 
   get conversationEngineButton(): string {
-    if (conversationTextEngine() === "local") return "Motor de texto: local (Whisper, sin red) · tocar para Soniox";
-    return sonioxApiKeySetting.get().trim()
-      ? "Motor de texto: Soniox (nube, separa voces) · tocar para local"
-      : "Motor de texto: Soniox sin clave (usará local) · añade la clave en Ajustes";
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const active = snapshot.enabled && snapshot.state === "escuchando" && snapshot.transcription?.model ? " · en uso" : "";
+    const model = conversationModel();
+    const name = model === "soniox" ? "Soniox (nube)" : model === "android-system" ? "Pixel (local, experimental)" : `Whisper ${model.split("-")[1]} (local)`;
+    return `Motor: ${name}${active}`;
+  }
+  get conversationModeButton(): string { return `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`; }
+  get conversationModelStatus(): string {
+    const model = conversationModel();
+    if (model === "soniox") return sonioxApiKeySetting.get().trim() ? "Reconoce y separa voces en la nube." : "Falta la clave de Soniox en Ajustes.";
+    if (model === "android-system") return isSystemTranscriptionReady() ? "Sin descarga. Usa español en el móvil, sin separar voces. Prueba experimental con el audio de las gafas." : "Motor local del Pixel no disponible en este móvil.";
+    const state = asrModelState(model);
+    if (state.error) return state.error;
+    const ready = state.status === "ready" ? "Descargado. Puedes iniciar." : "Pulsa Descargar; al terminar, pulsa Iniciar.";
+    return `${ready} Reconocimiento en el móvil, sin separar voces.${model === "whisper-medium-es" ? " Medium es experimental y puede tardar más." : ""}`;
+  }
+  get conversationDownloadVisibility(): string {
+    const model = conversationModel();
+    return model !== "soniox" && model !== "android-system" && asrModelState(model).status !== "ready" ? "visible" : "collapse";
+  }
+  get conversationDownloadButton(): string {
+    const model = conversationModel();
+    if (model === "soniox" || model === "android-system") return "";
+    const state = asrModelState(model);
+    return state.status === "downloading" ? `Descargando ${Math.floor(state.bytesDownloaded * 100 / state.totalBytes)} % · pausar`
+      : `Descargar ${Math.ceil(state.totalBytes / 1_000_000)} MB`;
+  }
+  onConversationDownloadTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    const model = conversationModel();
+    if (model === "soniox" || model === "android-system") return;
+    if (asrModelState(model).status === "downloading") cancelAsrModelDownload(model); else startAsrModelDownload(model);
+    this.refreshConversationUi();
+  }
+  get conversationTranscriptVisibility(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return snapshot.enabled && snapshot.state === "escuchando" ? "visible" : "collapse";
+  }
+  async onConversationModeTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const options = ["Texto y Hermes", "Solo texto (sin consultar a Hermes)"];
+    const choice = await Dialogs.action({ title: "Modo de conversación", cancelButtonText: "Cerrar", actions: options });
+    if (!this.localTranscriptionCanStart || !options.includes(choice)) return;
+    setConversationUsesHermes(choice === options[0]); this.hermesNotice = "";
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
+  async onConversationEngineTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const labels = CONVERSATION_MODELS.map(conversationModelOption);
+    const choice = await Dialogs.action({ title: "Motor de conversación", cancelButtonText: "Cerrar",
+      message: "Whisper funciona en el móvil. Hermes sigue usando el puente y su proveedor. Medium puede tardar más y consumir más memoria.", actions: labels });
+    if (!this.localTranscriptionCanStart) return;
+    const index = labels.indexOf(choice);
+    if (index < 0) return;
+    const model = CONVERSATION_MODELS[index]!;
+    setConversationModel(model); this.hermesNotice = ""; this.refreshConversationUi(); this.refreshHermesUi();
   }
 
   /** A4: the phone label is line-limited, so show the newest tail instead of the oldest head. */
@@ -409,23 +480,25 @@ export class MainViewModel extends RemoteControlsViewModel {
   get localTranscriptionLabel(): string {
     const state = dashboardController.conversationDetector.snapshot().transcription;
     const language = dashboardController.conversationDetector.snapshot().languageMode;
-    const engine = state?.engine === "soniox" ? "Soniox (nube)" : state?.engine ?? "local";
+    const engine = state?.engine === "soniox" ? "Soniox (nube)" : state?.model ?? state?.engine ?? "local";
     return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${engine} · ${state.status} · puede equivocarse con ruido. Se borra al parar.` : "";
   }
   get localTranscriptionButton(): string {
-    const model = asrModelState("whisper-base-es");
+    if (conversationTextEngine() === "soniox") return "Solo transcripción con Soniox";
+    if (conversationModel() === "android-system") return "Solo transcripción con el motor del Pixel";
+    const model = asrModelState(conversationLocalModel());
     if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
-    return conversationTextModelStatus() === "ready" ? `Transcribir localmente (${textLanguageLabel(conversationTextLanguage())}, 2 min máx.)` : "Descargar modelo local (161 MB)";
+    return model.status === "ready" ? "Solo transcripción con el modelo seleccionado" : "Descargar el modelo seleccionado";
   }
   onLocalTranscriptionTap(): void {
     if (!this.localTranscriptionCanStart) return;
-    const model = asrModelState("whisper-base-es");
-    if (model.status === "downloading") return;
-    if (conversationTextModelStatus() !== "ready") {
-      startAsrModelDownload("whisper-base-es");
+    const selected = conversationModel();
+    if (selected !== "soniox" && selected !== "android-system" && asrModelState(selected).status !== "ready") {
+      startAsrModelDownload(selected);
       return; // Weights only; download completion never starts capture.
     }
-    dashboardController.setConversationCaptureEnabled(true, true);
+    setConversationUsesHermes(false);
+    this.onConversationHermesTap();
   }
 
   async onConversationOptionsTap(): Promise<void> {
@@ -437,10 +510,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     const localDiagnosticsAction = "Diagnóstico local · " + this.conversationDetectorButton;
     const languageAction = this.conversationLanguageButton;
     const diagnosticsAction = this.conversationDiagnosticsButton;
-    const preciseAction = preciseTextModelLabel();
     const engineAction = this.conversationEngineButton;
-    const choice = await Dialogs.action({ title: "Conversación local", cancelButtonText: "Cerrar",
-      actions: ["Mi perfil", localDiagnosticsAction, textAction, engineAction, languageAction, preciseAction, "Solo transcripción", "Solo actividad de voz",
+    const choice = await Dialogs.action({ title: "Opciones avanzadas de conversación", cancelButtonText: "Cerrar",
+      actions: [engineAction, this.conversationModeButton, "Mi perfil", localDiagnosticsAction, textAction, languageAction, "Solo transcripción", "Solo actividad de voz",
         "Métricas tras OFF", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
     if (choice === localDiagnosticsAction) { this.onConversationDetectorTap(); return; }
@@ -450,15 +522,10 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (choice === "Mi perfil") { this.onVoiceProfileTap(); return; }
     if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
     if (choice === engineAction) {
-      setConversationTextEngine(conversationTextEngine() === "soniox" ? "local" : "soniox");
-      this.refreshConversationUi();
+      await this.onConversationEngineTap();
       return;
     }
-    if (choice === preciseAction) {
-      // Weights only, explicit user choice; download completion never starts capture.
-      if (asrModelState("whisper-small-es").status === "absent") startAsrModelDownload("whisper-small-es");
-      return;
-    }
+    if (choice === this.conversationModeButton) { await this.onConversationModeTap(); return; }
     if (choice === "Solo transcripción") { this.onLocalTranscriptionTap(); return; }
     if (choice === "Solo actividad de voz") { dashboardController.setConversationCaptureEnabled(true); return; }
     if (choice !== ownAction) return;
@@ -1471,7 +1538,8 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   /** What the next gesture lands on, as the watch pad shows it. */
   get padFocusLine(): string {
-    return dashboardController.glassesDisplayLabel();
+    const focus = dashboardController.glassesDisplayLabel();
+    return focus === "Display off" ? "" : focus;
   }
 
   private refreshPadFocusLine(): void {

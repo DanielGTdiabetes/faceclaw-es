@@ -10,8 +10,8 @@ import java.security.MessageDigest
 /**
  * Independent local-only Whisper route. No speaker model, storage, BLE or network client.
  *
- * A3/A4: prefers Whisper small int8 (4 threads, A4) when its weights are already downloaded and verify; otherwise
- * falls back to Whisper base. Never downloads anything by itself. The ASR copy of each window is
+ * Explicit base/small/medium selection, verified before JNI, without substitution or automatic downloads.
+ * The ASR copy of each window is
  * level-conditioned (LocalAsrConditioner) before decoding; capture, VAD and profile are untouched.
  */
 class FaceclawLocalTranscriber(context: Context) {
@@ -32,6 +32,14 @@ class FaceclawLocalTranscriber(context: Context) {
             "base-tokens.txt" to "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
         ))
     private val handler = Handler(Looper.getMainLooper())
+    private val medium = Model("whisper-medium", VoiceModelKind.WHISPER_MEDIUM,
+        File(root, "sherpa-onnx-whisper-medium-es-int8"), 4, mapOf(
+            "medium-encoder.int8.onnx" to "1c54582b4d829de0089f6cb63bbbdb3bf7555398bacaf855fbecf1a84dfd193e",
+            "medium-decoder.int8.onnx" to "595d00a338a365a7bfa0ca7f296cabc639583bef770ab6130df90f49a6412747",
+            "medium-tokens.txt" to "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126",
+        ))
+    private val selectionLock = Any()
+    private var selectedModel = small
 
     /** Verify already-downloaded weights on the worker before entering JNI. */
     private fun verified(model: Model): Boolean {
@@ -57,7 +65,8 @@ class FaceclawLocalTranscriber(context: Context) {
         override val dispatcher = CallbackDispatcher { action -> handler.post { action() } }
         /** `language` comes from the accepted start that owns this worker; it is never re-read later. */
         override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? {
-            val model = listOf(small, base).firstOrNull { verified(it) } ?: return null
+            val model = synchronized(selectionLock) { selectedModel }
+            if (!verified(model)) return null // Never substitute a different model during a comparison.
             val recognizer = OfflineRecognizer(AndroidSpeechEngines.recognizerConfig(
                 model.directory, model.kind, if (language == LocalTranscriptLanguage.ES) "es" else "", model.threads))
             return object : LocalTranscriptDecoder {
@@ -78,7 +87,17 @@ class FaceclawLocalTranscriber(context: Context) {
     }, conditionAudio = true)
     fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)
     /** "es" forces Spanish for this session only; anything else keeps automatic detection. */
-    fun start(language: String): Boolean = session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS)
+    fun start(language: String, modelId: String, maxMs: Long): Boolean = synchronized(selectionLock) {
+        if (session.isWorkerActive()) return false
+        val model = when (modelId) {
+            "whisper-base-es" -> base
+            "whisper-small-es" -> small
+            "whisper-medium-es" -> medium
+            else -> return false
+        }
+        selectedModel = model
+        session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS, maxMs)
+    }
     fun setPhase(phase: Int) = session.setPhase(phase)
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()

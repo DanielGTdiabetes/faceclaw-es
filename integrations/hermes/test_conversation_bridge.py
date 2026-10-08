@@ -56,6 +56,29 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.calls, [])
         await self.run_bridge(False, exercise)
 
+    async def test_real_transport_updates_memory_only_after_correlated_native_receipt(self):
+        async def exercise(bridge, socket, queue, hello, agent):
+            self.assertIn("conv/memory-ack/1", hello["capabilities"])
+            agent.response = {"kind": "mensaje", "text": "Synthetic idea"}
+            await socket.send(json.dumps({**anonymous("memory", "assist"), "memoryAck": True}))
+            frame = await asyncio.wait_for(queue.get(), 3)
+            self.assertEqual(bridge.conversation.said, [])
+            ack = {"v": 1, "chan": "conv", "type": "presented", "requestId": frame["requestId"],
+                   "ref": frame["ref"], "deliveryId": frame["deliveryId"]}
+            await socket.send(json.dumps({**ack, "requestId": "wrong"}))
+            # A ping/pong orders the preceding receipt without timing assumptions.
+            await socket.send(json.dumps({"v": 1, "chan": "ctl", "type": "ping"}))
+            self.assertEqual((await asyncio.wait_for(queue.get(), 3))["type"], "pong")
+            self.assertEqual(bridge.conversation.said, [])
+            await socket.send(json.dumps(ack))
+            await socket.send(json.dumps({**anonymous("duplicate", "assist"), "memoryAck": True}))
+            duplicate = await asyncio.wait_for(queue.get(), 3)
+            self.assertEqual(duplicate["kind"], "nada")
+            self.assertEqual(bridge.conversation._recent_said(), ["Synthetic idea"])
+            self.assertEqual(agent.calls[-1][0]["alreadySaid"], ["Synthetic idea"])
+            self.assertIsNone(bridge.history)
+        await self.run_bridge(True, exercise)
+
     async def test_optional_identity_context_and_invalid_modality_over_the_real_bridge(self):
         async def exercise(bridge, socket, queue, hello, agent):
             await socket.send(json.dumps({**anonymous("bad"), "modality": "otra"}))

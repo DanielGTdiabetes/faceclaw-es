@@ -9,7 +9,7 @@ declare const java: any;
  * than bundled in the APK; FaceclawVoiceController reads the files from the
  * directory each model's `dirName` names.
  *
- * Three models, same download layout:
+ * Downloadable models, same layout:
  *  - "moonshine": the original on-device option (three files). The model is
  *    no longer bundled in the APK; it is fetched into the same filesDir
  *    location that earlier releases copied the bundled files to, so
@@ -22,13 +22,15 @@ declare const java: any;
  *    computed from freshly downloaded files from the maintainer's HF mirror.
  *  - "whisper-small-es": larger multilingual Whisper for Spanish accuracy,
  *    at the cost of memory and decode time; base remains selectable.
+ *  - "whisper-medium-es": experimental larger multilingual model, pinned to
+ *    the maintainer revision/LFS hashes. No performance claim until tested.
  *
  * Mirrors the on-phone assistant model flow in llama.ts, except each model
  * here is multiple files rather than one; they download sequentially through
  * FaceclawModelDownloader (resume + pinned sha256 per file).
  */
 
-export type AsrModelId = "moonshine" | "whisper-base-es" | "whisper-small-es";
+export type AsrModelId = "moonshine" | "whisper-base-es" | "whisper-small-es" | "whisper-medium-es";
 
 type AsrModelFile = {
   name: string;
@@ -118,15 +120,30 @@ export const ASR_MODELS: Record<AsrModelId, AsrModelDef> = {
     ],
     totalBytes: 375485327,
   },
+  "whisper-medium-es": {
+    label: "Whisper medium (local, experimental)",
+    dirName: "sherpa-onnx-whisper-medium-es-int8",
+    // Maintainer LFS SHA-256 metadata at this immutable revision; verified on download/load.
+    baseUrl: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-medium/resolve/8c31d28503847560985df21f90e14f0c736e075e/",
+    files: [
+      { name: "medium-encoder.int8.onnx", sha256: "1c54582b4d829de0089f6cb63bbbdb3bf7555398bacaf855fbecf1a84dfd193e", sizeBytes: 374196283 },
+      { name: "medium-decoder.int8.onnx", sha256: "595d00a338a365a7bfa0ca7f296cabc639583bef770ab6130df90f49a6412747", sizeBytes: 571059257 },
+      { name: "medium-tokens.txt", sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126", sizeBytes: 816730 },
+    ],
+    totalBytes: 946072270,
+  },
 };
 
 export type AsrModelState = {
+  error?: string;
   status: "absent" | "downloading" | "ready";
   bytesDownloaded: number;
   totalBytes: number;
 };
 
 type ModelRuntime = {
+  generation: number;
+  error: string;
   downloader: any;
   // Bytes of files already fully downloaded in this run, plus progress within
   // the file currently downloading; drives the aggregate percentage.
@@ -136,13 +153,14 @@ type ModelRuntime = {
 };
 
 function freshRuntime(): ModelRuntime {
-  return { downloader: null, completedBytes: 0, currentFileBytes: 0, stateListeners: new Set() };
+  return { generation: 0, error: "", downloader: null, completedBytes: 0, currentFileBytes: 0, stateListeners: new Set() };
 }
 
 const runtimes: Record<AsrModelId, ModelRuntime> = {
   moonshine: freshRuntime(),
   "whisper-base-es": freshRuntime(),
   "whisper-small-es": freshRuntime(),
+  "whisper-medium-es": freshRuntime(),
 };
 
 function modelDirPath(id: AsrModelId): string {
@@ -180,16 +198,18 @@ export function asrModelState(id: AsrModelId): AsrModelState {
   }
   return {
     status: isAsrModelReady(id) ? "ready" : "absent",
+    ...(runtime.error ? { error: runtime.error } : {}),
     bytesDownloaded: 0,
     totalBytes,
   };
 }
 
 /**
- * A3: conversation text uses Whisper small when its weights are present (native side verifies
- * hashes and falls back to base), otherwise base. Ready if either is downloaded.
+ * With an explicit selection, report that model only. The no-argument legacy helper
+ * remains for diagnostic callers; actual conversation decoding never substitutes weights.
  */
-export function conversationTextModelStatus(): AsrModelState["status"] {
+export function conversationTextModelStatus(selected?: AsrModelId): AsrModelState["status"] {
+  if (selected) return asrModelState(selected).status;
   const small = asrModelState("whisper-small-es");
   const base = asrModelState("whisper-base-es");
   if (small.status === "ready" || base.status === "ready") return "ready";
@@ -200,7 +220,7 @@ export function conversationTextModelStatus(): AsrModelState["status"] {
 export function preciseTextModelLabel(): string {
   const small = asrModelState("whisper-small-es");
   if (small.status === "downloading") return `Modelo preciso (small): ${Math.floor(small.bytesDownloaded * 100 / small.totalBytes)} %`;
-  return small.status === "ready" ? "Modelo preciso (small): listo, en uso" : "Modelo preciso (small): descargar 375 MB";
+  return small.status === "ready" ? "Whisper small: descargado" : "Whisper small: descargar 375 MB";
 }
 
 export function onAsrModelStateChanged(id: AsrModelId, listener: (state: AsrModelState) => void): () => void {
@@ -217,14 +237,15 @@ function notifyStateChanged(id: AsrModelId): void {
 export function startAsrModelDownload(id: AsrModelId): void {
   const runtime = runtimes[id];
   if (!global.isAndroid || runtime.downloader || isAsrModelReady(id)) return;
+  runtime.error = "";
   runtime.completedBytes = ASR_MODELS[id].files
     .filter((file) => isFilePresent(id, file))
     .reduce((sum, f) => sum + f.sizeBytes, 0);
-  downloadNextFile(id);
+  downloadNextFile(id, ++runtime.generation);
   notifyStateChanged(id);
 }
 
-function downloadNextFile(id: AsrModelId): void {
+function downloadNextFile(id: AsrModelId, generation: number): void {
   const runtime = runtimes[id];
   const def = ASR_MODELS[id];
   const nextFile = def.files.find((file) => !isFilePresent(id, file));
@@ -236,15 +257,19 @@ function downloadNextFile(id: AsrModelId): void {
   runtime.currentFileBytes = 0;
   const listener = new com.faceclaw.app.FaceclawModelDownloaderListener({
     onProgress: (bytes: number, _total: number) => {
+      if (generation !== runtime.generation) return;
       runtime.currentFileBytes = Number(bytes);
       notifyStateChanged(id);
     },
     onDone: () => {
+      if (generation !== runtime.generation) return;
       runtime.completedBytes += nextFile.sizeBytes;
       runtime.currentFileBytes = 0;
-      downloadNextFile(id);
+      downloadNextFile(id, generation);
     },
     onError: (message: string) => {
+      if (generation !== runtime.generation) return;
+      runtime.error = "No se pudo descargar. Revisa la conexión y el espacio libre; puedes reintentar.";
       console.error(`Voice model download failed (${id}/${nextFile.name}): ${message}`);
       runtime.downloader = null;
       notifyStateChanged(id);
@@ -264,6 +289,7 @@ function downloadNextFile(id: AsrModelId): void {
 export function cancelAsrModelDownload(id: AsrModelId): void {
   const runtime = runtimes[id];
   if (!runtime.downloader) return;
+  runtime.generation++;
   runtime.downloader.cancel();
   runtime.downloader = null;
   notifyStateChanged(id);

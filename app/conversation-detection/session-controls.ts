@@ -16,11 +16,31 @@ export type ConversationSessionPort = {
 /** One RAM-only choice shared by the phone and lenses. Binding never starts audio. */
 let port: ConversationSessionPort | null = null;
 let withText = true;
-/** Spanish-first product default, including after process restart. RAM only; assistant settings unchanged. */
-let textLanguage: TextLanguage = "es";
+/** Automatic Spanish/Catalan recognition by default. RAM only; assistant settings unchanged. */
+let textLanguage: TextLanguage = "auto";
 let diagnostics = false;
 /** Soniox (cloud, diarized) by default; local Whisper on demand. RAM only. */
 let textEngine: "soniox" | "local" = "soniox";
+export const CONVERSATION_MODELS = ["soniox", "android-system", "whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const;
+export type ConversationModel = typeof CONVERSATION_MODELS[number];
+let localModel: Exclude<ConversationModel, "soniox" | "android-system"> = "whisper-small-es";
+let systemSelected = false;
+let useHermes = true;
+export function conversationLocalModel(): Exclude<ConversationModel, "soniox" | "android-system"> { return localModel; }
+export function conversationModel(): ConversationModel { return textEngine === "soniox" ? "soniox" : systemSelected ? "android-system" : localModel; }
+export function setConversationModel(value: ConversationModel): void {
+  if (port?.detector.snapshot().enabled || !CONVERSATION_MODELS.includes(value)) return;
+  if (value !== "soniox" && value !== "android-system") localModel = value;
+  systemSelected = value === "android-system";
+  textEngine = value === "soniox" ? "soniox" : "local";
+  for (const listener of listeners) listener();
+}
+export function conversationUsesHermes(): boolean { return useHermes; }
+export function setConversationUsesHermes(value: boolean): void {
+  if (port?.detector.snapshot().enabled || useHermes === value) return;
+  useHermes = value;
+  for (const listener of listeners) listener();
+}
 const listeners = new Set<() => void>();
 
 export function bindConversationSession(value: ConversationSessionPort): void { port = value; }
@@ -54,7 +74,7 @@ export function setConversationTextEngine(value: "soniox" | "local"): void {
   for (const listener of listeners) listener();
 }
 /** Options read once at start; every entry point (phone, lenses, "Solo transcripción") uses them. */
-export function conversationSessionOptions(): SessionOptions { return { language: textLanguage, diagnostics }; }
+export function conversationSessionOptions(): SessionOptions { return { language: systemSelected && textEngine === "local" ? "es" : textLanguage, diagnostics }; }
 export function onConversationTextSelected(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

@@ -1,5 +1,9 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
+import { conversationModel, conversationLocalModel } from "../conversation-detection/session-controls";
+import { isSystemTranscriptionReady } from "./system-transcription";
+import { LocalConversationTurns } from "../conversation-detection/local-conversation-turns";
+import { type ConversationTurn } from "../conversation-detection/conversation-turns";
 
 /** A4: rolling RAM-only text, by characters instead of the last three deliveries. */
 const MAX_TEXT_CHARS = 1200;
@@ -14,29 +18,44 @@ export class LocalTranscription implements DetectorTranscription {
   private enabled = false;
   private lines: string[] = [];
   private status = "inactivo";
+  private readonly turnLog = new LocalConversationTurns();
+  private engineKind = "";
 
-  start(language: TextLanguage = "es"): boolean {
+  start(language: TextLanguage = "es", _profileAssociation = false, maxMs = 120_000): boolean {
     if (this.enabled) return false;
     this.lines = [];
-    if (!global.isAndroid || !(isAsrModelReady("whisper-small-es") || isAsrModelReady("whisper-base-es"))) {
+    const selected = conversationModel();
+    const model = selected === "soniox" ? conversationLocalModel() : selected;
+    const system = model === "android-system";
+    if (!global.isAndroid || !(system ? isSystemTranscriptionReady() : isAsrModelReady(model))) {
       this.status = "modelo no disponible";
       return false;
     }
     try {
+      if (this.engine && this.engineKind !== (system ? "system" : "whisper")) {
+        if (this.snapshot().worker || this.snapshot().busy) { this.status = "ocupado"; return false; }
+        this.engine.stop(); this.engine = null;
+      }
       if (!this.engine) {
-        this.engine = new com.faceclaw.app.FaceclawLocalTranscriber(Utils.android.getApplicationContext());
+        const NativeEngine = system ? com.faceclaw.app.FaceclawSystemTranscriber : com.faceclaw.app.FaceclawLocalTranscriber;
+        this.engine = new NativeEngine(Utils.android.getApplicationContext());
+        this.engineKind = system ? "system" : "whisper";
         this.listener = new com.faceclaw.app.FaceclawLocalTranscriptListener({
           onText: (text: string, _language: string) => {
+            this.appendText(String(text));
+          },
+          onSegment: (text: string, _language: string, startMs: number, endMs: number) => {
             if (!this.enabled) return;
-            this.lines.push(String(text).slice(0, 600));
-            // Drop whole oldest deliveries until the text fits; always keep the newest one.
-            while (this.lines.length > 1 && this.lines.join(" ").length > MAX_TEXT_CHARS) this.lines.shift();
+            this.appendText(String(text));
+            this.turnLog.accept(String(text), Number(startMs), Number(endMs));
           },
         });
         this.engine.setListener(this.listener);
       }
       // Kotlin captures the language only if this start is accepted; a rejected start changes nothing.
-      this.enabled = Boolean(this.engine.start(language === "es" ? "es" : "auto"));
+      this.turnLog.start(model);
+      this.enabled = Boolean(this.engine.start(system || language === "es" ? "es" : "auto", model, maxMs));
+      if (!this.enabled) this.turnLog.stop();
       this.status = this.enabled ? "cargando" : "ocupado";
       return this.enabled;
     } catch {
@@ -46,9 +65,16 @@ export class LocalTranscription implements DetectorTranscription {
     }
   }
 
-  resetStream(): void { this.lines = []; this.engine?.resetStream(); }
+  private appendText(text: string): void {
+    if (!this.enabled) return;
+    this.lines.push(text.slice(0, 600));
+    while (this.lines.length > 1 && this.lines.join(" ").length > MAX_TEXT_CHARS) this.lines.shift();
+  }
+  subscribeTurns(listener: (turn: ConversationTurn) => void): () => void { return this.turnLog.subscribe(listener); }
+  turns(): ConversationTurn[] { return this.turnLog.list(); }
+  resetStream(): void { this.lines = []; this.turnLog.reset(); this.engine?.resetStream(); }
   setPhase(phase: number): void { if (this.enabled) this.engine?.setPhase(phase); }
-  stop(): void { this.enabled = false; this.lines = []; this.engine?.stop(); this.status = "inactivo"; }
+  stop(): void { this.enabled = false; this.lines = []; this.turnLog.stop(); this.engine?.stop(); this.status = "inactivo"; }
   acceptNative(pcm: unknown, vadState: string): void {
     if (this.enabled) this.engine?.acceptPcm(pcm, vadState);
   }

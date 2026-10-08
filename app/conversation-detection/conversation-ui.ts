@@ -87,7 +87,7 @@ export function wearerLine(snapshot: DetectorSnapshot): string {
 }
 
 export type ManualHermesRuntimeView = { enabled: boolean; listening: boolean; requests: number; modality?: string };
-const MANUAL_BASE = "Manual · máximo 20 min · cierre tras más de 5 min sin voz · español/valenciano automáticos";
+const MANUAL_BASE = "Manual · máximo 20 min · cierre tras más de 5 min sin voz";
 
 /**
  * Phone status for manual «Hermes en conversación». Recognising the wearer is optional on a conv/2

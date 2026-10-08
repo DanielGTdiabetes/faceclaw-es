@@ -1,5 +1,7 @@
 # Faceclaw Español
 
+**Conversación S2.6.10 instalada:** selector visible de Soniox, motor local del Pixel y Whisper base/small/medium, descarga independiente y modos «Texto y Hermes» / «Solo texto». Idioma automático en Soniox/Whisper; Pixel español. La API pública del Pixel y el adaptador instalado reconocen una frase sintética completa sin permiso de micrófono. [Uso, resultados y límites](notes/selector-modelos-conversacion-2026-10-08.md). Falta comparar con voces reales, ruido y sesiones largas.
+
 Adaptación de [jimrandomh/faceclaw](https://github.com/jimrandomh/faceclaw), basada en la versión 0.8.1. Licencia GPLv3, conservando la licencia y los avisos originales.
 
 - Whisper **base multilingüe**, cuantizado a int8, con idioma `es` y tarea `transcribe`: conserva el texto en español.

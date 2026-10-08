@@ -118,15 +118,17 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   private readonly identity: WearerIdentity;
   private readonly turnLog: ConversationTurns;
   private profileMatcher: ProfileSpeakerMatcher | null = null;
+  private maxMs = 120_000;
 
   constructor(private readonly local: DetectorTranscription, private readonly host: SonioxConversationHost) {
     this.identity = new WearerIdentity({ now: () => host.now(), every: (callback, ms) => host.every(callback, ms) });
     this.turnLog = new ConversationTurns(this.identity);
   }
 
-  start(language: TextLanguage = "es", profileAssociation = false): boolean {
+  start(language: TextLanguage = "es", profileAssociation = false, maxMs = 120_000): boolean {
     if (this.mode !== "off") return false;
     this.language = language;
+    this.maxMs = maxMs;
     this.reset();
     this.summaryValue = null;
     this.ending = false;
@@ -262,8 +264,8 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     const identity = this.identity.snapshot();
     if (this.mode === "local") {
       const local = this.local.snapshot();
-      return { ...local, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
-        identity, turnsAvailable: false };
+      return { ...local, model: local.engine, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
+        identity, turnsAvailable: this.stats.fallbacks === 0 && local.enabled && !!this.local.subscribeTurns };
     }
     return {
       enabled: this.mode === "soniox", status: this.status, worker: this.mode === "soniox", busy: false,
@@ -292,9 +294,15 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       });
   }
 
-  subscribeTurns(listener: (turn: ConversationTurn) => void): () => void { return this.turnLog.subscribe(listener); }
+  subscribeTurns(listener: (turn: ConversationTurn) => void): () => void {
+    const offSoniox = this.turnLog.subscribe(listener);
+    const offLocal = this.local.subscribeTurns?.((turn) => {
+      if (this.mode === "local" && this.stats.fallbacks === 0 && !this.ending) listener(turn);
+    });
+    return () => { offSoniox(); offLocal?.(); };
+  }
   subscribeAssociation(listener: (event: WearerAssociationEvent) => void): () => void { return this.identity.subscribe(listener); }
-  turns(): ConversationTurn[] { return this.turnLog.list(); }
+  turns(): ConversationTurn[] { return this.mode === "local" ? this.local.turns?.() ?? [] : this.turnLog.list(); }
   lastSessionSummary(): SonioxSessionSummary | null { return this.summaryValue ? { ...this.summaryValue } : null; }
 
   private sonioxLive(): boolean { return this.mode === "soniox" && this.open && !this.ending; }
@@ -315,7 +323,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       this.turnLog.clear();
     }
     this.mode = "local";
-    const started = this.local.start(this.language);
+    const started = this.local.start(this.language, false, this.maxMs);
     if (!started) { this.mode = "off"; this.status = "error"; }
     return started;
   }

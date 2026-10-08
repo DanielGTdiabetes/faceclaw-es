@@ -20,7 +20,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean } };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -32,6 +32,7 @@ export type HermesDisplayPort = {
   /** Remove the overlay; restoreSleep re-sleeps only if nothing explicit opened meanwhile. */
   retire(layer: Layer, restoreSleep: boolean): void;
   repaint(layer: Layer): void;
+  isVisible?(layer: Layer): boolean;
 };
 
 export type HermesLayerFactory = (text: () => string, hooks: { dismiss(): void; removed(): void }) => Layer & { retire(): void };
@@ -138,6 +139,17 @@ export class HermesConversationPresenter {
   diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
   hasOverlay(): boolean { return this.layer !== null; }
 
+  capturePresentation(): (() => void) | null {
+    const layer = this.layer, message = this.source.conversationHermesMessage;
+    if (!layer || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
+    const confirm = this.source.conversationHermes.capturePresentation?.();
+    if (!confirm) return null;
+    return () => {
+      if (!this.disposed && this.layer === layer && this.source.conversationHermesMessage === message
+        && this.liveText() && this.display.isVisible?.(layer) !== false) confirm();
+    };
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.retire(false);
@@ -227,7 +239,13 @@ function shellDisplay(): HermesDisplayPort {
     present: (layer, onYield) => shell.presentIndependentOverlay(layer, onYield),
     retire: (layer, restoreSleep) => shell.retireIndependentOverlay(layer, restoreSleep),
     repaint: (layer) => shell.repaintIndependentOverlay(layer),
+    isVisible: (layer) => shell.isIndependentOverlayVisible(layer),
   };
+}
+
+/** Called immediately before shell paint; invoke only after a native frame finishes with `sent`. */
+export function captureHermesPresentation(): (() => void) | null {
+  return current?.presenter.capturePresentation() ?? null;
 }
 
 /**

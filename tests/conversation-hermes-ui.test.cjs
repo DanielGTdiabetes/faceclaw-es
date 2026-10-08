@@ -200,6 +200,29 @@ function fakeController({ supported = true } = {}) {
 
 function topLayer(shell) { return shell.stack.layers.at(-1); }
 
+test('presentation receipt follows a visible current overlay, never a refused, paused or replaced one', () => {
+  for (const reason of ['current', 'keyboard', 'pause', 'replacement', 'off', 'disposed', 'covered']) {
+    const h = realShell(), f = fakeController(); let receipts = 0;
+    f.controller.conversationHermes.capturePresentation = () => () => receipts++;
+    const dispose = h.ui.bindHermesConversationUi(f.controller); f.arm();
+    if (reason === 'keyboard') h.shell.startKeyboardInput();
+    f.say('Primera idea');
+    const confirm = h.ui.captureHermesPresentation();
+    if (reason === 'keyboard') assert.equal(confirm, null);
+    else {
+      assert.equal(typeof confirm, 'function');
+      if (reason === 'pause') f.listening(false);
+      if (reason === 'replacement') f.say('Otra idea');
+      if (reason === 'off') f.say('');
+      if (reason === 'disposed') dispose();
+      if (reason === 'covered') h.shell.stack.push({ paint: (_ctx, below) => below(), handleInput() {} });
+      confirm();
+      assert.equal(receipts, reason === 'current' ? 1 : 0, reason);
+    }
+    dispose();
+  }
+});
+
 test('glasses system menu starts from any app and a stale ON menu cannot restart an expired session', () => {
   let enabled = false;
   const calls = [];
@@ -512,11 +535,15 @@ function localConversation(armed, manual = false) {
     ...graphicsMocks(),
     'conversation-detection/conversation-ui': { conversationDetail: () => 'Detalle', textLanguageLabel: () => 'castellano', wearerLine: () => '' },
     'conversation-detection/session-controls': {
+      CONVERSATION_MODELS: ['soniox', 'whisper-base-es', 'whisper-small-es', 'whisper-medium-es'],
+      conversationModel: () => 'soniox', conversationUsesHermes: () => true,
       conversationSession: () => session, conversationTextLanguage: () => 'es', conversationTextSelected: () => true,
       lensConversationPlan: () => ({ canStart: true, button: 'Iniciar', hint: '' }), onConversationTextSelected: () => () => {},
       setConversationTextSelected() {}, toggleLensConversation: (s) => s.setEnabled(false), wearerActions: () => [], wearerChoices: () => [],
     },
     'ui/menu': { openModalMenu() {} },
+    'native/asr-model': { onAsrModelStateChanged: () => () => {}, asrModelState: () => ({ status: 'ready' }) },
+    'native/conversation-model-options': { conversationModelLabel: () => 'Soniox', conversationModelOption: id => id },
     'ui/shell/shell': { shell: { isWindowVisible: () => false, yieldFocusToSidebar() {} } },
     'ui/shell/in-process-window': { createInProcessWindow: (value) => { options = value; return { requestRender() { renders++; } }; } },
     'ui/shell/conversation-hermes-ui': {
@@ -556,14 +583,16 @@ test('local conversation without Hermes keeps the classic transcript view and sc
   assert.equal(h.options.keepsScreenOn(), true);
 });
 
-test('glasses product conversation uses the shared manual owner, one menu control and no legacy transcript', () => {
+test('glasses product conversation uses the shared manual owner with model/mode controls while OFF', () => {
   const h = localConversation(false, true);
   h.patch({ enabled: false, state: 'desactivado' });
-  assert.match(h.paint(), /Máximo 20 min/);
+  assert.match(h.paint(), /Máximo\s+20 min/);
   assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
   assert.equal(h.counts().reads, 0);
   assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');
-  assert.equal(h.options.menuItems().length, 1);
+  assert.equal(h.options.menuItems().length, 4);
+  assert.match(h.options.menuItems()[1].label, /Motor/);
+  assert.match(h.options.menuItems()[2].label, /Modo/);
   h.options.baseLayer.handleInput({ type: 'click' });
   assert.deepEqual(h.starts, [['manual', true]], 'same controller entry point as phone/system menu');
   h.patch({ enabled: true, state: 'escuchando' });
@@ -593,7 +622,8 @@ function phoneHarness(f) {
   }).outputText, { module, exports: module.exports,
     assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {},
-    conversationSessionOptions: () => ({ language: 'es' }),
+    conversationTextEngine: () => 'soniox', conversationUsesHermes: () => true,
+    conversationSessionOptions: () => ({ language: 'auto' }),
   });
   const owner = { ...f.controller,
     conversationDetector: { hasOwnProfile: () => f.profile !== false, snapshot: () => ({ enabled: detectorOn, state: detectorOn ? 'escuchando' : 'desactivado', remainingMs: 1200000 }) },
@@ -619,7 +649,7 @@ function phoneHarness(f) {
     'ui/dashboard-settings': { onAnySettingChanged: tracked('settings'), mirrorTouchSetting: {}, showBleBandwidthSetting: { get: () => false }, sonioxApiKeySetting: { get: () => '' } },
     'native/asr-model': { onAsrModelStateChanged: tracked('asr') },
     'apps/microphones/mic-models': { onMicModelStateChanged: tracked('mic') },
-    'conversation-detection/session-controls': { onConversationTextSelected: tracked('text') },
+    'conversation-detection/session-controls': { onConversationTextSelected: tracked('text'), conversationUsesHermes: () => true },
     'graphics/image': { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 },
   }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
   const { MainViewModel } = load('app/phone-ui/main-view-model.ts');

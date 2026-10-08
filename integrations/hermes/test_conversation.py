@@ -84,7 +84,7 @@ class ValidationTests(unittest.TestCase):
             self.assertFalse(valid_request(frame))
 
     def test_capabilities_announce_conv1_and_conv2(self):
-        self.assertEqual(CAPABILITIES, ("conv/1", "conv/2"))
+        self.assertEqual(CAPABILITIES, ("conv/1", "conv/2", "conv/memory-ack/1"))
 
     def test_optional_identity_accepts_anonymous_one_or_two_voices_without_inventing_relations(self):
         for voices in (("1",), ("1", "2"), (None,), (None, "3")):
@@ -151,7 +151,8 @@ class ValidationTests(unittest.TestCase):
                        "neither two voices, alternation nor a greeting is required",
                        "never obliges you to contribute", "Humor, irony and mild sarcasm are optional", "Do not force jokes",
                        "Most contributions should be", "Prefer silence", "drop humor",
-                       "Do not repeat any of them", "keep participating as usual"):
+                       "Do not repeat any of them", "Silence is the default",
+                       "A witty reaction alone does not justify", "Do not answer an old question again"):
             self.assertIn(phrase, STYLE)
 
     def test_dispatch_is_denied_and_persistence_entry_points_are_disabled(self):
@@ -251,9 +252,11 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.service = ConversationService(lambda: self.agent, now=lambda: clock[0])
         await self.service.warmup()
         self.agent.response = {"kind": "mensaje", "text": "Primera idea"}
-        self.service.submit(self.phone, request(mode="assist"))
+        self.service.submit(self.phone, {**request(mode="assist"), "memoryAck": True})
         await self.wait(lambda: len(self.phone.frames) == 1)
         self.assertEqual(self.agent.calls[-1][0]["alreadySaid"], [])
+        self.assertEqual(self.service.said, [], "sending is not presentation")
+        self.assertTrue(self.service.presented(self.phone, self.phone.frames[-1]))
         self.service.submit(self.phone, request("c2", "assist"))
         await self.wait(lambda: len(self.phone.frames) == 2)
         self.assertEqual(self.agent.calls[-1][0]["alreadySaid"], ["Primera idea"], "never the speech itself")

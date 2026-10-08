@@ -30,6 +30,14 @@ function harness() {
     } }, reject() { accept = false; }, throwSend() { throws = true; } };
 }
 
+test('optional timing is bounded, text-free and cannot invalidate a valid result', () => {
+  const h = harness(); h.ready(); h.request();
+  h.reply({ timing: { primaryMs: 6100, primaryFirstTextMs: null, attempts: 99, apiCalls: Infinity,
+    queueMs: -1, fallbackMs: 'SECRET', fallbackReason: 'timeout', text: 'PRIVATE', ref: h.context.ref } });
+  assert.deepEqual(h.results[0].timing, { primaryMs: 6100, fallbackReason: 'timeout' });
+  assert.equal(h.results[0].verdict, 'tema');
+});
+
 test('old bridge, malformed capability and capability without explicit ON send no text', () => {
   const h = harness();
   for (const caps of [undefined, {}, 'conv/1', ['chat', 'mcp']]) {
@@ -76,6 +84,43 @@ test('every reference coordinate and request id must match; chat/mcp frames cann
   }
 });
 function keyValue(key) { return key === 'sessionId' ? 'old' : 999; }
+
+test('memory receipt is negotiated, correlated, text-free and sent only once after presentation', () => {
+  const h = harness(); h.channel.negotiate(['conv/1', 'conv/memory-ack/1']); h.channel.setEnabled(true);
+  h.request('assist'); assert.equal(h.frames[0].memoryAck, true);
+  h.reply({ kind: 'mensaje', text: 'Idea', deliveryId: 'opaque-id' });
+  assert.equal(h.frames.length, 1, 'receiving does not acknowledge presentation');
+  assert.equal(h.results[0].confirmPresented(), true);
+  assert.deepEqual(h.frames[1], { chan: 'conv', type: 'presented', deliveryId: 'opaque-id',
+    requestId: h.frames[0].requestId, ref: h.frames[0].ref });
+  assert.equal(h.results[0].confirmPresented(), false);
+  assert.equal(h.frames.length, 2);
+});
+
+test('late, OFF, chat and old-connection receipt callbacks cannot claim presentation', () => {
+  for (const reason of ['off', 'reset', 'chat', 'expiry']) {
+    const h = harness(); h.channel.negotiate(['conv/1', 'conv/memory-ack/1']); h.channel.setEnabled(true);
+    h.request('assist'); h.reply({ kind: 'mensaje', text: 'Idea', deliveryId: 'opaque-id' });
+    if (reason === 'off') { h.channel.setEnabled(false); h.channel.setEnabled(true); }
+    if (reason === 'reset') { h.channel.reset(); h.channel.negotiate(['conv/1', 'conv/memory-ack/1']); h.channel.setEnabled(true); }
+    if (reason === 'chat') { h.channel.setChatActive(true); h.channel.setChatActive(false); }
+    if (reason === 'expiry') h.advance(30_000);
+    assert.equal(h.results[0].confirmPresented(), false, reason);
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, 0);
+  }
+  const h = harness(); h.ready(); h.request('assist'); h.reply({ kind: 'mensaje', text: 'Idea', deliveryId: 'old' });
+  assert.equal(h.results[0].confirmPresented, undefined, 'old bridges never activate the extension');
+});
+
+test('a receipt transport failure may retry on a later confirmed frame', () => {
+  let available = false, sent = 0;
+  const h = harness(); h.channel.negotiate(['conv/1', 'conv/memory-ack/1']); h.channel.setEnabled(true);
+  h.request('assist'); h.reply({ kind: 'mensaje', text: 'Idea', deliveryId: 'opaque-id' });
+  h.channel.host.send = () => { sent++; return available; };
+  assert.equal(h.results[0].confirmPresented(), false);
+  available = true; assert.equal(h.results[0].confirmPresented(), true);
+  assert.equal(h.results[0].confirmPresented(), false); assert.equal(sent, 2);
+});
 
 test('OFF, disconnect, normal chat, replacement and timeout cancel only conv and deliver once', () => {
   for (const reason of ['off', 'reset', 'chat', 'replace', 'timeout']) {

@@ -6,6 +6,35 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LocalTranscriptWindowsTest {
+    @Test fun captureWindowBoundsSurviveLongManualSessionWithoutWordTimingClaims() {
+        val real = testPlatform()
+        val clock = object : ProtocolPlatform by real {
+            @Volatile var now = 1000L
+            override fun elapsedRealtimeMs(): Long = now
+        }
+        val delivered = Latch(1, real)
+        var bounds: Pair<Long, Long>? = null
+        val session = LocalTranscriptSession(object : LocalTranscriptHost {
+            override val dispatcher = CallbackDispatcher { it() }
+            override fun loadDecoder(language: LocalTranscriptLanguage) = object : LocalTranscriptDecoder {
+                override fun decode(samples: FloatArray) = LocalDecodedText("Texto sintético", "es", true)
+                override fun release() {}
+            }
+        }, clock)
+        session.setListener(object : FaceclawLocalTranscriptListener {
+            override fun onText(text: String, language: String) { error("Expected a capture window") }
+            override fun onSegment(text: String, language: String, startMs: Long, endMs: Long) {
+                bounds = Pair(startMs, endMs); delivered.countDown()
+            }
+        })
+        assertTrue(session.start(LocalTranscriptLanguage.ES, LocalTranscriptSegmentation.WINDOWS, 1200000))
+        waitFor(session, "status", "\"listo\"")
+        clock.now = 200000 // Beyond the old 2 min internal limit.
+        repeat(120) { session.acceptPcm(pcm(), "sin actividad") }
+        assertTrue(delivered.await(2000)); assertEquals(Pair(0L, 6000L), bounds)
+        session.stop(); waitFor(session, "worker", "false")
+        assertFalse(session.isWorkerActive())
+    }
     // Alternating 8 LSB ~= -72 dBFS, well below the current energy VAD. Synthetic, not human speech.
     private fun pcm(level: Int = 8, constant: Boolean = false) = ByteArray(1600).also { bytes ->
         repeat(800) { i ->

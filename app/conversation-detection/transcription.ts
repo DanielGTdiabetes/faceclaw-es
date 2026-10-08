@@ -24,6 +24,8 @@ export type LocalTranscriptionSnapshot = {
   accepted: number; abstentions: number; dropped: number;
   /** "soniox" (cloud), "local" or "local (sin red)" after a Soniox fallback. */
   engine?: string;
+  /** Actual loaded Whisper model; selection alone does not mean it is running. */
+  model?: string;
   /** Scalar Soniox counters; never text or key. */
   soniox?: { sentMs: number; finalTokens: number; messages: number; speakers: number; fallbacks: number; errors: number; lastError: string };
   /** S2: wearer association state; scalars and Soniox labels only, never text. */
@@ -77,7 +79,7 @@ export type ObservedSpeaker = SpeakerRef & { speaker: string; preview: string };
 
 export interface DetectorTranscription {
   /** The language is captured by an accepted start and stays fixed for that session. */
-  start(language?: TextLanguage, profileAssociation?: boolean): boolean;
+  start(language?: TextLanguage, profileAssociation?: boolean, maxMs?: number): boolean;
   acceptProfileMatch?(match: ProfileVoiceMatch): void;
   stop(): void;
   resetStream(): void;

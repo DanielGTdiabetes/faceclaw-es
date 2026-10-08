@@ -307,11 +307,13 @@ class FaceclawVoiceController(context: Context) {
      */
     private fun findAsrModelDir(kind: VoiceModelKind): File? {
         val dirName = when (kind) {
+            VoiceModelKind.WHISPER_MEDIUM -> return null // Conversation-only experimental model.
             VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_DIR
             VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_DIR
             VoiceModelKind.MOONSHINE -> ASR_MODEL_DIR
         }
         val fileNames = when (kind) {
+            VoiceModelKind.WHISPER_MEDIUM -> return null
             VoiceModelKind.WHISPER -> ASR_WHISPER_MODEL_FILES
             VoiceModelKind.WHISPER_SMALL -> ASR_WHISPER_SMALL_MODEL_FILES
             VoiceModelKind.MOONSHINE -> ASR_MODEL_FILES

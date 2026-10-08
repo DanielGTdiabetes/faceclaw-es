@@ -30,7 +30,11 @@ internal object AndroidSpeechEngines {
         val modelConfig = OfflineModelConfig.builder()
             .setNumThreads(numThreads)
         if (kind.isWhisper) {
-            val prefix = if (kind == VoiceModelKind.WHISPER_SMALL) "small" else "base"
+            val prefix = when (kind) {
+                VoiceModelKind.WHISPER_MEDIUM -> "medium"
+                VoiceModelKind.WHISPER_SMALL -> "small"
+                else -> "base"
+            }
             modelConfig
                 .setWhisper(OfflineWhisperModelConfig.builder()
                     .setEncoder(File(modelDir, "$prefix-encoder.int8.onnx").absolutePath)

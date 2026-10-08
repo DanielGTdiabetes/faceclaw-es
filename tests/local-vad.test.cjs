@@ -114,7 +114,11 @@ test('no input buffer or history survives accept; snapshots are detached scalars
   assert.deepEqual(vad.snapshot(), saved);
   saved.episodes = 99;
   assert.equal(vad.snapshot().episodes, 0);
-  for (const value of Object.values(vad)) assert.ok(typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string');
+  // C1's optional observer is an object reference, not retained PCM; without instrumentation it is null.
+  assert.equal(vad.observer, null);
+  for (const [key, value] of Object.entries(vad)) {
+    if (key !== 'observer') assert.ok(typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string');
+  }
 });
 
 test('invalid framing is rejected without updating VAD', () => {

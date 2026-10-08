@@ -1,4 +1,5 @@
 import { type ConversationTurn } from "./conversation-turns";
+import { isAnonymousLocalTurn } from "./local-conversation-turns";
 import { type WearerAssociationEvent } from "./wearer-identity";
 
 /** Proposed policy is supplied by the caller: none of these limits changes installed listening. */
@@ -115,7 +116,8 @@ export class ConversationEpisodeTracker {
     const labelled = turn.relation === "portador" ? !!this.wearer && turn.speaker === this.wearer
       : turn.relation === "otro" ? !!this.wearer && !!turn.speaker && turn.speaker !== this.wearer
       : turn.relation === "desconocido" && (turn.speaker === null || turn.speaker !== this.wearer);
-    if (!labelled || this.contradicts(turn) || turn.timing !== "valido" || !turn.text.trim()
+    const local = this.modality === "identidad-opcional" && isAnonymousLocalTurn(turn);
+    if (!labelled || this.contradicts(turn) || !(turn.engine === "soniox" && turn.timing === "valido" || local) || !turn.text.trim()
       || turn.text.length > this.policy.maxChars) {
       this.ignored++;
       return false;
