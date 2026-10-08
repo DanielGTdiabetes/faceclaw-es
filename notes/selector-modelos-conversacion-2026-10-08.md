@@ -35,7 +35,7 @@ Los episodios/canal admiten estos fragmentos solamente en identidad opcional y c
 
 ## Verificación y entrega
 
-Pruebas locales de selección/bloqueo ON, modelos exactos, descarga/pause/callback tardío, episodios anónimos, canal y respuesta Hermes, texto sin Hermes y menús obsoletos. Pruebas nativas: 34/34 (`LocalTranscriptPhaseTest`, `LocalTranscriptSessionTest`, `LocalTranscriptWindowsTest`), incluyendo entrega con límites de ventana más allá de los dos minutos previos y liberación tras OFF. TypeScript y oxlint correctos. El resultado final de compilación/firma/publicación se añade al cerrar la tarea.
+Pruebas locales de selección/bloqueo ON, modelos exactos, descarga/pause/callback tardío, episodios anónimos, canal y respuesta Hermes, texto sin Hermes y menús obsoletos. Pruebas nativas: 34/34 (`LocalTranscriptPhaseTest`, `LocalTranscriptSessionTest`, `LocalTranscriptWindowsTest`), incluyendo entrega con límites de ventana más allá de los dos minutos previos y liberación tras OFF. TypeScript y oxlint correctos.
 
 ## Prueba real del Pixel, sin micrófono
 
@@ -53,3 +53,7 @@ Primera APK S2.6.10 original `b8d8611c0cb146dbcab88612620dd58c9f90d008934de8adc8
 Pruebas afectadas JS/TS finales 277/277; últimas compilaciones 203/203 de conversación, tsc/oxlint/webpack/Gradle/lintVital/firma correctos. Python local con agentes simulados 44/44, sin consultas a proveedores. La APK final con las correcciones visuales es `d9be4259ee278343c060fff1618b321ac049b27ee4d8919083420b003e259d60`, instalada y extraída con hash igual, 35 ajustes byte idénticos. Sus dos DEX son idénticos a la primera APK probada: cambios finales solo JS/texto, adaptador nativo probado conservado. La reversión a S2.6.9 se conserva sin sobrescribir; copias privadas finales en `.tools/model-selector-20261008-final-private/`. Comprobación OFF previa; sin arranque automático de escucha después. Publicación de fuentes/pruebas/notas autorizada; APK, firma, ajustes y audios quedan fuera de Git.
 
 No se inicia conversación real ni se prueban lentes ópticamente. Sin ajustes persistentes, despliegue/reinicio del puente, cambios de suspensión ni NAS. Se conservan los cambios previos relacionados de sesión, métricas y entrega necesarios para reproducir el estado del móvil; el circuito Codex-Claude permanece desactivado.
+
+Fuentes/pruebas/evidencia publicadas en [942da5e](https://github.com/DanielGTdiabetes/faceclaw-es/commit/942da5e872de4e54038a0d2ba94a34204e7afbcf), rama `codex/conversation-detection-g0`, remoto confirmado por ls-remote y divergencia 0/0. Se incluyen las mejoras previas relacionadas de memoria/discreción/entrega ya presentes en el estado instalado; los cambios ajenos de agent-bridge, evaluación contextual y consumo quedan locales. Sin APK, firma, preferencias ni audio en Git. Protocolo local simulado test_bridge también pasa. No hay nuevo despliegue de puente.
+
+El móvil volvió a bloquearse tras la instalación final. La comprobación visual de la retirada del solapamiento queda pendiente de mantener Faceclaw visible; sí se inspecciona la **APK extraída instalada**: getter `padFocusLine` devuelve cadena vacía para «Display off» y el aviso antiguo «español/valenciano automáticos» está ausente. No se afirma observación de la pantalla final desde este chequeo del bundle.
