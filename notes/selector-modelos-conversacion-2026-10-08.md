@@ -1,5 +1,7 @@
 # Selector de modelos de Conversación · 08-10-2026
 
+**Confirmación posterior del usuario:** la primera frase dicha con su voz usando Pixel se ha transcrito correctamente. Una frase confirmada, sin registro ni consulta nueva del móvil; no demuestra comparación con otras voces/ruido ni continuidad larga. [Relevo para el PC de casa y siguientes pruebas](relevo-casa-pixel-2026-10-08.md).
+
 El usuario encarga sustituir la selección oculta/confusa por controles entendibles, comparar Soniox con modelos locales, descargar uno superior a small, usar Hermes y poder probar solo texto. Autoriza publicar en GitHub al terminar y probar la vía del Pixel. Se incorpora la API pública de reconocimiento local de Android; no se utiliza una librería ni interfaz privada de Android System Intelligence.
 
 ## Uso de la candidata S2.6.10
