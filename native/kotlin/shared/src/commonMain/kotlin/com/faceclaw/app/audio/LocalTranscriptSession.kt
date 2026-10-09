@@ -18,6 +18,8 @@ interface LocalTranscriptDecoder {
     fun release()
     /** Model label for diagnostics only (e.g. "whisper-small"); never a path. */
     val engine: String get() = "whisper"
+    /** Runtime knobs for diagnostics only (e.g. "threads=4;provider=cpu;tail=default"); never a path. */
+    val runtime: String get() = ""
 }
 interface LocalTranscriptHost {
     val dispatcher: CallbackDispatcher
@@ -105,6 +107,8 @@ object LocalTranscriptPhases {
 class LocalTranscriptBuffer(
     private val segmentInfo: (Int) -> Unit = {},
     private val segmentPhase: (Int) -> Unit = {},
+    /** Consulted only by a coalescing window policy: false while the consumer is still busy. */
+    private val canSubmit: () -> Boolean = { true },
     private val submit: (ShortArray) -> Unit,
 ) {
     companion object {
@@ -116,7 +120,7 @@ class LocalTranscriptBuffer(
         /** A4: 3 s hop. Every second is heard by two windows, so one busy drop loses no audio. */
         const val OVERLAP_SAMPLES = 16000 * 3
     }
-    private val samples = ShortArray(MAX_SAMPLES)
+    private var samples = ShortArray(MAX_SAMPLES)
     private val pre = ShortArray(PRE_SAMPLES)
     private val prePhases = IntArray(PRE_SAMPLES / CHUNK_SAMPLES)
     private val segmentSamplesByPhase = LongArray(LocalTranscriptPhases.MARKED)
@@ -126,8 +130,12 @@ class LocalTranscriptBuffer(
     private var voiced = 0
     private var active = false
     private var segmentation = LocalTranscriptSegmentation.VAD
-    private val windowPhases = IntArray(WINDOW_SAMPLES / CHUNK_SAMPLES)
+    private var policy = LocalTranscriptWindowPolicy.REFERENCE
+    private var windowPhases = IntArray(WINDOW_SAMPLES / CHUNK_SAMPLES)
     private var constantWindows = 0
+    private var deferredWindows = 0
+    private var coalescedWindows = 0
+    private var maxWindowSamples = 0
     private var silenceClosures = 0
     private var limitClosures = 0
     private var shortSegments = 0
@@ -152,9 +160,15 @@ class LocalTranscriptBuffer(
         clearAudio()
     }
 
-    fun resetMetrics(mode: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD) {
+    fun resetMetrics(mode: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD,
+        windows: LocalTranscriptWindowPolicy = LocalTranscriptWindowPolicy.REFERENCE) {
         clearAudio()
-        segmentation = mode; constantWindows = 0
+        // Fixed capacity per start: never grows while audio arrives.
+        val capacity = maxOf(MAX_SAMPLES, windows.maxWindowSamples)
+        if (samples.size != capacity) samples = ShortArray(capacity)
+        if (windowPhases.size != windows.maxWindowSamples / CHUNK_SAMPLES) windowPhases = IntArray(windows.maxWindowSamples / CHUNK_SAMPLES)
+        segmentation = mode; policy = windows; constantWindows = 0
+        deferredWindows = 0; coalescedWindows = 0; maxWindowSamples = 0
         silenceClosures = 0; limitClosures = 0; shortSegments = 0
         interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0
         for (array in listOf(phaseSilence, phaseLimit, phaseShort, phaseInterrupted,
@@ -165,7 +179,9 @@ class LocalTranscriptBuffer(
     fun diagnostics(): String = "\"silenceClosures\":$silenceClosures,\"limitClosures\":$limitClosures," +
         "\"shortSegments\":$shortSegments,\"interruptedSegments\":$interruptedSegments," +
         "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}," +
-        "\"segmentation\":\"${segmentation.wire}\",\"constantWindows\":$constantWindows"
+        "\"segmentation\":\"${segmentation.wire}\",\"constantWindows\":$constantWindows," +
+        "\"windowPolicy\":\"${policy.id}\",\"deferredWindows\":$deferredWindows,\"coalescedWindows\":$coalescedWindows," +
+        "\"maxWindowMs\":${maxWindowSamples / 16}"
 
     /** Same segment counters attributed to the origin phase of each segment. */
     fun phaseDiagnostics(phase: Int): String = "\"silenceClosures\":${phaseSilence[phase]}," +
@@ -239,10 +255,11 @@ class LocalTranscriptBuffer(
     }
 
     /**
-     * Every valid chunk reaches a six-second window, regardless of VAD or speaker identity.
-     * One second of overlap protects words at boundaries. Only a perfectly constant signal
+     * Every valid chunk reaches a window (six seconds in the reference policy), regardless of VAD or
+     * speaker identity. The overlap protects words at boundaries. Only a perfectly constant signal
      * (digital silence/DC, including stuck saturation) is skipped: this is NOT a speech detector.
      * Noise can still hallucinate in Whisper. This text never supplies participation evidence.
+     * A coalescing policy may keep growing the same bounded buffer while the consumer is busy.
      */
     private fun acceptWindow(pcm: ByteArray, origin: Int) {
         active = true
@@ -251,22 +268,36 @@ class LocalTranscriptBuffer(
             samples[count++] = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
         }
         segmentSamplesByPhase[origin] += CHUNK_SAMPLES.toLong()
-        if (count < WINDOW_SAMPLES) return
+        if (count < policy.windowSamples) return
+        if (policy.coalesces && count < policy.maxWindowSamples && !canSubmit()) {
+            if (count == policy.windowSamples) deferredWindows++
+            return
+        }
+        closeWindow()
+    }
+
+    private fun closeWindow() {
         val phase = closePhase()
         limitClosures++; phaseLimit[phase]++
         val varying = (1 until count).any { samples[it] != samples[0] }
         val audio = if (varying) samples.copyOf(count) else null
         if (audio == null) constantWindows++
-        else { submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong() }
+        else {
+            submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong()
+            if (count > policy.windowSamples) coalescedWindows++
+            maxWindowSamples = maxOf(maxWindowSamples, count)
+        }
         // Keep only the overlap; no second PCM queue or unbounded conversation history.
-        samples.copyInto(samples, 0, WINDOW_SAMPLES - OVERLAP_SAMPLES, WINDOW_SAMPLES)
-        samples.fill(0, OVERLAP_SAMPLES)
-        val overlapChunks = OVERLAP_SAMPLES / CHUNK_SAMPLES
-        windowPhases.copyInto(windowPhases, 0, windowPhases.size - overlapChunks, windowPhases.size)
+        val overlap = policy.overlapSamples
+        val chunks = count / CHUNK_SAMPLES
+        samples.copyInto(samples, 0, count - overlap, count)
+        samples.fill(0, overlap)
+        val overlapChunks = overlap / CHUNK_SAMPLES
+        windowPhases.copyInto(windowPhases, 0, chunks - overlapChunks, chunks)
         windowPhases.fill(0, overlapChunks)
         segmentSamplesByPhase.fill(0)
         repeat(overlapChunks) { segmentSamplesByPhase[windowPhases[it]] += CHUNK_SAMPLES.toLong() }
-        count = OVERLAP_SAMPLES
+        count = overlap
         if (audio != null) { segmentPhase(phase); submit(audio) }
     }
 
@@ -299,9 +330,13 @@ class LocalTranscriptSession(
         var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
         var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
     }
-    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int, val endChunk: Long)
+    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int, val endChunk: Long, val closedAtMs: Long) {
+        val startChunk: Long get() = endChunk - audio.size / LocalTranscriptBuffer.CHUNK_SAMPLES
+    }
     private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long,
-        val sampleCount: Int)
+        val sampleCount: Int, val closedAtMs: Long) {
+        val startChunk: Long get() = endChunk - sampleCount / LocalTranscriptBuffer.CHUNK_SAMPLES
+    }
     private val condition = platform.createCondition()
     private var running = false
     private var worker = false
@@ -323,27 +358,63 @@ class LocalTranscriptSession(
     private var listener: FaceclawLocalTranscriptListener? = null
     private val levels = LocalAsrLevelStats()
     private var engine = ""
-    private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it }) { audio ->
-        // Called under condition by acceptPcm; do not acquire its non-reentrant lock again.
+    private var runtime = ""
+    /** Union of decoded capture windows, in PCM chunks: audio a dropped window loses only if no neighbour covered it. */
+    private var coveredChunks = 0L
+    private var coveredEndChunk = 0L
+    /** Window close (PCM time) to listener delivery, wall clock. Decode + queue + dispatcher. */
+    private var latencyCount = 0L
+    private var latencyTotalMs = 0L
+    private var latencyMaxMs = 0L
+    /** Last decoded windows as (captureStartMs, captureEndMs, decodeMs) scalars; fixed size, never text/audio. */
+    private val timings = LongArray(TIMING_SLOTS * 3)
+    private var timingCount = 0L
+    // Both lambdas are called under condition by acceptPcm; do not acquire its non-reentrant lock again.
+    private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it },
+        canSubmit = { running && ready && !busy }) { audio ->
         if (!running || !ready || busy) { audio.fill(0); stats[pendingSegmentPhase].dropped++ }
-        else { job = Job(generation, audio, pendingSegmentPhase, inputChunks); busy = true; condition.signalAll() }
+        else {
+            job = Job(generation, audio, pendingSegmentPhase, inputChunks, platform.elapsedRealtimeMs())
+            busy = true; condition.signalAll()
+        }
+    }
+
+    companion object {
+        const val TIMING_SLOTS = 256
     }
 
     fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
+
+    /**
+     * Benchmark detail kept out of [diagnostics] (polled by the UI): the most recent decoded windows as
+     * [captureStartMs, captureEndMs, decodeMs], oldest first. Capture times are PCM time since start.
+     */
+    fun decodeTimings(): String = condition.withLock {
+        val count = minOf(timingCount, TIMING_SLOTS.toLong()).toInt()
+        val first = timingCount - count
+        (0 until count).joinToString(",", "{\"total\":$timingCount,\"windows\":[", "]}") {
+            val slot = ((first + it) % TIMING_SLOTS).toInt() * 3
+            "[${timings[slot]},${timings[slot + 1]},${timings[slot + 2]}]"
+        }
+    }
     fun isWorkerActive(): Boolean = condition.withLock { worker }
 
     /** The language is captured only by an accepted start and handed to that worker as an immutable value. */
     fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO,
-        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD, maxMs: Long = 120000): Boolean {
+        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD, maxMs: Long = 120000,
+        windows: LocalTranscriptWindowPolicy = LocalTranscriptWindowPolicy.REFERENCE): Boolean {
+        if (!LocalTranscriptWindowPolicy.isValid(windows)) return false
         condition.withLock {
             if (worker) return false // A non-interruptible previous JNI call must drain first.
             running = true; worker = true; ready = false; generation++
             deadline = platform.elapsedRealtimeMs() + maxMs.coerceIn(1, 1200000)
             status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
-            buffer.resetMetrics(segmentation)
+            buffer.resetMetrics(segmentation, windows)
+            coveredChunks = 0; coveredEndChunk = 0; latencyCount = 0; latencyTotalMs = 0; latencyMaxMs = 0
+            timings.fill(0); timingCount = 0
             inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
-            levels.reset(); engine = ""
+            levels.reset(); engine = ""; runtime = ""
         }
         val config = language
         startThread("FaceclawLocalTranscript", true) { runWorker(config) }
@@ -422,6 +493,8 @@ class LocalTranscriptSession(
             "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
             "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
             "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":$conditionAudio," +
+            "\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"coveredAudioMs\":${coveredChunks * 50}," +
+            "\"deliveryLatencyCount\":$latencyCount,\"deliveryLatencyTotalMs\":$latencyTotalMs,\"deliveryLatencyMaxMs\":$latencyMaxMs," +
             levels.json() + "," + buffer.mixedDiagnostics() +
             ",\"phases\":[${(0 until LocalTranscriptPhases.COUNT).joinToString(",") { phaseJson(it) }}]}}"
     }
@@ -446,6 +519,7 @@ class LocalTranscriptSession(
                 if (running) {
                     ready = decoder != null
                     engine = decoder?.engine ?: ""
+                    runtime = decoder?.runtime ?: ""
                     status = if (ready) "listo" else "modelo no disponible"
                     if (!ready) running = false
                 }
@@ -464,7 +538,13 @@ class LocalTranscriptSession(
                     val canDecode = condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }
                     if (canDecode) {
                         decodeStarted = platform.elapsedRealtimeMs()
-                        condition.withLock { stats[next.phase].decodeCalls++; stats[next.phase].decodedSamples += floats.size }
+                        condition.withLock {
+                            stats[next.phase].decodeCalls++; stats[next.phase].decodedSamples += floats.size
+                            if (windowed && next.endChunk > coveredEndChunk) {
+                                coveredChunks += next.endChunk - maxOf(next.startChunk, coveredEndChunk)
+                                coveredEndChunk = next.endChunk
+                            }
+                        }
                     }
                     val decoded = if (canDecode) try {
                         decoder?.decode(floats)
@@ -476,6 +556,9 @@ class LocalTranscriptSession(
                         condition.withLock {
                             val s = stats[next.phase]
                             s.decodeTotalMs += elapsed; s.decodeMaxMs = maxOf(s.decodeMaxMs, elapsed)
+                            val slot = (timingCount % TIMING_SLOTS).toInt() * 3
+                            timings[slot] = next.startChunk * 50; timings[slot + 1] = next.endChunk * 50; timings[slot + 2] = elapsed
+                            timingCount++
                         }
                     } else null
                     val text = if (decoded != null) acceptedLocalText(decoded) else ""
@@ -504,7 +587,8 @@ class LocalTranscriptSession(
                                 s.accepted++
                                 // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
                                 discardPendingResult()
-                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk, next.audio.size)
+                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk, next.audio.size,
+                                    next.closedAtMs)
                                 true
                             }
                         }
@@ -545,12 +629,15 @@ class LocalTranscriptSession(
                     val target = listener
                     if (running && generation == token && platform.elapsedRealtimeMs() < deadline && target != null) {
                         val previous = lastDelivered
+                        // Adjacent = this window starts inside the previously delivered one. In the reference
+                        // policy that is exactly "one hop later"; any dropped/skipped window breaks it.
                         val text = if (windowed && previous?.generation == current.generation &&
-                            current.endChunk - previous.endChunk ==
-                            (LocalTranscriptBuffer.WINDOW_SAMPLES - LocalTranscriptBuffer.OVERLAP_SAMPLES) / LocalTranscriptBuffer.CHUNK_SAMPLES.toLong())
+                            current.startChunk < previous.endChunk && current.endChunk > previous.endChunk)
                             localWindowNovelText(previous.text, current.text) else current.text
                         lastDelivered = current
                         if (text.isEmpty()) return@withLock null
+                        val latency = maxOf(0L, platform.elapsedRealtimeMs() - current.closedAtMs)
+                        latencyCount++; latencyTotalMs += latency; latencyMaxMs = maxOf(latencyMaxMs, latency)
                         stats[current.phase].delivered++
                         stats[current.phase].deliveredChars += text.length.toLong()
                         Pair(target, current.copy(text = text))

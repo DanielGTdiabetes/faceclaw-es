@@ -24,24 +24,30 @@ internal object AndroidSpeechEngines {
     private const val SAMPLE_RATE = 16000
     private const val FEATURE_DIM = 80
 
-    /** Sherpa-onnx configuration for the on-device model files in [modelDir]. */
+    /**
+     * Sherpa-onnx configuration for the on-device model files in [modelDir]. `provider` and
+     * `whisperTailPaddings` keep the runtime defaults ("cpu", builder 1000 frames) unless a validated
+     * [LocalWhisperPerformance] asks otherwise; a 0 padding leaves the builder default untouched.
+     */
     fun recognizerConfig(modelDir: File, kind: VoiceModelKind, whisperLanguage: String = "es",
-        numThreads: Int = 1): OfflineRecognizerConfig {
+        numThreads: Int = 1, provider: String = "cpu", whisperTailPaddings: Int = 0): OfflineRecognizerConfig {
         val modelConfig = OfflineModelConfig.builder()
             .setNumThreads(numThreads)
+            .setProvider(provider)
         if (kind.isWhisper) {
             val prefix = when (kind) {
                 VoiceModelKind.WHISPER_MEDIUM -> "medium"
                 VoiceModelKind.WHISPER_SMALL -> "small"
                 else -> "base"
             }
+            val whisper = OfflineWhisperModelConfig.builder()
+                .setEncoder(File(modelDir, "$prefix-encoder.int8.onnx").absolutePath)
+                .setDecoder(File(modelDir, "$prefix-decoder.int8.onnx").absolutePath)
+                .setLanguage(whisperLanguage)
+                .setTask("transcribe")
+            if (whisperTailPaddings > 0) whisper.setTailPaddings(whisperTailPaddings)
             modelConfig
-                .setWhisper(OfflineWhisperModelConfig.builder()
-                    .setEncoder(File(modelDir, "$prefix-encoder.int8.onnx").absolutePath)
-                    .setDecoder(File(modelDir, "$prefix-decoder.int8.onnx").absolutePath)
-                    .setLanguage(whisperLanguage)
-                    .setTask("transcribe")
-                    .build())
+                .setWhisper(whisper.build())
                 .setTokens(File(modelDir, "$prefix-tokens.txt").absolutePath)
         } else {
             modelConfig
