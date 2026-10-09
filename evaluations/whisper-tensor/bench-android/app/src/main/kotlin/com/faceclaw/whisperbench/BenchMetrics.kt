@@ -70,4 +70,54 @@ object BenchMetrics {
         val text = value?.toString() ?: ""
         return if (text.any { it == ',' || it == '"' || it == '\n' }) "\"" + text.replace("\"", "\"\"") + "\"" else text
     }
+
+    /** Outcome code of LocalTranscriptSession.decodeTimings() for a successful decode (TIMING_OK). */
+    const val OUTCOME_OK = 0L
+
+    /**
+     * Whole-run view of the session's bounded timing ring. The session keeps only its last 256 attempts
+     * (bounded production RAM); the benchmark polls it often enough that consecutive snapshots overlap
+     * and keeps every attempt here. If attempts ever left the ring unseen, or the last snapshot does not
+     * reach the final total, the run is incomplete and every metric that needs all windows is withheld
+     * (null) instead of being computed from the tail of the run.
+     */
+    class DecodeTimingCollector {
+        /** [startMs, endMs, decodeMs, outcome] in attempt order. */
+        private val attempts = ArrayList<LongArray>()
+        /** Attempts accounted for: stored plus lost. */
+        private var next = 0L
+        private var lost = 0L
+        var total = 0L; private set
+
+        /** One decodeTimings() snapshot: {"total":N,"first":F,"windows":[[s,e,ms,outcome],...]}. */
+        fun ingest(snapshot: String) {
+            val total = Regex("\"total\":(\\d+)").find(snapshot)?.groupValues?.get(1)?.toLong() ?: error("no total")
+            val windows = Regex("""\[(\d+),(\d+),(\d+),(\d+)]""").findAll(snapshot)
+                .map { match -> LongArray(4) { match.groupValues[it + 1].toLong() } }.toList()
+            val first = Regex("\"first\":(\\d+)").find(snapshot)?.groupValues?.get(1)?.toLong() ?: error("no first")
+            check(total >= this.total && first + windows.size == total) { "inconsistent timing snapshot" }
+            if (first > next) { lost += first - next; next = first } // Unseen attempts already left the ring.
+            windows.forEachIndexed { offset, attempt -> if (first + offset == next) { attempts.add(attempt); next++ } }
+            this.total = total
+        }
+
+        val complete: Boolean get() = lost == 0L && next == total
+
+        /** Null when complete; otherwise why whole-run metrics were withheld (JSON, CSV and SUMMARY). */
+        val invalidReason: String? get() = if (complete) null else
+            "timing ring truncated: collected ${attempts.size} of $total decoder attempts"
+
+        fun outcomeCount(outcome: Long): Int = attempts.count { it[3] == outcome }
+
+        /** Decode-time percentile over the successful attempts of the whole run; null if incomplete. */
+        fun okPercentile(fraction: Double): Long? =
+            if (!complete) null else percentile(attempts.filter { it[3] == OUTCOME_OK }.map { it[2] }, fraction)
+
+        /** Longest failed or invalidated attempt; null if there were none or the run is incomplete. */
+        fun notOkMaxMs(): Long? = if (!complete) null else attempts.filter { it[3] != OUTCOME_OK }.maxOfOrNull { it[2] }
+
+        /** Union of successfully decoded capture spans clipped to [from, to); null if incomplete. */
+        fun coveredMs(from: Long, to: Long): Long? =
+            if (!complete) null else covered(attempts.filter { it[3] == OUTCOME_OK }.map { longArrayOf(it[0], it[1]) }, from, to)
+    }
 }

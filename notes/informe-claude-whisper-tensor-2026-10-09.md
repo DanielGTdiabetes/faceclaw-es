@@ -12,26 +12,37 @@ Mediciones en el Pixel autorizadas por el usuario en esta sesión («El otro hil
   configuración de producción (4 hilos, CPU), el p50 por ventana de 6 s es ≈2,9 s y el p95 ≈5,2 s. Ningún número de
   hilos baja de 3 s: con 2 hilos el p95 es 4,7 s y con 6 hilos 6,6 s, peor. A ritmo real se descarta el **33,5 %** de
   las ventanas (55 de 164).
-- **Esos descartes no han hecho perder voz en este corpus.** El solape de 3 s hace que la ventana vecina cubra lo
-  descartado: el 100 % de la voz se decodificó en las 16 reproducciones. El síntoma «no aparece la otra persona a 2 m»
-  no se explica solo por la carga.
+- **Esos descartes no dejaron huecos temporales en este corpus.** El solape de 3 s hace que la ventana vecina cubra lo
+  descartado: en las 16 reproducciones, las ventanas enviadas a inferencia cubrieron el 100 % del tiempo de voz de los
+  clips. Eso es cobertura temporal, **no 100 % de palabras reconocidas ni de texto entregado**: esas ventanas pueden
+  contener errores, rechazos de idioma y deduplicación. Con la semántica de entonces la cobertura contaba también intentos
+  fallidos; estos ensayos no registraron ese dato (corregido después, ver «Actualización»). No se extrapola a voces
+  reales a 2 m. El síntoma «no aparece la otra persona a 2 m» no se explica solo por la carga.
 - **El reconocimiento sí pierde texto.**
   - **Filtro de idioma:** en 6 s el detector automático clasifica como pt/ru/ro/en/it ventanas de español o catalán.
     Con small, el filtro de idioma descartó 11 de las 45 ventanas del corpus: 3 de voz y 8 de silencio o ruido.
-  - **Ventana de 6 s:** las frases completas tienen bastantes menos errores que troceadas (PC: español 10 % frente a
-    15 %, catalán 25 % frente a 39 %).
+  - **Ventana de 6 s:** en PC, las frases completas tienen bastantes menos errores que troceadas en segmentos
+    consecutivos de 6 s sin solape (español 10 % frente a 15 %, catalán 25 % frente a 39 %). No es una comparación
+    directa con la política de producción 6/3 ni una mejora validada en el Pixel: es una pista para otro experimento.
   - **Voz débil:** la frase atenuada 30 dB tiene un 62 % de palabras erróneas, frente a un 25 % de la misma voz sin
     atenuar; el acondicionamiento actual apenas cambia esto (66 % sin él).
 - **Rendimiento:**
-  - Base con 4 hilos mejora el p95 frente a 1 hilo (producción) un 37 % en la primera pasada y un 16 % en la segunda.
+  - Base con 4 hilos mejora el p95 frente a 1 hilo un 37 % en la primera pasada de corpus y un 16 % en la segunda;
+    en ritmo real sostenido, un 51,85 % y un 40,35 % (5.4).
   - Ni XNNPACK, ni padding reducido, ni más hilos aceleran small un 20 %.
-  - **whisper.cpp con Vulkan funciona en la GPU PowerVR del Tensor G5, pero es unas 11 veces más lento que la CPU.**
-  - whisper.cpp en CPU comete muchos menos errores en catalán (21 % frente a 39 %), pero es unas 4 veces más lento.
+  - **whisper.cpp con Vulkan arranca en la GPU PowerVR del Tensor G5, pero la sonda fue muy lenta** (una ventana, dos
+    ejecuciones: 72,1 s de procesado). No se compara con el mismo clip en CPU ni se extrapola un factor al corpus.
+  - whisper.cpp en CPU tuvo menos errores en catalán (21 % frente a 39 %) y fue más lento. **No es una comparación
+    aislada del runtime**: otra cuantización (q8_0), búsqueda, contexto fijo de 30 s y sin los filtros de
+    estructura/alucinación de Faceclaw. Es una pista, no una conclusión.
 - **TPU:** Tensor SDK es una beta con registro; Whisper no figura en su catálogo y no hay acceso a las herramientas.
   Bloqueado, sin números inventados.
 - **Recomendación:**
-  - Conservar la producción tal cual, salvo **promover base a 4 hilos**: el sostenido de 10 min por variante confirma
-    −40 a −52 % de p95 con salida idéntica.
+  - Conservar la producción tal cual, salvo **promover base a 4 hilos** (aplicado tras la revisión de Codex): dos
+    bloques de 5 min por configuración, orden 1/4/4/1 separados por enfriamientos, p95 1.726/831/828/1.388 ms
+    (−51,85 % y −40,35 % emparejados) con hipótesis completas idénticas. Acredita latencia en esas condiciones, no
+    autonomía ni estabilidad de una hora. Small, el modelo del usuario, sigue igual y este cambio no resuelve la voz
+    lejana.
   - La política coalescente queda experimental: elimina descartes, pero no mejora la precisión y añade 1 s de latencia.
   - La siguiente palanca es el **reconocimiento**: restringir idioma, ventanas más largas sin coste de descarte y
     decodificación con mejor búsqueda. No hace falta más CPU, GPU ni TPU.
@@ -163,9 +174,11 @@ frecuencia, duración, idioma y referencia; dos construcciones dan hashes idént
 Criterio de promoción aplicado: mejora de al menos un **20 %** en p95, o reducción útil de descartes, sin regresión
 material en precisión, cobertura, temperatura o cierre.
 
-Margen de precisión: 16 frases (~400 palabras de referencia por idioma) y ventanas que cambian según el tiempo de cada
-ejecución. Diferencias de WER **menores de ~0,05 en español y ~0,10 en catalán o en las secuencias no se consideran
-significativas**. Ejemplo: la misma política dio 0,57 y 0,80 en `stream-ca` en dos rondas.
+Tamaño de la muestra: **ocho frases por idioma, 177 palabras normalizadas de referencia en español y 170 en catalán**
+(la versión anterior decía «~400 por idioma»: era incorrecto). Las ventanas además cambian según el tiempo de cada
+ejecución. Como criterio **heurístico** de lectura, diferencias de WER menores de ~0,05 en español y ~0,10 en catalán
+o en las secuencias no se tratan como diferencias; no hay análisis estadístico que las convierta en significación
+demostrada. Ejemplo de variabilidad: la misma política dio 0,57 y 0,80 en `stream-ca` en dos rondas.
 
 ### 5.1 Referencia en PC (x86, sherpa-onnx 1.13.0 de PyPI, mismos ONNX; **no es rendimiento del Pixel**)
 
@@ -176,11 +189,11 @@ significativas**. Ejemplo: la misma política dio 0,57 y 0,80 en `stream-ca` en 
 | base, acond. on / off | 0,237 / 0,175 | 0,523 / 0,559 | Acondicionar perjudica algo la voz limpia en español |
 | small, acond. on / off | 0,152 / 0,141 | 0,394 / 0,382 | Igual, con menos diferencia |
 | small, padding 300 / 500 (acond. on) | 0,158 / 0,152 | 0,423 / 0,423 | Sin ganancia; −7 % de tiempo en x86 |
-| small, frase completa sin trocear | **0,102** | **0,253** | Trocear en 6 s cuesta mucho, sobre todo en catalán |
+| small, frase completa sin trocear | **0,102** | **0,253** | Frente a trozos consecutivos de 6 s sin solape (no la política 6/3): pista, no validación |
 | small, forzado es | 0,152 | 0,629 | Forzar español destruye el catalán: descartado |
 | small, 1/2/4/6 hilos | idéntico | idéntico | Los hilos no cambian el texto en x86 |
 | Prueba de nivel, frase atenuada (small, acond. on / off) | 20/32 = 0,62 / 21/32 = 0,66 | – | La frase fuerte: 8/32 = 0,25. El acondicionamiento ayuda poco; muestra pequeña |
-| whisper.cpp small q8_0 en x86, 6 s | 0,130 | 0,212 | Mejor en catalán; otra cuantización y búsqueda |
+| whisper.cpp small q8_0 en x86, 6 s | 0,130 | 0,212 | Mejor en catalán; otra cuantización, búsqueda y contexto, sin filtros de estructura: no aísla el runtime |
 
 ### 5.2 Pixel: inferencia real del decoder (modo corpus)
 
@@ -243,7 +256,7 @@ estado térmico 1.
 | --- | ---: | ---: |
 | Ventanas cerradas / descartadas | 164 / **55 (33,5 %)** | 124 / **0** |
 | Decodificaciones | 109 | 124 |
-| Voz cubierta por ventanas decodificadas (mínimo de 8 reproducciones) | **100 %** | **100 %** |
+| Tiempo de voz cubierto por ventanas enviadas a inferencia (mínimo de 8 reproducciones; no son palabras reconocidas) | **100 %** | **100 %** |
 | p95 de decode (peor secuencia) | 5.480 ms | 6.573 ms |
 | Latencia media / máxima de cierre a entrega | 3.052 / 4.969 ms | 4.101 / 6.579 ms |
 | Entregas | 89 | 97 |
@@ -257,7 +270,7 @@ estado térmico 1.
 
 **Interpretación:**
 
-- Los descartes de la referencia no perdieron voz gracias al solape.
+- Los descartes de la referencia no dejaron huecos temporales gracias al solape (cobertura temporal, no texto).
 - La coalescente los elimina, pero es más lenta y no gana precisión: empeora en catalán y en la secuencia mixta. Una
   hipótesis no probada es que ventanas largas mezclan pausas y frases en otro idioma.
 - Más decodificaciones implica más trabajo total.
@@ -265,8 +278,9 @@ estado térmico 1.
 
 ### 5.4 Pixel: sostenido (protocolo)
 
-`results/pixel/sustained-base-t1-t4/`: base, `ref-6-3`, bloques de 5 min en orden ABBA (1, 4, 4, 1 hilos) = **10 min por
-finalista**, 2 min de enfriamiento entre bloques, pantalla encendida, USB conectado, serie cada 10 s (`timeseries.csv`).
+`results/pixel/sustained-base-t1-t4/`: base, `ref-6-3`, **dos bloques de 5 min por configuración** en orden ABBA (1, 4,
+4, 1 hilos), separados por 2 min de enfriamiento; no son 10 min ininterrumpidos por variante. Pantalla encendida, USB
+conectado, serie cada 10 s (`timeseries.csv`).
 
 | Bloque | Hilos | Ventanas | Descartes | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | Rechazo idioma | Térmico | Batería °C | PSS MB | Drenaje OFF |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- | --- | ---: | ---: |
@@ -275,14 +289,17 @@ finalista**, 2 min de enfriamiento entre bloques, pantalla encendida, USB conect
 | 2 | 4 | 101 | 0 | 537 | **828** | 900 | 593/913 | 83 | 12 | 1 constante | 37,2→37,0 | 465 | 134 ms |
 | 3 | 1 | 101 | 0 | 893 | 1.388 | 1.475 | 973/1.493 | 83 | 12 | 1 constante | 37,0→36,6 | 465 | 135 ms |
 
-- Base con 4 hilos reduce el p95 un **40–52 %** y la latencia de entrega a la mitad, con salida idéntica (mismas 83
-  entregas y 12 rechazos) y sin descartes con ninguno de los dos valores.
+- Base con 4 hilos reduce el p95 un **51,85 % y 40,35 %** (pares emparejados 1.726→831 y 1.388→828 ms) y la latencia
+  de entrega a la mitad, con hipótesis completas idénticas en los cuatro bloques (no solo el mismo número de entregas) y
+  sin descartes con ninguno de los dos valores. Acredita la mejora de latencia en esas condiciones, no autonomía ni
+  estabilidad de una hora. `timingsComplete=true` en los cuatro bloques (101 ventanas, menos de 256).
 - No se observó estrangulamiento: margen térmico 0,77–0,81, estado 1 y batería estable, aunque el teléfono ya venía
   templado de las pruebas anteriores.
 - **Consumo no medido:** USB conectado y la corriente instantánea oscila entre −36 y +703 mA de media por bloque según
   la carga. No se atribuye energía por inferencia ni autonomía.
-- El WER del modo sostenido (1,309) **no es válido**: el bucle corta secuencias y la referencia unida no corresponde.
-  Corregido en el código (`wer`/`cer` nulos en `sustained`); la APK que se usó para medir lo calculaba.
+- El WER del modo sostenido **no es válido**: el bucle corta secuencias y la referencia unida no corresponde. El
+  código del banco lo deja nulo; el JSON histórico conserva el valor calculado entonces como evidencia, y
+  `summarize_pixel.py` lo muestra como «n/v» (con nota) en `SUMMARY.md`. No usarlo para comparar precisión.
 - **small no se midió en sostenido:** pendiente. Con su p95 de ≈5 s no habría cambio de configuración que promover.
 
 ### 5.5 whisper.cpp (prototipo aislado, fase 3)
@@ -298,11 +315,13 @@ v1.9.4 `927cfce`, NDK r27c, Vulkan-Headers v1.4.321, SPIRV-Headers vulkan-sdk-1.
 | Vulkan, sonda de 1 ventana × 2 (+1 prueba previa) | **Vulkan0: PowerVR D-Series DXT-48-1536 MC1** (`int dot: 0`, `matrix cores: none`) | 58.502 ms (≈30 s por pasada) | 72.143 ms | – | 1/19 |
 | sherpa small 4 hilos (5.2, mismo corpus) | cpu | – | 2.896 / 5.194 ms | 0,158 | 0,394 |
 
-- **Vulkan:** el backend funciona en el Pixel, pero es unas 10 veces más lento que la CPU. Tiene sentido descartar
-  Vulkan para Whisper en este dispositivo y driver.
+- **Vulkan:** el backend arranca en el Pixel (verificado en su log), pero solo se midió una sonda pequeña (una ventana,
+  dos ejecuciones) con un procesado de 72,1 s. No es la misma comparación que la fila CPU (mediana de 45 ventanas) y no
+  se extrapola ningún factor al corpus. Su lentitud absoluta justifica no priorizar esta configuración.
 - **whisper.cpp en CPU:** no es viable en tiempo real (fijo de 30 s, doble pasada de encoder para detectar idioma,
-  beam search). Pero **comete bastantes menos errores en catalán**. Merece aislar por qué (búsqueda/idioma frente a
-  pesos) antes que cambiar de runtime.
+  beam search). Tuvo menos errores en catalán, pero **no es una comparación aislada del runtime**: cuantización,
+  búsqueda y contexto difieren, y `analyze.py` reaplica el filtro de idioma pero no los de estructura/alucinación.
+  Merece aislar por qué antes de cualquier conclusión.
 - **Pendiente:** las variantes greedy con `-ac` reducido no se midieron.
 
 ## 6. TPU con Tensor SDK / LiteRT (fase 4): viabilidad
@@ -351,11 +370,11 @@ Fuentes oficiales releídas el 09-10-2026: [Tensor SDK](https://developers.googl
 | CPU: hilos 1/2/4/6 | Sí (`startConfigured`, banco) | Sí | Sí (2 pasadas corpus) | Más pasadas con orden alternado y teléfono frío |
 | CPU: XNNPACK / padding / acondicionamiento | Sí | Sí | Sí (corpus small t4) | Verificar asignación de nodos XNNPACK, si interesara |
 | Segmentación `ref-6-3` / `coalesce-6-3-max12` | Sí + 9 pruebas | Sí | Sí (ritmo real ABBA) | Sostenido de la coalescente; dedup y mezcla de idiomas en ventanas largas |
-| Sostenido 10 min por finalista | Sí (modo `sustained`) | Sí | Sí: base 1 frente a 4 hilos, 10 min cada uno, ABBA | small sostenido |
+| Sostenido por bloques | Sí (modo `sustained`) | Sí | Sí: base 1 frente a 4 hilos, dos bloques de 5 min cada uno, ABBA | small sostenido |
 | whisper.cpp CPU | Prototipo aislado | Sí (Android + x86) | Sí (45 ventanas) | Greedy / `-ac` / medium; origen de la mejora en catalán |
 | whisper.cpp Vulkan | Prototipo aislado | Sí | Sí (sonda; backend verificado) | Nada útil con este driver |
 | TPU Tensor SDK | No (bloqueado) | No | No | Acceso beta, entorno Ubuntu 22.04, conversión del encoder |
-| APK de producción candidata | Sí | Sí, sin firmar | No instalada | Revisión Codex; firma original solo si se decide instalar |
+| APK de producción candidata | Sí | Sí, sin firmar (sin S2.6.11) | Nunca instalada; sustituida por S2.6.12 integrada | Ver «Actualización» |
 
 ## 8. Recomendación
 
@@ -365,10 +384,10 @@ Fuentes oficiales releídas el 09-10-2026: [Tensor SDK](https://developers.googl
   Las métricas tras OFF de la app ganarían cobertura y latencia sin coste apreciable.
 - El banco y el corpus, como herramienta.
 
-**Candidato a promover con una comprobación más:** base con 4 hilos en lugar de 1. El p95 mejora un 37 % y un 16 % en
-las dos pasadas y el texto es igual. Solo afecta a quien elija base; el usuario usa small. El sostenido (5.4) lo confirma: −40 % a −52 % de p95 durante 10 min por variante, sin cambio de
-texto ni de temperatura. Criterio de promoción cumplido. Cambio propuesto: `defaultFor("whisper-base-es") = 4 hilos`
-(una línea en `LocalWhisperRunConfig.kt` y en el test), **no aplicado** en esta candidata para que Codex lo decida.
+**Promovido tras la revisión de Codex:** base con 4 hilos en lugar de 1. El p95 mejora un 37 % y un 16 % en las dos
+pasadas de corpus con el mismo texto, y en ritmo real (5.4) un 51,85 % y un 40,35 % en dos bloques de 5 min por
+configuración, con hipótesis idénticas. Solo afecta a quien elija base; el usuario usa small, que sigue en 4 hilos, y
+este cambio no resuelve por sí solo su reconocimiento lejano. `defaultFor("whisper-base-es") = 4 hilos`.
 
 **Mantener experimental:**
 

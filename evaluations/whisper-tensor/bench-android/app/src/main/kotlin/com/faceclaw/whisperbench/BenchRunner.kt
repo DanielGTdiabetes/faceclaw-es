@@ -235,8 +235,10 @@ class BenchRunner(private val context: Context, private val options: BenchOption
         options.policies.forEach { checkNotNull(LocalTranscriptWindowPolicy.byId(it)) { "unknown policy $it" } }
         val order = (0 until options.rounds).flatMap { if (it % 2 == 0) base else base.reversed() }
         val cases = JSONArray()
+        // Empty cells are withheld metrics; timingsInvalidReason says why (never a tail-of-run percentile).
         val csv = StringBuilder("round,model,runtime,policy,stream,audioMs,closures,constantWindows,decodeCalls,dropped,dropPct," +
-            "coveragePct,speechCoveragePct,decodeP50Ms,decodeP95Ms,decodeMaxMs,latencyAvgMs,latencyMaxMs,delivered,wer,cer," +
+            "attemptedCoveragePct,coveragePct,speechCoveragePct,decodeErrors,timingsComplete,timingsInvalidReason," +
+            "decodeP50Ms,decodeP95Ms,decodeMaxMs,latencyAvgMs,latencyMaxMs,delivered,wer,cer," +
             "rejectedLanguage,rejectedEmpty,rejectedStructure,rejectedHallucination,deliveryDiscarded,stopDrainMs,lateChunks\n")
         val series = StringBuilder("elapsedMs,round,model,runtime,policy,thermalStatus,headroom10s,batteryTempC,batteryCurrentUa,batteryLevel,plugged,pssKb\n")
         for ((round, case) in order.withIndex()) {
@@ -248,11 +250,12 @@ class BenchRunner(private val context: Context, private val options: BenchOption
                 cases.put(item)
                 csv.append(listOf(round, case.modelId, case.performance.wire, case.policy, stream.id, item.opt("audioMs"),
                     item.opt("closures"), item.opt("constantWindows"), item.opt("decodeCalls"), item.opt("dropped"), item.opt("dropPct"),
-                    item.opt("coveragePct"), item.opt("speechCoveragePct"), item.opt("decodeP50Ms"), item.opt("decodeP95Ms"),
+                    item.opt("attemptedCoveragePct"), item.opt("coveragePct"), item.opt("speechCoveragePct"), item.opt("decodeErrors"),
+                    item.opt("timingsComplete"), item.opt("timingsInvalidReason"), item.opt("decodeP50Ms"), item.opt("decodeP95Ms"),
                     item.opt("decodeMaxMs"), item.opt("latencyAvgMs"), item.opt("latencyMaxMs"), item.opt("delivered"), item.opt("wer"),
                     item.opt("cer"), item.opt("rejectedLanguage"), item.opt("rejectedEmpty"), item.opt("rejectedStructure"),
                     item.opt("rejectedHallucination"), item.opt("deliveryDiscarded"), item.opt("stopDrainMs"), item.opt("lateChunks"))
-                    .joinToString(",") { BenchMetrics.csvField(it) }).append('\n')
+                    .joinToString(",") { BenchMetrics.csvField(if (it == JSONObject.NULL) null else it) }).append('\n')
                 File(outDir, "realtime.csv").writeText(csv.toString())
                 if (sustainedMs > 0) File(outDir, "timeseries.csv").writeText(series.toString())
             }
@@ -298,8 +301,11 @@ class BenchRunner(private val context: Context, private val options: BenchOption
         val tail = lowNoise(6 * 16000)
         val totalChunks = (stream.pcm.size + tail.size) / 800
         val chunk = ByteArray(1600)
+        // The session ring holds 256 attempts (>= 12.8 min at one window per 3 s hop); polling every
+        // 30 s of replay keeps consecutive snapshots overlapping, so a 19 min block is collected whole.
+        val collector = BenchMetrics.DecodeTimingCollector()
         val start = SystemClock.elapsedRealtimeNanos()
-        var lateChunks = 0; var maxLateMs = 0L; var nextSample = 0L
+        var lateChunks = 0; var maxLateMs = 0L; var nextSample = 0L; var nextPoll = 30_000L
         for (index in 0 until totalChunks) {
             val due = BenchMetrics.dueNanos(start, index.toLong())
             val wait = due - SystemClock.elapsedRealtimeNanos()
@@ -314,6 +320,7 @@ class BenchRunner(private val context: Context, private val options: BenchOption
             }
             transcriber.acceptPcm(chunk.copyOf(), "sin actividad")
             val elapsed = (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000
+            if (elapsed >= nextPoll) { collector.ingest(transcriber.decodeTimings()); nextPoll += 30_000 }
             if (series.isNotEmpty() && elapsed >= nextSample && options.mode == "sustained") {
                 val t = thermal()
                 series.append(listOf(elapsed, round, case.modelId, case.performance.wire, case.policy, t.opt("thermalStatus"),
@@ -327,29 +334,36 @@ class BenchRunner(private val context: Context, private val options: BenchOption
         while (SystemClock.elapsedRealtime() - drainStart < 60_000 && transcriber.diagnostics().contains("\"busy\":true")) SystemClock.sleep(20)
         SystemClock.sleep(300)
         val diag = JSONObject(transcriber.diagnostics())
-        val timings = JSONObject(transcriber.decodeTimings())
+        collector.ingest(transcriber.decodeTimings())
         val stopStart = SystemClock.elapsedRealtimeNanos()
         transcriber.stop()
         while (transcriber.diagnostics().contains("\"worker\":true")) SystemClock.sleep(5)
         item.put("stopDrainMs", ms(stopStart))
         val analysis = diag.getJSONObject("analysis")
-        val windows = timings.getJSONArray("windows")
-        val bounds = (0 until windows.length()).map { windows.getJSONArray(it).let { w -> longArrayOf(w.getLong(0), w.getLong(1)) } }
-        val decodeMs = (0 until windows.length()).map { windows.getJSONArray(it).getLong(2) }
         val speechTotal = stream.speech.sumOf { it[1] - it[0] }
-        val speechCovered = stream.speech.sumOf { BenchMetrics.covered(bounds, it[0], it[1]) }
+        val speechCovered = stream.speech.map { collector.coveredMs(it[0], it[1]) }
         val closures = analysis.getLong("limitClosures"); val dropped = diag.getLong("dropped")
+        val windowedMs = maxOf(1L, analysis.getLong("windowedAudioMs"))
         val hypothesis = received.joinToString(" ")
         val errors = BenchMetrics.errors(stream.reference, hypothesis)
-        item.put("audioMs", stream.pcm.size / 16).put("closures", closures).put("constantWindows", analysis.getLong("constantWindows"))
+        // Coverage = PCM time of windows the decoder processed without error in the current generation.
+        // It is not recognised, accepted or delivered words.
+        item.put("coverageSemantics", "decoded-ok-v2")
+            .put("audioMs", stream.pcm.size / 16).put("closures", closures).put("constantWindows", analysis.getLong("constantWindows"))
             .put("decodeCalls", analysis.getLong("decodeCalls")).put("dropped", dropped)
+            .put("decodeErrors", analysis.getLong("decodeErrors")).put("processingErrors", analysis.getLong("processingErrors"))
             .put("dropPct", if (closures == 0L) 0.0 else 100.0 * dropped / closures)
-            .put("coveragePct", 100.0 * analysis.getLong("coveredAudioMs") / maxOf(1L, analysis.getLong("windowedAudioMs")))
-            .put("speechCoveragePct", if (speechTotal == 0L) null else 100.0 * speechCovered / speechTotal)
-            .put("timingsComplete", timings.getLong("total") == windows.length().toLong())
-            .put("decodeP50Ms", BenchMetrics.percentile(decodeMs, 0.5)).put("decodeP95Ms", BenchMetrics.percentile(decodeMs, 0.95))
+            .put("attemptedCoveragePct", 100.0 * analysis.getLong("attemptedAudioMs") / windowedMs)
+            .put("coveragePct", 100.0 * analysis.getLong("coveredAudioMs") / windowedMs)
+            .put("speechCoveragePct", if (speechTotal == 0L || speechCovered.any { it == null }) JSONObject.NULL
+                else 100.0 * speechCovered.sumOf { it!! } / speechTotal)
+            .put("timingsComplete", collector.complete).put("timingsAttempts", collector.total)
+            .put("timingsInvalidReason", collector.invalidReason ?: JSONObject.NULL)
+            .put("decodeP50Ms", collector.okPercentile(0.5) ?: JSONObject.NULL)
+            .put("decodeP95Ms", collector.okPercentile(0.95) ?: JSONObject.NULL)
+            .put("failedOrInvalidatedMaxMs", collector.notOkMaxMs() ?: JSONObject.NULL)
             .put("decodeMaxMs", analysis.getLong("decodeMaxMs"))
-            .put("latencyAvgMs", analysis.getLong("deliveryLatencyCount").let { if (it == 0L) null else analysis.getLong("deliveryLatencyTotalMs") / it })
+            .put("latencyAvgMs", analysis.getLong("deliveryLatencyCount").let { if (it == 0L) JSONObject.NULL else analysis.getLong("deliveryLatencyTotalMs") / it })
             .put("latencyMaxMs", analysis.getLong("deliveryLatencyMaxMs"))
             .put("delivered", analysis.getLong("delivered")).put("deliveryDiscarded", analysis.getLong("deliveryDiscarded"))
             .put("invalidatedDecodes", analysis.getLong("invalidatedDecodes"))
@@ -360,8 +374,8 @@ class BenchRunner(private val context: Context, private val options: BenchOption
             .put("deferredWindows", analysis.getLong("deferredWindows")).put("coalescedWindows", analysis.getLong("coalescedWindows"))
             .put("maxWindowMs", analysis.getLong("maxWindowMs"))
             // A sustained loop cuts streams at arbitrary points, so its joined reference is not comparable.
-            .put("wer", if (errors.refWords == 0 || stream.kind == "sustained") null else errors.wordErrors.toDouble() / errors.refWords)
-            .put("cer", if (errors.refChars == 0 || stream.kind == "sustained") null else errors.charErrors.toDouble() / errors.refChars)
+            .put("wer", if (errors.refWords == 0 || stream.kind == "sustained") JSONObject.NULL else errors.wordErrors.toDouble() / errors.refWords)
+            .put("cer", if (errors.refChars == 0 || stream.kind == "sustained") JSONObject.NULL else errors.charErrors.toDouble() / errors.refChars)
             .put("hypWords", errors.hypWords).put("lateChunks", lateChunks).put("maxLateMs", maxLateMs)
             .put("levels", analysis.getJSONObject("levels"))
             .put("thermalAfter", thermal()).put("memoryAfter", memory())

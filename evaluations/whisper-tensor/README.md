@@ -66,7 +66,7 @@ progreso en `adb logcat -s FaceclawWhisperBench` y en `$B/results/<id>/status.tx
 | Modo | Mide | Parámetros principales |
 | --- | --- | --- |
 | `corpus` | Llamadas directas al decoder: verificación SHA, carga, calentamiento y p50/p95/RTF estables; WER/CER y palabras insertadas en silencio/ruido tras el filtro de producción | `models`, `threads`, `providers`, `tails`, `conditioning`, `segmentMs` (6000), `repeat`, `warmup`, `kinds` |
-| `realtime` | `FaceclawLocalTranscriber` de producción alimentado a 50 ms por fragmento y ritmo real: descartes, cobertura total y de voz, latencia ventana→entrega, rechazos por causa, WER entregado, drenaje al OFF | `policies` (`ref-6-3`, `coalesce-6-3-max12`), `rounds` (orden ABBA) |
+| `realtime` | `FaceclawLocalTranscriber` de producción alimentado a 50 ms por fragmento y ritmo real: descartes, cobertura (intentada y decodificada sin error; nunca palabras reconocidas), voz cubierta, errores de decoder, latencia ventana→entrega, rechazos por causa, WER entregado, drenaje al OFF. El anillo de tiempos (256) se recoge cada 30 s; si no se recoge completo, p50/p95 y voz cubierta quedan nulos con `timingsInvalidReason` | `policies` (`ref-6-3`, `coalesce-6-3-max12`), `rounds` (orden ABBA) |
 | `sustained` | Igual que realtime en bucle durante `minutes` por bloque, serie térmica/batería cada 10 s y PSS | `minutes` (≤19), `rounds` |
 
 Comandos usados en el informe:
@@ -78,7 +78,7 @@ Comandos usados en el informe:
 --es mode corpus --es models whisper-small-es --es threads 4 --es tails 0,300 --es conditioning on,off --es providers cpu,xnnpack
 # Segmentación a ritmo real
 --es mode realtime --es models whisper-small-es --es threads 4 --es policies ref-6-3,coalesce-6-3-max12 --es rounds 2
-# Sostenido, dos finalistas (base 1 vs 4 hilos), ABBA, 10 min cada uno
+# Sostenido, dos finalistas (base 1 vs 4 hilos), ABBA: dos bloques de 5 min por configuración
 --es mode sustained --es models whisper-base-es --es threads 1,4 --es minutes 5 --es rounds 2 --es cooldownSec 120
 ```
 

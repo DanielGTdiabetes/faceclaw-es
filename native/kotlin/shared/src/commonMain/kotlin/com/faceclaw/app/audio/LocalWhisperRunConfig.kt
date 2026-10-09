@@ -19,10 +19,13 @@ data class LocalWhisperPerformance(val threads: Int, val provider: String = "cpu
         const val TAIL_MIN = 100
         const val TAIL_MAX = 1000
 
-        /** Current production values: base keeps one thread, small and medium four. */
+        /**
+         * Production values: four CPU threads for every model. Base moved from 1 to 4 after the Pixel
+         * sustained replay (two 5 min blocks per setting, order 1/4/4/1: p95 1726/831/828/1388 ms,
+         * identical hypotheses). Provider, padding and window policy stay at their defaults.
+         */
         fun defaultFor(modelId: String): LocalWhisperPerformance? = when (modelId) {
-            "whisper-base-es" -> LocalWhisperPerformance(1)
-            "whisper-small-es", "whisper-medium-es" -> LocalWhisperPerformance(4)
+            "whisper-base-es", "whisper-small-es", "whisper-medium-es" -> LocalWhisperPerformance(4)
             else -> null
         }
 

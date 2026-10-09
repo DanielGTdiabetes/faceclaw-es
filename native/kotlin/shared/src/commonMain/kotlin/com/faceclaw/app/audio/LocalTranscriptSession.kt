@@ -359,15 +359,24 @@ class LocalTranscriptSession(
     private val levels = LocalAsrLevelStats()
     private var engine = ""
     private var runtime = ""
-    /** Union of decoded capture windows, in PCM chunks: audio a dropped window loses only if no neighbour covered it. */
+    /**
+     * Unions of capture windows, in PCM chunks (windows reach the worker in capture order, so a running
+     * end mark is an exact union). Attempted = handed to the decoder, whatever the outcome. Covered =
+     * the decoder returned without throwing while the window's generation was still current
+     * ([TIMING_OK]); a failed or OFF/reset-invalidated window adds nothing, and a later successful
+     * window covers only its own span. Covered is decoder processing, not accepted or delivered text:
+     * a window rejected by the language/structure filters is covered but delivers nothing.
+     */
+    private var attemptedChunks = 0L
+    private var attemptedEndChunk = 0L
     private var coveredChunks = 0L
     private var coveredEndChunk = 0L
     /** Window close (PCM time) to listener delivery, wall clock. Decode + queue + dispatcher. */
     private var latencyCount = 0L
     private var latencyTotalMs = 0L
     private var latencyMaxMs = 0L
-    /** Last decoded windows as (captureStartMs, captureEndMs, decodeMs) scalars; fixed size, never text/audio. */
-    private val timings = LongArray(TIMING_SLOTS * 3)
+    /** Last decoder attempts as (captureStartMs, captureEndMs, decodeMs, outcome) scalars; fixed size, never text/audio. */
+    private val timings = LongArray(TIMING_SLOTS * TIMING_FIELDS)
     private var timingCount = 0L
     // Both lambdas are called under condition by acceptPcm; do not acquire its non-reentrant lock again.
     private val buffer = LocalTranscriptBuffer(segmentPhase = { pendingSegmentPhase = it },
@@ -380,21 +389,32 @@ class LocalTranscriptSession(
     }
 
     companion object {
+        /** Fixed ring: production RAM stays bounded; a longer run must be collected incrementally. */
         const val TIMING_SLOTS = 256
+        private const val TIMING_FIELDS = 4
+        /** Decoder returned while the window's generation was current: counts as covered. */
+        const val TIMING_OK = 0L
+        /** Decoder threw while the generation was current (decodeErrors): timed, never covered. */
+        const val TIMING_FAILED = 1L
+        /** OFF, resetStream or deadline before the decoder returned (invalidatedDecodes): timed, never covered. */
+        const val TIMING_INVALIDATED = 2L
     }
 
     fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
 
     /**
-     * Benchmark detail kept out of [diagnostics] (polled by the UI): the most recent decoded windows as
-     * [captureStartMs, captureEndMs, decodeMs], oldest first. Capture times are PCM time since start.
+     * Benchmark detail kept out of [diagnostics] (polled by the UI): the most recent decoder attempts
+     * as [captureStartMs, captureEndMs, decodeMs, outcome], oldest first, outcome one of TIMING_*.
+     * Capture times are PCM time since start. `total` counts every attempt of this start and `first`
+     * is the attempt index of the first listed window: when `first` > 0 older attempts have left the
+     * ring and the list alone no longer describes the whole run.
      */
     fun decodeTimings(): String = condition.withLock {
         val count = minOf(timingCount, TIMING_SLOTS.toLong()).toInt()
         val first = timingCount - count
-        (0 until count).joinToString(",", "{\"total\":$timingCount,\"windows\":[", "]}") {
-            val slot = ((first + it) % TIMING_SLOTS).toInt() * 3
-            "[${timings[slot]},${timings[slot + 1]},${timings[slot + 2]}]"
+        (0 until count).joinToString(",", "{\"total\":$timingCount,\"first\":$first,\"windows\":[", "]}") {
+            val slot = ((first + it) % TIMING_SLOTS).toInt() * TIMING_FIELDS
+            "[${timings[slot]},${timings[slot + 1]},${timings[slot + 2]},${timings[slot + 3]}]"
         }
     }
     fun isWorkerActive(): Boolean = condition.withLock { worker }
@@ -410,7 +430,7 @@ class LocalTranscriptSession(
             deadline = platform.elapsedRealtimeMs() + maxMs.coerceIn(1, 1200000)
             status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
             buffer.resetMetrics(segmentation, windows)
-            coveredChunks = 0; coveredEndChunk = 0; latencyCount = 0; latencyTotalMs = 0; latencyMaxMs = 0
+            attemptedChunks = 0; attemptedEndChunk = 0; coveredChunks = 0; coveredEndChunk = 0; latencyCount = 0; latencyTotalMs = 0; latencyMaxMs = 0
             timings.fill(0); timingCount = 0
             inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
@@ -493,7 +513,8 @@ class LocalTranscriptSession(
             "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
             "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
             "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":$conditionAudio," +
-            "\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"coveredAudioMs\":${coveredChunks * 50}," +
+            "\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"attemptedAudioMs\":${attemptedChunks * 50}," +
+            "\"coveredAudioMs\":${coveredChunks * 50}," +
             "\"deliveryLatencyCount\":$latencyCount,\"deliveryLatencyTotalMs\":$latencyTotalMs,\"deliveryLatencyMaxMs\":$latencyMaxMs," +
             levels.json() + "," + buffer.mixedDiagnostics() +
             ",\"phases\":[${(0 until LocalTranscriptPhases.COUNT).joinToString(",") { phaseJson(it) }}]}}"
@@ -540,9 +561,9 @@ class LocalTranscriptSession(
                         decodeStarted = platform.elapsedRealtimeMs()
                         condition.withLock {
                             stats[next.phase].decodeCalls++; stats[next.phase].decodedSamples += floats.size
-                            if (windowed && next.endChunk > coveredEndChunk) {
-                                coveredChunks += next.endChunk - maxOf(next.startChunk, coveredEndChunk)
-                                coveredEndChunk = next.endChunk
+                            if (windowed && next.endChunk > attemptedEndChunk) {
+                                attemptedChunks += next.endChunk - maxOf(next.startChunk, attemptedEndChunk)
+                                attemptedEndChunk = next.endChunk
                             }
                         }
                     }
@@ -556,8 +577,19 @@ class LocalTranscriptSession(
                         condition.withLock {
                             val s = stats[next.phase]
                             s.decodeTotalMs += elapsed; s.decodeMaxMs = maxOf(s.decodeMaxMs, elapsed)
-                            val slot = (timingCount % TIMING_SLOTS).toInt() * 3
-                            timings[slot] = next.startChunk * 50; timings[slot + 1] = next.endChunk * 50; timings[slot + 2] = elapsed
+                            // Same precedence as the counters below: a stale generation is invalidated even if it threw.
+                            val outcome = when {
+                                !running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline -> TIMING_INVALIDATED
+                                decodeFailed -> TIMING_FAILED
+                                else -> TIMING_OK
+                            }
+                            if (outcome == TIMING_OK && windowed && next.endChunk > coveredEndChunk) {
+                                coveredChunks += next.endChunk - maxOf(next.startChunk, coveredEndChunk)
+                                coveredEndChunk = next.endChunk
+                            }
+                            val slot = (timingCount % TIMING_SLOTS).toInt() * TIMING_FIELDS
+                            timings[slot] = next.startChunk * 50; timings[slot + 1] = next.endChunk * 50
+                            timings[slot + 2] = elapsed; timings[slot + 3] = outcome
                             timingCount++
                         }
                     } else null
@@ -565,6 +597,8 @@ class LocalTranscriptSession(
                     val post = condition.withLock {
                         val s = stats[next.phase]
                         if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) {
+                            // Result never used. Usually also TIMING_INVALIDATED; an OFF landing after the decoder
+                            // returned keeps that window covered (it was processed) but still yields no text.
                             if (canDecode) s.invalidatedDecodes++
                             false
                         } else {

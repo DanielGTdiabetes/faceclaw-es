@@ -32,33 +32,41 @@ Pixel 10 Pro Fold Tensor G5, Android 17 (SDK 37), bench 3f2e534e802d, sherpa-onn
 
 Pixel 10 Pro Fold Tensor G5, Android 17 (SDK 37), bench 3f2e534e802d, sherpa-onnx 1.13.0. 
 
-| Ronda | Modelo | Runtime | Política | Secuencia | Audio s | Ventanas | Descartes | % desc. | Cobertura % | Voz cubierta % | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | WER | Rechazo idioma | Drenaje OFF ms | Fragm. tarde |
-|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
-| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-es | 70.1 | 24 | 7 | 29.2 | 98.6 | 100 | 2911 | 4299 | 4299 | 2771/4303 | 15 | 0.310 | 2 | 307 | 0 |
-| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-ca | 79.9 | 27 | 9 | 33.3 | 97.8 | 100 | 2960 | 4512 | 4512 | 3188/4518 | 15 | 0.515 | 3 | 319 | 0 |
-| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-level-es | 34.7 | 12 | 5 | 41.7 | 95.8 | 100 | 3627 | 4922 | 4922 | 3157/4008 | 5 | 0.391 | 2 | 361 | 0 |
-| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-mixed-es-ca | 54.1 | 19 | 7 | 36.8 | 99.8 | 100 | 3343 | 4590 | 4590 | 3016/4161 | 9 | 0.340 | 3 | 319 | 0 |
-| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-es | 70.1 | 22 | 0 | 0 | 99.3 | 100 | 2880 | 4951 | 5216 | 3042/4008 | 16 | 0.159 | 2 | 305 | 0 |
-| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-ca | 79.9 | 20 | 0 | 0 | 97.1 | 100 | 3799 | 5709 | 6536 | 4240/6544 | 16 | 0.799 | 2 | 371 | 0 |
-| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-level-es | 34.7 | 9 | 0 | 0 | 95.5 | 100 | 3684 | 5579 | 5579 | 3996/4719 | 6 | 0.453 | 2 | 340 | 0 |
-| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-mixed-es-ca | 54.1 | 12 | 0 | 0 | 98.8 | 100 | 4792 | 6573 | 6573 | 4713/6579 | 10 | 0.690 | 2 | 393 | 0 |
-| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-es | 70.1 | 21 | 0 | 0 | 97.6 | 100 | 2902 | 4401 | 4645 | 3093/4408 | 17 | 0.195 | 1 | 350 | 0 |
-| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-ca | 79.9 | 20 | 0 | 0 | 97.3 | 100 | 3776 | 5508 | 5533 | 4211/5541 | 16 | 0.567 | 2 | 407 | 0 |
-| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-level-es | 34.7 | 8 | 0 | 0 | 100 | 100 | 4984 | 5706 | 5706 | 4805/5239 | 6 | 0.656 | 2 | 409 | 0 |
-| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-mixed-es-ca | 54.1 | 12 | 0 | 0 | 98.7 | 100 | 5058 | 6473 | 6473 | 4706/6479 | 10 | 0.520 | 2 | 406 | 0 |
-| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-es | 70.1 | 24 | 8 | 33.3 | 98.6 | 100 | 2930 | 5400 | 5400 | 2932/4384 | 14 | 0.212 | 2 | 351 | 0 |
-| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-ca | 79.9 | 27 | 9 | 33.3 | 97.8 | 100 | 2956 | 4929 | 4929 | 3129/4934 | 15 | 0.433 | 3 | 364 | 0 |
-| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-level-es | 34.7 | 12 | 5 | 41.7 | 95.8 | 100 | 3657 | 4716 | 4716 | 3235/4234 | 5 | 0.391 | 2 | 371 | 0 |
-| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-mixed-es-ca | 54.1 | 19 | 5 | 26.3 | 99.8 | 100 | 2965 | 5480 | 5480 | 2987/4969 | 11 | 0.410 | 3 | 395 | 0 |
+| Ronda | Modelo | Runtime | Política | Secuencia | Audio s | Ventanas | Descartes | % desc. | Cobertura % | Voz cubierta % | Errores decod. | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | WER | Rechazo idioma | Drenaje OFF ms | Fragm. tarde |
+|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-es | 70.1 | 24 | 7 | 29.2 | 98.6² | 100² | – | 2911 | 4299 | 4299 | 2771/4303 | 15 | 0.310 | 2 | 307 | 0 |
+| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-ca | 79.9 | 27 | 9 | 33.3 | 97.8² | 100² | – | 2960 | 4512 | 4512 | 3188/4518 | 15 | 0.515 | 3 | 319 | 0 |
+| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-level-es | 34.7 | 12 | 5 | 41.7 | 95.8² | 100² | – | 3627 | 4922 | 4922 | 3157/4008 | 5 | 0.391 | 2 | 361 | 0 |
+| 0 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-mixed-es-ca | 54.1 | 19 | 7 | 36.8 | 99.8² | 100² | – | 3343 | 4590 | 4590 | 3016/4161 | 9 | 0.340 | 3 | 319 | 0 |
+| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-es | 70.1 | 22 | 0 | 0 | 99.3² | 100² | – | 2880 | 4951 | 5216 | 3042/4008 | 16 | 0.159 | 2 | 305 | 0 |
+| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-ca | 79.9 | 20 | 0 | 0 | 97.1² | 100² | – | 3799 | 5709 | 6536 | 4240/6544 | 16 | 0.799 | 2 | 371 | 0 |
+| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-level-es | 34.7 | 9 | 0 | 0 | 95.5² | 100² | – | 3684 | 5579 | 5579 | 3996/4719 | 6 | 0.453 | 2 | 340 | 0 |
+| 1 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-mixed-es-ca | 54.1 | 12 | 0 | 0 | 98.8² | 100² | – | 4792 | 6573 | 6573 | 4713/6579 | 10 | 0.690 | 2 | 393 | 0 |
+| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-es | 70.1 | 21 | 0 | 0 | 97.6² | 100² | – | 2902 | 4401 | 4645 | 3093/4408 | 17 | 0.195 | 1 | 350 | 0 |
+| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-ca | 79.9 | 20 | 0 | 0 | 97.3² | 100² | – | 3776 | 5508 | 5533 | 4211/5541 | 16 | 0.567 | 2 | 407 | 0 |
+| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-level-es | 34.7 | 8 | 0 | 0 | 100² | 100² | – | 4984 | 5706 | 5706 | 4805/5239 | 6 | 0.656 | 2 | 409 | 0 |
+| 2 | whisper-small-es | threads=4;provider=cpu;tail=default | coalesce-6-3-max12 | stream-mixed-es-ca | 54.1 | 12 | 0 | 0 | 98.7² | 100² | – | 5058 | 6473 | 6473 | 4706/6479 | 10 | 0.520 | 2 | 406 | 0 |
+| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-es | 70.1 | 24 | 8 | 33.3 | 98.6² | 100² | – | 2930 | 5400 | 5400 | 2932/4384 | 14 | 0.212 | 2 | 351 | 0 |
+| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-ca | 79.9 | 27 | 9 | 33.3 | 97.8² | 100² | – | 2956 | 4929 | 4929 | 3129/4934 | 15 | 0.433 | 3 | 364 | 0 |
+| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-level-es | 34.7 | 12 | 5 | 41.7 | 95.8² | 100² | – | 3657 | 4716 | 4716 | 3235/4234 | 5 | 0.391 | 2 | 371 | 0 |
+| 3 | whisper-small-es | threads=4;provider=cpu;tail=default | ref-6-3 | stream-mixed-es-ca | 54.1 | 19 | 5 | 26.3 | 99.8² | 100² | – | 2965 | 5480 | 5480 | 2987/4969 | 11 | 0.410 | 3 | 395 | 0 |
+
+² Cobertura con la semántica anterior: ventanas entregadas al decoder, incluidos intentos fallidos. No significa palabras reconocidas ni texto entregado.
+
 
 ## sustained-base-t1-t4 (sustained)
 
 Pixel 10 Pro Fold Tensor G5, Android 17 (SDK 37), bench 3f2e534e802d, sherpa-onnx 1.13.0. 
 
-| Ronda | Modelo | Runtime | Política | Secuencia | Audio s | Ventanas | Descartes | % desc. | Cobertura % | Voz cubierta % | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | WER | Rechazo idioma | Drenaje OFF ms | Fragm. tarde |
-|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
-| 0 | whisper-base-es | threads=1;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100 | 100 | 1002 | 1726 | 2167 | 1105/2178 | 83 | 1.309 | 12 | 106 | 0 |
-| 1 | whisper-base-es | threads=4;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100 | 100 | 533 | 831 | 937 | 590/950 | 83 | 1.309 | 12 | 117 | 0 |
-| 2 | whisper-base-es | threads=4;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100 | 100 | 537 | 828 | 900 | 593/913 | 83 | 1.309 | 12 | 134 | 1 |
-| 3 | whisper-base-es | threads=1;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100 | 100 | 893 | 1388 | 1475 | 973/1493 | 83 | 1.309 | 12 | 135 | 1 |
+| Ronda | Modelo | Runtime | Política | Secuencia | Audio s | Ventanas | Descartes | % desc. | Cobertura % | Voz cubierta % | Errores decod. | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | WER | Rechazo idioma | Drenaje OFF ms | Fragm. tarde |
+|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| 0 | whisper-base-es | threads=1;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100² | 100² | – | 1002 | 1726 | 2167 | 1105/2178 | 83 | n/v¹ | 12 | 106 | 0 |
+| 1 | whisper-base-es | threads=4;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100² | 100² | – | 533 | 831 | 937 | 590/950 | 83 | n/v¹ | 12 | 117 | 0 |
+| 2 | whisper-base-es | threads=4;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100² | 100² | – | 537 | 828 | 900 | 593/913 | 83 | n/v¹ | 12 | 134 | 1 |
+| 3 | whisper-base-es | threads=1;provider=cpu;tail=default | ref-6-3 | sustained-5min | 300.0 | 101 | 0 | 0 | 100² | 100² | – | 893 | 1388 | 1475 | 973/1493 | 83 | n/v¹ | 12 | 135 | 1 |
+
+¹ WER no válido: la secuencia en bucle corta frases en puntos arbitrarios y la referencia unida no es comparable. El JSON conserva el valor original, que no debe usarse como precisión.
+
+² Cobertura con la semántica anterior: ventanas entregadas al decoder, incluidos intentos fallidos. No significa palabras reconocidas ni texto entregado.
+
 
