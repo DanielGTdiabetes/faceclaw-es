@@ -1,5 +1,22 @@
 # Continuar Faceclaw desde otro PC
 
+**Incremento local pendiente de relevo Pixel, 09-10-2026:** `e5d361b` habilita
+Whisper medium local en el asistente Hey Even (selector, descarga, mapeo,
+verificación SHA-256 y cuatro hilos solo para medium); `2fd320a` conserva tras
+OFF solo los agregados/identidad del último motor local y el drenaje real, sin
+texto/audio ni reactivación; el commit de documentación de este incremento registra el piloto LiteRT/Tensor aislado.
+Pruebas TS afectadas 22/22, Kotlin host, AAR, prepare Android y
+assembleRelease/lintVitalRelease correctos. El auxiliar
+`E:\projects\faceclaw-es-medium-npu-lab` compila debug sin red/micrófono y no se
+instaló. LiteRT/Tensor queda «no disponible para esta prueba»: no hay modelo
+medium TFLite verificable ni SDK Tensor Beta autorizado; no se convirtió modelo
+ni se midió NPU. No se usó ADB, no se firmó ni instaló APK y no se leyó estado,
+ajustes, audio, texto, perfil o memoria. El relevo
+`.tools/medium-luna-handoff-2026-10-09.json` estaba ausente; su ausencia no libera
+el Pixel. Antes de cualquier ADB: relevo `released` del encargo, sin reserva
+ajena, adquirir reserva propia por creación exclusiva, confirmar serial/OFF/
+drenaje y seguir el informe `resultado-terra-medium-pixel-2026-10-09.md`.
+
 **Revisión Codex completada, 09-10-2026:** [revisión S2.6.12](revision-codex-whisper-s2.6.12-2026-10-09.md). Fuentes S2.6.11/S2.6.12 en `codex/conversation-detection-g0`; banco/resultados conservados en `claude/whisper-perf-bench-2026-10-09` @ `342154c`. Instalación contrastada mediante APK extraída, firma y ajustes idénticos; helper PowerShell 5.1 corregido y probado. Supera el pendiente de revisión/fuentes sin commit de la entrada siguiente. La mejora de hilos aplica a base; small permanece igual. Sin reinstalación, consulta del Pixel ni copia NAS nueva.
 
 **Estado vigente, 09-10-2026 tarde: S2.6.12 instalada.** [Informe](whisper-s2.6.12-instalacion-2026-10-09.md). APK `2cd955b1…`/805/firma original, `install -r`, extraída igual; reversión fresca S2.6.11 `ed471aa3…` (`dist/conversation-g0/before-update-s2.6.12-whisper-performance.apk`), 35 ajustes idénticos, OFF antes/después, 7 nativas/runtime/bundle JS iguales a S2.6.11. Delta Whisper de `claude/whisper-perf-bench-2026-10-09` @ `a85b04a` (worktree `E:\projects\faceclaw-es-whisper-bench`): cobertura solo de decodificaciones correctas, anillo de tiempos con resultado y recogida incremental en el banco, base 1→4 hilos. Fuentes S2.6.11 locales conservadas, sin commit/push; el ZIP de recuperación anterior no incluye este delta. Sin copia NAS nueva. Motor/memoria en RAM: el usuario volvió a seleccionar Whisper small y memoria 24 h tras actualizar. Sin captura/ensayo; Hermes/NAS sin tocar. Supera la entrada S2.6.11 siguiente.
