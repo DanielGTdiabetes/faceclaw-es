@@ -3,6 +3,9 @@
   "main": "app/app.ts",
   "version": "1.0.0",
   "private": false,
+  "nativescript": {
+    "id": "com.faceclaw.app"
+  },
   "scripts": {
     "input": "node scripts/faceclaw-input.cjs",
     "profile:android": "node scripts/profile-android.cjs",
