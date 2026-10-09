@@ -1,0 +1,23 @@
+{
+ "normalize": [
+  {"in": "¿Dónde estamos?", "out": "dónde estamos"},
+  {"in": "El guanyador de la medalla d'or", "out": "el guanyador de la medalla d or"},
+  {"in": "  Hola,   MÓN!!  ", "out": "hola món"},
+  {"in": "EE. UU. 100 y 200", "out": "ee uu 100 y 200"},
+  {"in": "l’explosió", "out": "l explosió"},
+  {"in": "", "out": ""}
+ ],
+ "errors": [
+  {"ref": "el lunes iremos al mercado", "hyp": "el lunes iremos al mercado", "expect": {"wordErrors": 0, "refWords": 5, "charErrors": 0}},
+  {"ref": "el lunes iremos al mercado", "hyp": "lunes iremos al gran mercado", "expect": {"wordErrors": 2, "deletions": 1, "insertions": 1, "substitutions": 0}},
+  {"ref": "on estem ara", "hyp": "on estam ara", "expect": {"wordErrors": 1, "substitutions": 1, "charErrors": 1}},
+  {"ref": "", "hyp": "gracias por ver el vídeo", "expect": {"wordErrors": 5, "insertions": 5, "refWords": 0, "hypWords": 5}},
+  {"ref": "hola", "hyp": "", "expect": {"wordErrors": 1, "deletions": 1, "charErrors": 4}}
+ ],
+ "percentile": [
+  {"values": [5, 1, 3], "fraction": 0.5, "expect": 3},
+  {"values": [1, 2, 3, 4], "fraction": 0.5, "expect": 2},
+  {"values": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "fraction": 0.95, "expect": 19},
+  {"values": [7, 9, 8], "fraction": 0.95, "expect": 9}
+ ]
+}

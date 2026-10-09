@@ -1,0 +1,369 @@
+{
+ "sampleRate": 16000,
+ "format": "pcm_s16le mono",
+ "generator": "build_corpus.py",
+ "fixtures": [
+  {
+   "id": "es-fleurs-00",
+   "kind": "speech",
+   "language": "es",
+   "reference": "En cuatro años, es el quinto CEP de Martelly.",
+   "origin": "FLEURS dev es_419/10576560181272987628.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-00.pcm",
+   "sha256": "f2752ce3334ac198f77a6df0bcfc98ba1ab6f3009306adaa503bbc2cc7887416",
+   "durationMs": 5520
+  },
+  {
+   "id": "es-fleurs-01",
+   "kind": "speech",
+   "language": "es",
+   "reference": "Al pasar el tiempo, a medida que la incipiente población se va adaptando al nuevo entorno, comienza a asemejarse cada vez menos a la otra población.",
+   "origin": "FLEURS dev es_419/12272481321089400725.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-01.pcm",
+   "sha256": "0fedd786b356e4d944ec2511a14cd150345a94e4147d076329a5a6308f76614b",
+   "durationMs": 11580
+  },
+  {
+   "id": "es-fleurs-02",
+   "kind": "speech",
+   "language": "es",
+   "reference": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados.",
+   "origin": "FLEURS dev es_419/12309249212943067327.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-02.pcm",
+   "sha256": "0835bbca2ece3778fd8c9a5e00ffa79f4d1b0c482891c48207acd34d0b5609a3",
+   "durationMs": 9540
+  },
+  {
+   "id": "es-fleurs-03",
+   "kind": "speech",
+   "language": "es",
+   "reference": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientalistas o, incluso, podemos volvernos activistas y luchar para aminorar, en alguna medida, el sufrimiento futuro.",
+   "origin": "FLEURS dev es_419/12716912110208003007.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-03.pcm",
+   "sha256": "86c2ceedc5999139b782bc5c1f2531d115ed26208365c79bc4c3115776b364eb",
+   "durationMs": 16980
+  },
+  {
+   "id": "es-fleurs-04",
+   "kind": "speech",
+   "language": "es",
+   "reference": "El cristianismo ortodoxo es la religión mayoritaria en Moldavia.",
+   "origin": "FLEURS dev es_419/12832763676170496221.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-04.pcm",
+   "sha256": "aa0491fcb1f38c0b277bef93879b84d554431a061e4175313016cceea8fdd499",
+   "durationMs": 7320
+  },
+  {
+   "id": "es-fleurs-05",
+   "kind": "speech",
+   "language": "es",
+   "reference": "En esta lanzadera de traslado dinámico, todos están de algún modo conectados con un sistema de transporte basado en el uso de automóviles privados, y lo sostienen.",
+   "origin": "FLEURS dev es_419/139282854823872998.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-05.pcm",
+   "sha256": "98b5cf446af029d6a980b30f1267d173149f760c6f2e83c4561a479894d84ed0",
+   "durationMs": 10200
+  },
+  {
+   "id": "es-fleurs-06",
+   "kind": "speech",
+   "language": "es",
+   "reference": "Los casos registrados de esclerosis múltiple (EM) en EE. UU. ascienden a cerca de 400 000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y de mediana edad.",
+   "origin": "FLEURS dev es_419/14174207670770285689.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-06.pcm",
+   "sha256": "2ea0821b183ce563acf8ac8743c0b5a5947a0fe9bdaf35ea6a7a92cc58617473",
+   "durationMs": 15180
+  },
+  {
+   "id": "es-fleurs-07",
+   "kind": "speech",
+   "language": "es",
+   "reference": "Además, existen monturas, en especial las inglesas, con barras de seguridad que permiten que el cuero del estribo se desprenda de su estructura si un jinete que sale despedido tira hacia atrás.",
+   "origin": "FLEURS dev es_419/14444456949745319932.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "es-fleurs-07.pcm",
+   "sha256": "9a5e128af28573b18e004367604e960c8789ea626d4ded06b2f4658338ee2034",
+   "durationMs": 14040
+  },
+  {
+   "id": "ca-fleurs-00",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall, normalment amb experiència pràctica.",
+   "origin": "FLEURS dev ca_es/10314883843464614672.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-00.pcm",
+   "sha256": "ece7da5dd6c93aa6cb73977b755e72621e40a427848de8258c274c558b017c59",
+   "durationMs": 7980
+  },
+  {
+   "id": "ca-fleurs-01",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "Un antic policia filipí ha mantingut com a ostatges turistes de Hong Kong per segrestar el seu autobús a Manila, la capital de les Filipines.",
+   "origin": "FLEURS dev ca_es/10712167215744995817.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-01.pcm",
+   "sha256": "99d8537634000cff1e0c35aab421c72c7e321edd4869a634486a57e8c2cad7c9",
+   "durationMs": 10140
+  },
+  {
+   "id": "ca-fleurs-02",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "No sé si us n'adoneu, però la majoria de béns d'Amèrica central arriben a aquest país lliures d'impostos.",
+   "origin": "FLEURS dev ca_es/10865855051293500329.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-02.pcm",
+   "sha256": "018316a987807e3634e2d8e0a04eceb82491932df46ee9c2e785a5d97eb8d805",
+   "durationMs": 9420
+  },
+  {
+   "id": "ca-fleurs-03",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "La NHK també ha informat que la central nuclear de Kashiwazaki Kariwa, a la prefectura de Niigata, funcionava amb normalitat.",
+   "origin": "FLEURS dev ca_es/11227727078417914846.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-03.pcm",
+   "sha256": "8ef1b95071e41dc0f9fe762454f6cdd86258f3da8366384438c5d331b3a072c2",
+   "durationMs": 13560
+  },
+  {
+   "id": "ca-fleurs-04",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "Les qualitats que determinen una subcultura com a diferent poden ser lingüístiques, estètiques, religioses, polítiques, sexuals, geogràfiques o una combinació dels factors.",
+   "origin": "FLEURS dev ca_es/11369544331656264255.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-04.pcm",
+   "sha256": "98658913d01538b31ce8fbe8ae443670a014bc02c39ad1ea5129e04161057d3e",
+   "durationMs": 15120
+  },
+  {
+   "id": "ca-fleurs-05",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "La part septentrional o Sentinel Range té les muntanyes més altes de l'Antàrtida, el Massís Vinson, amb un màxim de 4.892 m del Mont Vinson.",
+   "origin": "FLEURS dev ca_es/12191371764973539118.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-05.pcm",
+   "sha256": "01f62a572cc43f7cee5b22914c24260a23e27fd00f6561867a37caf29b6cb4cc",
+   "durationMs": 15040
+  },
+  {
+   "id": "ca-fleurs-06",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "Les consideracions que es presenten solen ser breus, generals i massa simplificades comparades amb la informació més detallada disponible a qualsevol altre lloc.",
+   "origin": "FLEURS dev ca_es/13342536752300157826.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-06.pcm",
+   "sha256": "bf94d563db3da988d14a23bde54c7df6cec977ec9d437051fbac2043c622474a",
+   "durationMs": 8580
+  },
+  {
+   "id": "ca-fleurs-07",
+   "kind": "speech",
+   "language": "ca",
+   "reference": "Els científics afirmen que l'explosió causada per la col·lisió fou descomunal.",
+   "origin": "FLEURS dev ca_es/13724141066928177155.wav",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs)",
+   "file": "ca-fleurs-07.pcm",
+   "sha256": "0684bd8de35ea39e7c35ce980ed7b0b54fb31c493e409853b8d9d98b54d85276",
+   "durationMs": 8600
+  },
+  {
+   "id": "silence-digital-10s",
+   "kind": "silence",
+   "language": "",
+   "reference": "",
+   "origin": "synthetic zeros",
+   "license": "CC0 (generated)",
+   "file": "silence-digital-10s.pcm",
+   "sha256": "ac2878215ad33205d1732578c89f25ededaad1b676911c540825bcf4baa42d9b",
+   "durationMs": 10000
+  },
+  {
+   "id": "noise-white-60dbfs-10s",
+   "kind": "noise",
+   "language": "",
+   "reference": "",
+   "origin": "synthetic white noise, seed 1",
+   "license": "CC0 (generated)",
+   "file": "noise-white-60dbfs-10s.pcm",
+   "sha256": "9f694294390a45e81080cd2a722b027e6218ec8dd2137e1a5d0ef98135d5393b",
+   "durationMs": 10000
+  },
+  {
+   "id": "noise-pink-45dbfs-10s",
+   "kind": "noise",
+   "language": "",
+   "reference": "",
+   "origin": "synthetic pink noise, seed 2",
+   "license": "CC0 (generated)",
+   "file": "noise-pink-45dbfs-10s.pcm",
+   "sha256": "2659c6c39090e7be4b028627bf341c6709edbdc7bad0ec8bf32fad1164274ff8",
+   "durationMs": 10000
+  },
+  {
+   "id": "noise-hum-40dbfs-10s",
+   "kind": "noise",
+   "language": "",
+   "reference": "",
+   "origin": "synthetic hum noise, seed 3",
+   "license": "CC0 (generated)",
+   "file": "noise-hum-40dbfs-10s.pcm",
+   "sha256": "739791deb082ca0fbc25881e395cc54f21c60f7731d82e2a7b7f484ce196dccc",
+   "durationMs": 10000
+  },
+  {
+   "id": "stream-es",
+   "kind": "stream",
+   "language": "es",
+   "reference": "En cuatro años, es el quinto CEP de Martelly. Al pasar el tiempo, a medida que la incipiente población se va adaptando al nuevo entorno, comienza a asemejarse cada vez menos a la otra población. Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientalistas o, incluso, podemos volvernos activistas y luchar para aminorar, en alguna medida, el sufrimiento futuro. El cristianismo ortodoxo es la religión mayoritaria en Moldavia. En esta lanzadera de traslado dinámico, todos están de algún modo conectados con un sistema de transporte basado en el uso de automóviles privados, y lo sostienen.",
+   "origin": "concatenated FLEURS es clips, 0.4-1.2 s gaps, -65 dBFS floor",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs) + CC0 noise floor",
+   "segments": [
+    {
+     "fixture": "es-fleurs-00",
+     "startMs": 4500,
+     "endMs": 10020
+    },
+    {
+     "fixture": "es-fleurs-01",
+     "startMs": 10931,
+     "endMs": 22511
+    },
+    {
+     "fixture": "es-fleurs-02",
+     "startMs": 22931,
+     "endMs": 32471
+    },
+    {
+     "fixture": "es-fleurs-03",
+     "startMs": 33091,
+     "endMs": 50071
+    },
+    {
+     "fixture": "es-fleurs-04",
+     "startMs": 50650,
+     "endMs": 57970
+    },
+    {
+     "fixture": "es-fleurs-05",
+     "startMs": 58959,
+     "endMs": 69159
+    }
+   ],
+   "file": "stream-es.pcm",
+   "sha256": "c392901c7226832c68f4539ab8b022fece86aceca5363823f401e1764e460bb4",
+   "durationMs": 70100
+  },
+  {
+   "id": "stream-ca",
+   "kind": "stream",
+   "language": "ca",
+   "reference": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall, normalment amb experiència pràctica. Un antic policia filipí ha mantingut com a ostatges turistes de Hong Kong per segrestar el seu autobús a Manila, la capital de les Filipines. No sé si us n'adoneu, però la majoria de béns d'Amèrica central arriben a aquest país lliures d'impostos. La NHK també ha informat que la central nuclear de Kashiwazaki Kariwa, a la prefectura de Niigata, funcionava amb normalitat. Les qualitats que determinen una subcultura com a diferent poden ser lingüístiques, estètiques, religioses, polítiques, sexuals, geogràfiques o una combinació dels factors. La part septentrional o Sentinel Range té les muntanyes més altes de l'Antàrtida, el Massís Vinson, amb un màxim de 4.892 m del Mont Vinson.",
+   "origin": "concatenated FLEURS ca clips, 0.4-1.2 s gaps, -65 dBFS floor",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs) + CC0 noise floor",
+   "segments": [
+    {
+     "fixture": "ca-fleurs-00",
+     "startMs": 4500,
+     "endMs": 12480
+    },
+    {
+     "fixture": "ca-fleurs-01",
+     "startMs": 13593,
+     "endMs": 23733
+    },
+    {
+     "fixture": "ca-fleurs-02",
+     "startMs": 24203,
+     "endMs": 33623
+    },
+    {
+     "fixture": "ca-fleurs-03",
+     "startMs": 34360,
+     "endMs": 47920
+    },
+    {
+     "fixture": "ca-fleurs-04",
+     "startMs": 48344,
+     "endMs": 63464
+    },
+    {
+     "fixture": "ca-fleurs-05",
+     "startMs": 64039,
+     "endMs": 79079
+    }
+   ],
+   "file": "stream-ca.pcm",
+   "sha256": "34105e971d6cf04c5dfef4c5d3d03c19c07e41c1d148cf40f08d399b75baec42",
+   "durationMs": 79883
+  },
+  {
+   "id": "stream-level-es",
+   "kind": "stream",
+   "language": "es",
+   "reference": "Los casos registrados de esclerosis múltiple (EM) en EE. UU. ascienden a cerca de 400 000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y de mediana edad. Además, existen monturas, en especial las inglesas, con barras de seguridad que permiten que el cuero del estribo se desprenda de su estructura si un jinete que sale despedido tira hacia atrás.",
+   "origin": "LEVEL TEST ONLY: second clip attenuated 30 dB; not equivalent to a speaker at two metres",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs) + CC0 noise floor",
+   "segments": [
+    {
+     "fixture": "es-fleurs-06",
+     "startMs": 4500,
+     "endMs": 19680
+    },
+    {
+     "fixture": "es-fleurs-07",
+     "startMs": 20101,
+     "endMs": 34141
+    }
+   ],
+   "file": "stream-level-es.pcm",
+   "sha256": "528a75fb00c400d91cd3b70844aeecf9c06806b44ad567a7acf1abe7c24b59de",
+   "durationMs": 34700
+  },
+  {
+   "id": "stream-mixed-es-ca",
+   "kind": "stream",
+   "language": "es+ca",
+   "reference": "Los casos registrados de esclerosis múltiple (EM) en EE. UU. ascienden a cerca de 400 000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y de mediana edad. Les consideracions que es presenten solen ser breus, generals i massa simplificades comparades amb la informació més detallada disponible a qualsevol altre lloc. Además, existen monturas, en especial las inglesas, con barras de seguridad que permiten que el cuero del estribo se desprenda de su estructura si un jinete que sale despedido tira hacia atrás. Els científics afirmen que l'explosió causada per la col·lisió fou descomunal.",
+   "origin": "alternating es/ca FLEURS clips",
+   "license": "CC-BY-4.0 (google/fleurs; Conneau et al. 2022, https://huggingface.co/datasets/google/fleurs) + CC0 noise floor",
+   "segments": [
+    {
+     "fixture": "es-fleurs-06",
+     "startMs": 4500,
+     "endMs": 19680
+    },
+    {
+     "fixture": "ca-fleurs-06",
+     "startMs": 20599,
+     "endMs": 29179
+    },
+    {
+     "fixture": "es-fleurs-07",
+     "startMs": 30015,
+     "endMs": 44055
+    },
+    {
+     "fixture": "ca-fleurs-07",
+     "startMs": 44632,
+     "endMs": 53232
+    }
+   ],
+   "file": "stream-mixed-es-ca.pcm",
+   "sha256": "3feef2e6110c68b243572313129bbe147bf0b43becc7bf70b210302ccc2244a7",
+   "durationMs": 54103
+  }
+ ]
+}

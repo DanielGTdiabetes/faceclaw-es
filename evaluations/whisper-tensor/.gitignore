@@ -1,0 +1,11 @@
+corpus/out/
+results/raw-local/
+whispercpp/build/
+whispercpp/src/
+bench-android/**/build/
+bench-android/.gradle/
+bench-android/local.properties
+*.pcm
+*.onnx
+*.bin
+*.apk
