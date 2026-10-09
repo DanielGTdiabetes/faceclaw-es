@@ -1,96 +1,98 @@
 # Resultado Terra · Whisper medium / Pixel · 09-10-2026
 
-## Estado de entrega
+## Estado actual
 
-Tres cambios separados y locales, sin push, merge, instalación ni ADB:
+Tres commits locales y correcciones aún sin commit, sin `push`, merge, ADB, instalación, extracción de APK,
+lectura de ajustes ni captura del Pixel. El relevo
+`.tools/medium-luna-handoff-2026-10-09.json` existe y sigue con `state: busy`;
+la reserva pertenece a Luna. No se borró, sustituyó ni usó como autorización.
 
-| Área | Commit | Resultado |
+| Área | Commit | Estado revisado |
 | --- | --- | --- |
-| A. Asistente «Hey Even» | `e5d361b` | Medium aparece como opción local, descarga reutilizable y modelo solicitado real. |
-| B. Diagnóstico tras OFF | `2fd320a` | Conserva agregados locales y estado de drenaje, sin texto/audio ni reactivación. |
-| C. LiteRT / NPU | `docs(evaluations)` | Prototipo aislado preflight y decisión documentada; no hay afirmación de aceleración. |
+| Opción medium del asistente | `e5d361b` | Selector, mapeo y descarga local preparados. |
+| Retención tras OFF | `2fd320a` | Base inicial retenida; la corrección posterior queda en el árbol de trabajo hasta revisión. |
+| Investigación LiteRT | `09564de` | Sustituida por evidencia más precisa y laboratorio aislado actualizado. |
 
-La rama local conserva tres commits sobre `7281663`; las cinco notas no rastreadas
-preexistentes se conservaron sin añadirlas a ningún commit.
+## Corrección pendiente de commit: diagnóstico OFF
 
-## A. Medium en el asistente
+La revisión identificó que una copia fija de `lastLocalSnapshot` conservaba
+`busy`/`worker` para siempre si el decoder terminaba después de OFF. Ahora la
+instantánea local retenida tiene época de sesión y se refresca solo mientras el
+mismo decoder indica drenaje. Conserva únicamente escalares finales; no acepta
+PCM, texto, audio ni turnos, no usa temporizador y una nueva sesión o cambio
+local→cloud borra la retención antes de crear/usar otro motor.
 
-- `onboard-whisper-medium` está disponible en el selector persistido y en la
-  lista de Voz, junto con `whisper-medium-es` en el gestor de descargas. No se
-  selecciona automáticamente ni cambia `voice.provider` existente.
-- El puente marca explícitamente `whisper-medium`, lo trata como local y no
-  crea cliente cloud/Moonshine. `VoiceCaptureSession` lo convierte a
-  `WHISPER_MEDIUM`.
-- Android resuelve únicamente los archivos ya descargados bajo
-  `faceclaw-voice-asr/sherpa-onnx-whisper-medium-es-int8`, verificando los
-  SHA-256 del catálogo `LocalWhisperModels`. Ausencia o corrupción hace fallar
-  el modelo seleccionado; no existe fallback silencioso.
-- Medium solicita CPU con cuatro hilos; base y small del asistente conservan su
-  comportamiento anterior. La decisión es el baseline ya usado por Conversación,
-  no una medición nueva. El wakeword continúa siendo del firmware: esta ruta
-  solo procesa la frase posterior y advierte de mayor espera.
+La prueba TS avanza el mock de ocupado a drenado y comprueba los contadores
+finales, OFF repetido, el inicio local nuevo y local→cloud. No está marcada como
+entrega final hasta pasar revisión y quedar en su commit separado.
 
-## B. Diagnóstico local después de OFF
+## Medium en el asistente
 
-Al parar una sesión local, `SonioxConversationTranscription` toma la instantánea
-nativa ya detenida. Solo conserva escalares: motor/modelo, contadores/análisis y
-`worker`/`busy`/buffer reales mientras un decoder invalidado drena. El texto ya
-fue borrado por `LocalTranscription.stop()` y no se retiene audio. La lectura con
-OFF no acepta PCM, no inicia captura ni produce turnos; Soniox permanece con
-contadores genéricos a cero. Todo se borra antes de una nueva sesión, incluido el
-cambio local→cloud, para que no haya cifras antiguas.
+- `onboard-whisper-medium` aparece como opción explícita, permanece local y se
+  mapea a `VoiceModelKind.WHISPER_MEDIUM`.
+- La prueba Kotlin ya no acepta un fake indistinto: registra el enum solicitado
+  y afirma `WHISPER_MEDIUM`; también afirma que la configuración efectiva del
+  asistente pide cuatro hilos CPU solo para medium (base/small/Moonshine: uno).
+- Los archivos medium se verifican contra SHA-256 antes de cargar JNI. Para no
+  rehashar ~946 MB por intervención, la verificación se cachea por huella de
+  ruta/existencia/tamaño/mtime; un reemplazo cambia la huella y fuerza hash de
+  nuevo. Hay prueba de cache, cambio de huella e invalidación explícita. No se
+  atribuye una latencia medida a este cambio.
 
-## C. Piloto LiteRT / Tensor
+## LiteRT / NPU: investigación abierta
 
-El auxiliar `E:\projects\faceclaw-es-medium-npu-lab` se compiló como APK debug
-de desarrollo, paquete `com.faceclaw.whispermediumlab`, sin permisos de red,
-micrófono, Bluetooth o almacenamiento. No se instaló. No incluye LiteRT, pesos,
-audio, corpus ni logs: muestra `PRECONDITION BLOCKED` hasta que haya un modelo
-medium TFLite multilingüe comprobable y el runtime/licencia correspondientes.
+No hubo inferencia, compatibilidad ni delegación demostradas. La compilación del
+auxiliar aislado no prueba ninguna de esas cosas. La restricción de registro del
+Tensor SDK concierne a su ruta Tensor SDK/AOT, no prueba que NNAPI legado o
+LiteRT público requieran ese SDK ni que el Pixel no pueda ejecutar un artefacto
+compatible.
 
-La investigación pública queda en
-`evaluations/whisper-medium-npu/README.md`. Google documenta Tensor G5 con LiteRT
-`CompiledModel` y AOT, pero el Tensor SDK es Beta, requiere registro y un entorno
-Linux; no se solicitó acceso, no se aceptaron condiciones y no se intentó una
-conversión larga. La cifra 16,74× de la issue de `whisper.tflite` es una división
-de Geekbench del S23 Ultra, no un benchmark Whisper/Pixel/energía. NNAPI está
-deprecado desde Android 15 pero no por ello ausente; no se añadió a ONNX/sherpa,
-un runtime distinto para el que no aplica `Interpreter.Options().setUseNNAPI`.
+Se localizó una candidata pública para preparar la prueba: `cik009/whisper`,
+`whisper-medium.tflite` multilingüe de 774 MB en revisión inmutable
+`08cc7cda80c788c4ae30e0d0999c3a36444b3101`, SHA-256 publicado
+`a5e9dc7c7a461c72e358615cc72e471ef9cc1175f84b90fe04657aad4bb9bfb9` y
+licencia declarada Apache-2.0. Aún no se descargó ni se verificó localmente:
+eso es trabajo pendiente, no bloqueo externo. Continúan pendientes contrato de
+decoder, vocabulario, firmas/operadores del FlatBuffer y comparación de calidad.
 
-Estado: **no disponible para esta prueba**, no «no funciona». La siguiente prueba
-admisible exige artefacto con licencia/hash/firma/operadores, perfil que muestre
-backend y subgrafos delegados, y A/B del mismo TFLite medium/audio (CPU contra
-acelerador) desglosando carga, log-Mel, encoder, decoder y total caliente. Un
-resultado solo encoder/tiny no sería evidencia de transcripción medium.
+El laboratorio `E:\projects\faceclaw-es-medium-npu-lab` compiló debug con
+LiteRT público 2.2.0 y contiene un plan CPU/NPU *compile-only* sin descarga de
+runtime ni inferencia. Tras relevo y reserva propia deberá ejecutar el decoder
+completo con mismo audio en CPU/NPU y conservar logs/perfiles de backend,
+subgrafos delegados/fallback, carga fría, preprocesado, encoder, decoder y total
+caliente. Tiny, `.en` o solo encoder no cuentan como medium completo. No se
+integra en producción ni se promete 16×.
 
-## Validación realizada
+## Preparación de candidata Android
 
-- `npx tsc -p tests/tsconfig.json` y
-  `node --test tests/voice-finalization.test.cjs tests/soniox-conversation.test.cjs`:
-  **22/22** correctas.
-- `wear\\gradlew.bat -p tests/kotlin testAndroidHostTest --offline --console=plain`:
-  correcto; la advertencia iOS es esperada en Windows.
-- `node scripts/kotlin-build.cjs android release`: correcto.
-- `npx --no-install ns prepare android --release --env.production`: correcto.
-- Android offline `assembleRelease lintVitalRelease` para `arm64-v8a`, con
-  `faceclawUnsigned`: correcto. Persisten advertencias preexistentes de
-  `additional_gradle.properties` ausente, `flatDir` y versión Gradle.
-- Auxiliar aislado: `assembleDebug --offline` correcto. Solo avisos de Java 21
-  sobre source/target 8 y XML de SDK, sin dependencia de red.
+- La versión candidata ya es
+  `0.8.2-es.5-conversation.s2.6.13-whisper-medium` (código 805), y el helper
+  de instalación la admite, pero no se invocó con `-Install`.
+- La firma original está disponible: existen `.tools/signing/faceclaw-es.jks`
+  y `.tools/signing/store.password`; no se leyó/imprimió secreto ni se generó
+  sustituta. La candidata firmada local queda en
+  `dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.6.13-whisper-medium.apk`,
+  SHA-256 `a10097b0f06b3da286942ec8520f51761e127de7e432ba2909a4b00eb6b21951`,
+  con certificado público original `57aaa887…6114c435`; no se instaló.
+- Al liberarse el relevo: comprobar de nuevo una vez el estado, adquirir solo
+  la reserva propia, validar OFF/drenado, compilar y firmar, comprobar firma y
+  hash, respaldar APK/ajustes, comparar ajustes privados, instalar `-r`, volver
+  a comprobar OFF/drenado y liberar solo la reserva propia.
 
-## Pixel, APK e instalación
+## Validación de PC hasta ahora
 
-No se hizo ADB, captura, instalación, extracción de APK, lectura de ajustes ni
-prueba humana. El relevo requerido
-`.tools/medium-luna-handoff-2026-10-09.json` no existía y tampoco había reserva;
-la ausencia no acredita disponibilidad. Por ello no se creó APK firmada, hash,
-versión nueva, comprobación de certificado, respaldo, comparación privada de
-ajustes ni reversión para este incremento. S2.6.12 sigue siendo la instalación
-documentada; no se debe inferir el estado actual del dispositivo.
+- TypeScript y Node afectados: 22/22 correctos.
+- Kotlin host: `testAndroidHostTest` correcto en Windows (advertencia iOS
+  esperable).
+- APK principal arm64: `assembleRelease lintVitalRelease` correcto, paquete
+  `com.faceclaw.app`/805 y SHA-256 sin firmar
+  `ec7f785df497572d94db9b3609fbedca1ab86c39d25959a433ebc35751e0275a`.
+  El manifiesto fuente elimina el atributo `package` obsoleto para AGP actual y
+  `package.json` declara de nuevo el identificador NativeScript original.
+- Laboratorio aislado: `assembleDebug` correcto con LiteRT 2.2.0; advertencias
+  de Java source/target 8, namespace LiteRT y símbolos nativos sin strip, sin
+  ejecución en dispositivo.
 
-Para continuar hace falta un relevo con `state: released` que corresponda a este
-encargo y ausencia de la reserva ajena. Después: adquirir `medium-pixel-reservation`
-mediante creación exclusiva, registrar propietario/fecha, comprobar identidad
-`61161FDCG0013L`, OFF, captura y drenaje; validar firma/keystore sin imprimir
-secretos; respaldar, comparar ajustes, instalar con `adb install -r`, comprobar
-hash/firma/version y terminar OFF/drenado antes de liberar solo la reserva propia.
+No se ha hecho la fase física: respaldo/comparación privada de ajustes,
+instalación, comprobación posterior ni ensayo de voz siguen pendientes del
+relevo Luna y la reserva propia.

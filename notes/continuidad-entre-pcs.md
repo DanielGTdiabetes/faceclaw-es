@@ -1,21 +1,35 @@
 # Continuar Faceclaw desde otro PC
 
-**Incremento local pendiente de relevo Pixel, 09-10-2026:** `e5d361b` habilita
-Whisper medium local en el asistente Hey Even (selector, descarga, mapeo,
-verificación SHA-256 y cuatro hilos solo para medium); `2fd320a` conserva tras
-OFF solo los agregados/identidad del último motor local y el drenaje real, sin
-texto/audio ni reactivación; el commit de documentación de este incremento registra el piloto LiteRT/Tensor aislado.
-Pruebas TS afectadas 22/22, Kotlin host, AAR, prepare Android y
-assembleRelease/lintVitalRelease correctos. El auxiliar
-`E:\projects\faceclaw-es-medium-npu-lab` compila debug sin red/micrófono y no se
-instaló. LiteRT/Tensor queda «no disponible para esta prueba»: no hay modelo
-medium TFLite verificable ni SDK Tensor Beta autorizado; no se convirtió modelo
-ni se midió NPU. No se usó ADB, no se firmó ni instaló APK y no se leyó estado,
-ajustes, audio, texto, perfil o memoria. El relevo
-`.tools/medium-luna-handoff-2026-10-09.json` estaba ausente; su ausencia no libera
-el Pixel. Antes de cualquier ADB: relevo `released` del encargo, sin reserva
-ajena, adquirir reserva propia por creación exclusiva, confirmar serial/OFF/
-drenaje y seguir el informe `resultado-terra-medium-pixel-2026-10-09.md`.
+**Incremento local pendiente de relevo Pixel, revisión posterior, 09-10-2026:**
+conservar `e5d361b`, `2fd320a` y `09564de`; no están cerrados. En el árbol de
+trabajo queda la corrección de OFF: la instantánea retenida se refresca solo del
+mismo decoder mientras drena, conserva contadores finales, no acepta PCM/texto/
+turnos, no usa temporizador y queda aislada por época ante sesión nueva o
+local→cloud. La prueba TS cubre ocupado→drenado, contadores, OFF repetido y
+ambas fronteras; 22/22 Node pasan. Kotlin registra el enum real
+`WHISPER_MEDIUM`, prueba el mapeo y cuatro hilos CPU efectivos; un cache por
+huella evita repetir SHA-256 de medium hasta reemplazo/invalidate, sin afirmar
+latencia medida.
+
+El relevo `.tools/medium-luna-handoff-2026-10-09.json` existe y está `busy`,
+reservado por Luna: no borrarlo, sustituirlo ni usar ADB. Releer una vez solo
+cuando vaya a continuar la fase física; antes se exige `released`, sin reserva
+ajena, y reserva propia exclusiva. La firma original local está disponible (dos
+archivos presentes; secretos no leídos); la candidata Android
+`0.8.2-es.5-conversation.s2.6.13-whisper-medium`/805 está firmada localmente
+con certificado original y no instalada. Siguen pendientes respaldo/comparación
+privada de ajustes y toda operación física.
+
+La investigación LiteRT permanece abierta: hay candidata pública medium
+multilingüe con licencia/hash publicado, pero no descargada/verificada localmente
+ni inferida. El laboratorio aislado
+`E:\projects\faceclaw-es-medium-npu-lab` compila con LiteRT 2.2.0 y plan
+CPU/NPU *compile-only*, no instalado. Eso no prueba backend/delegación. El
+requisito Tensor SDK afecta su ruta AOT específica, no resuelve ni descarta
+LiteRT/NNAPI público. Seguir
+`notes/resultado-terra-medium-pixel-2026-10-09.md` y
+`evaluations/whisper-medium-npu/README.md`; no integrar el prototipo ni afirmar
+16×.
 
 **Revisión Codex completada, 09-10-2026:** [revisión S2.6.12](revision-codex-whisper-s2.6.12-2026-10-09.md). Fuentes S2.6.11/S2.6.12 en `codex/conversation-detection-g0`; banco/resultados conservados en `claude/whisper-perf-bench-2026-10-09` @ `342154c`. Instalación contrastada mediante APK extraída, firma y ajustes idénticos; helper PowerShell 5.1 corregido y probado. Supera el pendiente de revisión/fuentes sin commit de la entrada siguiente. La mejora de hilos aplica a base; small permanece igual. Sin reinstalación, consulta del Pixel ni copia NAS nueva.
 

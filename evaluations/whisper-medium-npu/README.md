@@ -1,74 +1,84 @@
-# Piloto aislado: Whisper medium con LiteRT / NPU · 09-10-2026
+# Investigación separada: Whisper medium / LiteRT / Pixel
 
-## Resultado de la precomprobación
+## Hechos comprobados y límite de la evidencia
 
-No se ejecutó inferencia, conversión ni ADB para este piloto. Se creó el auxiliar
-aislado `E:\projects\faceclaw-es-medium-npu-lab`, paquete
-`com.faceclaw.whispermediumlab`, sin permisos de red, micrófono, Bluetooth ni
-almacenamiento y sin dependencia de Faceclaw. Queda fuera del runtime de
-producción y no contiene APK, pesos, corpus, audio, vocabulario ni logs.
+No se ha ejecutado inferencia, perfil de backend, delegación, conversión ni ADB
+para esta investigación. La app auxiliar aislada
+`E:\projects\faceclaw-es-medium-npu-lab` compiló en PC con LiteRT público
+2.2.0, pero no se instaló ni se ejecutó en el Pixel. Por tanto su compilación
+demuestra únicamente que el auxiliar construye; no demuestra compatibilidad del
+modelo, inferencia ni uso de NPU.
 
-La prueba concreta está **bloqueada por prerrequisitos externos**, no por un
-resultado negativo de Tensor G5:
+La documentación de Google separa dos rutas:
 
-- No hay un artefacto Whisper medium multilingüe `.tflite` disponible localmente
-  con procedencia/licencia/hash, firma de tensores y operadores comprobados.
-- El SDK Google Tensor es Beta con registro; su documentación pide una estación
-  Linux x86_64/Ubuntu 22.04. No se solicitó acceso, no se aceptaron condiciones y
-  no se instaló el SDK.
-- Para Tensor, LiteRT documenta `CompiledModel` con compilación AOT; no admite
-  compilación JIT en dispositivo. Una APK instalada por ADB no obtiene por ello
-  los AI Packs/runtimes Tensor AOT que documenta el flujo de Play.
+- LiteRT público para Android ofrece `CompiledModel`, CPU y acelerador NPU, y
+  conserva `Interpreter` para compatibilidad. Eso permite preparar un ensayo
+  aislado sin registrarse en Tensor SDK.
+- El requisito de alta/Beta y Linux del Tensor SDK bloquea esa ruta específica
+  de SDK/AOT. No demuestra que el intérprete LiteRT/NNAPI legado requiera el
+  SDK, ni que el Pixel actual no pueda ejecutar un modelo compatible.
 
-Por tanto no es lícito presentar como viable un adaptador TFLite para medium ni
-atribuir al Pixel la cifra `16,74×`. Esa cifra de la issue de `whisper.tflite`
-divide puntuaciones Geekbench del S23 Ultra (QNN frente a GPU); no mide Whisper,
-no es un Pixel y no mide tiempo ni energía.
+NNAPI está deprecado desde Android 15, pero no ausente por esa razón. Si se
+prueba, se informa como ruta separada y se comprueba el backend efectivo; no se
+deduce de que una API no lance una excepción. La cifra `16,74×` de la issue
+`whisper.tflite` es una división de puntuaciones Geekbench de un S23 Ultra
+(QNN/GPU), no un benchmark Whisper, Pixel, tiempo total ni energía.
 
-## Artefactos examinados
+## Candidata pública para la prueba aislada
 
-Faceclaw usa ONNX/sherpa 1.13.0, no LiteRT. El medium actual es multilingüe,
-con encoder/decoder int8 ONNX y vocabulario propios, con hashes fijados en
-`app/native/asr-model.ts` y `LocalWhisperModels.kt`. Sus pesos int8 no hacen que
-las activaciones, el frontend ni la ruta completa sean “INT8 integral”, ni crean
-un modelo `.tflite` compatible con una NPU.
+Existe una candidata que evita tratar la falta de descarga local como bloqueo
+externo. No está aprobada para Faceclaw ni descargada aún:
 
-Las referencias públicas localizadas son candidatas de infraestructura, no modelos
-adoptados:
+| Campo | Valor público a verificar localmente antes de usar |
+| --- | --- |
+| Artefacto | [`cik009/whisper`, `whisper-medium.tflite`](https://huggingface.co/cik009/whisper/blob/08cc7cda80c788c4ae30e0d0999c3a36444b3101/whisper-medium.tflite), revisión inmutable `08cc7cda80c788c4ae30e0d0999c3a36444b3101` |
+| Variante / tamaño | `medium` multilingüe, no `.en`; 774 MB |
+| Hash publicado | SHA-256 `a5e9dc7c7a461c72e358615cc72e471ef9cc1175f84b90fe04657aad4bb9bfb9`; Xet `b001f74e07e749e6024e5482c0c92731b4c1ddd33f571469d5258565f6a448d3` |
+| Licencia declarada | Apache-2.0 en el repositorio de la candidata |
+| Vocabulario asociado | [`filters_vocab_multilingual.bin`](https://huggingface.co/cik009/whisper/tree/08cc7cda80c788c4ae30e0d0999c3a36444b3101), pendiente de hash y compatibilidad local |
 
-- `fusigi0930/android-whisper` describe un ejemplo TFLite híbrido —pesos int8 y
-  activaciones float32— y exige el vocabulario/filtros multilingüe por separado.
-- `vilassn/whisper_android` ofrece proyectos Android TFLite y scripts de
-  conversión, por lo que necesitaría revisar artefacto, licencia, modelo y decoder
-  antes de reutilizar nada.
-- LiteRT exige probar ejecución y perfil; permite fallback/ejecución parcial, que
-  deben reportarse por separado. NNAPI está deprecado desde Android 15, pero ello
-  no equivale a ausencia; no se ha añadido `setUseNNAPI` a ONNX/sherpa, porque no
-  afectaría a ese runtime.
+Los repositorios indicados aportan contexto, no una aprobación automática:
 
-## Siguiente prueba admisible
+- [`moonshine-ai/openai-whisper`](https://github.com/moonshine-ai/openai-whisper)
+  está archivado; su guía nombra medium y el vocabulario multilingüe, pero no
+  acredita la conversión de la candidata actual. Su artefacto tiny descrito es
+  híbrido (pesos int8, activaciones float32), no “int8 integral”.
+- [`nyadla-sys/whisper.tflite`](https://github.com/nyadla-sys/whisper.tflite)
+  documenta Android tiny/small y tiene una issue de medium aún abierta. La issue
+  NPU es una hipótesis con cifras Geekbench, no evidencia de medium completo.
+- [`vilassn/whisper_android`](https://github.com/vilassn/whisper_android) es
+  wiring/conversión Android MIT basado en la línea anterior; los artefactos
+  públicos examinados no aportan una atestación independiente de este medium.
 
-Con acceso ya autorizado al SDK Tensor y un modelo medium TFLite verificable, el
-auxiliar debe comparar **el mismo modelo y audio** en CPU y acelerador; registrar
-carga/compilación fría, preprocesado log-Mel, encoder, decoder autoregresivo y
-total caliente; y conservar perfiles que identifiquen backend y subgrafos
-delegados. Un piloto tiny o solo encoder se etiqueta como infraestructura, no
-como soporte/velocidad/calidad de medium. Frente a ONNX se declaran las diferencias
-de pesos, cuantización, frontend y búsqueda.
+Falta completar localmente: descarga desde esa revisión, SHA-256 calculado,
+tamaño, licencia/linaje contrastados, firmas de tensores y operadores del
+FlatBuffer, y contrato completo de log-Mel, tokens especiales, vocabulario y
+decoder autoregresivo. Nada de ello se sustituye por un modelo tiny, `.en` o
+solo encoder.
 
-Solo una mejora repetible de p95 completo de al menos 20% sobre el baseline ONNX
-de Luna, sin degradación material, justificaría ampliar al corpus es/ca, voz
-atenuada, silencio, repeticiones y carga térmica sostenida.
+## Ensayo preparado, todavía no ejecutado
+
+El auxiliar contiene una ruta de *compile-only* CPU y NPU con
+`com.google.ai.edge.litert:litert:2.2.0`; no descarga un runtime ni llama a
+`run()`. Tras verificar la candidata se le añade el frontend y decoder completos
+para que el ensayo haga, sobre el mismo audio:
+
+1. CPU y solicitud NPU por separado, guardando carga/compilación fría,
+   preprocesado, encoder, decoder y total caliente.
+2. Perfil/log LiteRT que identifique backend efectivo, nodos/subgrafos
+   delegados y cada fallback; “NPU solicitada” o compilación exitosa no bastan.
+3. Comparación explícita con ONNX/sherpa: pesos, cuantización, frontend y
+   búsqueda diferentes invalidan una equivalencia automática.
+
+Esto se ejecuta solo tras el relevo Luna `released`, ausencia de reserva ajena y
+adquisición de la reserva propia conforme al protocolo existente. No se integra
+el auxiliar en producción ni se promete aceleración alguna.
 
 ## Fuentes consultadas
 
-- Android: NNAPI está deprecado desde Android 15 y recomienda rutas actualizables.
-  <https://developer.android.com/ndk/guides/neuralnetworks/migration-guide>
-- Google: LiteRT NPU / `CompiledModel`, AOT, fallback y requisitos Android.
-  <https://developers.google.com/edge/litert/next/npu>
-- Google: Tensor G5, SDK Beta, registro y requisito Linux.
-  <https://developers.google.com/edge/litert/next/tensor-sdk>
-- Issue que originó la cifra de Geekbench, no una medición Whisper/Pixel.
-  <https://github.com/nyadla-sys/whisper.tflite/issues/47>
-- Referencias TFLite de Whisper: <https://github.com/fusigi0930/android-whisper>
-  y <https://github.com/vilassn/whisper_android>.
+- [LiteRT Android y `CompiledModel`](https://developers.google.com/edge/litert/android)
+- [LiteRT NPU / `CompiledModel`](https://developers.google.com/edge/litert/next/npu)
+- [Tensor SDK (ruta específica Beta/AOT)](https://developers.google.com/edge/litert/next/tensor-sdk)
+- [Migración Android NNAPI](https://developer.android.com/ndk/guides/neuralnetworks/migration-guide)
+- [Candidata medium con tamaño, licencia y SHA-256](https://huggingface.co/cik009/whisper/blob/08cc7cda80c788c4ae30e0d0999c3a36444b3101/whisper-medium.tflite)
+- [Issue NPU de referencia, no benchmark Whisper](https://github.com/nyadla-sys/whisper.tflite/issues/47)
