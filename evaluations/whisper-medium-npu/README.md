@@ -65,6 +65,35 @@ SDK/AOT, que requiere acceso que no se ha solicitado. La ruta `CompiledModel` NP
 `E:\projects\faceclaw-es-medium-npu-lab` **no se ejecutó**; con este artefacto no hay razón para esperar otro
 resultado. No se ha probado ningún modelo tiny/small/encoder-only como sustituto.
 
+## Sonda: un bloque de encoder estático (09-10-2026, 20:51–20:57)
+
+Para comprobar la propuesta «encoder en NPU, decoder en CPU» sin convertir el modelo entero, se generó un bloque
+transformer con la forma de Whisper medium (d 1024, 16 cabezas, FFN 4096, 1500 posiciones, LayerNorm, GELU) y
+el stem convolucional (2×Conv1D + GELU, entrada `[1, 3000, 80]`), con **pesos aleatorios y formas estáticas**, en
+float32, fp16 e int8 completo ([`make_encoder_block.py`](encoder-block-probe/make_encoder_block.py), TF 2.21).
+Mismo `benchmark_model`, 10 ejecuciones + 2 de calentamiento, entradas aleatorias. Mide solo aceptación y
+velocidad de ese conjunto de operadores; no es Whisper ni tiene significado de precisión.
+
+| Modelo | CPU XNNPACK 4 hilos | GPU delegate | NNAPI `google-edgetpu` |
+| --- | ---: | ---: | --- |
+| Bloque fp32 | 275 ms | 208 ms (41/41 nodos) | **0 nodos** («the model graph will not be executed by the delegate»); 2,63 s en el intérprete de referencia |
+| Bloque fp16 | 284 ms | 192 ms (50/50) | **0 nodos**; 2,66 s |
+| Bloque int8 completo | 398 ms (35/45 en XNNPACK) | 265 ms (45/45) | **Falla**: `ANEURALNETWORKS_BAD_DATA` al añadir una operación |
+| Stem fp32 | 63 ms | 58 ms | 0 nodos; 143 ms |
+| Stem fp16 | 63 ms | 65 ms | 0 nodos; 244 ms |
+| Stem int8 completo | 15 ms (6/8) | 123 ms | Reclama 2/8 nodos y falla la compilación (`MISSED_DEADLINE_TRANSIENT`) |
+
+Conclusiones:
+
+- **La NPU (EdgeTPU vía NNAPI) no acepta un bloque de encoder Whisper ni siquiera con formas estáticas**, ni en
+  float ni en int8 completo. La separación encoder/decoder no basta para usar la NPU por NNAPI en este Pixel. Queda
+  solo la ruta Google Tensor SDK/AOT, que requiere un acceso que no se ha solicitado.
+- **La GPU sí acepta el bloque estático entero** y es ~25–30 % más rápida que la CPU con el mismo bloque en float.
+  Pero 24 bloques × ~0,19–0,21 s ≈ 4,6–5 s de encoder en GPU, **más lento** que el encoder real híbrido int8 en
+  CPU medido arriba (≈ 3,0 s dentro de los 4,06 s). Es una extrapolación con pesos sintéticos, no una medición del
+  encoder real; indica que la GPU no promete la mejora del 20 %.
+- Registros completos en [`encoder-block-probe/results-pixel-20261009/`](encoder-block-probe/results-pixel-20261009/).
+
 ## Lectura útil para Faceclaw
 
 El coste del encoder sobre 30 s fijos domina tanto en TFLite como en ONNX. Para ventanas de 6 s, un encoder que

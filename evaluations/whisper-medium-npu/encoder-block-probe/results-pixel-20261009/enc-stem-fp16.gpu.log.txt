@@ -1,0 +1,40 @@
+## 20:55:50 thermal=ThermalStatus:0
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [10]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [120]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [2]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-enc-probe/enc-stem-fp16.tflite]
+INFO: Signature to run: []
+INFO: #threads used for CPU inference: [4]
+INFO: Use gpu: [1]
+INFO: Use xnnpack: [0]
+INFO: Loaded model /data/local/tmp/fc-enc-probe/enc-stem-fp16.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Created TensorFlow Lite delegate for GPU.
+INFO: GPU delegate created.
+INFO: Loaded OpenCL library with dlopen.
+VERBOSE: Replacing 11 out of 11 node(s) with delegate (TfLiteGpuDelegateV2) node, yielding 1 partitions for subgraph 0.
+INFO: Initialized OpenCL-based API.
+INFO: Created 1 GPU delegate kernels.
+INFO: Explicitly applied GPU delegate, and the model graph will be completely executed by the delegate.
+INFO: The input model file size (MB): 6.7887
+INFO: Initialized session in 192.123ms.
+INFO: Running benchmark for at least 2 iterations and at least 0.5 seconds but terminate if exceeding 120 seconds.
+INFO: count=5 first=183032 curr=102878 min=53172 max=183032 avg=101584 std=47995 p5=53172 median=102878 p95=183032
+
+INFO: Running benchmark for at least 10 iterations and at least 0 seconds but terminate if exceeding 120 seconds.
+INFO: count=10 first=78378 curr=36618 min=36618 max=105534 avg=65091.4 std=24484 p5=36618 median=73958 p95=105534
+
+INFO: Inference timings in us: Init: 192123, First inference: 183032, Warmup (avg): 101584, Inference (avg): 65091.4
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=78.4609 overall=78.4609
+INFO: Overall peak memory footprint (MB) via periodic monitoring: 87.4375
+INFO: Memory status at the end of exeution:
+INFO: - VmRSS              : 83 MB
+INFO: + RssAnnon           : 24 MB
+INFO: + RssFile + RssShmem : 59 MB
+## exit 0 20:55:52
