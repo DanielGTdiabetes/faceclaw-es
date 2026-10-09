@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Benchmark only: no microphone, no network, no Faceclaw data. Reads models/corpus pushed by adb into
-     its own external files directory and writes results there. -->
+     its own external files directory and writes results there. The foreground service and partial wake lock
+     keep a locked/dozing phone from freezing the process during a measurement. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:allowBackup="false"
         android:label="Faceclaw Whisper bench"
@@ -15,5 +19,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".BenchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device speech recognition benchmark started by a developer over adb" />
+        </service>
     </application>
 </manifest>

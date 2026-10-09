@@ -1,31 +1,25 @@
 package com.faceclaw.whisperbench
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
 import android.widget.TextView
 
 /**
- * Starts one benchmark run from the launch intent (see evaluations/whisper-tensor/README.md) on a
- * background thread. Progress goes to the screen and to logcat tag FaceclawWhisperBench; results go to
- * <external files>/results/<runId>/. `--es keepScreenOn true` keeps the display on for comparable runs.
+ * Hands the launch intent (see evaluations/whisper-tensor/README.md) to [BenchService], which runs the
+ * benchmark in the foreground with a partial wake lock. Progress goes to logcat tag FaceclawWhisperBench
+ * and to <external files>/results/<runId>/status.txt. `--es keepScreenOn true` keeps the display on while
+ * this activity is visible.
  */
 class BenchActivity : Activity() {
-    private var started = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val view = TextView(this).apply { textSize = 16f; setPadding(32, 64, 32, 32) }
-        setContentView(view)
-        if (started || savedInstanceState != null) return
-        started = true
-        val options = BenchOptions(intent)
+        setContentView(TextView(this).apply {
+            textSize = 16f; setPadding(32, 64, 32, 32)
+            text = "Faceclaw Whisper bench: ${intent.getStringExtra("mode") ?: "info"} (logcat FaceclawWhisperBench)"
+        })
         if (intent.getStringExtra("keepScreenOn") == "true") window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val runner = BenchRunner(this, options) { message ->
-            Log.i("FaceclawWhisperBench", message)
-            runOnUiThread { view.text = message }
-        }
-        Thread({ runner.run() }, "FaceclawWhisperBench").start()
+        if (savedInstanceState == null) startForegroundService(Intent(intent).setClass(this, BenchService::class.java))
     }
 }
