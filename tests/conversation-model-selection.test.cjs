@@ -74,7 +74,7 @@ test('medium download is pinned, verifies all files and pause invalidates late d
   const model = asr.ASR_MODELS['whisper-medium-es'];
   assert.equal(model.totalBytes, model.files.reduce((sum, file) => sum + file.sizeBytes, 0));
   assert.match(model.baseUrl, /8c31d28503847560985df21f90e14f0c736e075e/);
-  const kotlin = fs.readFileSync('App_Resources/Android/src/main/java/com/faceclaw/app/FaceclawLocalTranscriber.kt', 'utf8');
+  const kotlin = fs.readFileSync('App_Resources/Android/src/main/java/com/faceclaw/app/LocalWhisperModels.kt', 'utf8');
   model.files.forEach(file => { assert.ok(kotlin.includes(file.sha256)); assert.match(file.sha256, /^[a-f0-9]{64}$/); });
   asr.startAsrModelDownload('whisper-medium-es'); assert.equal(downloads.length, 1);
   asr.cancelAsrModelDownload('whisper-medium-es'); downloads[0].listener.onDone();
