@@ -78,8 +78,8 @@ Comandos usados en el informe:
 --es mode corpus --es models whisper-small-es --es threads 4 --es tails 0,300 --es conditioning on,off --es providers cpu,xnnpack
 # Segmentación a ritmo real
 --es mode realtime --es models whisper-small-es --es threads 4 --es policies ref-6-3,coalesce-6-3-max12 --es rounds 2
-# Sostenido, dos finalistas, ABBA, 10 min cada uno
---es mode sustained --es models whisper-small-es --es threads 4,6 --es minutes 5 --es rounds 2 --es cooldownSec 120
+# Sostenido, dos finalistas (base 1 vs 4 hilos), ABBA, 10 min cada uno
+--es mode sustained --es models whisper-base-es --es threads 1,4 --es minutes 5 --es rounds 2 --es cooldownSec 120
 ```
 
 Recuperar y retirar:

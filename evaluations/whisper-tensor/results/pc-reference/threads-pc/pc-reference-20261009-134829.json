@@ -1,0 +1,2411 @@
+{
+ "kind": "pc-reference (x86 PC, NOT Pixel)",
+ "host": {
+  "platform": "Windows-10-10.0.26300-SP0",
+  "processor": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+  "cpus": 16,
+  "python": "3.11.2"
+ },
+ "sherpaOnnx": "1.13.0",
+ "corpusManifestSha256": "e86ab7fc7e1ed4c1aa07373861ebc0b1b554725b986efaf1d5c400abba25dd26",
+ "segmentMs": 6000,
+ "language": "auto",
+ "cases": [
+  {
+   "model": "whisper-small",
+   "threads": 1,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 223,
+   "loadMs": 808,
+   "fixtures": [
+    {
+     "id": "es-fleurs-00",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 5520,
+     "languages": [
+      "es"
+     ],
+     "rejections": [
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "hypothesis": "En cuatro años es el quinto sep de marteshi."
+    },
+    {
+     "id": "es-fleurs-01",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 11580,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "unfiltered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "hypothesis": "Al pasar el tiempo, a medida que la incipiente población se va adaptando a nuevo entorno, comienza a asemejarse cada vez menos a la otra población."
+    },
+    {
+     "id": "es-fleurs-02",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 9540,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "unfiltered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "hypothesis": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados."
+    },
+    {
+     "id": "es-fleurs-03",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 16980,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "hypothesis": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientales. o incluso podemos volvernos activistas y luchar para a menor. en alguna minoría el sufrimiento futuro."
+    },
+    {
+     "id": "es-fleurs-04",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 7320,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "hypothesis": "El cridianismo ortodoxo es la religión mayoritaria en Molina. ¡Mandavia!"
+    },
+    {
+     "id": "es-fleurs-05",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 10200,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "hypothesis": "En esta lanzadora de traslado dinámico todos los que están de algún modo conectados con un sistema de es el transporte basado en el uso automóviles privados y lo sostiene."
+    },
+    {
+     "id": "es-fleurs-06",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 15180,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "hypothesis": "Los casos registrados de Esclerosis Múltiples EM en EEU U, ascienden acerca de 400 mil, lo que la hace en la enfermedad neurológica más frecuente. entre adultos jóvenes y de mediana edad."
+    },
+    {
+     "id": "es-fleurs-07",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 14040,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "hypothesis": "Además existen monturas, en especial las inglesas con barras de seguridad que pertenecen permita que el cuero del estivo se desprenda de su estructura, si un jinete que sale despedido tira hacia atrás"
+    },
+    {
+     "id": "ca-fleurs-00",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 7980,
+     "languages": [
+      "ca",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "unfiltered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en milió de detalls. Normalment, amb experiència. práctica."
+    },
+    {
+     "id": "ca-fleurs-01",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 10140,
+     "languages": [
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "hypothesis": "Un antiguo policía filipí ha mantenido como hostages turistas de Hong Kong l'estal seu autobús a Manila, la capitán de les Filipines."
+    },
+    {
+     "id": "ca-fleurs-02",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 9420,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "unfiltered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "hypothesis": "No sé si us n'adoneu, però la majoria de vents d'Amèrica central arriba que, en aquest país, lliures d'impostos."
+    },
+    {
+     "id": "ca-fleurs-03",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 13560,
+     "languages": [
+      "es",
+      "ca",
+      "nn"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 20,
+      "wordErrors": 6,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 122,
+      "charErrors": 25,
+      "hypWords": 19
+     },
+     "unfiltered": {
+      "refWords": 20,
+      "wordErrors": 8,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 2,
+      "refChars": 122,
+      "charErrors": 31,
+      "hypWords": 21
+     },
+     "hypothesis": "La NAK también ha informado que la central nuclear de que a la prefectura de negata funcionava amb normalitat."
+    },
+    {
+     "id": "ca-fleurs-04",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15120,
+     "languages": [
+      "es",
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "unfiltered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "hypothesis": "Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas, estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinació de factors."
+    },
+    {
+     "id": "ca-fleurs-05",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15040,
+     "languages": [
+      "ro",
+      "ca",
+      "en"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 18,
+      "substitutions": 7,
+      "deletions": 11,
+      "insertions": 0,
+      "refChars": 137,
+      "charErrors": 81,
+      "hypWords": 16
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 17,
+      "substitutions": 13,
+      "deletions": 3,
+      "insertions": 1,
+      "refChars": 137,
+      "charErrors": 45,
+      "hypWords": 25
+     },
+     "hypothesis": "altes davant d'rtida. El Macís Vincent, amb un màxim de 4.892 metres del món,"
+    },
+    {
+     "id": "ca-fleurs-06",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8580,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "hypothesis": "Les consideracions que es presenten solen ser breus, generals i masses simplificades comparades amb la informació més... que tenia disponible a Quartzeleval Trenau."
+    },
+    {
+     "id": "ca-fleurs-07",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8600,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "unfiltered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "hypothesis": "Los científicos afirmen que la explosión causada por la colisión, una vez."
+    }
+   ],
+   "summary": {
+    "decodes": 111,
+    "decodeP50Ms": 929,
+    "decodeP95Ms": 1301,
+    "rtf": 0.178,
+    "wer_es": 0.1525,
+    "wer_ca": 0.3941,
+    "cer_es": 0.0668,
+    "cer_ca": 0.2031,
+    "nonSpeechWordsUnfiltered": 0,
+    "nonSpeechWordsDelivered": 0,
+    "rejections": {
+     "NONE": 34,
+     "LANGUAGE": 3,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-small",
+   "threads": 2,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 223,
+   "loadMs": 784,
+   "fixtures": [
+    {
+     "id": "es-fleurs-00",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 5520,
+     "languages": [
+      "es"
+     ],
+     "rejections": [
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "hypothesis": "En cuatro años es el quinto sep de marteshi."
+    },
+    {
+     "id": "es-fleurs-01",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 11580,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "unfiltered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "hypothesis": "Al pasar el tiempo, a medida que la incipiente población se va adaptando a nuevo entorno, comienza a asemejarse cada vez menos a la otra población."
+    },
+    {
+     "id": "es-fleurs-02",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 9540,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "unfiltered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "hypothesis": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados."
+    },
+    {
+     "id": "es-fleurs-03",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 16980,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "hypothesis": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientales. o incluso podemos volvernos activistas y luchar para a menor. en alguna minoría el sufrimiento futuro."
+    },
+    {
+     "id": "es-fleurs-04",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 7320,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "hypothesis": "El cridianismo ortodoxo es la religión mayoritaria en Molina. ¡Mandavia!"
+    },
+    {
+     "id": "es-fleurs-05",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 10200,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "hypothesis": "En esta lanzadora de traslado dinámico todos los que están de algún modo conectados con un sistema de es el transporte basado en el uso automóviles privados y lo sostiene."
+    },
+    {
+     "id": "es-fleurs-06",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 15180,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "hypothesis": "Los casos registrados de Esclerosis Múltiples EM en EEU U, ascienden acerca de 400 mil, lo que la hace en la enfermedad neurológica más frecuente. entre adultos jóvenes y de mediana edad."
+    },
+    {
+     "id": "es-fleurs-07",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 14040,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "hypothesis": "Además existen monturas, en especial las inglesas con barras de seguridad que pertenecen permita que el cuero del estivo se desprenda de su estructura, si un jinete que sale despedido tira hacia atrás"
+    },
+    {
+     "id": "ca-fleurs-00",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 7980,
+     "languages": [
+      "ca",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "unfiltered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en milió de detalls. Normalment, amb experiència. práctica."
+    },
+    {
+     "id": "ca-fleurs-01",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 10140,
+     "languages": [
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "hypothesis": "Un antiguo policía filipí ha mantenido como hostages turistas de Hong Kong l'estal seu autobús a Manila, la capitán de les Filipines."
+    },
+    {
+     "id": "ca-fleurs-02",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 9420,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "unfiltered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "hypothesis": "No sé si us n'adoneu, però la majoria de vents d'Amèrica central arriba que, en aquest país, lliures d'impostos."
+    },
+    {
+     "id": "ca-fleurs-03",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 13560,
+     "languages": [
+      "es",
+      "ca",
+      "nn"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 20,
+      "wordErrors": 6,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 122,
+      "charErrors": 25,
+      "hypWords": 19
+     },
+     "unfiltered": {
+      "refWords": 20,
+      "wordErrors": 8,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 2,
+      "refChars": 122,
+      "charErrors": 31,
+      "hypWords": 21
+     },
+     "hypothesis": "La NAK también ha informado que la central nuclear de que a la prefectura de negata funcionava amb normalitat."
+    },
+    {
+     "id": "ca-fleurs-04",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15120,
+     "languages": [
+      "es",
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "unfiltered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "hypothesis": "Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas, estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinació de factors."
+    },
+    {
+     "id": "ca-fleurs-05",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15040,
+     "languages": [
+      "ro",
+      "ca",
+      "en"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 18,
+      "substitutions": 7,
+      "deletions": 11,
+      "insertions": 0,
+      "refChars": 137,
+      "charErrors": 81,
+      "hypWords": 16
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 17,
+      "substitutions": 13,
+      "deletions": 3,
+      "insertions": 1,
+      "refChars": 137,
+      "charErrors": 45,
+      "hypWords": 25
+     },
+     "hypothesis": "altes davant d'rtida. El Macís Vincent, amb un màxim de 4.892 metres del món,"
+    },
+    {
+     "id": "ca-fleurs-06",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8580,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "hypothesis": "Les consideracions que es presenten solen ser breus, generals i masses simplificades comparades amb la informació més... que tenia disponible a Quartzeleval Trenau."
+    },
+    {
+     "id": "ca-fleurs-07",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8600,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "unfiltered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "hypothesis": "Los científicos afirmen que la explosión causada por la colisión, una vez."
+    }
+   ],
+   "summary": {
+    "decodes": 111,
+    "decodeP50Ms": 718,
+    "decodeP95Ms": 1153,
+    "rtf": 0.146,
+    "wer_es": 0.1525,
+    "wer_ca": 0.3941,
+    "cer_es": 0.0668,
+    "cer_ca": 0.2031,
+    "nonSpeechWordsUnfiltered": 0,
+    "nonSpeechWordsDelivered": 0,
+    "rejections": {
+     "NONE": 34,
+     "LANGUAGE": 3,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-small",
+   "threads": 4,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 223,
+   "loadMs": 804,
+   "fixtures": [
+    {
+     "id": "es-fleurs-00",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 5520,
+     "languages": [
+      "es"
+     ],
+     "rejections": [
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "hypothesis": "En cuatro años es el quinto sep de marteshi."
+    },
+    {
+     "id": "es-fleurs-01",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 11580,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "unfiltered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "hypothesis": "Al pasar el tiempo, a medida que la incipiente población se va adaptando a nuevo entorno, comienza a asemejarse cada vez menos a la otra población."
+    },
+    {
+     "id": "es-fleurs-02",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 9540,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "unfiltered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "hypothesis": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados."
+    },
+    {
+     "id": "es-fleurs-03",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 16980,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "hypothesis": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientales. o incluso podemos volvernos activistas y luchar para a menor. en alguna minoría el sufrimiento futuro."
+    },
+    {
+     "id": "es-fleurs-04",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 7320,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "hypothesis": "El cridianismo ortodoxo es la religión mayoritaria en Molina. ¡Mandavia!"
+    },
+    {
+     "id": "es-fleurs-05",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 10200,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "hypothesis": "En esta lanzadora de traslado dinámico todos los que están de algún modo conectados con un sistema de es el transporte basado en el uso automóviles privados y lo sostiene."
+    },
+    {
+     "id": "es-fleurs-06",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 15180,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "hypothesis": "Los casos registrados de Esclerosis Múltiples EM en EEU U, ascienden acerca de 400 mil, lo que la hace en la enfermedad neurológica más frecuente. entre adultos jóvenes y de mediana edad."
+    },
+    {
+     "id": "es-fleurs-07",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 14040,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "hypothesis": "Además existen monturas, en especial las inglesas con barras de seguridad que pertenecen permita que el cuero del estivo se desprenda de su estructura, si un jinete que sale despedido tira hacia atrás"
+    },
+    {
+     "id": "ca-fleurs-00",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 7980,
+     "languages": [
+      "ca",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "unfiltered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en milió de detalls. Normalment, amb experiència. práctica."
+    },
+    {
+     "id": "ca-fleurs-01",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 10140,
+     "languages": [
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "hypothesis": "Un antiguo policía filipí ha mantenido como hostages turistas de Hong Kong l'estal seu autobús a Manila, la capitán de les Filipines."
+    },
+    {
+     "id": "ca-fleurs-02",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 9420,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "unfiltered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "hypothesis": "No sé si us n'adoneu, però la majoria de vents d'Amèrica central arriba que, en aquest país, lliures d'impostos."
+    },
+    {
+     "id": "ca-fleurs-03",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 13560,
+     "languages": [
+      "es",
+      "ca",
+      "nn"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 20,
+      "wordErrors": 6,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 122,
+      "charErrors": 25,
+      "hypWords": 19
+     },
+     "unfiltered": {
+      "refWords": 20,
+      "wordErrors": 8,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 2,
+      "refChars": 122,
+      "charErrors": 31,
+      "hypWords": 21
+     },
+     "hypothesis": "La NAK también ha informado que la central nuclear de que a la prefectura de negata funcionava amb normalitat."
+    },
+    {
+     "id": "ca-fleurs-04",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15120,
+     "languages": [
+      "es",
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "unfiltered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "hypothesis": "Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas, estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinació de factors."
+    },
+    {
+     "id": "ca-fleurs-05",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15040,
+     "languages": [
+      "ro",
+      "ca",
+      "en"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 18,
+      "substitutions": 7,
+      "deletions": 11,
+      "insertions": 0,
+      "refChars": 137,
+      "charErrors": 81,
+      "hypWords": 16
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 17,
+      "substitutions": 13,
+      "deletions": 3,
+      "insertions": 1,
+      "refChars": 137,
+      "charErrors": 45,
+      "hypWords": 25
+     },
+     "hypothesis": "altes davant d'rtida. El Macís Vincent, amb un màxim de 4.892 metres del món,"
+    },
+    {
+     "id": "ca-fleurs-06",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8580,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "hypothesis": "Les consideracions que es presenten solen ser breus, generals i masses simplificades comparades amb la informació més... que tenia disponible a Quartzeleval Trenau."
+    },
+    {
+     "id": "ca-fleurs-07",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8600,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "unfiltered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "hypothesis": "Los científicos afirmen que la explosión causada por la colisión, una vez."
+    }
+   ],
+   "summary": {
+    "decodes": 111,
+    "decodeP50Ms": 636,
+    "decodeP95Ms": 955,
+    "rtf": 0.125,
+    "wer_es": 0.1525,
+    "wer_ca": 0.3941,
+    "cer_es": 0.0668,
+    "cer_ca": 0.2031,
+    "nonSpeechWordsUnfiltered": 0,
+    "nonSpeechWordsDelivered": 0,
+    "rejections": {
+     "NONE": 34,
+     "LANGUAGE": 3,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-small",
+   "threads": 6,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 223,
+   "loadMs": 803,
+   "fixtures": [
+    {
+     "id": "es-fleurs-00",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 5520,
+     "languages": [
+      "es"
+     ],
+     "rejections": [
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 2,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 43,
+      "charErrors": 4,
+      "hypWords": 9
+     },
+     "hypothesis": "En cuatro años es el quinto sep de marteshi."
+    },
+    {
+     "id": "es-fleurs-01",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 11580,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "unfiltered": {
+      "refWords": 26,
+      "wordErrors": 1,
+      "substitutions": 1,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 145,
+      "charErrors": 1,
+      "hypWords": 26
+     },
+     "hypothesis": "Al pasar el tiempo, a medida que la incipiente población se va adaptando a nuevo entorno, comienza a asemejarse cada vez menos a la otra población."
+    },
+    {
+     "id": "es-fleurs-02",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 9540,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "unfiltered": {
+      "refWords": 11,
+      "wordErrors": 0,
+      "substitutions": 0,
+      "deletions": 0,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 0,
+      "hypWords": 11
+     },
+     "hypothesis": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados."
+    },
+    {
+     "id": "es-fleurs-03",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 16980,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 31,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 206,
+      "charErrors": 13,
+      "hypWords": 32
+     },
+     "hypothesis": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientales. o incluso podemos volvernos activistas y luchar para a menor. en alguna minoría el sufrimiento futuro."
+    },
+    {
+     "id": "es-fleurs-04",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 7320,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "unfiltered": {
+      "refWords": 9,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 63,
+      "charErrors": 9,
+      "hypWords": 10
+     },
+     "hypothesis": "El cridianismo ortodoxo es la religión mayoritaria en Molina. ¡Mandavia!"
+    },
+    {
+     "id": "es-fleurs-05",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 10200,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 7,
+      "substitutions": 2,
+      "deletions": 1,
+      "insertions": 4,
+      "refChars": 160,
+      "charErrors": 19,
+      "hypWords": 30
+     },
+     "hypothesis": "En esta lanzadora de traslado dinámico todos los que están de algún modo conectados con un sistema de es el transporte basado en el uso automóviles privados y lo sostiene."
+    },
+    {
+     "id": "es-fleurs-06",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 15180,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 7,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 180,
+      "charErrors": 10,
+      "hypWords": 32
+     },
+     "hypothesis": "Los casos registrados de Esclerosis Múltiples EM en EEU U, ascienden acerca de 400 mil, lo que la hace en la enfermedad neurológica más frecuente. entre adultos jóvenes y de mediana edad."
+    },
+    {
+     "id": "es-fleurs-07",
+     "kind": "speech",
+     "language": "es",
+     "durationMs": 14040,
+     "languages": [
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "unfiltered": {
+      "refWords": 32,
+      "wordErrors": 3,
+      "substitutions": 2,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 189,
+      "charErrors": 15,
+      "hypWords": 33
+     },
+     "hypothesis": "Además existen monturas, en especial las inglesas con barras de seguridad que pertenecen permita que el cuero del estivo se desprenda de su estructura, si un jinete que sale despedido tira hacia atrás"
+    },
+    {
+     "id": "ca-fleurs-00",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 7980,
+     "languages": [
+      "ca",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "unfiltered": {
+      "refWords": 19,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 121,
+      "charErrors": 7,
+      "hypWords": 20
+     },
+     "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en milió de detalls. Normalment, amb experiència. práctica."
+    },
+    {
+     "id": "ca-fleurs-01",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 10140,
+     "languages": [
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 25,
+      "wordErrors": 11,
+      "substitutions": 9,
+      "deletions": 2,
+      "insertions": 0,
+      "refChars": 139,
+      "charErrors": 25,
+      "hypWords": 23
+     },
+     "hypothesis": "Un antiguo policía filipí ha mantenido como hostages turistas de Hong Kong l'estal seu autobús a Manila, la capitán de les Filipines."
+    },
+    {
+     "id": "ca-fleurs-02",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 9420,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "unfiltered": {
+      "refWords": 21,
+      "wordErrors": 4,
+      "substitutions": 3,
+      "deletions": 0,
+      "insertions": 1,
+      "refChars": 103,
+      "charErrors": 10,
+      "hypWords": 22
+     },
+     "hypothesis": "No sé si us n'adoneu, però la majoria de vents d'Amèrica central arriba que, en aquest país, lliures d'impostos."
+    },
+    {
+     "id": "ca-fleurs-03",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 13560,
+     "languages": [
+      "es",
+      "ca",
+      "nn"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 20,
+      "wordErrors": 6,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 122,
+      "charErrors": 25,
+      "hypWords": 19
+     },
+     "unfiltered": {
+      "refWords": 20,
+      "wordErrors": 8,
+      "substitutions": 5,
+      "deletions": 1,
+      "insertions": 2,
+      "refChars": 122,
+      "charErrors": 31,
+      "hypWords": 21
+     },
+     "hypothesis": "La NAK también ha informado que la central nuclear de que a la prefectura de negata funcionava amb normalitat."
+    },
+    {
+     "id": "ca-fleurs-04",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15120,
+     "languages": [
+      "es",
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "unfiltered": {
+      "refWords": 22,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 166,
+      "charErrors": 16,
+      "hypWords": 21
+     },
+     "hypothesis": "Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas, estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinació de factors."
+    },
+    {
+     "id": "ca-fleurs-05",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 15040,
+     "languages": [
+      "ro",
+      "ca",
+      "en"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 27,
+      "wordErrors": 18,
+      "substitutions": 7,
+      "deletions": 11,
+      "insertions": 0,
+      "refChars": 137,
+      "charErrors": 81,
+      "hypWords": 16
+     },
+     "unfiltered": {
+      "refWords": 27,
+      "wordErrors": 17,
+      "substitutions": 13,
+      "deletions": 3,
+      "insertions": 1,
+      "refChars": 137,
+      "charErrors": 45,
+      "hypWords": 25
+     },
+     "hypothesis": "altes davant d'rtida. El Macís Vincent, amb un màxim de 4.892 metres del món,"
+    },
+    {
+     "id": "ca-fleurs-06",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8580,
+     "languages": [
+      "ca",
+      "ca"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "unfiltered": {
+      "refWords": 23,
+      "wordErrors": 6,
+      "substitutions": 4,
+      "deletions": 1,
+      "insertions": 1,
+      "refChars": 159,
+      "charErrors": 23,
+      "hypWords": 23
+     },
+     "hypothesis": "Les consideracions que es presenten solen ser breus, generals i masses simplificades comparades amb la informació més... que tenia disponible a Quartzeleval Trenau."
+    },
+    {
+     "id": "ca-fleurs-07",
+     "kind": "speech",
+     "language": "ca",
+     "durationMs": 8600,
+     "languages": [
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "unfiltered": {
+      "refWords": 13,
+      "wordErrors": 9,
+      "substitutions": 8,
+      "deletions": 1,
+      "insertions": 0,
+      "refChars": 77,
+      "charErrors": 21,
+      "hypWords": 12
+     },
+     "hypothesis": "Los científicos afirmen que la explosión causada por la colisión, una vez."
+    }
+   ],
+   "summary": {
+    "decodes": 111,
+    "decodeP50Ms": 629,
+    "decodeP95Ms": 971,
+    "rtf": 0.123,
+    "wer_es": 0.1525,
+    "wer_ca": 0.3941,
+    "cer_es": 0.0668,
+    "cer_ca": 0.2031,
+    "nonSpeechWordsUnfiltered": 0,
+    "nonSpeechWordsDelivered": 0,
+    "rejections": {
+     "NONE": 34,
+     "LANGUAGE": 3,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  }
+ ]
+}

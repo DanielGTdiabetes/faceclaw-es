@@ -1,0 +1,17 @@
+model,threads,tailPaddingFrames,conditioning,fixture,kind,language,refWords,wordErrors,insertions,deletions,refChars,charErrors,hypWordsUnfiltered,hypWordsDelivered,rejections,languages
+whisper-base,4,0,on,stream-es,stream,es,113,27,8,1,699,72,123,120,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es|es|es|es|es|es|es
+whisper-base,4,0,on,stream-ca,stream,ca,134,74,12,9,793,201,142,137,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|LANGUAGE,ru|ca|ca|ca|ca|es|ca|ca|es|ca|es|ca|es|nn
+whisper-base,4,0,on,stream-level-es,stream,es,64,35,2,4,370,78,63,62,LANGUAGE|NONE|NONE|NONE|NONE|NONE,en|es|es|es|es|es
+whisper-base,4,0,on,stream-mixed-es-ca,stream,es+ca,100,60,11,9,608,162,103,102,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,en|es|es|ca|es|es|es|es|ca
+whisper-base,4,0,off,stream-es,stream,es,113,29,8,2,699,75,122,119,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es|es|es|es|es|es|es
+whisper-base,4,0,off,stream-ca,stream,ca,134,82,5,37,793,301,143,102,LANGUAGE|NONE|LANGUAGE|NONE|NONE|NONE|LANGUAGE|NONE|NONE|NONE|NONE|NONE|LANGUAGE|LANGUAGE,en|ca|el|ca|ca|ca|pt|ca|es|ca|es|ca|ro|en
+whisper-base,4,0,off,stream-level-es,stream,es,64,41,1,9,370,126,57,56,LANGUAGE|NONE|NONE|NONE|NONE|NONE,en|es|es|es|es|es
+whisper-base,4,0,off,stream-mixed-es-ca,stream,es+ca,100,55,4,17,608,171,88,87,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,en|es|es|ca|es|es|es|es|ca
+whisper-small,4,0,on,stream-es,stream,es,113,18,6,3,699,57,116,116,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es|es|es|es|es|es|es
+whisper-small,4,0,on,stream-ca,stream,ca,134,58,6,13,793,163,130,127,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|LANGUAGE,pt|ca|es|ca|ca|ca|ca|ca|es|ca|es|es|es|nn
+whisper-small,4,0,on,stream-level-es,stream,es,64,28,4,10,370,97,58,58,LANGUAGE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es
+whisper-small,4,0,on,stream-mixed-es-ca,stream,es+ca,100,40,2,16,608,130,86,86,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|ca|ca|es|es|es|es
+whisper-small,4,0,off,stream-es,stream,es,113,18,4,2,699,54,115,115,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es|es|es|es|es|es|es
+whisper-small,4,0,off,stream-ca,stream,ca,134,41,3,4,793,86,137,133,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|LANGUAGE,pt|ca|ca|ca|ca|ca|ca|ca|es|ca|es|es|es|nn
+whisper-small,4,0,off,stream-level-es,stream,es,64,29,4,10,370,102,58,58,LANGUAGE|NONE|NONE|NONE|NONE|NONE,nn|es|es|es|es|es
+whisper-small,4,0,off,stream-mixed-es-ca,stream,es+ca,100,36,1,18,608,124,83,83,LANGUAGE|NONE|NONE|NONE|NONE|NONE|NONE|NONE|NONE,nn|es|es|ca|ca|es|es|es|es

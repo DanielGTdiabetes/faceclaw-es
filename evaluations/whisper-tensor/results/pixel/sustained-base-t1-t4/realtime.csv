@@ -1,0 +1,5 @@
+round,model,runtime,policy,stream,audioMs,closures,constantWindows,decodeCalls,dropped,dropPct,coveragePct,speechCoveragePct,decodeP50Ms,decodeP95Ms,decodeMaxMs,latencyAvgMs,latencyMaxMs,delivered,wer,cer,rejectedLanguage,rejectedEmpty,rejectedStructure,rejectedHallucination,deliveryDiscarded,stopDrainMs,lateChunks
+0,whisper-base-es,threads=1;provider=cpu;tail=default,ref-6-3,sustained-5min,300000,101,0,101,0,0.0,100.0,100.0,1002,1726,2167,1105,2178,83,1.3090024330900243,1.011726647796199,12,0,0,0,0,106,0
+1,whisper-base-es,threads=4;provider=cpu;tail=default,ref-6-3,sustained-5min,300000,101,0,101,0,0.0,100.0,100.0,533,831,937,590,950,83,1.3090024330900243,1.011726647796199,12,0,0,0,0,117,0
+2,whisper-base-es,threads=4;provider=cpu;tail=default,ref-6-3,sustained-5min,300000,101,0,101,0,0.0,100.0,100.0,537,828,900,593,913,83,1.3090024330900243,1.011726647796199,12,0,0,0,0,134,1
+3,whisper-base-es,threads=1;provider=cpu;tail=default,ref-6-3,sustained-5min,300000,101,0,101,0,0.0,100.0,100.0,893,1388,1475,973,1493,83,1.3090024330900243,1.011726647796199,12,0,0,0,0,135,1

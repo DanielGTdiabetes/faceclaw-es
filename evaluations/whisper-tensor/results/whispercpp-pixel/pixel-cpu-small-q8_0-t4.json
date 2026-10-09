@@ -1,0 +1,358 @@
+{
+ "summary": {
+  "label": "pixel-cpu-small-q8_0-t4",
+  "requestedBackend": "cpu",
+  "effectiveBackends": [
+   "cpu"
+  ],
+  "devices": [],
+  "valid": true,
+  "threads": 4,
+  "language": "auto",
+  "model": "ggml-small-q8_0.bin",
+  "runs": 45,
+  "failedRuns": 0,
+  "processingP50Ms": 11591.75,
+  "processingP95Ms": 33229.590000000004,
+  "encodeP50Ms": 7608.21,
+  "encodeP95Ms": 9704.97,
+  "decodeP50Ms": 2835.6200000000003,
+  "wer": {
+   "es": 0.1243,
+   "ca": 0.2059
+  },
+  "cer": {
+   "es": 0.063,
+   "ca": 0.0928
+  },
+  "nonSpeechWords": 0,
+  "note": "processing = whisper.cpp total minus model load; excludes process start"
+ },
+ "fixtures": [
+  {
+   "id": "es-fleurs-00",
+   "kind": "speech",
+   "languages": [
+    "es"
+   ],
+   "refWords": 9,
+   "wordErrors": 2,
+   "substitutions": 2,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 43,
+   "charErrors": 4,
+   "hypWords": 9
+  },
+  {
+   "id": "es-fleurs-01",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es"
+   ],
+   "refWords": 26,
+   "wordErrors": 1,
+   "substitutions": 0,
+   "deletions": 1,
+   "insertions": 0,
+   "refChars": 145,
+   "charErrors": 3,
+   "hypWords": 25
+  },
+  {
+   "id": "es-fleurs-02",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es"
+   ],
+   "refWords": 11,
+   "wordErrors": 0,
+   "substitutions": 0,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 77,
+   "charErrors": 0,
+   "hypWords": 11
+  },
+  {
+   "id": "es-fleurs-03",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es",
+    "es"
+   ],
+   "refWords": 31,
+   "wordErrors": 4,
+   "substitutions": 3,
+   "deletions": 0,
+   "insertions": 1,
+   "refChars": 206,
+   "charErrors": 13,
+   "hypWords": 32
+  },
+  {
+   "id": "es-fleurs-04",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es"
+   ],
+   "refWords": 9,
+   "wordErrors": 2,
+   "substitutions": 2,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 63,
+   "charErrors": 15,
+   "hypWords": 9
+  },
+  {
+   "id": "es-fleurs-05",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es"
+   ],
+   "refWords": 27,
+   "wordErrors": 4,
+   "substitutions": 0,
+   "deletions": 1,
+   "insertions": 3,
+   "refChars": 160,
+   "charErrors": 22,
+   "hypWords": 29
+  },
+  {
+   "id": "es-fleurs-06",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es",
+    "es"
+   ],
+   "refWords": 32,
+   "wordErrors": 7,
+   "substitutions": 6,
+   "deletions": 1,
+   "insertions": 0,
+   "refChars": 180,
+   "charErrors": 8,
+   "hypWords": 31
+  },
+  {
+   "id": "es-fleurs-07",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "es",
+    "es"
+   ],
+   "refWords": 32,
+   "wordErrors": 2,
+   "substitutions": 2,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 189,
+   "charErrors": 2,
+   "hypWords": 32
+  },
+  {
+   "id": "ca-fleurs-00",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "es"
+   ],
+   "refWords": 19,
+   "wordErrors": 1,
+   "substitutions": 1,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 121,
+   "charErrors": 1,
+   "hypWords": 19
+  },
+  {
+   "id": "ca-fleurs-01",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "ca"
+   ],
+   "refWords": 25,
+   "wordErrors": 5,
+   "substitutions": 4,
+   "deletions": 1,
+   "insertions": 0,
+   "refChars": 139,
+   "charErrors": 13,
+   "hypWords": 24
+  },
+  {
+   "id": "ca-fleurs-02",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "ca"
+   ],
+   "refWords": 21,
+   "wordErrors": 3,
+   "substitutions": 2,
+   "deletions": 0,
+   "insertions": 1,
+   "refChars": 103,
+   "charErrors": 10,
+   "hypWords": 22
+  },
+  {
+   "id": "ca-fleurs-03",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "ca",
+    "en"
+   ],
+   "refWords": 20,
+   "wordErrors": 7,
+   "substitutions": 3,
+   "deletions": 0,
+   "insertions": 4,
+   "refChars": 122,
+   "charErrors": 13,
+   "hypWords": 24
+  },
+  {
+   "id": "ca-fleurs-04",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "ca",
+    "ca"
+   ],
+   "refWords": 22,
+   "wordErrors": 1,
+   "substitutions": 1,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 166,
+   "charErrors": 2,
+   "hypWords": 22
+  },
+  {
+   "id": "ca-fleurs-05",
+   "kind": "speech",
+   "languages": [
+    "es",
+    "ca",
+    "en"
+   ],
+   "refWords": 27,
+   "wordErrors": 14,
+   "substitutions": 12,
+   "deletions": 2,
+   "insertions": 0,
+   "refChars": 137,
+   "charErrors": 38,
+   "hypWords": 25
+  },
+  {
+   "id": "ca-fleurs-06",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "ca"
+   ],
+   "refWords": 23,
+   "wordErrors": 2,
+   "substitutions": 2,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 159,
+   "charErrors": 3,
+   "hypWords": 23
+  },
+  {
+   "id": "ca-fleurs-07",
+   "kind": "speech",
+   "languages": [
+    "ca",
+    "en"
+   ],
+   "refWords": 13,
+   "wordErrors": 2,
+   "substitutions": 0,
+   "deletions": 2,
+   "insertions": 0,
+   "refChars": 77,
+   "charErrors": 15,
+   "hypWords": 11
+  },
+  {
+   "id": "silence-digital-10s",
+   "kind": "silence",
+   "languages": [
+    "en",
+    "en"
+   ],
+   "refWords": 0,
+   "wordErrors": 0,
+   "substitutions": 0,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 0,
+   "charErrors": 0,
+   "hypWords": 0
+  },
+  {
+   "id": "noise-white-60dbfs-10s",
+   "kind": "noise",
+   "languages": [
+    "nn",
+    "nn"
+   ],
+   "refWords": 0,
+   "wordErrors": 0,
+   "substitutions": 0,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 0,
+   "charErrors": 0,
+   "hypWords": 0
+  },
+  {
+   "id": "noise-pink-45dbfs-10s",
+   "kind": "noise",
+   "languages": [
+    "nn",
+    "nn"
+   ],
+   "refWords": 0,
+   "wordErrors": 0,
+   "substitutions": 0,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 0,
+   "charErrors": 0,
+   "hypWords": 0
+  },
+  {
+   "id": "noise-hum-40dbfs-10s",
+   "kind": "noise",
+   "languages": [
+    "en",
+    "en"
+   ],
+   "refWords": 0,
+   "wordErrors": 0,
+   "substitutions": 0,
+   "deletions": 0,
+   "insertions": 0,
+   "refChars": 0,
+   "charErrors": 0,
+   "hypWords": 0
+  }
+ ]
+}

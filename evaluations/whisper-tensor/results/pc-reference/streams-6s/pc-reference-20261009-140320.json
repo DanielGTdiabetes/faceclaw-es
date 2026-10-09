@@ -1,0 +1,955 @@
+{
+ "kind": "pc-reference (x86 PC, NOT Pixel)",
+ "host": {
+  "platform": "Windows-10-10.0.26300-SP0",
+  "processor": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+  "cpus": 16,
+  "python": "3.11.2"
+ },
+ "sherpaOnnx": "1.13.0",
+ "corpusManifestSha256": "e86ab7fc7e1ed4c1aa07373861ebc0b1b554725b986efaf1d5c400abba25dd26",
+ "segmentMs": 6000,
+ "language": "auto",
+ "cases": [
+  {
+   "model": "whisper-base",
+   "threads": 4,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 98,
+   "loadMs": 367,
+   "fixtures": [
+    {
+     "id": "stream-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 70100,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 113,
+      "wordErrors": 27,
+      "substitutions": 18,
+      "deletions": 1,
+      "insertions": 8,
+      "refChars": 699,
+      "charErrors": 72,
+      "hypWords": 120
+     },
+     "unfiltered": {
+      "refWords": 113,
+      "wordErrors": 30,
+      "substitutions": 18,
+      "deletions": 1,
+      "insertions": 11,
+      "refChars": 699,
+      "charErrors": 79,
+      "hypWords": 123
+     },
+     "hypothesis": "En cuatro años es el quinto Seb de Martesi. Al pasar el tiempo, a medida que la insipiente población se va adaptando al nuevo entorno comienza a semejarse cada vez menos a la otra población. Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. Podemos comenzar a llevar una vida más es muy compatible con el planeta, formar parte de movimientos ambientalistas o incluso podemos volvarnos a activistas y luchar para aminorar en alguna menoría el sufrimiento. El criteriánismo el reduxo es la religión más oritaria en moldavia. Esta lanzadera de traslado dynamic por todos los que están de algún modo conectado con un sistema de transporte basado en el el uso automóvil es privado y los sostienen."
+    },
+    {
+     "id": "stream-ca",
+     "kind": "stream",
+     "language": "ca",
+     "durationMs": 79883,
+     "languages": [
+      "ru",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "es",
+      "ca",
+      "ca",
+      "es",
+      "ca",
+      "es",
+      "ca",
+      "es",
+      "nn"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 134,
+      "wordErrors": 74,
+      "substitutions": 53,
+      "deletions": 9,
+      "insertions": 12,
+      "refChars": 793,
+      "charErrors": 201,
+      "hypWords": 137
+     },
+     "unfiltered": {
+      "refWords": 134,
+      "wordErrors": 79,
+      "substitutions": 59,
+      "deletions": 6,
+      "insertions": 14,
+      "refChars": 793,
+      "charErrors": 215,
+      "hypWords": 142
+     },
+     "hypothesis": "i amb el moment que ho hauria de fer, que s'han tractat de 500 milió de detalls. Normalment amb experiència pràctica. Un antic polícia filipí amantingut com a les estates d'haver estigués d'haver un con per segrestar el seu autobús a Manila, la capital de les filitines. No sé si us n'adoneu, però la majoria de vens d'amèrica central... arriba en aquests países, lloras de impostos. La N-A-K, també ha informat que la central nuclear de Caixiu-Azaki Cariu-Azaki a la prefectura de negata funcionava normalitat. Las cualidades que determinan una sucultura como a diferencia pueden ser lingüíces polítiques, sexuants, geogràfica, o una combinación de factores. La part 7-tentrional o centínel range, les muntanyes més altes davantàrtida, el massa... un máximo de 4.042 metros de almoón binson."
+    },
+    {
+     "id": "stream-level-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 34700,
+     "languages": [
+      "en",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 64,
+      "wordErrors": 35,
+      "substitutions": 29,
+      "deletions": 4,
+      "insertions": 2,
+      "refChars": 370,
+      "charErrors": 78,
+      "hypWords": 62
+     },
+     "unfiltered": {
+      "refWords": 64,
+      "wordErrors": 36,
+      "substitutions": 29,
+      "deletions": 4,
+      "insertions": 3,
+      "refChars": 370,
+      "charErrors": 81,
+      "hypWords": 63
+     },
+     "hypothesis": "en el caso registrado de desclerosis múltiples em en eqo haciendo en acerca de 400 mil, lo que hace la enfermedad neurologica más frecuente entre adultos jóvenes y de medianas de otras. Además existen manturas en especial las ingresas. con barra y seguridad que permiten el acuerdo del activo que les prenda la estructura. el genete que sale este idiote la otra"
+    },
+    {
+     "id": "stream-mixed-es-ca",
+     "kind": "stream",
+     "language": "es+ca",
+     "durationMs": 54103,
+     "languages": [
+      "en",
+      "es",
+      "es",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 100,
+      "wordErrors": 60,
+      "substitutions": 40,
+      "deletions": 9,
+      "insertions": 11,
+      "refChars": 608,
+      "charErrors": 162,
+      "hypWords": 102
+     },
+     "unfiltered": {
+      "refWords": 100,
+      "wordErrors": 61,
+      "substitutions": 40,
+      "deletions": 9,
+      "insertions": 12,
+      "refChars": 608,
+      "charErrors": 167,
+      "hypWords": 103
+     },
+     "hypothesis": "los casos registrados de desclerosos múltiples em en ehu haciendo en acerca de 400 mil, lo que hace la enfermedad neurologica más frecuente entre adultos jóvenes i de mediària n'he d'altre. más simplificadas comparadas en la información más detallada disponible al cual se va a dar el mejor. Además existen monturas en especial las inglesas con barras de seguridad que permiten el cuero de los estivos de desprenda de su estructura si un genete que sale despedido tiras hacia atrás. l'explosion explosió causada per la col·l·l·l·l·l·l·l·l·l·l·l·l·l"
+    }
+   ],
+   "summary": {
+    "decodes": 41,
+    "decodeP50Ms": 224,
+    "decodeP95Ms": 358,
+    "rtf": 0.039,
+    "wer_es": 0.0,
+    "wer_ca": 0.0,
+    "cer_es": 0.0,
+    "cer_ca": 0.0,
+    "nonSpeechWordsUnfiltered": 431,
+    "nonSpeechWordsDelivered": 421,
+    "rejections": {
+     "NONE": 36,
+     "LANGUAGE": 5,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-base",
+   "threads": 4,
+   "tailPaddingFrames": 0,
+   "conditioning": "off",
+   "verifyMs": 98,
+   "loadMs": 367,
+   "fixtures": [
+    {
+     "id": "stream-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 70100,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 113,
+      "wordErrors": 29,
+      "substitutions": 19,
+      "deletions": 2,
+      "insertions": 8,
+      "refChars": 699,
+      "charErrors": 75,
+      "hypWords": 119
+     },
+     "unfiltered": {
+      "refWords": 113,
+      "wordErrors": 32,
+      "substitutions": 19,
+      "deletions": 2,
+      "insertions": 11,
+      "refChars": 699,
+      "charErrors": 82,
+      "hypWords": 122
+     },
+     "hypothesis": "En cuatro años es el quinto Seb de Martesi. Al pasar el tiempo, a medida que la insipiente población se va adaptando al nuevo entorno comienza a semejarse cada vez menos a la otra población. Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. Podemos comenzar a llevar una vida más es muy compatible con el planeta, formar parte de movimientos ambientalistas o incluso podemos volvarnos a activistas y luchar para aminorar en alguna menoría el sufrimiento. El cristianismo el productor es la religión más oritaria en Mondavia. Esta es la ansabera de traslado dynamic todos los que están de algún modo conectado con un sistema de transporte basado el uso automóvil es privado y los sostienen."
+    },
+    {
+     "id": "stream-ca",
+     "kind": "stream",
+     "language": "ca",
+     "durationMs": 79883,
+     "languages": [
+      "en",
+      "ca",
+      "el",
+      "ca",
+      "ca",
+      "ca",
+      "pt",
+      "ca",
+      "es",
+      "ca",
+      "es",
+      "ca",
+      "ro",
+      "en"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "LANGUAGE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 134,
+      "wordErrors": 82,
+      "substitutions": 40,
+      "deletions": 37,
+      "insertions": 5,
+      "refChars": 793,
+      "charErrors": 301,
+      "hypWords": 102
+     },
+     "unfiltered": {
+      "refWords": 134,
+      "wordErrors": 88,
+      "substitutions": 63,
+      "deletions": 8,
+      "insertions": 17,
+      "refChars": 793,
+      "charErrors": 251,
+      "hypWords": 143
+     },
+     "hypothesis": "en el moment que ho hauria de fer totes les problemes que s'han tractat de 500 miliós de detalls. Normalment amb experiència prà turistes de Hong Kong persegurestar el seu autobús a Manila, la capital de les filitines. No sé si us n'adoneu, però la majoria de bens d'amèrica central arriben a aquest país lliures d'impostos. La a la prefectura de negata funcionava normalitat. Las cualidades que determinan una sucultura como diferén pueden ser lingüí... polítiques, sexuants, geogràfica, o una combinación de factores. La part 7 d'entrional ho sentin el range. Tal és muntanyes més altes davantàrtida."
+    },
+    {
+     "id": "stream-level-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 34700,
+     "languages": [
+      "en",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 64,
+      "wordErrors": 41,
+      "substitutions": 31,
+      "deletions": 9,
+      "insertions": 1,
+      "refChars": 370,
+      "charErrors": 126,
+      "hypWords": 56
+     },
+     "unfiltered": {
+      "refWords": 64,
+      "wordErrors": 42,
+      "substitutions": 31,
+      "deletions": 9,
+      "insertions": 2,
+      "refChars": 370,
+      "charErrors": 129,
+      "hypWords": 57
+     },
+     "hypothesis": "en el caso registrado de desclerosis múltiples, EMN, E-U, HACIEN en la cerca de 400 mil, lo que hace la enfermedad neurologica más frecuente entre adultos jóvenes y de media nedal con barbas y seguridad que permiten el cual era el estudio que aprenda de su cultura. el género que sale este idiote la fecha"
+    },
+    {
+     "id": "stream-mixed-es-ca",
+     "kind": "stream",
+     "language": "es+ca",
+     "durationMs": 54103,
+     "languages": [
+      "en",
+      "es",
+      "es",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "es",
+      "ca"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 100,
+      "wordErrors": 55,
+      "substitutions": 34,
+      "deletions": 17,
+      "insertions": 4,
+      "refChars": 608,
+      "charErrors": 171,
+      "hypWords": 87
+     },
+     "unfiltered": {
+      "refWords": 100,
+      "wordErrors": 56,
+      "substitutions": 34,
+      "deletions": 17,
+      "insertions": 5,
+      "refChars": 608,
+      "charErrors": 174,
+      "hypWords": 88
+     },
+     "hypothesis": "en el caso registrado de desclerosis múltiples em en ehu haciendo en acerca de 400 mil, lo que hace la enfermedad neurologica más frecuente entre adultos jóvenes i de mediària nedal. más simplificadas comparadas a una información más detallada disponible al Corsa de la Vantrella. Además existen monturas en especial las inglesas con barras de seguridad que que el cuero de los estivos se desprenda de su estructura, si un genete quésale de expedido tirado hacia atrás. l'explosió causada per la col·lisió foda és comunal."
+    }
+   ],
+   "summary": {
+    "decodes": 41,
+    "decodeP50Ms": 250,
+    "decodeP95Ms": 366,
+    "rtf": 0.041,
+    "wer_es": 0.0,
+    "wer_ca": 0.0,
+    "cer_es": 0.0,
+    "cer_ca": 0.0,
+    "nonSpeechWordsUnfiltered": 410,
+    "nonSpeechWordsDelivered": 364,
+    "rejections": {
+     "NONE": 33,
+     "LANGUAGE": 8,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-small",
+   "threads": 4,
+   "tailPaddingFrames": 0,
+   "conditioning": "on",
+   "verifyMs": 231,
+   "loadMs": 780,
+   "fixtures": [
+    {
+     "id": "stream-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 70100,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 113,
+      "wordErrors": 18,
+      "substitutions": 9,
+      "deletions": 3,
+      "insertions": 6,
+      "refChars": 699,
+      "charErrors": 57,
+      "hypWords": 116
+     },
+     "unfiltered": {
+      "refWords": 113,
+      "wordErrors": 18,
+      "substitutions": 9,
+      "deletions": 3,
+      "insertions": 6,
+      "refChars": 699,
+      "charErrors": 57,
+      "hypWords": 116
+     },
+     "hypothesis": "En cuatro años es el quinto sep de Marteshi. Al pasar el tiempo, a medida que la incipiente población se va adaptando al nuevo entorno, comienza a asemejarse cada vez menos a la otra población. Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientalistas o incluso podemos volvernos a activistas y lucharon para aminorar en alguna minoría el sufrimiento. el queritianismo el a religión mayoritaria en Moldavia. esta lanzadora de traslado en Amic por todos los que están de algún modo conectados con un sistema de transporte basado en el... el uso de automóviles privados y lo sostienen."
+    },
+    {
+     "id": "stream-ca",
+     "kind": "stream",
+     "language": "ca",
+     "durationMs": 79883,
+     "languages": [
+      "pt",
+      "ca",
+      "es",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "es",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "nn"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 134,
+      "wordErrors": 58,
+      "substitutions": 39,
+      "deletions": 13,
+      "insertions": 6,
+      "refChars": 793,
+      "charErrors": 163,
+      "hypWords": 127
+     },
+     "unfiltered": {
+      "refWords": 134,
+      "wordErrors": 59,
+      "substitutions": 41,
+      "deletions": 11,
+      "insertions": 7,
+      "refChars": 793,
+      "charErrors": 160,
+      "hypWords": 130
+     },
+     "hypothesis": "normalment cobrirà tots els problemes que s'han tractat aquí en millor detall, i normalment amb experiència pràctica. Un antiguo policía, Felipe, ha mantenido como hostages de l'autobús de la capital de les Philippines. No sé si us n'adoneu, però la majoria de vents d'Amèrica central... Arriba en aquest país lliures d'impostos. NAK també ha informat que la central nuclear de Kashiwazaki a la prefectura de negata funcionava amb normalitat. Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas, estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinación de factores. La parte septentrional, o Sentinel Range, está en las montañas más altas de la Antártida, el Macío. de la ciudad de Bimson, con un máximo de 4.892 metros del mundo Bimson."
+    },
+    {
+     "id": "stream-level-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 34700,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 64,
+      "wordErrors": 28,
+      "substitutions": 14,
+      "deletions": 10,
+      "insertions": 4,
+      "refChars": 370,
+      "charErrors": 97,
+      "hypWords": 58
+     },
+     "unfiltered": {
+      "refWords": 64,
+      "wordErrors": 28,
+      "substitutions": 14,
+      "deletions": 10,
+      "insertions": 4,
+      "refChars": 370,
+      "charErrors": 97,
+      "hypWords": 58
+     },
+     "hypothesis": "en los casos registrados de esclerosis múltiples EM en EEUU ascienden acerca de 400 mil, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y de media edad. con barras de seguridad que permiten el cuero de los tibos de la experiencia de su estructura. y un gímete que sale feo y lo tiras atrás"
+    },
+    {
+     "id": "stream-mixed-es-ca",
+     "kind": "stream",
+     "language": "es+ca",
+     "durationMs": 54103,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "ca",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 100,
+      "wordErrors": 40,
+      "substitutions": 22,
+      "deletions": 16,
+      "insertions": 2,
+      "refChars": 608,
+      "charErrors": 130,
+      "hypWords": 86
+     },
+     "unfiltered": {
+      "refWords": 100,
+      "wordErrors": 40,
+      "substitutions": 22,
+      "deletions": 16,
+      "insertions": 2,
+      "refChars": 608,
+      "charErrors": 130,
+      "hypWords": 86
+     },
+     "hypothesis": "en los casos registrados de Eschelerosis múltiples EM en EEUU ascienden acerca de 400 mil, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes i de medi onerada. i masses simplificades comparades amb la informació més detallada disponible del qual se veu millor. Además existen monturas, en especial las inglesas, con barras de seguridad que permite que el cuero del estribo se desprenda de su estructura y un gine que sale despedido tira hacia atrás. la explosión causada por la Colisión, Fodes Comunal."
+    }
+   ],
+   "summary": {
+    "decodes": 41,
+    "decodeP50Ms": 675,
+    "decodeP95Ms": 1139,
+    "rtf": 0.123,
+    "wer_es": 0.0,
+    "wer_ca": 0.0,
+    "cer_es": 0.0,
+    "cer_ca": 0.0,
+    "nonSpeechWordsUnfiltered": 390,
+    "nonSpeechWordsDelivered": 387,
+    "rejections": {
+     "NONE": 36,
+     "LANGUAGE": 5,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  },
+  {
+   "model": "whisper-small",
+   "threads": 4,
+   "tailPaddingFrames": 0,
+   "conditioning": "off",
+   "verifyMs": 231,
+   "loadMs": 780,
+   "fixtures": [
+    {
+     "id": "stream-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 70100,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 113,
+      "wordErrors": 18,
+      "substitutions": 12,
+      "deletions": 2,
+      "insertions": 4,
+      "refChars": 699,
+      "charErrors": 54,
+      "hypWords": 115
+     },
+     "unfiltered": {
+      "refWords": 113,
+      "wordErrors": 18,
+      "substitutions": 12,
+      "deletions": 2,
+      "insertions": 4,
+      "refChars": 699,
+      "charErrors": 54,
+      "hypWords": 115
+     },
+     "hypothesis": "En cuatro años es el quinto sep de Martesi. Al pasar el tiempo, a medida que la incipiente población se va adaptando al nuevo entorno, comienza a asemejarse cada vez menos a la otra población. Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientalistas o incluso podemos volvernos a activistas y lucharon para minorar en alguna minoría el sufrimiento. el queritianismo horturo en la religión mayoritaria en Moldavia. esta lanzadora de traslado en Amicor, todos los que están de algún modo conectados con un sistema de transporte basado en el... el uso automóviles privados y lo sostienen."
+    },
+    {
+     "id": "stream-ca",
+     "kind": "stream",
+     "language": "ca",
+     "durationMs": 79883,
+     "languages": [
+      "pt",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "ca",
+      "es",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "nn"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "LANGUAGE"
+     ],
+     "delivered": {
+      "refWords": 134,
+      "wordErrors": 41,
+      "substitutions": 34,
+      "deletions": 4,
+      "insertions": 3,
+      "refChars": 793,
+      "charErrors": 86,
+      "hypWords": 133
+     },
+     "unfiltered": {
+      "refWords": 134,
+      "wordErrors": 43,
+      "substitutions": 36,
+      "deletions": 2,
+      "insertions": 5,
+      "refChars": 793,
+      "charErrors": 86,
+      "hypWords": 137
+     },
+     "hypothesis": "Normalment cobrirà tots els problemes que s'han tractat aquí en millor detall, i normalment amb experiència pràctica. Un antic policia a Filipi ha mantingut com a hostatges i turistes de Hong Kong per segrestar el seu autobús a Manila, la capità de les Filipines. No sé si us n'adoneu, però la majoria de vents d'Amèrica central... Arriba en aquest país lliures d'impostos. NAC, T, també ha informat que la central nuclear de Cashiwazaki, a la prefectura de negata funcionava amb normalitat. Las cualidades que determinan una subcultura como diferente pueden ser lingüísticas. estèctiques, religioses, polítiques, sexuals, geogràfiques... o una combinación de factores. La parte septentrional o Sentinel Range, de las montañas más altas de la Antártida, el Macías, Vinson, a un máximo de 4.892 metros del mundo Vinson."
+    },
+    {
+     "id": "stream-level-es",
+     "kind": "stream",
+     "language": "es",
+     "durationMs": 34700,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 64,
+      "wordErrors": 29,
+      "substitutions": 15,
+      "deletions": 10,
+      "insertions": 4,
+      "refChars": 370,
+      "charErrors": 102,
+      "hypWords": 58
+     },
+     "unfiltered": {
+      "refWords": 64,
+      "wordErrors": 29,
+      "substitutions": 15,
+      "deletions": 10,
+      "insertions": 4,
+      "refChars": 370,
+      "charErrors": 102,
+      "hypWords": 58
+     },
+     "hypothesis": "en los casos registrados de esclerosis múltiples EM en EEUU ascienden acerca de 400 mil, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y de mediano edad. con barras de seguridad que permiten el cuero de los tibos de la experiencia de su estructura. que es un gímete que sale este vídeo, tiras otro"
+    },
+    {
+     "id": "stream-mixed-es-ca",
+     "kind": "stream",
+     "language": "es+ca",
+     "durationMs": 54103,
+     "languages": [
+      "nn",
+      "es",
+      "es",
+      "ca",
+      "ca",
+      "es",
+      "es",
+      "es",
+      "es"
+     ],
+     "rejections": [
+      "LANGUAGE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+     ],
+     "delivered": {
+      "refWords": 100,
+      "wordErrors": 36,
+      "substitutions": 17,
+      "deletions": 18,
+      "insertions": 1,
+      "refChars": 608,
+      "charErrors": 124,
+      "hypWords": 83
+     },
+     "unfiltered": {
+      "refWords": 100,
+      "wordErrors": 36,
+      "substitutions": 17,
+      "deletions": 18,
+      "insertions": 1,
+      "refChars": 608,
+      "charErrors": 124,
+      "hypWords": 83
+     },
+     "hypothesis": "en los casos registrados de esclerosis múltiples EM en EEUU ascienden acerca de 400 mil, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes i de mediànera. i masses simplificades comparades amb la informació més detallada disponible de qualsevol entrellot. Además existen monturas, en especial las inglesas, con barras de seguridad que preen que el cuero del estivo se desprenda de su estructura y un jinete que sale despedido tira hacia atrás. la explosión causada por la colisión fue descomunal."
+    }
+   ],
+   "summary": {
+    "decodes": 41,
+    "decodeP50Ms": 632,
+    "decodeP95Ms": 993,
+    "rtf": 0.107,
+    "wer_es": 0.0,
+    "wer_ca": 0.0,
+    "cer_es": 0.0,
+    "cer_ca": 0.0,
+    "nonSpeechWordsUnfiltered": 393,
+    "nonSpeechWordsDelivered": 389,
+    "rejections": {
+     "NONE": 36,
+     "LANGUAGE": 5,
+     "EMPTY": 0,
+     "STRUCTURE": 0,
+     "HALLUCINATION": 0
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "summary": {
+  "label": "pixel-vulkan-probe-small-q8_0-t4",
+  "requestedBackend": "vulkan",
+  "effectiveBackends": [
+   "vulkan"
+  ],
+  "devices": [
+   "PowerVR D-Series DXT-48-1536 MC1 (PowerVR D-Series Vulkan Driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 128 | shared memory: 32768 | int dot: 0 | matrix cores: none"
+  ],
+  "valid": true,
+  "threads": 4,
+  "language": "auto",
+  "model": "ggml-small-q8_0.bin",
+  "runs": 2,
+  "failedRuns": 0,
+  "processingP50Ms": 72143.21,
+  "processingP95Ms": 74865.29999999999,
+  "encodeP50Ms": 58501.86,
+  "encodeP95Ms": 60892.15,
+  "decodeP50Ms": 11665.3,
+  "wer": {
+   "ca": 0.0526
+  },
+  "cer": {
+   "ca": 0.0744
+  },
+  "nonSpeechWords": 0,
+  "note": "processing = whisper.cpp total minus model load; excludes process start"
+ },
+ "fixtures": [
+  {
+   "id": "ca-fleurs-00",
+   "kind": "speech",
+   "languages": [
+    "ca"
+   ],
+   "refWords": 19,
+   "wordErrors": 1,
+   "substitutions": 0,
+   "deletions": 1,
+   "insertions": 0,
+   "refChars": 121,
+   "charErrors": 9,
+   "hypWords": 18
+  }
+ ]
+}

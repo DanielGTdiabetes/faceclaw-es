@@ -359,8 +359,9 @@ class BenchRunner(private val context: Context, private val options: BenchOption
             .put("languageOther", analysis.getLong("languageOther"))
             .put("deferredWindows", analysis.getLong("deferredWindows")).put("coalescedWindows", analysis.getLong("coalescedWindows"))
             .put("maxWindowMs", analysis.getLong("maxWindowMs"))
-            .put("wer", if (errors.refWords == 0) null else errors.wordErrors.toDouble() / errors.refWords)
-            .put("cer", if (errors.refChars == 0) null else errors.charErrors.toDouble() / errors.refChars)
+            // A sustained loop cuts streams at arbitrary points, so its joined reference is not comparable.
+            .put("wer", if (errors.refWords == 0 || stream.kind == "sustained") null else errors.wordErrors.toDouble() / errors.refWords)
+            .put("cer", if (errors.refChars == 0 || stream.kind == "sustained") null else errors.charErrors.toDouble() / errors.refChars)
             .put("hypWords", errors.hypWords).put("lateChunks", lateChunks).put("maxLateMs", maxLateMs)
             .put("levels", analysis.getJSONObject("levels"))
             .put("thermalAfter", thermal()).put("memoryAfter", memory())
