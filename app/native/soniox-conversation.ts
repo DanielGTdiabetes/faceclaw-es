@@ -84,6 +84,11 @@ function newSessionId(now: number): string {
 
 const emptyStats = () => ({ sentMs: 0, finalTokens: 0, messages: 0, speakers: 0, fallbacks: 0, errors: 0 });
 
+/** A native decoder is still allowed to publish scalar completion state after OFF. */
+function localSnapshotIsDraining(snapshot: LocalTranscriptionSnapshot): boolean {
+  return snapshot.worker || snapshot.busy || snapshot.inputBufferedBytes > 0;
+}
+
 export class SonioxConversationTranscription implements DetectorTranscription {
   private socket: SocketLike | null = null;
   private mode: "off" | "soniox" | "local" = "off";
@@ -118,6 +123,13 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   /** Scalar native local-ASR diagnostics retained after OFF, never transcript/audio. */
   private lastLocalSnapshot: LocalTranscriptionSnapshot | null = null;
   private lastLocalFallback = false;
+  /**
+   * A stopped native decoder may still be draining.  Its scalar snapshot is safe to
+   * read, but it must never be confused with the next accepted conversation.
+   */
+  private localDiagnosticsEpoch = 0;
+  private retainedLocalDiagnosticsEpoch = -1;
+  private lastLocalDraining = false;
   private readonly identity: WearerIdentity;
   private readonly turnLog: ConversationTurns;
   private profileMatcher: ProfileSpeakerMatcher | null = null;
@@ -130,12 +142,15 @@ export class SonioxConversationTranscription implements DetectorTranscription {
 
   start(language: TextLanguage = "es", profileAssociation = false, maxMs = 120_000): boolean {
     if (this.mode !== "off") return false;
+    this.localDiagnosticsEpoch++;
     this.language = language;
     this.maxMs = maxMs;
     // A newly accepted start is a new diagnostics session: never blend its
     // counters with the preceding local session retained after OFF.
     this.lastLocalSnapshot = null;
     this.lastLocalFallback = false;
+    this.retainedLocalDiagnosticsEpoch = -1;
+    this.lastLocalDraining = false;
     this.reset();
     this.summaryValue = null;
     this.ending = false;
@@ -257,6 +272,8 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       // drains. Take the native snapshot after stop so worker/busy reflect the
       // real drain, while LocalTranscription has already erased its text.
       this.lastLocalSnapshot = cloneSnapshot(this.local.snapshot());
+      this.retainedLocalDiagnosticsEpoch = this.localDiagnosticsEpoch;
+      this.lastLocalDraining = localSnapshotIsDraining(this.lastLocalSnapshot);
     }
     this.closeSocket();
     this.mode = "off";
@@ -281,9 +298,20 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       return { ...local, model: local.engine, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
         identity, turnsAvailable: this.stats.fallbacks === 0 && local.enabled && !!this.local.subscribeTurns };
     }
-    if (this.mode === "off" && this.lastLocalSnapshot) {
-      return { ...this.lastLocalSnapshot, enabled: false,
-        model: this.lastLocalSnapshot.engine, engine: this.lastLocalFallback ? "local (sin red)" : "local", soniox: this.scalars(), identity,
+    if (this.mode === "off" && this.lastLocalSnapshot && this.retainedLocalDiagnosticsEpoch === this.localDiagnosticsEpoch) {
+      // `stop()` invalidates capture and LocalTranscription has already erased
+      // text/turns. While its *same* native worker drains, however, its scalar
+      // counters and busy flags can still advance.  Poll no timer: snapshot
+      // reads are the sole observation boundary, and a new start clears this
+      // retained epoch before it can create another worker.
+      if (this.lastLocalDraining) {
+        const live = cloneSnapshot(this.local.snapshot());
+        this.lastLocalSnapshot = live;
+        this.lastLocalDraining = localSnapshotIsDraining(live);
+      }
+      const retained = this.lastLocalSnapshot;
+      return { ...retained, enabled: false,
+        model: retained.engine, engine: this.lastLocalFallback ? "local (sin red)" : "local", soniox: this.scalars(), identity,
         turnsAvailable: false };
     }
     return {

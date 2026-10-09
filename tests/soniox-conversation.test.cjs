@@ -160,7 +160,7 @@ test('stop closes the stream gracefully, clears text and ignores late messages; 
   assert.equal(h.engine.start('es'), true);
 });
 
-test('local aggregates and drain state remain readable after OFF without retaining text or reviving capture', () => {
+test('local diagnostics refresh from draining to complete after OFF without retaining text or reviving capture', () => {
   const h = harness({ engine: 'local' });
   h.engine.start('es');
   h.local.setText('texto que debe borrarse');
@@ -178,6 +178,18 @@ test('local aggregates and drain state remain readable after OFF without retaini
     inputBufferedBytes: 3200, accepted: 3, abstentions: 2, dropped: 1 });
   assert.equal(afterOff.analysis.decodeCalls, 2);
   assert.equal(afterOff.soniox.sentMs, 0);
+  // The real decoder can finish after OFF.  Its final scalar counters must be
+  // observable, without re-opening PCM, transcript, or turns.
+  h.local.setDiagnostics({ worker: false, busy: false, inputBufferedBytes: 0,
+    accepted: 4, abstentions: 3, dropped: 2,
+    analysis: { pcmAudioMs: 4800, decodeCalls: 3, decodeTotalMs: 1200 } });
+  const drained = h.engine.snapshot();
+  assert.deepEqual({ worker: drained.worker, busy: drained.busy, inputBufferedBytes: drained.inputBufferedBytes,
+    accepted: drained.accepted, abstentions: drained.abstentions, dropped: drained.dropped },
+  { worker: false, busy: false, inputBufferedBytes: 0, accepted: 4, abstentions: 3, dropped: 2 });
+  assert.equal(drained.analysis.decodeCalls, 3);
+  h.engine.stop(); // OFF is idempotent; it neither re-stops nor drops the final diagnostics.
+  assert.equal(h.engine.snapshot().accepted, 4);
   h.engine.acceptNative({}, 'posible voz');
   assert.deepEqual(h.local.events, ['start:es', 'stop']);
 });
@@ -190,8 +202,10 @@ test('a new local session or local-to-cloud transition clears retained local dia
   assert.equal(h.engine.snapshot().accepted, 7);
   h.engine.start('es');
   assert.equal(h.engine.snapshot().accepted, 0);
+  h.local.setDiagnostics({ accepted: 1, worker: false, busy: false });
+  assert.equal(h.engine.snapshot().accepted, 1);
   h.engine.stop();
-  h.local.setDiagnostics({ accepted: 9 });
+  h.local.setDiagnostics({ accepted: 9, worker: true, busy: true });
   h.setEngine('soniox');
   h.engine.start('es'); h.sockets[0].listener.onOpen();
   assert.equal(h.engine.snapshot().accepted, 0);
