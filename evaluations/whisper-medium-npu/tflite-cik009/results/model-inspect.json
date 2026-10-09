@@ -1,0 +1,7712 @@
+{
+ "version": 3,
+ "description": "MLIR Converted.",
+ "subgraphs": [
+  {
+   "index": 0,
+   "name": "serving_default",
+   "operators": 2814,
+   "tensors": 3920,
+   "inputs": [
+    {
+     "name": "serving_default_input_features:0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      80,
+      3000
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "StatefulPartitionedCall:0",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 510,
+    "ADD": 443,
+    "FULLY_CONNECTED": 384,
+    "MUL": 370,
+    "MEAN": 244,
+    "TRANSPOSE": 145,
+    "BATCH_MATMUL": 145,
+    "SUB": 127,
+    "SQUARED_DIFFERENCE": 122,
+    "RSQRT": 122,
+    "SOFTMAX": 72,
+    "PAD": 50,
+    "GELU": 50,
+    "SCATTER_ND": 6,
+    "STRIDED_SLICE": 3,
+    "CONV_2D": 2,
+    "REDUCE_MAX": 2,
+    "EQUAL": 2,
+    "DEQUANTIZE": 1,
+    "GATHER": 1,
+    "LOG_SOFTMAX": 1,
+    "ZEROS_LIKE": 1,
+    "SELECT": 1,
+    "EXP": 1,
+    "SUM": 1,
+    "LOG": 1,
+    "GREATER": 1,
+    "BROADCAST_TO": 1,
+    "LOGICAL_AND": 1,
+    "SELECT_V2": 1,
+    "ARG_MAX": 1,
+    "REDUCE_ANY": 1,
+    "WHILE": 1
+   }
+  },
+  {
+   "index": 1,
+   "name": "serving_en_",
+   "operators": 2715,
+   "tensors": 3779,
+   "inputs": [
+    {
+     "name": "serving_en__input_features:0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      80,
+      3000
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "StatefulPartitionedCall_1:0",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 499,
+    "ADD": 427,
+    "FULLY_CONNECTED": 378,
+    "MUL": 357,
+    "MEAN": 238,
+    "TRANSPOSE": 145,
+    "BATCH_MATMUL": 140,
+    "SQUARED_DIFFERENCE": 119,
+    "RSQRT": 119,
+    "SUB": 119,
+    "SOFTMAX": 70,
+    "PAD": 50,
+    "GELU": 49,
+    "CONV_2D": 2,
+    "DEQUANTIZE": 1,
+    "GATHER": 1,
+    "WHILE": 1
+   }
+  },
+  {
+   "index": 2,
+   "name": "while_cond_1_cond_false_327170",
+   "operators": 0,
+   "tensors": 3,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 3,
+   "name": "while_cond_1_cond_false_578520",
+   "operators": 0,
+   "tensors": 3,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 4,
+   "name": "while_cond_1_cond_true_327160",
+   "operators": 11,
+   "tensors": 22,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_1/cond/TensorScatterUpdate2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 3,
+    "ADD": 2,
+    "SCATTER_ND": 2,
+    "STRIDED_SLICE": 1,
+    "PACK": 1,
+    "SUB": 1,
+    "MUL": 1
+   }
+  },
+  {
+   "index": 5,
+   "name": "while_cond_1_cond_true_578510",
+   "operators": 11,
+   "tensors": 22,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_1/cond/TensorScatterUpdate5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 3,
+    "ADD": 2,
+    "SCATTER_ND": 2,
+    "STRIDED_SLICE": 1,
+    "PACK": 1,
+    "SUB": 1,
+    "MUL": 1
+   }
+  },
+  {
+   "index": 6,
+   "name": "while_cond_1_false_327000",
+   "operators": 6,
+   "tensors": 12,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_1/cond",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 2,
+    "ADD": 1,
+    "STRIDED_SLICE": 1,
+    "GREATER_EQUAL": 1,
+    "IF": 1
+   }
+  },
+  {
+   "index": 7,
+   "name": "while_cond_1_false_578350",
+   "operators": 6,
+   "tensors": 12,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_1/cond1",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "RESHAPE": 2,
+    "ADD": 1,
+    "STRIDED_SLICE": 1,
+    "GREATER_EQUAL": 1,
+    "IF": 1
+   }
+  },
+  {
+   "index": 8,
+   "name": "while_cond_1_true_326990",
+   "operators": 0,
+   "tensors": 3,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 9,
+   "name": "while_cond_1_true_578340",
+   "operators": 0,
+   "tensors": 3,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "INT32",
+     "shape": [
+      3
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 10,
+   "name": "while_cond_2_cond_1_false_328830",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 11,
+   "name": "while_cond_2_cond_1_false_580180",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 12,
+   "name": "while_cond_2_cond_1_true_328820",
+   "operators": 1,
+   "tensors": 4,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/cond_1/SelectV2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "SELECT_V2": 1
+   }
+  },
+  {
+   "index": 13,
+   "name": "while_cond_2_cond_1_true_580170",
+   "operators": 1,
+   "tensors": 4,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/cond_1/SelectV21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "SELECT_V2": 1
+   }
+  },
+  {
+   "index": 14,
+   "name": "while_cond_2_cond_false_328720",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 15,
+   "name": "while_cond_2_cond_false_580070",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 16,
+   "name": "while_cond_2_cond_true_328710",
+   "operators": 0,
+   "tensors": 2,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/cond/Const",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 17,
+   "name": "while_cond_2_cond_true_580060",
+   "operators": 0,
+   "tensors": 2,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/cond/Const1",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 18,
+   "name": "while_cond_2_false_327740",
+   "operators": 51,
+   "tensors": 74,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arith.constant1226",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/cond_2/SelectV2_1",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/cond_2/SelectV2_1",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "LOGICAL_AND": 6,
+    "SUB": 4,
+    "ADD": 4,
+    "PACK": 4,
+    "STRIDED_SLICE": 4,
+    "RESHAPE": 4,
+    "GREATER_EQUAL": 3,
+    "BROADCAST_TO": 3,
+    "EQUAL": 2,
+    "IF": 2,
+    "LOGICAL_OR": 2,
+    "SELECT_V2": 2,
+    "REDUCE_MAX": 2,
+    "LESS": 1,
+    "LOGICAL_NOT": 1,
+    "LOG_SOFTMAX": 1,
+    "ZEROS_LIKE": 1,
+    "SELECT": 1,
+    "EXP": 1,
+    "SUM": 1,
+    "LOG": 1,
+    "GREATER": 1
+   }
+  },
+  {
+   "index": 19,
+   "name": "while_cond_2_false_579090",
+   "operators": 51,
+   "tensors": 74,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arith.constant1246",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/cond_2/SelectV2_11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/cond_2/SelectV2_11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "LOGICAL_AND": 6,
+    "SUB": 4,
+    "ADD": 4,
+    "PACK": 4,
+    "STRIDED_SLICE": 4,
+    "RESHAPE": 4,
+    "GREATER_EQUAL": 3,
+    "BROADCAST_TO": 3,
+    "EQUAL": 2,
+    "IF": 2,
+    "LOGICAL_OR": 2,
+    "SELECT_V2": 2,
+    "REDUCE_MAX": 2,
+    "LESS": 1,
+    "LOGICAL_NOT": 1,
+    "LOG_SOFTMAX": 1,
+    "ZEROS_LIKE": 1,
+    "SELECT": 1,
+    "EXP": 1,
+    "SUM": 1,
+    "LOG": 1,
+    "GREATER": 1
+   }
+  },
+  {
+   "index": 20,
+   "name": "while_cond_2_true_327730",
+   "operators": 0,
+   "tensors": 5,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/Const",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arith.constant1247",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arith.constant1247",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 21,
+   "name": "while_cond_2_true_579080",
+   "operators": 0,
+   "tensors": 5,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond_2/Const1",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arith.constant1248",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arith.constant1248",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 22,
+   "name": "while_cond_false_326810",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 23,
+   "name": "while_cond_false_578160",
+   "operators": 0,
+   "tensors": 1,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {}
+  },
+  {
+   "index": 24,
+   "name": "while_cond_true_326800",
+   "operators": 5,
+   "tensors": 11,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond/TensorScatterUpdate4",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "SCATTER_ND": 2,
+    "SUB": 1,
+    "MUL": 1,
+    "ADD": 1
+   }
+  },
+  {
+   "index": 25,
+   "name": "while_cond_true_578150",
+   "operators": 5,
+   "tensors": 11,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/cond/TensorScatterUpdate9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "SCATTER_ND": 2,
+    "SUB": 1,
+    "MUL": 1,
+    "ADD": 1
+   }
+  },
+  {
+   "index": 26,
+   "name": "while_cond",
+   "operators": 4,
+   "tensors": 112,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg3",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg4",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg6",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg7",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg8",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg10",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg12",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg13",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg14",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg15",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg16",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg17",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg18",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg19",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg20",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg22",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg23",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg24",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg25",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg26",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg27",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg28",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg29",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg30",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg31",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg32",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg33",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg34",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg35",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg36",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg37",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg38",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg39",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg40",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg41",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg42",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg43",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg44",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg45",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg46",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg47",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg48",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg49",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg50",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg51",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg52",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg102",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg103",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg104",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg105",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/LogicalAnd",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "REDUCE_ALL": 1,
+    "LOGICAL_NOT": 1,
+    "LESS": 1,
+    "LOGICAL_AND": 1
+   }
+  },
+  {
+   "index": 27,
+   "name": "while_body",
+   "operators": 1698,
+   "tensors": 2351,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg3",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg4",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg6",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg7",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg8",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg10",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg12",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg13",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg14",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg15",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg16",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg17",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg18",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg19",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg20",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg22",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg23",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg24",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg25",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg26",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg27",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg28",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg29",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg30",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg31",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg32",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg33",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg34",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg35",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg36",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg37",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg38",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg39",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg40",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg41",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg42",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg43",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg44",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg45",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg46",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg47",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg48",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg49",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg50",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg51",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg52",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg102",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg103",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg104",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg105",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/add_3",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/TensorScatterUpdate_22",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/or",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/add_2",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_1",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_2",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_3",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_4",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_6",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_7",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_8",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_10",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_12",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_13",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_14",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_15",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_16",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_17",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_18",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_19",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_20",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_22",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_23",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_24",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_25",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_26",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_27",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_28",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_29",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_30",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_31",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_32",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_33",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_34",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_35",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_36",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_37",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_38",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_39",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_40",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_41",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_42",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_43",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_44",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_45",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_46",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_47",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_48",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg102",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg103",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg104",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg105",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      51865
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "ADD": 300,
+    "MUL": 229,
+    "RESHAPE": 218,
+    "FULLY_CONNECTED": 192,
+    "MEAN": 146,
+    "STRIDED_SLICE": 102,
+    "BATCH_MATMUL": 97,
+    "SUB": 79,
+    "SQUARED_DIFFERENCE": 73,
+    "RSQRT": 73,
+    "DYNAMIC_UPDATE_SLICE": 49,
+    "CONCATENATION": 48,
+    "SOFTMAX": 48,
+    "GELU": 24,
+    "PACK": 3,
+    "IF": 3,
+    "CAST": 2,
+    "EQUAL": 2,
+    "GATHER": 2,
+    "SCATTER_ND": 2,
+    "GREATER_EQUAL": 1,
+    "CUMSUM": 1,
+    "DEQUANTIZE": 1,
+    "ARG_MAX": 1,
+    "REDUCE_ANY": 1,
+    "LOGICAL_OR": 1
+   }
+  },
+  {
+   "index": 28,
+   "name": "while1_cond",
+   "operators": 4,
+   "tensors": 108,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg3",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg4",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg6",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg7",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg8",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg10",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg12",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg13",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg14",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg15",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg16",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg17",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg18",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg19",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg20",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg22",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg23",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg24",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg25",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg26",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg27",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg28",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg29",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg30",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg31",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg32",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg33",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg34",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg35",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg36",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg37",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg38",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg39",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg40",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg41",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg42",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg43",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg44",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg45",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg46",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg47",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg48",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg49",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg50",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg51",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg52",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/LogicalAnd1",
+     "type": "BOOL",
+     "shape": [],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "REDUCE_ALL": 1,
+    "LOGICAL_NOT": 1,
+    "LESS": 1,
+    "LOGICAL_AND": 1
+   }
+  },
+  {
+   "index": 29,
+   "name": "while1_body",
+   "operators": 1706,
+   "tensors": 2362,
+   "inputs": [
+    {
+     "name": "arg0",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg1",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg2",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg3",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "arg4",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg5",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg6",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg7",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg8",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg9",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg10",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg11",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg12",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg13",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg14",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg15",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg16",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg17",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg18",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg19",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg20",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg21",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg22",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg23",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg24",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg25",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg26",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg27",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg28",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg29",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg30",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg31",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg32",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg33",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg34",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg35",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg36",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg37",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg38",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg39",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg40",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg41",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg42",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg43",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg44",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg45",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg46",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg47",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg48",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg49",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg50",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg51",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg52",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "while/add_31",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/TensorScatterUpdate_25",
+     "type": "INT32",
+     "shape": [
+      1,
+      449
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/or1",
+     "type": "BOOL",
+     "shape": [
+      1
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/add_21",
+     "type": "INT32",
+     "shape": [],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice1",
+     "type": "INT32",
+     "shape": [
+      1,
+      448
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_110",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_210",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_310",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_49",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_51",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_61",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_71",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_81",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_91",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_101",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_111",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_121",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_131",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_141",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_151",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_161",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_171",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_181",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_191",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_201",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_211",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_221",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_231",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_241",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_251",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_261",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_271",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_281",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_291",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_301",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_311",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_321",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_331",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_341",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_351",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_361",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_371",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_381",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_391",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_401",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_411",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_421",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_431",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_441",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_451",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_461",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_471",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "while/XlaDynamicUpdateSlice_481",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      447,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg53",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg54",
+     "type": "FLOAT32",
+     "shape": [
+      1,
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg55",
+     "type": "FLOAT32",
+     "shape": [
+      51865,
+      1024
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg56",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg57",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg58",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg59",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg60",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg61",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg62",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg63",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg64",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg65",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg66",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg67",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg68",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg69",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg70",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg71",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg72",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg73",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg74",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg75",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg76",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg77",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg78",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg79",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg80",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg81",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg82",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg83",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg84",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg85",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg86",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg87",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg88",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg89",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg90",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg91",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg92",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg93",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg94",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg95",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg96",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg97",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg98",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg99",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg100",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    },
+    {
+     "name": "arg101",
+     "type": "FLOAT32",
+     "shape": [
+      16,
+      1500,
+      64
+     ],
+     "shape_signature": null
+    }
+   ],
+   "op_counts": {
+    "ADD": 300,
+    "MUL": 229,
+    "RESHAPE": 220,
+    "FULLY_CONNECTED": 192,
+    "MEAN": 146,
+    "STRIDED_SLICE": 102,
+    "BATCH_MATMUL": 97,
+    "SUB": 81,
+    "SQUARED_DIFFERENCE": 73,
+    "RSQRT": 73,
+    "DYNAMIC_UPDATE_SLICE": 49,
+    "CONCATENATION": 48,
+    "SOFTMAX": 48,
+    "GELU": 24,
+    "SCATTER_ND": 6,
+    "PACK": 3,
+    "IF": 3,
+    "CAST": 2,
+    "EQUAL": 2,
+    "GATHER": 2,
+    "GREATER_EQUAL": 1,
+    "CUMSUM": 1,
+    "DEQUANTIZE": 1,
+    "ARG_MAX": 1,
+    "REDUCE_ANY": 1,
+    "LOGICAL_OR": 1
+   }
+  }
+ ],
+ "signatures": [
+  {
+   "key": "serving_default",
+   "subgraph": 0,
+   "inputs": [
+    "input_features"
+   ],
+   "outputs": [
+    "sequences"
+   ]
+  },
+  {
+   "key": "serving_en_",
+   "subgraph": 1,
+   "inputs": [
+    "input_features"
+   ],
+   "outputs": [
+    "sequences"
+   ]
+  }
+ ],
+ "metadata": [
+  "min_runtime_version",
+  "CONVERSION_METADATA"
+ ],
+ "constant_tensors_by_type": {
+  "FLOAT32": 1788,
+  "INT32": 184,
+  "BOOL": 16,
+  "INT8": 1157
+ },
+ "constant_bytes_by_type": {
+  "FLOAT32": 21982664,
+  "INT32": 10160,
+  "BOOL": 466792,
+  "INT8": 2374595584
+ }
+}

@@ -2,18 +2,25 @@
 
 ## Estado actual
 
-Tres commits locales y correcciones aún sin commit, sin `push`, merge, ADB, instalación, extracción de APK,
-lectura de ajustes ni captura del Pixel. El relevo
+Siete commits locales de Terra (`e5d361b`, `2fd320a`, `09564de`, `1e4c785`, `db91a21`, `b90c235`,
+`54c3781`); al escribir este informe no había `push`, merge, ADB, instalación, extracción de APK,
+lectura de ajustes ni captura del Pixel. *(Aclaración posterior, Claude 09-10-2026: versiones anteriores de
+este texto decían «correcciones sin commit»; esas correcciones sí están en `1e4c785`, `db91a21` y `b90c235`.
+Esta aclaración no es evidencia de instalación ni de medición.)* El relevo
 `.tools/medium-luna-handoff-2026-10-09.json` existe y sigue con `state: busy`;
 la reserva pertenece a Luna. No se borró, sustituyó ni usó como autorización.
 
 | Área | Commit | Estado revisado |
 | --- | --- | --- |
 | Opción medium del asistente | `e5d361b` | Selector, mapeo y descarga local preparados. |
-| Retención tras OFF | `2fd320a` | Base inicial retenida; la corrección posterior queda en el árbol de trabajo hasta revisión. |
+| Retención tras OFF | `2fd320a` | Base inicial retenida; la corrección posterior está en `1e4c785`. |
+| Refresco durante drenaje | `1e4c785` | Instantánea del mismo motor refrescada mientras drena. |
+| Caché de verificación medium | `db91a21` | Ruta/existencia/tamaño/mtime; mejora de latencia no medida. |
+| Candidata S2.6.13 | `b90c235` | Versión y empaquetado; la APK de Terra no contiene `assets/app/package.json` (ver informe de instalación S2.6.13). |
+| Evidencia LiteRT | `54c3781` | Investigación corregida; sin inferencia. |
 | Investigación LiteRT | `09564de` | Sustituida por evidencia más precisa y laboratorio aislado actualizado. |
 
-## Corrección pendiente de commit: diagnóstico OFF
+## Corrección del diagnóstico OFF (`1e4c785`)
 
 La revisión identificó que una copia fija de `lastLocalSnapshot` conservaba
 `busy`/`worker` para siempre si el decoder terminaba después de OFF. Ahora la

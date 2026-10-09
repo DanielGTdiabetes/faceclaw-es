@@ -268,3 +268,12 @@ La comprobación inicial de archivos recuperó la firma y sincronizó `405686b` 
 ## Corrección posterior de ubicación GPS — 03-10-2026
 
 Hermes ya consulta la posición real del teléfono. Se corrigió además la caché Android: aceptación inmediata de dos minutos, coherente con el umbral del asistente; una posición de cuatro minutos solicita renovación puntual antes de devolverla. Actualización instalada con firma original sobre G2.2, versión conservada y 33 ajustes idénticos. Distinguir por nombre/hash del nuevo build; Consulta física posterior comprobada por el usuario: «ha funcionado». Informe y rutas de APK/reversión: [gps-location-freshness-2026-10-03.md](gps-location-freshness-2026-10-03.md).
+
+## S2.6.13 Whisper medium instalada — 09-10-2026
+
+Pixel actualizado a `0.8.2-es.5-conversation.s2.6.13-whisper-medium` (código 805, firma original, datos conservados,
+35 ajustes idénticos). La candidata de Terra no se instaló: le faltaba `assets/app/package.json` porque `ns prepare`
+se había saltado; reconstruida como `-r2` (SHA-256 `c99eacf4…362b`). Reversión: `before-update-s2.6.13-whisper-medium-r2.apk`
+(= S2.6.12). En este PC `ns prepare` necesita `NS_SKIP_ENV_CHECK=1`. Medium en CPU no sostiene `ref-6-3` y la
+NPU/GPU no está demostrada. Motor y memoria del día se restablecen al actualizar: volver a elegirlos.
+Informe: [s2.6.13-medium-instalacion-2026-10-09.md](s2.6.13-medium-instalacion-2026-10-09.md).
