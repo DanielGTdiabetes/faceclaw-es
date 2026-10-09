@@ -721,12 +721,13 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // runs -- see the same note in native/voice-control.ts. The "whisper" value
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
-export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "elevenlabs" | "whisper" | "soniox";
+export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox";
 
 const voiceProviderLabels: Record<VoiceProvider, string> = {
   onboard: "Local (Moonshine, solo inglés)",
   "onboard-whisper": "Local (Whisper base, español, rápido)",
   "onboard-whisper-small": "Local (Whisper small, español, mayor precisión)",
+  "onboard-whisper-medium": "Local (Whisper medium, español, más espera)",
   elevenlabs: "ElevenLabs",
   whisper: "OpenAI (Whisper)",
   soniox: "Soniox",
@@ -737,7 +738,7 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   label: "Reconocimiento de voz",
   storageKey: "voice.provider",
   defaultValue: "onboard-whisper",
-  values: ["onboard", "onboard-whisper", "onboard-whisper-small", "elevenlabs", "whisper", "soniox"],
+  values: ["onboard", "onboard-whisper", "onboard-whisper-small", "onboard-whisper-medium", "elevenlabs", "whisper", "soniox"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
     if (value === "elevenlabs") return elevenLabsApiKeySetting.get().trim().length === 0;
@@ -745,7 +746,7 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
     if (value === "soniox") return sonioxApiKeySetting.get().trim().length === 0;
     return false;
   },
-  description: "Para español, descarga Whisper base (rápido) o Whisper small (mayor precisión, más espera) y selecciona el proveedor correspondiente. El audio se transcribe en el móvil. Moonshine solo reconoce inglés. Los proveedores en la nube necesitan una clave API.",
+  description: "Para español, descarga Whisper base (rápido), small (mayor precisión) o medium (más espera) y selecciona el proveedor correspondiente. El audio se transcribe en el móvil; Hey Even sigue detectándose en el firmware antes de esta frase. Moonshine solo reconoce inglés. Los proveedores en la nube necesitan una clave API.",
 });
 
 const wakeWordActionLabels: Record<WakeWordAction, string> = {

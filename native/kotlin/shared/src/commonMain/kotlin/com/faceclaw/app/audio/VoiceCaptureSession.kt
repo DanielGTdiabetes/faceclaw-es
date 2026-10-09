@@ -118,6 +118,7 @@ class VoiceCaptureSession(
             when (kind) {
                 "whisper" -> VoiceModelKind.WHISPER
                 "whisper-small" -> VoiceModelKind.WHISPER_SMALL
+                "whisper-medium" -> VoiceModelKind.WHISPER_MEDIUM
                 else -> VoiceModelKind.MOONSHINE
             }
     }

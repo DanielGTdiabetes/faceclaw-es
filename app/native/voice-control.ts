@@ -33,7 +33,7 @@ export type VoiceControlState = {
 // family, not with "onboard-whisper" below, which is the on-device sherpa-onnx
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "elevenlabs" | "whisper" | "soniox";
+export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
@@ -425,8 +425,9 @@ export class FaceclawVoiceControlBridge {
     this.cloudClient = null;
     this.started = true;
     // Which on-device model to load; a no-op setter for every provider except
-    // "onboard-whisper" (FaceclawVoiceController defaults to Moonshine).
+    // the three explicit Whisper choices (FaceclawVoiceController defaults to Moonshine).
     this.controller?.setOnboardModelKind(
+      options.provider === "onboard-whisper-medium" ? "whisper-medium" :
       options.provider === "onboard-whisper-small" ? "whisper-small" :
       options.provider === "onboard-whisper" ? "whisper" : "moonshine",
     );
@@ -441,7 +442,7 @@ export class FaceclawVoiceControlBridge {
    * than failing the capture outright.
    */
   private createCloudClient(options: PushToTalkOptions): CloudSttClient | null {
-    if (options.provider === "onboard" || options.provider === "onboard-whisper" || options.provider === "onboard-whisper-small") return null;
+    if (options.provider === "onboard" || options.provider === "onboard-whisper" || options.provider === "onboard-whisper-small" || options.provider === "onboard-whisper-medium") return null;
     const sttOptions = {
       apiKey: "",
       onTranscript: (event: CloudSttTranscriptEvent) =>

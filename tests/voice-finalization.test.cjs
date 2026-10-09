@@ -157,7 +157,7 @@ test('cloud fallback and a synchronous final still send exactly once', () => {
   }
 });
 
-for (const [provider, modelKind] of [['onboard-whisper', 'whisper'], ['onboard-whisper-small', 'whisper-small']]) {
+for (const [provider, modelKind] of [['onboard-whisper', 'whisper'], ['onboard-whisper-small', 'whisper-small'], ['onboard-whisper-medium', 'whisper-medium']]) {
 test(`${provider}: native completion follows the final and is capture-specific`, async () => {
   let controller;
   class Controller {

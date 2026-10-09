@@ -250,8 +250,8 @@ class VoiceCaptureSessionTest {
     }
 
     @Test
-    fun bothWhisperModelsDecodeOnceAtEndAndSkipSilence() {
-        for (model in listOf("whisper", "whisper-small")) {
+    fun allWhisperModelsDecodeOnceAtEndAndSkipSilence() {
+        for (model in listOf("whisper", "whisper-small", "whisper-medium")) {
             for (amplitude in listOf(0, 3000)) {
                 val platform = ShiftedPlatform(testPlatform())
                 val mic = ScriptedMic(List(40) { amplitude }) { platform.offsetMs += 1000 }

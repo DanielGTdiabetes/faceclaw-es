@@ -127,6 +127,7 @@ function settingsSections(): SettingsSection[] {
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-es"),
         asrModelMenuItem("whisper-small-es"),
+        asrModelMenuItem("whisper-medium-es"),
       ],
     },
     {
