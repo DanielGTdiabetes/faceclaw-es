@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-10-09T18:16:02.2195750+02:00",
+  "completedAt": "2026-10-09T20:33:32+02:00",
+  "state": "complete",
+  "completed": true,
+  "interruptionReason": null,
+  "previousStateNote": "La primera versión de este archivo (18:16) quedó incompleta sin mediciones porque Faceclaw estaba en primer plano; se reanudó tras comprobar OFF/drenaje.",
+  "winner": null,
+  "finalist": null,
+  "keptConfiguration": "CPU/4 hilos (producción)",
+  "conclusion": "Medium CPU no sostiene ref-6-3 (p95 ~15 s frente a <3 s); 1 hilo: -25% p95 en piloto de corpus, empate en realtime, +25% en sostenido. Sin promoción.",
+  "runs": [
+    "medium-pilot",
+    "medium-baseline-corpus",
+    "medium-realtime-abba",
+    "medium-sustained-abba"
+  ],
+  "measurementsCsv": "measurements.csv",
+  "report": "notes/resultado-luna-medium-pixel-2026-10-09.md",
+  "corpus": "público/sintético; sin datos de sesión de Faceclaw"
+}

@@ -1,0 +1,634 @@
+{
+ "kind": "pixel-bench (real decoder on device)",
+ "options": {
+  "mode": "corpus",
+  "models": [
+   "whisper-medium-es"
+  ],
+  "threads": [
+   1,
+   2,
+   4,
+   6
+  ],
+  "providers": [
+   "cpu"
+  ],
+  "tails": [
+   0
+  ],
+  "policies": [
+   "ref-6-3"
+  ],
+  "conditioning": [
+   "on"
+  ],
+  "language": "auto",
+  "segmentMs": 6000,
+  "repeat": 3,
+  "warmup": 1,
+  "kinds": [
+   "speech",
+   "stream"
+  ],
+  "minutes": 10,
+  "rounds": 1,
+  "cooldownSec": 30,
+  "recordText": true
+ },
+ "device": {
+  "manufacturer": "Google",
+  "model": "Pixel 10 Pro Fold",
+  "device": "rango",
+  "socManufacturer": "Google",
+  "socModel": "Tensor G5",
+  "android": "17",
+  "sdk": 37,
+  "securityPatch": "2026-09-05",
+  "fingerprint": "google\/rango\/rango:17\/CP3A.260905.009\/16091614:user\/release-keys",
+  "abis": [
+   "arm64-v8a"
+  ],
+  "cpus": 8,
+  "cpuMaxKHz": [
+   2246000,
+   2246000,
+   3052000,
+   3052000,
+   3052000,
+   3052000,
+   3052000,
+   3782000
+  ],
+  "vm": "2.1.0",
+  "benchCommit": "342154c74a66",
+  "sherpaOnnx": "1.13.0",
+  "sherpaLibraries": "libonnxruntime.so=4d2318b3849abb8862133d3068fc7e807ed8b2671cc6d83657fff2fcb9e1caad;libsherpa-onnx-jni.so=290a2c18e7aa6214879abc7e177b25326b17771215c14b8cb5ebe61c46ca8253",
+  "totalMemMb": 15575,
+  "thermal": {
+   "thermalStatus": 0,
+   "headroom10s": 0.6361862421035767,
+   "batteryTempC": 32.5,
+   "batteryLevel": 100,
+   "plugged": 2,
+   "batteryCurrentUa": -135416,
+   "chargeCounterUah": 4809166,
+   "interactive": true,
+   "elapsedMs": 36538237
+  }
+ },
+ "corpusManifestSha256": "e86ab7fc7e1ed4c1aa07373861ebc0b1b554725b986efaf1d5c400abba25dd26",
+ "cases": [
+  {
+   "model": "whisper-medium-es",
+   "runtime": "threads=1;provider=cpu;tail=default",
+   "thermalBefore": {
+    "thermalStatus": 0,
+    "headroom10s": 0.6358664035797119,
+    "batteryTempC": 32.5,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -2082,
+    "chargeCounterUah": 4809166,
+    "interactive": true,
+    "elapsedMs": 36568256
+   },
+   "verifyMs": 597,
+   "loadMs": 3929,
+   "memoryAfterLoad": {
+    "totalPssKb": 1104167,
+    "nativeHeapKb": 996378,
+    "vmRssKb": 1197672,
+    "vmHwmKb": 1372492
+   },
+   "effectiveProvider": "cpu",
+   "warmupMs": [
+    5925
+   ],
+   "conditioning_on": {
+    "decodes": 27,
+    "audioMs": 144600,
+    "decodeP50Ms": 8492,
+    "decodeP95Ms": 11335,
+    "decodeMaxMs": 11366,
+    "rtf": 1.454536652835408,
+    "rejections": {
+     "NONE": 7,
+     "LANGUAGE": 2
+    },
+    "unstableRepetitions": 0,
+    "wer": {
+     "es": 0.1111111111111111,
+     "ca": 0.05263157894736842
+    },
+    "cer": {
+     "es": 0.023255813953488372,
+     "ca": 0.0743801652892562
+    },
+    "nonSpeechWordsDelivered": 62,
+    "nonSpeechWordsUnfiltered": 64,
+    "fixtures": [
+     {
+      "id": "es-fleurs-00",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE"
+      ],
+      "detected": [
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 9,
+      "hypWordsUnfiltered": 9,
+      "hypothesis": "En cuatro años es el quinto Cep de martelli."
+     },
+     {
+      "id": "ca-fleurs-00",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "pl"
+      ],
+      "refWords": 19,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 20,
+      "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall. Normalment amb experiència..."
+     },
+     {
+      "id": "stream-level-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 64,
+      "wordErrors": 24,
+      "insertions": 6,
+      "deletions": 8,
+      "hypWords": 62,
+      "hypWordsUnfiltered": 64,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y y de mediana edad. con barcas de seguridad que permiten que el cuero del estivo se desprenda de su estructura este es un jinete que ya le he pedido que lo hace otra vez"
+     }
+    ]
+   },
+   "thermalAfter": {
+    "thermalStatus": 0,
+    "headroom10s": 0.7939000725746155,
+    "batteryTempC": 35.8,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -62500,
+    "chargeCounterUah": 4790833,
+    "interactive": true,
+    "elapsedMs": 36789734
+   },
+   "memoryAfter": {
+    "totalPssKb": 127141,
+    "nativeHeapKb": 17379,
+    "vmRssKb": 220332,
+    "vmHwmKb": 2318692
+   }
+  },
+  {
+   "model": "whisper-medium-es",
+   "runtime": "threads=2;provider=cpu;tail=default",
+   "thermalBefore": {
+    "thermalStatus": 0,
+    "headroom10s": 0.7837517857551575,
+    "batteryTempC": 36.2,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -1823,
+    "chargeCounterUah": 4790833,
+    "interactive": true,
+    "elapsedMs": 36819767
+   },
+   "verifyMs": 986,
+   "loadMs": 4369,
+   "memoryAfterLoad": {
+    "totalPssKb": 1100060,
+    "nativeHeapKb": 996594,
+    "vmRssKb": 1193268,
+    "vmHwmKb": 2318692
+   },
+   "effectiveProvider": "cpu",
+   "warmupMs": [
+    5522
+   ],
+   "conditioning_on": {
+    "decodes": 27,
+    "audioMs": 144600,
+    "decodeP50Ms": 8547,
+    "decodeP95Ms": 13552,
+    "decodeMaxMs": 13827,
+    "rtf": 1.6141632088520055,
+    "rejections": {
+     "NONE": 7,
+     "LANGUAGE": 2
+    },
+    "unstableRepetitions": 0,
+    "wer": {
+     "es": 0.1111111111111111,
+     "ca": 0.05263157894736842
+    },
+    "cer": {
+     "es": 0.023255813953488372,
+     "ca": 0.0743801652892562
+    },
+    "nonSpeechWordsDelivered": 62,
+    "nonSpeechWordsUnfiltered": 64,
+    "fixtures": [
+     {
+      "id": "es-fleurs-00",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE"
+      ],
+      "detected": [
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 9,
+      "hypWordsUnfiltered": 9,
+      "hypothesis": "En cuatro años es el quinto Cep de martelli."
+     },
+     {
+      "id": "ca-fleurs-00",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "pl"
+      ],
+      "refWords": 19,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 20,
+      "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall. Normalment amb experiència..."
+     },
+     {
+      "id": "stream-level-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 64,
+      "wordErrors": 24,
+      "insertions": 6,
+      "deletions": 8,
+      "hypWords": 62,
+      "hypWordsUnfiltered": 64,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y y de mediana edad. con barcas de seguridad que permiten que el cuero del estivo se desprenda de su estructura este es un jinete que ya le he pedido que lo hace otra vez"
+     }
+    ]
+   },
+   "thermalAfter": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8567479252815247,
+    "batteryTempC": 37.2,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -13281,
+    "chargeCounterUah": 4785833,
+    "interactive": true,
+    "elapsedMs": 37064737
+   },
+   "memoryAfter": {
+    "totalPssKb": 127975,
+    "nativeHeapKb": 17304,
+    "vmRssKb": 219388,
+    "vmHwmKb": 2322244
+   }
+  },
+  {
+   "model": "whisper-medium-es",
+   "runtime": "threads=4;provider=cpu;tail=default",
+   "thermalBefore": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8421326875686646,
+    "batteryTempC": 37.2,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": 1302,
+    "chargeCounterUah": 4785833,
+    "interactive": true,
+    "elapsedMs": 37094781
+   },
+   "verifyMs": 1401,
+   "loadMs": 6218,
+   "memoryAfterLoad": {
+    "totalPssKb": 1098391,
+    "nativeHeapKb": 996866,
+    "vmRssKb": 1189804,
+    "vmHwmKb": 2322244
+   },
+   "effectiveProvider": "cpu",
+   "warmupMs": [
+    5512
+   ],
+   "conditioning_on": {
+    "decodes": 27,
+    "audioMs": 144600,
+    "decodeP50Ms": 11114,
+    "decodeP95Ms": 15021,
+    "decodeMaxMs": 15649,
+    "rtf": 1.849253112033195,
+    "rejections": {
+     "NONE": 7,
+     "LANGUAGE": 2
+    },
+    "unstableRepetitions": 0,
+    "wer": {
+     "es": 0.1111111111111111,
+     "ca": 0.05263157894736842
+    },
+    "cer": {
+     "es": 0.023255813953488372,
+     "ca": 0.0743801652892562
+    },
+    "nonSpeechWordsDelivered": 62,
+    "nonSpeechWordsUnfiltered": 64,
+    "fixtures": [
+     {
+      "id": "es-fleurs-00",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE"
+      ],
+      "detected": [
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 9,
+      "hypWordsUnfiltered": 9,
+      "hypothesis": "En cuatro años es el quinto Cep de martelli."
+     },
+     {
+      "id": "ca-fleurs-00",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "pl"
+      ],
+      "refWords": 19,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 20,
+      "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall. Normalment amb experiència..."
+     },
+     {
+      "id": "stream-level-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 64,
+      "wordErrors": 24,
+      "insertions": 6,
+      "deletions": 8,
+      "hypWords": 62,
+      "hypWordsUnfiltered": 64,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y y de mediana edad. con barcas de seguridad que permiten que el cuero del estivo se desprenda de su estructura este es un jinete que ya le he pedido que lo hace otra vez"
+     }
+    ]
+   },
+   "thermalAfter": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8870142698287964,
+    "batteryTempC": 38.5,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -1823,
+    "chargeCounterUah": 4780000,
+    "interactive": true,
+    "elapsedMs": 37376344
+   },
+   "memoryAfter": {
+    "totalPssKb": 131166,
+    "nativeHeapKb": 17375,
+    "vmRssKb": 221888,
+    "vmHwmKb": 2322360
+   }
+  },
+  {
+   "model": "whisper-medium-es",
+   "runtime": "threads=6;provider=cpu;tail=default",
+   "thermalBefore": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8763867616653442,
+    "batteryTempC": 38.5,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -781,
+    "chargeCounterUah": 4780000,
+    "interactive": true,
+    "elapsedMs": 37406428
+   },
+   "verifyMs": 1780,
+   "loadMs": 9066,
+   "memoryAfterLoad": {
+    "totalPssKb": 1098678,
+    "nativeHeapKb": 997117,
+    "vmRssKb": 1189404,
+    "vmHwmKb": 2322360
+   },
+   "effectiveProvider": "cpu",
+   "warmupMs": [
+    6219
+   ],
+   "conditioning_on": {
+    "decodes": 27,
+    "audioMs": 144600,
+    "decodeP50Ms": 12642,
+    "decodeP95Ms": 17843,
+    "decodeMaxMs": 21566,
+    "rtf": 2.3742185338865838,
+    "rejections": {
+     "NONE": 7,
+     "LANGUAGE": 2
+    },
+    "unstableRepetitions": 0,
+    "wer": {
+     "es": 0.1111111111111111,
+     "ca": 0.05263157894736842
+    },
+    "cer": {
+     "es": 0.023255813953488372,
+     "ca": 0.0743801652892562
+    },
+    "nonSpeechWordsDelivered": 62,
+    "nonSpeechWordsUnfiltered": 64,
+    "fixtures": [
+     {
+      "id": "es-fleurs-00",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE"
+      ],
+      "detected": [
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 9,
+      "hypWordsUnfiltered": 9,
+      "hypothesis": "En cuatro años es el quinto Cep de martelli."
+     },
+     {
+      "id": "ca-fleurs-00",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "pl"
+      ],
+      "refWords": 19,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 20,
+      "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall. Normalment amb experiència..."
+     },
+     {
+      "id": "stream-level-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 64,
+      "wordErrors": 24,
+      "insertions": 6,
+      "deletions": 8,
+      "hypWords": 62,
+      "hypWordsUnfiltered": 64,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y y de mediana edad. con barcas de seguridad que permiten que el cuero del estivo se desprenda de su estructura este es un jinete que ya le he pedido que lo hace otra vez"
+     }
+    ]
+   },
+   "thermalAfter": {
+    "thermalStatus": 1,
+    "headroom10s": 0.9020864963531494,
+    "batteryTempC": 38.5,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -9634,
+    "chargeCounterUah": 4778333,
+    "interactive": true,
+    "elapsedMs": 37767924
+   },
+   "memoryAfter": {
+    "totalPssKb": 125512,
+    "nativeHeapKb": 17310,
+    "vmRssKb": 215644,
+    "vmHwmKb": 2322360
+   }
+  }
+ ],
+ "deviceAfter": {
+  "thermalStatus": 1,
+  "headroom10s": 0.9020864963531494,
+  "batteryTempC": 38.5,
+  "batteryLevel": 100,
+  "plugged": 2,
+  "batteryCurrentUa": -9634,
+  "chargeCounterUah": 4778333,
+  "interactive": true,
+  "elapsedMs": 37767981
+ }
+}

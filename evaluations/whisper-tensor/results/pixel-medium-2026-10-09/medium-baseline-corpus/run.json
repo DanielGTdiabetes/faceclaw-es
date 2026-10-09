@@ -1,0 +1,719 @@
+{
+ "kind": "pixel-bench (real decoder on device)",
+ "options": {
+  "mode": "corpus",
+  "models": [
+   "whisper-medium-es"
+  ],
+  "threads": [
+   4
+  ],
+  "providers": [
+   "cpu"
+  ],
+  "tails": [
+   0
+  ],
+  "policies": [
+   "ref-6-3"
+  ],
+  "conditioning": [
+   "on"
+  ],
+  "language": "auto",
+  "segmentMs": 6000,
+  "repeat": 3,
+  "warmup": 2,
+  "kinds": [
+   "speech",
+   "silence",
+   "noise",
+   "stream"
+  ],
+  "minutes": 10,
+  "rounds": 1,
+  "cooldownSec": 120,
+  "recordText": true
+ },
+ "device": {
+  "manufacturer": "Google",
+  "model": "Pixel 10 Pro Fold",
+  "device": "rango",
+  "socManufacturer": "Google",
+  "socModel": "Tensor G5",
+  "android": "17",
+  "sdk": 37,
+  "securityPatch": "2026-09-05",
+  "fingerprint": "google\/rango\/rango:17\/CP3A.260905.009\/16091614:user\/release-keys",
+  "abis": [
+   "arm64-v8a"
+  ],
+  "cpus": 8,
+  "cpuMaxKHz": [
+   2246000,
+   2246000,
+   3052000,
+   3052000,
+   3052000,
+   3052000,
+   3052000,
+   3782000
+  ],
+  "vm": "2.1.0",
+  "benchCommit": "342154c74a66",
+  "sherpaOnnx": "1.13.0",
+  "sherpaLibraries": "libonnxruntime.so=4d2318b3849abb8862133d3068fc7e807ed8b2671cc6d83657fff2fcb9e1caad;libsherpa-onnx-jni.so=290a2c18e7aa6214879abc7e177b25326b17771215c14b8cb5ebe61c46ca8253",
+  "totalMemMb": 15575,
+  "thermal": {
+   "thermalStatus": 1,
+   "headroom10s": 0.8492412567138672,
+   "batteryTempC": 38.5,
+   "batteryLevel": 100,
+   "plugged": 2,
+   "batteryCurrentUa": -994009,
+   "chargeCounterUah": 4778333,
+   "interactive": true,
+   "elapsedMs": 37842767
+  }
+ },
+ "corpusManifestSha256": "e86ab7fc7e1ed4c1aa07373861ebc0b1b554725b986efaf1d5c400abba25dd26",
+ "cases": [
+  {
+   "model": "whisper-medium-es",
+   "runtime": "threads=4;provider=cpu;tail=default",
+   "thermalBefore": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8011245727539062,
+    "batteryTempC": 38.5,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": -782,
+    "chargeCounterUah": 4778333,
+    "interactive": true,
+    "elapsedMs": 37962928
+   },
+   "verifyMs": 1511,
+   "loadMs": 5895,
+   "memoryAfterLoad": {
+    "totalPssKb": 1113488,
+    "nativeHeapKb": 996761,
+    "vmRssKb": 1203564,
+    "vmHwmKb": 1379632
+   },
+   "effectiveProvider": "cpu",
+   "warmupMs": [
+    4311,
+    4357
+   ],
+   "conditioning_on": {
+    "decodes": 258,
+    "audioMs": 1372449,
+    "decodeP50Ms": 10392,
+    "decodeP95Ms": 17313,
+    "decodeMaxMs": 19389,
+    "rtf": 1.9499041494438045,
+    "rejections": {
+     "NONE": 70,
+     "LANGUAGE": 16
+    },
+    "unstableRepetitions": 0,
+    "wer": {
+     "es": 0.14124293785310735,
+     "ca": 0.20588235294117646
+    },
+    "cer": {
+     "es": 0.08466603951081844,
+     "ca": 0.1142578125
+    },
+    "nonSpeechWordsDelivered": 425,
+    "nonSpeechWordsUnfiltered": 477,
+    "fixtures": [
+     {
+      "id": "es-fleurs-00",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE"
+      ],
+      "detected": [
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 9,
+      "hypWordsUnfiltered": 9,
+      "hypothesis": "En cuatro años es el quinto Cep de martelli."
+     },
+     {
+      "id": "es-fleurs-01",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es"
+      ],
+      "refWords": 26,
+      "wordErrors": 2,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 25,
+      "hypWordsUnfiltered": 25,
+      "hypothesis": "Al pasar el tiempo, a medida que la incipiente población se va adaptando a... entorno comienza a asemejarse cada vez menos a la otra población"
+     },
+     {
+      "id": "es-fleurs-02",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es"
+      ],
+      "refWords": 11,
+      "wordErrors": 0,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 11,
+      "hypWordsUnfiltered": 11,
+      "hypothesis": "Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados."
+     },
+     {
+      "id": "es-fleurs-03",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 31,
+      "wordErrors": 3,
+      "insertions": 1,
+      "deletions": 0,
+      "hypWords": 32,
+      "hypWordsUnfiltered": 32,
+      "hypothesis": "Podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientales y o incluso podemos volvernos activistas y luchar para aminorar en alguna minoría el sufrimiento futuro."
+     },
+     {
+      "id": "es-fleurs-04",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es"
+      ],
+      "refWords": 9,
+      "wordErrors": 2,
+      "insertions": 1,
+      "deletions": 0,
+      "hypWords": 10,
+      "hypWordsUnfiltered": 10,
+      "hypothesis": "El cristianismo ortodoxo es la religión mayoritaria en Montero. todavía"
+     },
+     {
+      "id": "es-fleurs-05",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es"
+      ],
+      "refWords": 27,
+      "wordErrors": 4,
+      "insertions": 3,
+      "deletions": 0,
+      "hypWords": 30,
+      "hypWordsUnfiltered": 30,
+      "hypothesis": "En esta lanzadera de traslado dinámico todos los que están de algún modo conectados con un sistema de traslado dinámico basado en el uso de automóviles privados y lo sostienen."
+     },
+     {
+      "id": "es-fleurs-06",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 32,
+      "wordErrors": 5,
+      "insertions": 1,
+      "deletions": 1,
+      "hypWords": 32,
+      "hypWordsUnfiltered": 32,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEU ascienden a cerca de 400 mil, lo que la hace en la enfermedad neurológica más frecuente entre adultos jóvenes y de mediana edad."
+     },
+     {
+      "id": "es-fleurs-07",
+      "kind": "speech",
+      "language": "es",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 32,
+      "wordErrors": 8,
+      "insertions": 5,
+      "deletions": 0,
+      "hypWords": 37,
+      "hypWordsUnfiltered": 37,
+      "hypothesis": "Ademas existen monturas, en especial las inglesas, con barras de seguridad que pertenecen al barco. permite que el cuero del estivo se desprenda de su estructura si un jinete que sale despedido tira la vuelta hacia atrás."
+     },
+     {
+      "id": "ca-fleurs-00",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "pl"
+      ],
+      "refWords": 19,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 1,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 20,
+      "hypothesis": "Un curs normalment cobrirà tots els problemes que s'han tractat aquí en millor detall. Normalment amb experiència..."
+     },
+     {
+      "id": "ca-fleurs-01",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "ca",
+       "ca"
+      ],
+      "refWords": 25,
+      "wordErrors": 6,
+      "insertions": 2,
+      "deletions": 0,
+      "hypWords": 27,
+      "hypWordsUnfiltered": 27,
+      "hypothesis": "Un antic policia filipí ha mantingut com a hostatges turistes de Hong Kong per seguretat. per estar al seu autobús a Manila, la capità de les Filipines."
+     },
+     {
+      "id": "ca-fleurs-02",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "ca",
+       "ca"
+      ],
+      "refWords": 21,
+      "wordErrors": 4,
+      "insertions": 3,
+      "deletions": 0,
+      "hypWords": 24,
+      "hypWordsUnfiltered": 24,
+      "hypothesis": "No sé si us n'adoneu, però la majoria de vents d'Amèrica Central arriben a la Xina. en aquest país lliures d'impostos."
+     },
+     {
+      "id": "ca-fleurs-03",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "ca",
+       "ca",
+       "nn"
+      ],
+      "refWords": 20,
+      "wordErrors": 2,
+      "insertions": 0,
+      "deletions": 2,
+      "hypWords": 18,
+      "hypWordsUnfiltered": 22,
+      "hypothesis": "La NHK també ha informat que la central nuclear de a la prefectura de Niigata funcionava amb normalitat."
+     },
+     {
+      "id": "ca-fleurs-04",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "ca",
+       "ca",
+       "ca"
+      ],
+      "refWords": 22,
+      "wordErrors": 1,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 22,
+      "hypWordsUnfiltered": 22,
+      "hypothesis": "Les qualitats que determinen una subcultura com a diferent poden ser lingüístiques, Estètiques, religioses, polítiques, sexuals, geogràfiques... o una combinació de factors."
+     },
+     {
+      "id": "ca-fleurs-05",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "es",
+       "ca",
+       "ne"
+      ],
+      "refWords": 27,
+      "wordErrors": 10,
+      "insertions": 2,
+      "deletions": 1,
+      "hypWords": 28,
+      "hypWordsUnfiltered": 28,
+      "hypothesis": "La parte septentrional o sentinel range de las montañas mesólicas de les altes de l'Antàrtida. El massís Vinson, amb un màxim de 4.892 metres del món,"
+     },
+     {
+      "id": "ca-fleurs-06",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "ca",
+       "ca"
+      ],
+      "refWords": 23,
+      "wordErrors": 1,
+      "insertions": 1,
+      "deletions": 0,
+      "hypWords": 24,
+      "hypWordsUnfiltered": 24,
+      "hypothesis": "Les consideracions que es presenten solen ser breus, generals i massa simplificades comparades amb la informació més detallada. era disponible a qualsevol altre lloc."
+     },
+     {
+      "id": "ca-fleurs-07",
+      "kind": "speech",
+      "language": "ca",
+      "rejections": [
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "es",
+       "es"
+      ],
+      "refWords": 13,
+      "wordErrors": 10,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 13,
+      "hypWordsUnfiltered": 13,
+      "hypothesis": "Los científicos afirman que la explosión causada por la colisión fue descomodada. comunal."
+     },
+     {
+      "id": "silence-digital-10s",
+      "kind": "silence",
+      "language": "",
+      "rejections": [
+       "LANGUAGE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "en",
+       "en"
+      ],
+      "refWords": 0,
+      "wordErrors": 0,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 0,
+      "hypWordsUnfiltered": 2,
+      "hypothesis": ""
+     },
+     {
+      "id": "noise-white-60dbfs-10s",
+      "kind": "noise",
+      "language": "",
+      "rejections": [
+       "LANGUAGE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "nn",
+       "nn"
+      ],
+      "refWords": 0,
+      "wordErrors": 0,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 0,
+      "hypWordsUnfiltered": 13,
+      "hypothesis": ""
+     },
+     {
+      "id": "noise-pink-45dbfs-10s",
+      "kind": "noise",
+      "language": "",
+      "rejections": [
+       "LANGUAGE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "nn",
+       "nn"
+      ],
+      "refWords": 0,
+      "wordErrors": 0,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 0,
+      "hypWordsUnfiltered": 16,
+      "hypothesis": ""
+     },
+     {
+      "id": "noise-hum-40dbfs-10s",
+      "kind": "noise",
+      "language": "",
+      "rejections": [
+       "LANGUAGE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "en",
+       "en"
+      ],
+      "refWords": 0,
+      "wordErrors": 0,
+      "insertions": 0,
+      "deletions": 0,
+      "hypWords": 0,
+      "hypWordsUnfiltered": 2,
+      "hypothesis": ""
+     },
+     {
+      "id": "stream-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "nn",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 113,
+      "wordErrors": 12,
+      "insertions": 4,
+      "deletions": 4,
+      "hypWords": 113,
+      "hypWordsUnfiltered": 115,
+      "hypothesis": "En 4 años es el quinto Cep de Martelli. Al pasar el tiempo, a medida que la incipiente población se va adaptando al nuevo entorno, comienza a asemejarse cada vez menos a la otra población Tampoco estaba facultado para anular leyes fiscales o aranceles entre estados. podemos comenzar a llevar una vida más amigable con el planeta, formar parte de movimientos ambientalistas o incluso podemos volvernos a activistas y luchar para aminorar en alguna minoría el sufrimiento futuro. es la religión mayoritaria en Moldavia. Esta lanzadera de traslado dinámico, todos los que están de algún modo conectados con un sistema de transporte basado en él. el uso de automóviles privados que lo sostienen."
+     },
+     {
+      "id": "stream-ca",
+      "kind": "stream",
+      "language": "ca",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "LANGUAGE"
+      ],
+      "detected": [
+       "pt",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "ca",
+       "nn"
+      ],
+      "refWords": 134,
+      "wordErrors": 40,
+      "insertions": 18,
+      "deletions": 6,
+      "hypWords": 146,
+      "hypWordsUnfiltered": 160,
+      "hypothesis": "Normalment cobrirà tots els problemes que s'han tractat aquí en millor detall, normalment amb experiència pràctica. Un antic policia filipí ha mantingut com a hostatges de Hong Kong per segrestar el seu autobús a Manila, la capità de les Filipines. No sé si us n'adoneu, però la majoria de vents d'Amèrica Central que arriben a aquest país lliures d'impostos. NHK també ha informat que la central nuclear de Kashiwazaki, Kariwazaki, a la prefectura de Niigata funcionava amb normalitat. Les qualitats que determinen una subcultura com a diferent poden ser lingüística, de la humanitat, de la humanitat, de la humanitat, de la humanitat, de la humanitat, de la humanitat, de la humanitat, de o una combinació de factors. la part septentrional o Sentinel Range de les muntanyes més altes de la Màntàrtida. Vinson amb un màxim de 4.892 metres del món Vinson."
+     },
+     {
+      "id": "stream-level-es",
+      "kind": "stream",
+      "language": "es",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "es",
+       "es",
+       "es"
+      ],
+      "refWords": 64,
+      "wordErrors": 24,
+      "insertions": 6,
+      "deletions": 8,
+      "hypWords": 62,
+      "hypWordsUnfiltered": 64,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y y de mediana edad. con barcas de seguridad que permiten que el cuero del estivo se desprenda de su estructura este es un jinete que ya le he pedido que lo hace otra vez"
+     },
+     {
+      "id": "stream-mixed-es-ca",
+      "kind": "stream",
+      "language": "es+ca",
+      "rejections": [
+       "LANGUAGE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE",
+       "NONE"
+      ],
+      "detected": [
+       "en",
+       "es",
+       "es",
+       "ca",
+       "ca",
+       "es",
+       "es",
+       "es",
+       "ca"
+      ],
+      "refWords": 100,
+      "wordErrors": 22,
+      "insertions": 9,
+      "deletions": 5,
+      "hypWords": 104,
+      "hypWordsUnfiltered": 105,
+      "hypothesis": "Los casos registrados de esclerosis múltiples EM en EEUU ascienden a cerca de 400.000, lo que la hace la enfermedad neurológica más frecuente entre adultos jóvenes y i de mediana edat. Les consideracions que es presenten solen ser breus. General... i massa simplificades comparades amb la informació més detallada disponible a qualsevol altre lloc. Ademas existen monturas, en especial las inglesas con barras de seguridad que pueden ser usadas para montar el barco que permiten que el cuero del estivo se desprenda de su estructura si un jinete que sale despedido tira hacia atrás. l'explosió causada per la col·lisió fódes comunal."
+     }
+    ]
+   },
+   "thermalAfter": {
+    "thermalStatus": 1,
+    "headroom10s": 0.8716970086097717,
+    "batteryTempC": 39.3,
+    "batteryLevel": 100,
+    "plugged": 2,
+    "batteryCurrentUa": 4166,
+    "chargeCounterUah": 4756666,
+    "interactive": true,
+    "elapsedMs": 40656971
+   },
+   "memoryAfter": {
+    "totalPssKb": 129882,
+    "nativeHeapKb": 17542,
+    "vmRssKb": 215792,
+    "vmHwmKb": 2347608
+   }
+  }
+ ],
+ "deviceAfter": {
+  "thermalStatus": 1,
+  "headroom10s": 0.8716970086097717,
+  "batteryTempC": 39.3,
+  "batteryLevel": 100,
+  "plugged": 2,
+  "batteryCurrentUa": 4166,
+  "chargeCounterUah": 4756666,
+  "interactive": true,
+  "elapsedMs": 40657022
+ }
+}
