@@ -1,10 +1,36 @@
 # Whisper local en Pixel 10 Pro Fold: rendimiento, segmentación, whisper.cpp y TPU · 09-10-2026
 
 Autor: Claude Code, para revisión de Codex. Checkout aislado `E:\projects\faceclaw-es-whisper-bench`, rama
-`claude/whisper-perf-bench-2026-10-09`, base `6395abd`. **Nada integrado, desplegado, publicado ni enviado con push.**
+`claude/whisper-perf-bench-2026-10-09`, base `6395abd`. Sin push. Las secciones 1–9 describen la candidata `c4bb5bf`
+tal como se midió; la sección «Actualización» recoge las correcciones de la revisión de Codex y la instalación.
 Faceclaw, sus ajustes, su perfil, Hermes, firmware y servicios no se han modificado. No se usó el micrófono.
 Mediciones en el Pixel autorizadas por el usuario en esta sesión («El otro hilo ya terminó…»), con el auxiliar
 `com.faceclaw.whisperbench`, que se retira al terminar (sección 9).
+
+## Actualización tras la revisión de Codex (09-10-2026, tarde)
+
+Revisión: `E:\projects\research\faceclaw-whisper-review-20261009\revision-codex.md`. Correcciones en el commit
+`a85b04a` de esta rama (sobre `c4bb5bf`). **Integrado e instalado como S2.6.12** sobre las fuentes vigentes de S2.6.11
+del checkout principal: ver `E:\projects\faceclaw-es\notes\whisper-s2.6.12-instalacion-2026-10-09.md`
+(APK `2cd955b1…`, reversión S2.6.11 `ed471aa3…`). La APK sin firmar `860ad86b…` de la sección 9 no contiene S2.6.11 y
+**no se instaló**.
+
+- **Cobertura y decoder fallido (P2):** `coveredAudioMs` cuenta ahora solo ventanas cuyo decoder volvió sin
+  excepción con la generación vigente; `attemptedAudioMs` conserva la unión de ventanas entregadas al decoder. El
+  anillo `decodeTimings()` guarda `[inicio, fin, ms, resultado]` (0 correcto, 1 fallo, 2 invalidado por OFF/reset/plazo).
+  Un rechazo por idioma es audio procesado (cubierto), no un fallo. Pruebas nuevas en `LocalWhisperPerformanceTest`.
+- **Anillo de 256 (P2):** la RAM de producción sigue acotada; `decodeTimings()` expone `first`. El banco recoge el
+  anillo cada 30 s y une por índice; si falta algún intento, p50/p95 y voz cubierta quedan nulos con
+  `timingsInvalidReason` en JSON, CSV y `SUMMARY.md`. Percentiles solo sobre intentos correctos de toda la ejecución.
+  Pruebas con 257 ventanas reales y con 380 sintéticas (19 min).
+- **Presentación:** los JSON históricos no se modifican. `summarize_pixel.py` muestra el WER del sostenido como «n/v» y
+  marca la cobertura antigua como «ventanas enviadas a inferencia»; `SUMMARY.md` regenerado; `test_summarize_pixel.py`.
+  Las secciones de resumen, 5.3, 5.4, 5.5 y 8 se han corregido: ocho frases y 177/170 palabras, márgenes heurísticos,
+  dos bloques de 5 min, cobertura temporal no son palabras, whisper.cpp/Vulkan sin factor extrapolado.
+- **Producción:** base pasa de 1 a 4 hilos. Small y medium en 4, CPU, padding por defecto y `ref-6-3`. Coalescencia,
+  XNNPACK y padding solo vía `startConfigured`, sin conectar a la app.
+- **Pruebas:** suite Kotlin 287 (286 correctas; falla solo la animación de reloj conocida, correcta aislada),
+  banco 6/6, resumidor 4/4, vectores 15/15. Las dos reproducciones de Codex dejan de cumplirse con el código corregido.
 
 ## Resumen
 
