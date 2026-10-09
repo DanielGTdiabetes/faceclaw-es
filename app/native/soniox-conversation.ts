@@ -115,6 +115,9 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   private transportFailure: SonioxTransportDiagnostics | undefined;
   private sessionSpeakers = new Set<string>();
   private summaryValue: SonioxSessionSummary | null = null;
+  /** Scalar native local-ASR diagnostics retained after OFF, never transcript/audio. */
+  private lastLocalSnapshot: LocalTranscriptionSnapshot | null = null;
+  private lastLocalFallback = false;
   private readonly identity: WearerIdentity;
   private readonly turnLog: ConversationTurns;
   private profileMatcher: ProfileSpeakerMatcher | null = null;
@@ -129,6 +132,10 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     if (this.mode !== "off") return false;
     this.language = language;
     this.maxMs = maxMs;
+    // A newly accepted start is a new diagnostics session: never blend its
+    // counters with the preceding local session retained after OFF.
+    this.lastLocalSnapshot = null;
+    this.lastLocalFallback = false;
     this.reset();
     this.summaryValue = null;
     this.ending = false;
@@ -243,7 +250,14 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       this.summaryValue = this.buildSummary();
     }
     this.generation++;
-    if (this.mode === "local") this.local.stop();
+    if (this.mode === "local") {
+      this.lastLocalFallback = this.stats.fallbacks > 0;
+      this.local.stop();
+      // Kotlin keeps only aggregate diagnostics while an invalidated decoder
+      // drains. Take the native snapshot after stop so worker/busy reflect the
+      // real drain, while LocalTranscription has already erased its text.
+      this.lastLocalSnapshot = cloneSnapshot(this.local.snapshot());
+    }
     this.closeSocket();
     this.mode = "off";
     this.profileMatcher = null;
@@ -266,6 +280,11 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       const local = this.local.snapshot();
       return { ...local, model: local.engine, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
         identity, turnsAvailable: this.stats.fallbacks === 0 && local.enabled && !!this.local.subscribeTurns };
+    }
+    if (this.mode === "off" && this.lastLocalSnapshot) {
+      return { ...this.lastLocalSnapshot, enabled: false,
+        model: this.lastLocalSnapshot.engine, engine: this.lastLocalFallback ? "local (sin red)" : "local", soniox: this.scalars(), identity,
+        turnsAvailable: false };
     }
     return {
       enabled: this.mode === "soniox", status: this.status, worker: this.mode === "soniox", busy: false,
@@ -522,4 +541,9 @@ function clip(text: string): string {
   const tail = text.slice(-MAX_TEXT_CHARS);
   const space = tail.indexOf(" ");
   return space >= 0 && space < 40 ? tail.slice(space + 1) : tail;
+}
+
+/** Copies scalar diagnostics so later native refreshes cannot mutate history. */
+function cloneSnapshot(snapshot: LocalTranscriptionSnapshot): LocalTranscriptionSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as LocalTranscriptionSnapshot;
 }

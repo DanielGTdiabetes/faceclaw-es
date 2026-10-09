@@ -5,16 +5,19 @@ const { SonioxConversationTranscription, SONIOX_MODEL } = require('../.test-buil
 function localPort() {
   const events = [];
   let text = '';
+  const emptyDiagnostics = () => ({ enabled: true, status: 'listo', worker: true, busy: false, inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 });
+  let diagnostics = emptyDiagnostics();
   return {
     events,
     setText(value) { text = value; },
-    start(language) { events.push(`start:${language}`); return true; },
+    setDiagnostics(value) { diagnostics = { ...diagnostics, ...value }; },
+    start(language) { diagnostics = emptyDiagnostics(); events.push(`start:${language}`); return true; },
     stop() { events.push('stop'); text = ''; },
     resetStream() { events.push('reset'); },
     setPhase() {},
     acceptNative() { events.push('pcm'); },
     text: () => text,
-    snapshot: () => ({ enabled: true, status: 'listo', worker: true, busy: false, inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 }),
+    snapshot: () => ({ ...diagnostics }),
   };
 }
 
@@ -22,9 +25,10 @@ function harness({ key = 'sk-test', engine = 'soniox' } = {}) {
   const local = localPort();
   const sockets = [];
   let now = 0, tick = null;
+  let engineMode = engine;
   const host = {
     apiKey: () => key,
-    engine: () => engine,
+    engine: () => engineMode,
     now: () => now,
     every(cb) { tick = cb; return () => { tick = null; }; },
     connect(url, listener) {
@@ -37,7 +41,7 @@ function harness({ key = 'sk-test', engine = 'soniox' } = {}) {
     },
   };
   const engineUnderTest = new SonioxConversationTranscription(local, host);
-  return { local, sockets, engine: engineUnderTest, advance(ms) { now += ms; tick?.(); }, hasTick: () => !!tick };
+  return { local, sockets, engine: engineUnderTest, setEngine(value) { engineMode = value; }, advance(ms) { now += ms; tick?.(); }, hasTick: () => !!tick };
 }
 
 const msg = (tokens, extra = {}) => JSON.stringify({ tokens, ...extra });
@@ -154,4 +158,42 @@ test('stop closes the stream gracefully, clears text and ignores late messages; 
   assert.equal(h.engine.text(), '');
   assert.deepEqual(h.local.events, []);
   assert.equal(h.engine.start('es'), true);
+});
+
+test('local aggregates and drain state remain readable after OFF without retaining text or reviving capture', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('es');
+  h.local.setText('texto que debe borrarse');
+  h.local.setDiagnostics({ engine: 'whisper-medium', status: 'inactivo', worker: true, busy: true,
+    inputBufferedBytes: 3200, accepted: 3, abstentions: 2, dropped: 1,
+    analysis: { pcmAudioMs: 4000, decodeCalls: 2, decodeTotalMs: 900 } });
+  h.engine.stop();
+  const afterOff = h.engine.snapshot();
+  assert.equal(h.engine.text(), '');
+  assert.deepEqual(h.local.events, ['start:es', 'stop']);
+  assert.deepEqual({ enabled: afterOff.enabled, engine: afterOff.engine, model: afterOff.model,
+    worker: afterOff.worker, busy: afterOff.busy, inputBufferedBytes: afterOff.inputBufferedBytes,
+    accepted: afterOff.accepted, abstentions: afterOff.abstentions, dropped: afterOff.dropped },
+  { enabled: false, engine: 'local', model: 'whisper-medium', worker: true, busy: true,
+    inputBufferedBytes: 3200, accepted: 3, abstentions: 2, dropped: 1 });
+  assert.equal(afterOff.analysis.decodeCalls, 2);
+  assert.equal(afterOff.soniox.sentMs, 0);
+  h.engine.acceptNative({}, 'posible voz');
+  assert.deepEqual(h.local.events, ['start:es', 'stop']);
+});
+
+test('a new local session or local-to-cloud transition clears retained local diagnostics', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('es');
+  h.local.setDiagnostics({ engine: 'whisper-medium', accepted: 7 });
+  h.engine.stop();
+  assert.equal(h.engine.snapshot().accepted, 7);
+  h.engine.start('es');
+  assert.equal(h.engine.snapshot().accepted, 0);
+  h.engine.stop();
+  h.local.setDiagnostics({ accepted: 9 });
+  h.setEngine('soniox');
+  h.engine.start('es'); h.sockets[0].listener.onOpen();
+  assert.equal(h.engine.snapshot().accepted, 0);
+  assert.equal(h.engine.snapshot().engine, 'soniox');
 });
