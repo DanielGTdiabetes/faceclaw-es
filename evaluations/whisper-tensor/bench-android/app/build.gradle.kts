@@ -74,7 +74,7 @@ val gitCommit: String = providers.exec {
     isIgnoreExitValue = true
 }.standardOutput.asText.get().trim().ifEmpty { "unknown" }
 val gitDirty: Boolean = providers.exec {
-    commandLine("git", "-C", repoRoot.path, "status", "--porcelain", "--", "native", "App_Resources", "evaluations/whisper-tensor")
+    commandLine("git", "-C", repoRoot.path, "status", "--porcelain", "--untracked-files=no", "--", "native", "App_Resources", "evaluations/whisper-tensor")
     isIgnoreExitValue = true
 }.standardOutput.asText.get().isNotBlank()
 
