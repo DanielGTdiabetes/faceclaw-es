@@ -121,6 +121,11 @@ class VoiceCaptureSession(
                 "whisper-medium" -> VoiceModelKind.WHISPER_MEDIUM
                 else -> VoiceModelKind.MOONSHINE
             }
+
+        /** Assistant-only CPU baseline; the Android adapter passes this to Sherpa's recognizer config. */
+        @JvmStatic
+        fun assistantTranscriberThreads(kind: VoiceModelKind): Int =
+            if (kind == VoiceModelKind.WHISPER_MEDIUM) 4 else 1
     }
 
     enum class Mode {

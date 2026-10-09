@@ -75,6 +75,18 @@ class FaceclawVoiceController(context: Context) {
     @Volatile
     private var communicator: FaceclawBleCommunicator? = null
 
+    private data class ModelFileFingerprint(
+        val path: String,
+        val exists: Boolean,
+        val bytes: Long,
+        val modifiedAt: Long,
+    )
+
+    // Hashing Whisper medium is deliberately not a per-intervention operation.
+    // A replacement changes this file fingerprint and therefore forces a new
+    // LocalWhisperModels.verified() before the recognizer can be loaded.
+    private val mediumVerification = FingerprintedVerificationCache<List<ModelFileFingerprint>>()
+
     private val transcriberCache = VoiceTranscriberCache(load = { kind ->
         val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
         Log.i(TAG, "Loading voice model " + kind)
@@ -82,7 +94,7 @@ class FaceclawVoiceController(context: Context) {
         // four-thread CPU baseline. Keep the established base/small defaults
         // unchanged until they have their own evidence.
         AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(
-            modelDir, kind, numThreads = if (kind == VoiceModelKind.WHISPER_MEDIUM) 4 else 1,
+            modelDir, kind, numThreads = VoiceCaptureSession.assistantTranscriberThreads(kind),
         ))
     })
 
@@ -294,21 +306,28 @@ class FaceclawVoiceController(context: Context) {
      * missing, i.e. the model still needs to be downloaded.
      */
     private fun findAsrModelDir(kind: VoiceModelKind): File? {
-        val whisperModel = when (kind) {
-            VoiceModelKind.WHISPER -> LocalWhisperModels.BASE
-            VoiceModelKind.WHISPER_SMALL -> LocalWhisperModels.SMALL
-            VoiceModelKind.WHISPER_MEDIUM -> LocalWhisperModels.MEDIUM
-            VoiceModelKind.MOONSHINE -> null
-        }
-        if (whisperModel != null) {
+        if (kind == VoiceModelKind.WHISPER_MEDIUM) {
             val root = File(appContext.filesDir, ASR_ROOT)
             // Reuse the downloaded Conversation model only when every
             // catalogue file matches its pinned digest. There is no cloud or
             // Moonshine fallback for a missing/corrupt selected Whisper model.
-            return if (LocalWhisperModels.verified(root, whisperModel)) File(root, whisperModel.directoryName) else null
+            val model = LocalWhisperModels.MEDIUM
+            val directory = File(root, model.directoryName)
+            val fingerprint = model.files.keys.sorted().map { name ->
+                val file = File(directory, name)
+                ModelFileFingerprint(file.absolutePath, file.isFile, file.length(), file.lastModified())
+            }
+            return if (mediumVerification.verify(fingerprint) { LocalWhisperModels.verified(root, model) }) directory else null
         }
-        val dirName = ASR_MODEL_DIR
+        val dirName = when (kind) {
+            VoiceModelKind.WHISPER -> "sherpa-onnx-whisper-base-es-int8"
+            VoiceModelKind.WHISPER_SMALL -> "sherpa-onnx-whisper-small-es-int8"
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_DIR
+            VoiceModelKind.WHISPER_MEDIUM -> return null
+        }
         val fileNames = when (kind) {
+            VoiceModelKind.WHISPER -> arrayOf("base-encoder.int8.onnx", "base-decoder.int8.onnx", "base-tokens.txt")
+            VoiceModelKind.WHISPER_SMALL -> arrayOf("small-encoder.int8.onnx", "small-decoder.int8.onnx", "small-tokens.txt")
             VoiceModelKind.MOONSHINE -> ASR_MODEL_FILES
             else -> return null
         }

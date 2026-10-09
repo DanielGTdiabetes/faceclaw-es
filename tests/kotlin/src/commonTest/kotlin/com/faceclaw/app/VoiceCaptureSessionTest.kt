@@ -66,6 +66,7 @@ class VoiceCaptureSessionTest {
         var packetListener: FaceclawAudioPacketListener? = null
         var g2Stops = 0
         val recordings = mutableListOf<ByteArray>()
+        val requestedModels = mutableListOf<VoiceModelKind>()
         override fun onSessionStarting() {}
         override fun isG2SessionReady(): Boolean = g2Ready
         override fun isG2AudioCaptureActive(): Boolean = packetListener != null
@@ -93,7 +94,10 @@ class VoiceCaptureSessionTest {
         }
         override fun openPhoneMic(): PcmAudioSource? = mic
         override fun hasTranscriberModel(kind: VoiceModelKind): Boolean = hasModel
-        override fun loadTranscriber(kind: VoiceModelKind): OfflineTranscriber = transcriber ?: error("no transcriber")
+        override fun loadTranscriber(kind: VoiceModelKind): OfflineTranscriber {
+            requestedModels.add(kind)
+            return transcriber ?: error("no transcriber")
+        }
         override fun speakerEmbedder(modelPath: String): SpeakerEmbedder = object : SpeakerEmbedder {
             override fun embed(pcm16le: ByteArray, sampleRate: Int): FloatArray? = embedding
             override fun release() {}
@@ -251,7 +255,12 @@ class VoiceCaptureSessionTest {
 
     @Test
     fun allWhisperModelsDecodeOnceAtEndAndSkipSilence() {
-        for (model in listOf("whisper", "whisper-small", "whisper-medium")) {
+        val models = listOf(
+            "whisper" to VoiceModelKind.WHISPER,
+            "whisper-small" to VoiceModelKind.WHISPER_SMALL,
+            "whisper-medium" to VoiceModelKind.WHISPER_MEDIUM,
+        )
+        for ((model, expectedKind) in models) {
             for (amplitude in listOf(0, 3000)) {
                 val platform = ShiftedPlatform(testPlatform())
                 val mic = ScriptedMic(List(40) { amplitude }) { platform.offsetMs += 1000 }
@@ -264,6 +273,7 @@ class VoiceCaptureSessionTest {
                 session.setOnboardModelKind(model)
                 session.start("onboard", 10)
                 assertTrue(events.stoppedLatch.await(10000))
+                assertEquals(listOf(expectedKind), host.requestedModels)
                 assertEquals(if (amplitude == 0) 0 else 1, transcriber.calls.size)
                 if (amplitude != 0) {
                     assertEquals<List<Pair<String?, Boolean>>>(listOf("avísame a las diez" to true), events.transcripts)
@@ -273,6 +283,14 @@ class VoiceCaptureSessionTest {
                 assertTrue(transcriber.released)
             }
         }
+    }
+
+    @Test
+    fun mediumModelKindAndAssistantCpuThreadBaselineAreExplicit() {
+        assertEquals(VoiceModelKind.WHISPER_MEDIUM, VoiceCaptureSession.parseModelKind("whisper-medium"))
+        assertEquals(4, VoiceCaptureSession.assistantTranscriberThreads(VoiceModelKind.WHISPER_MEDIUM))
+        assertEquals(1, VoiceCaptureSession.assistantTranscriberThreads(VoiceModelKind.WHISPER_SMALL))
+        assertEquals(1, VoiceCaptureSession.assistantTranscriberThreads(VoiceModelKind.MOONSHINE))
     }
 
     @Test
