@@ -56,7 +56,7 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
@@ -2137,6 +2137,8 @@ class DashboardController {
     if (enabled && !this.conversationDetector.snapshot().enabled) {
       if (this.hermesSelected && transcribe && participation !== "enrollment"
         && (conversationTextEngine() === "soniox" || options.manualConversation && options.optionalProfile)) {
+        const wantsDailyContext = !!options.manualConversation && conversationDailyContextSelected();
+        if (!assistantBridge.conversation.setDailyContextEnabled(wantsDailyContext) && wantsDailyContext) return;
         // Optional identity only for the manual ON that asked for it; diagnostics keep required identity.
         // Manual Hermes stays available for the full capture session; diagnostic sessions keep their budget.
         const armed = this.conversationHermes.begin(options.manualConversation ? null : 8,
@@ -2162,6 +2164,9 @@ class DashboardController {
     }
     if (this.conversationDetector.snapshot().enabled) return "";
     const withHermes = conversationUsesHermes();
+    if (withHermes && conversationDailyContextSelected() && !assistantBridge.conversation.supportsDailyContext()) {
+      return "La memoria de 24 h no está disponible. Conecta el servidor preparado o desactívala para iniciar.";
+    }
     const local = conversationTextEngine() === "local";
     if (withHermes && !assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
     if (!local && !sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";

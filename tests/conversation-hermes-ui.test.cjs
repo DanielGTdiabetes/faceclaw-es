@@ -620,9 +620,11 @@ function phoneHarness(f) {
   vm.runInNewContext(ts.transpileModule(`export class Manual { ${methods.map(m => m.getText(source)).join('\n')} }`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText, { module, exports: module.exports,
-    assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true } },
+    assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true,
+      supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {},
     conversationTextEngine: () => 'soniox', conversationUsesHermes: () => true,
+    conversationDailyContextSelected: () => false,
     conversationSessionOptions: () => ({ language: 'auto' }),
   });
   const owner = { ...f.controller,
@@ -643,13 +645,15 @@ function phoneHarness(f) {
     'g2/dashboard-controller': { dashboardController: { ...owner,
       conversationDetector: { ...owner.conversationDetector, subscribe: tracked('detector') },
       subscribe: tracked('controller'), onConversationHermesChange: (fn) => { const off = f.controller.onConversationHermesChange(fn); return () => { off(); unsubscribed.push('hermes'); }; } } },
-    'assistant/bridge-client': { assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true },
+    'assistant/bridge-client': { assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true,
+      supportsDailyContext: () => false },
       onStateChange: (fn) => { bridgeListeners.add(fn); return () => { bridgeListeners.delete(fn); unsubscribed.push('bridge'); }; } } },
     'ui/shell/conversation-hermes-ui': realShell().ui,
     'ui/dashboard-settings': { onAnySettingChanged: tracked('settings'), mirrorTouchSetting: {}, showBleBandwidthSetting: { get: () => false }, sonioxApiKeySetting: { get: () => '' } },
     'native/asr-model': { onAsrModelStateChanged: tracked('asr') },
     'apps/microphones/mic-models': { onMicModelStateChanged: tracked('mic') },
-    'conversation-detection/session-controls': { onConversationTextSelected: tracked('text'), conversationUsesHermes: () => true },
+    'conversation-detection/session-controls': { onConversationTextSelected: tracked('text'), conversationUsesHermes: () => true,
+      conversationDailyContextSelected: () => false },
     'graphics/image': { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 },
   }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
   const { MainViewModel } = load('app/phone-ui/main-view-model.ts');

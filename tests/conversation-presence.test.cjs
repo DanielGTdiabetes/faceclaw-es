@@ -17,9 +17,11 @@ function harness(lockEnabled = false) {
     lockScreenEnabledSetting: { get: () => lockEnabled }, getGlassesPresence: () => presence,
     hasMicrophonePermission: () => microphone, voiceActivity: { isActive: () => false },
     // Manual ON prerequisites outside presence: conv/2 bridge (optional identity) and a Soniox key.
-    assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => true } },
+    assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => true,
+      setDailyContextEnabled: () => true, supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
     conversationUsesHermes: () => true,
+    conversationDailyContextSelected: () => false,
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },
     // C1: default RAM session options read once at ON.
     conversationSessionOptions: () => ({ language: 'auto', diagnostics: false }),

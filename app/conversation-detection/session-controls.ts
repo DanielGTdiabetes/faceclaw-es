@@ -26,6 +26,14 @@ export type ConversationModel = typeof CONVERSATION_MODELS[number];
 let localModel: Exclude<ConversationModel, "soniox" | "android-system"> = "whisper-small-es";
 let systemSelected = false;
 let useHermes = true;
+/** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
+let dailyContext = false;
+export function conversationDailyContextSelected(): boolean { return dailyContext; }
+export function setConversationDailyContextSelected(value: boolean): void {
+  if (port?.detector.snapshot().enabled || dailyContext === value) return;
+  dailyContext = value;
+  for (const listener of listeners) listener();
+}
 export function conversationLocalModel(): Exclude<ConversationModel, "soniox" | "android-system"> { return localModel; }
 export function conversationModel(): ConversationModel { return textEngine === "soniox" ? "soniox" : systemSelected ? "android-system" : localModel; }
 export function setConversationModel(value: ConversationModel): void {

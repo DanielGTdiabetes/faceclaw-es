@@ -99,7 +99,8 @@ class Phone:
 
 
 class Bridge:
-    def __init__(self, token, agent_factory=None, conversation_factory=None, conversation_fallback_factory=None):
+    def __init__(self, token, agent_factory=None, conversation_factory=None, conversation_fallback_factory=None,
+                 daily_context_factory=None):
         if not isinstance(token, str) or not token:
             raise ValueError("A private authentication token is required")
         self.token = token
@@ -114,7 +115,8 @@ class Bridge:
         self.run_sequence = 0
         self.running_state = None
         self.conversation = ConversationService(conversation_factory,
-            fallback_factory=conversation_fallback_factory) if conversation_factory else None
+            fallback_factory=conversation_fallback_factory,
+            daily_context_factory=daily_context_factory) if conversation_factory else None
 
     def phone_tool(self, method, params=None):
         # Hermes may execute a tool on a separate worker thread. The serial
@@ -275,7 +277,7 @@ class Bridge:
             self.phone = phone
             await phone.send("ctl", type="hello-ack", serverName="faceclaw-hermes",
                              sessionKey="faceclaw:hermes",
-                             capabilities=["chat", "mcp"] + (list(CAPABILITIES) if self.conversation else []))
+                             capabilities=["chat", "mcp"] + (list(self.conversation.capabilities()) if self.conversation else []))
             task = asyncio.create_task(self.initialize_phone(phone))
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
@@ -305,7 +307,12 @@ class Bridge:
                         self.tasks.add(task)
                         task.add_done_callback(self.tasks.discard)
                 elif frame.get("chan") == "conv" and self.conversation:
-                    if frame.get("type") == "presented":
+                    if (frame.get("type") == "forget-daily-context"
+                            and isinstance(frame.get("requestId"), str) and 0 < len(frame["requestId"]) <= 128):
+                        cleared = await self.conversation.forget_daily(phone)
+                        await phone.send("conv", type="daily-context-cleared",
+                                         requestId=frame["requestId"], ok=cleared)
+                    elif frame.get("type") == "presented":
                         self.conversation.presented(phone, frame)
                     elif frame.get("type") == "cancel":
                         if isinstance(frame.get("requestId"), str) and valid_ref(frame.get("ref")):
@@ -468,10 +475,21 @@ class Bridge:
 async def main():
     private = Path(os.environ.get("FACECLAW_SECRET_FILE", "/home/dani/faceclaw-hermes-bridge/private.json"))
     token = json.loads(private.read_text())["token"]
+    daily_context_factory = None
+    if os.environ.get("FACECLAW_DAILY_CONTEXT") == "24h":
+        from daily_context import DailyContext
+        path = os.environ.get("FACECLAW_DAILY_CONTEXT_DB")
+        # No implicit persistent path. Provision one private, non-backed-up file
+        # for this bridge owner; mobile consent is independently required.
+        if path:
+            daily_context_factory = lambda: DailyContext(path)
+        else:
+            LOG.warning("conv daily context disabled: private database path required")
     bridge = Bridge(token, conversation_factory=create_conversation_agent
                     if os.environ.get("FACECLAW_CONVERSATION") == "1" else None,
                     conversation_fallback_factory=create_conversation_fallback_agent
-                    if os.environ.get("FACECLAW_CONVERSATION") == "1" else None)
+                    if os.environ.get("FACECLAW_CONVERSATION") == "1" else None,
+                    daily_context_factory=daily_context_factory)
     await bridge.warmup()
     try:
         async with serve(bridge.handle, os.environ.get("FACECLAW_BIND", "0.0.0.0"),

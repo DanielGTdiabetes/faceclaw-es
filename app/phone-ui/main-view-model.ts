@@ -38,6 +38,7 @@ import {
   setConversationDiagnosticsSelected, setConversationTextLanguage, setConversationTextSelected,
   wearerActions, wearerChoices,
   CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
+  conversationDailyContextSelected, setConversationDailyContextSelected,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
@@ -151,7 +152,11 @@ export class MainViewModel extends RemoteControlsViewModel {
     }));
     // Hermes selection/runtime and bridge capability: labels only, never audio or channel calls.
     this.unsubscribers.push(dashboardController.onConversationHermesChange(() => this.refreshHermesUi()));
-    this.unsubscribers.push(assistantBridge.onStateChange(() => { this.hermesNotice = ""; this.refreshHermesUi(); }));
+    this.unsubscribers.push(assistantBridge.onStateChange(() => {
+      this.hermesNotice = ""; this.refreshHermesUi();
+      this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
+      this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+    }));
     this.hermesShown = { button: "", status: "", history: "" };
     this.refreshHermesUi();
     this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
@@ -188,6 +193,8 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("localTranscript", this.localTranscript);
     this.notifyPropertyChange("conversationEngineButton", this.conversationEngineButton);
     this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
+    this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
+    this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
     this.notifyPropertyChange("conversationDownloadButton", this.conversationDownloadButton);
     this.notifyPropertyChange("conversationDownloadVisibility", this.conversationDownloadVisibility);
     this.notifyPropertyChange("conversationModelStatus", this.conversationModelStatus);
@@ -417,6 +424,48 @@ export class MainViewModel extends RemoteControlsViewModel {
     return `Motor: ${name}${active}`;
   }
   get conversationModeButton(): string { return `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`; }
+  get conversationMemoryButton(): string {
+    return "Memoria del día: " + (conversationDailyContextSelected() ? "24 h" : "desactivada");
+  }
+  get conversationMemoryStatus(): string {
+    if (!assistantBridge.conversation.supportsDailyContext()) return "Memoria de 24 h no disponible en el servidor conectado.";
+    if (!conversationDailyContextSelected()) return "No se consulta ni añade memoria. Los resúmenes anteriores caducan; puedes borrarlos desde este menú.";
+    return conversationUsesHermes()
+      ? "Resúmenes en tu servidor durante 24 h. Se borran automáticamente; consultarlos no renueva el plazo."
+      : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
+  }
+  async onConversationMemoryTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const actions = ["Usar resúmenes durante 24 h", "No usar memoria del día", "Borrar memoria del día"];
+    const choice = await Dialogs.action({ title: "Continuidad durante el día", cancelButtonText: "Cerrar", actions });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === actions[1]) {
+      setConversationDailyContextSelected(false);
+    } else if (choice === actions[0]) {
+      if (!assistantBridge.conversation.supportsDailyContext()) {
+        this.hermesNotice = "El servidor conectado todavía no ofrece memoria de 24 h.";
+      } else {
+        const accepted = await Dialogs.confirm({ title: "Memoria de 24 horas",
+          message: "Hermes conservará resúmenes breves por tema en tu servidor para retomar conversaciones durante el día. Caducan 24 h después de actualizarse. No se guarda audio ni la transcripción completa.",
+          okButtonText: "Activar 24 h", cancelButtonText: "Cancelar" });
+        if (accepted && this.localTranscriptionCanStart && assistantBridge.conversation.supportsDailyContext()) {
+          setConversationDailyContextSelected(true);
+        }
+      }
+    } else if (choice === actions[2]) {
+      const accepted = await Dialogs.confirm({ title: "Borrar memoria del día",
+        message: "Se eliminarán todos los resúmenes temporales del servidor. No afecta al perfil de voz ni al historial del asistente.",
+        okButtonText: "Borrar", cancelButtonText: "Cancelar" });
+      if (accepted && this.localTranscriptionCanStart) {
+        const sent = assistantBridge.conversation.forgetDailyContext((ok) => {
+          this.hermesNotice = ok ? "Memoria del día borrada." : "No se pudo confirmar el borrado de la memoria del día.";
+          this.refreshHermesUi();
+        });
+        if (!sent) this.hermesNotice = "Memoria del día no disponible o borrado en curso.";
+      }
+    }
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
   get conversationModelStatus(): string {
     const model = conversationModel();
     if (model === "soniox") return sonioxApiKeySetting.get().trim() ? "Reconoce y separa voces en la nube." : "Falta la clave de Soniox en Ajustes.";

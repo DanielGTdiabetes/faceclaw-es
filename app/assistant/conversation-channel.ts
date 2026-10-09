@@ -8,6 +8,7 @@ export const CONVERSATION_CAPABILITY = "conv/1";
  */
 export const CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY = "conv/2";
 export const CONVERSATION_MEMORY_ACK_CAPABILITY = "conv/memory-ack/1";
+export const CONVERSATION_DAILY_CONTEXT_CAPABILITY = "conv/daily-context/1";
 export type ConversationChannelStats = {
   sent: number; verdicts: number; tema: number; cortesia: number; incierto: number;
   mensajes: number; nada: number; errores: number; invalidos: number; caducados: number; cancelados: number;
@@ -41,6 +42,9 @@ export class ConversationChannel {
   private supported = false;
   private optionalIdentity = false;
   private memoryAck = false;
+  private dailyContextSupported = false;
+  private dailyContextEnabled = false;
+  private forgetting: { requestId: string; done: (ok: boolean) => void; cancel: () => void } | null = null;
   private receiptEpoch = 0;
   private enabled = false;
   private stats = emptyStats();
@@ -57,11 +61,12 @@ export class ConversationChannel {
     this.supported = Array.isArray(capabilities) && capabilities.includes(CONVERSATION_CAPABILITY);
     this.optionalIdentity = this.supported && (capabilities as unknown[]).includes(CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY);
     this.memoryAck = this.supported && (capabilities as unknown[]).includes(CONVERSATION_MEMORY_ACK_CAPABILITY);
+    this.dailyContextSupported = this.supported && (capabilities as unknown[]).includes(CONVERSATION_DAILY_CONTEXT_CAPABILITY);
   }
 
   /** Explicit RAM-only choice, refused on an old/unsupported bridge. No automatic re-enable. */
   setEnabled(enabled: boolean): boolean {
-    if (enabled && !this.supported) return false;
+    if (enabled && (!this.supported || this.forgetting)) return false;
     this.enabled = enabled;
     if (!enabled) this.receiptEpoch++;
     if (!enabled) this.cancel();
@@ -70,6 +75,34 @@ export class ConversationChannel {
 
   isReady(): boolean { return this.supported && this.enabled && !this.chatActive; }
   isSupported(): boolean { return this.supported; }
+  supportsDailyContext(): boolean { return this.dailyContextSupported; }
+  /** The UI freezes consent at ON. Old bridges receive the exact old wire contract. */
+  setDailyContextEnabled(enabled: boolean): boolean {
+    if (this.enabled || (enabled && !this.dailyContextSupported)) return false;
+    this.dailyContextEnabled = enabled;
+    return true;
+  }
+  /** Explicit OFF-only UI action; no passive prompt or agent tool calls this method. */
+  forgetDailyContext(done: (ok: boolean) => void): boolean {
+    if (this.enabled || !this.dailyContextSupported || this.forgetting) return false;
+    const control = { requestId: "d" + this.connection + "-" + ++this.sequence, done, cancel: () => {} };
+    this.forgetting = control;
+    try {
+      if (!this.host.send({ chan: "conv", type: "forget-daily-context", requestId: control.requestId })) {
+        this.finishForgetting(false); return false;
+      }
+    } catch { this.finishForgetting(false); return false; }
+    if (this.forgetting === control) {
+      control.cancel = this.host.after(() => this.finishForgetting(false), 5_000);
+    }
+    return true;
+  }
+  private finishForgetting(ok: boolean): void {
+    const control = this.forgetting;
+    if (!control) return;
+    this.forgetting = null; control.cancel();
+    try { control.done(ok); } catch { /* UI callback cannot break chat. */ }
+  }
   /** True only when the authenticated bridge announced conv/2; an old bridge keeps required identity. */
   supportsOptionalIdentity(): boolean { return this.optionalIdentity; }
   /** Aggregate counters only: no text, labels, references or timings. Reset by the owner at ON. */
@@ -90,6 +123,9 @@ export class ConversationChannel {
     this.supported = false;
     this.optionalIdentity = false;
     this.memoryAck = false;
+    this.dailyContextSupported = false;
+    this.dailyContextEnabled = false;
+    this.finishForgetting(false);
     this.receiptEpoch++;
     this.chatActive = false;
     this.connection++;
@@ -114,6 +150,7 @@ export class ConversationChannel {
       // Required identity keeps the exact conv/1 frame; optional identity is always explicit on the wire.
       sent = this.host.send({ chan: "conv", type: mode, requestId: pending.requestId, ref: { ...pending.ref },
         ...(this.memoryAck ? { memoryAck: true } : {}),
+        ...(this.dailyContextEnabled && this.dailyContextSupported ? { dailyContext: true } : {}),
         ...(modality === "identidad-opcional" ? { modality } : {}),
         timeoutMs, turns: context.turns.map((turn) => ({ seq: turn.seq, speaker: turn.speaker,
           relation: turn.relation, text: turn.text, startMs: turn.startMs, endMs: turn.endMs })) });
@@ -146,6 +183,10 @@ export class ConversationChannel {
   }
 
   handle(frame: unknown): void {
+    if (isRecord(frame) && frame.chan === "conv" && frame.type === "daily-context-cleared") {
+      if (this.forgetting && frame.requestId === this.forgetting.requestId) this.finishForgetting(frame.ok === true);
+      return;
+    }
     const pending = this.pending;
     if (!pending || !isRecord(frame) || frame.chan !== "conv" || frame.requestId !== pending.requestId
       || !sameRef(frame.ref, pending.ref)) return;

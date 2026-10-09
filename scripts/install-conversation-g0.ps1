@@ -4,7 +4,7 @@ param(
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$JavaDirectory = $env:JAVA_HOME,
     [string]$Serial = '',
-    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1', '0.8.2-es.5-conversation.s2', '0.8.2-es.5-conversation.s2.1', '0.8.2-es.5-conversation.s2.2', '0.8.2-es.5-conversation.s2.3', '0.8.2-es.5-conversation.s2.4-hermes', '0.8.2-es.5-conversation.s2.5-manual', '0.8.2-es.5-conversation.s2.6-manual-context', '0.8.2-es.5-conversation.s2.6.1-manual-context', '0.8.2-es.5-conversation.s2.6.2-manual-context', '0.8.2-es.5-conversation.s2.6.3-manual-context', '0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context', '0.8.2-es.5-conversation.s2.6.6-manual-context', '0.8.2-es.5-conversation.s2.6.7-manual-context', '0.8.2-es.5-conversation.s2.6.8-manual-context', '0.8.2-es.5-conversation.s2.6.9-manual-context', '0.8.2-es.5-conversation.s2.6.10-model-selector')]
+    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1', '0.8.2-es.5-conversation.s2', '0.8.2-es.5-conversation.s2.1', '0.8.2-es.5-conversation.s2.2', '0.8.2-es.5-conversation.s2.3', '0.8.2-es.5-conversation.s2.4-hermes', '0.8.2-es.5-conversation.s2.5-manual', '0.8.2-es.5-conversation.s2.6-manual-context', '0.8.2-es.5-conversation.s2.6.1-manual-context', '0.8.2-es.5-conversation.s2.6.2-manual-context', '0.8.2-es.5-conversation.s2.6.3-manual-context', '0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context', '0.8.2-es.5-conversation.s2.6.6-manual-context', '0.8.2-es.5-conversation.s2.6.7-manual-context', '0.8.2-es.5-conversation.s2.6.8-manual-context', '0.8.2-es.5-conversation.s2.6.9-manual-context', '0.8.2-es.5-conversation.s2.6.10-model-selector', '0.8.2-es.5-conversation.s2.6.11-daily-context', '0.8.2-es.5-conversation.s2.6.12-whisper-performance')]
     [string]$ExpectedVersion = '0.8.2-es.5-conversation.s2.6.6-manual-context',
     [switch]$Install
 )
@@ -37,6 +37,23 @@ function Assert-OriginalSignature([string]$Apk) {
         throw 'La firma no coincide con la original instalada. No instalar.'
     }
 }
+function Copy-InstalledApk([string]$Adb, [string]$DeviceSerial, [string]$RemoteApk, [string]$Destination) {
+    # Windows PowerShell 5.1 wraps native stderr (including successful adb progress)
+    # in NativeCommandError. Judge the pull by its exit code and backup, then verify
+    # the original signature below before allowing an installation.
+    $taskPreviousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $Adb -s $DeviceSerial pull $RemoteApk $Destination 2>&1 | ForEach-Object { $_.ToString() } | Out-Host
+        $taskPullExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $taskPreviousPreference
+    }
+    if ($taskPullExitCode -ne 0 -or !(Test-Path -LiteralPath $Destination -PathType Leaf) -or
+        (Get-Item -LiteralPath $Destination).Length -eq 0) {
+        throw 'Falló el respaldo; no instalar.'
+    }
+}
 $taskBadging = & $taskAapt dump badging $InputApk 2>&1
 $taskExpectedPackage = "^package: name='com.faceclaw.app' versionCode='805' versionName='" + [regex]::Escape($ExpectedVersion) + "'"
 if ($LASTEXITCODE -ne 0 -or !($taskBadging | Select-String $taskExpectedPackage)) {
@@ -65,8 +82,7 @@ if ($LASTEXITCODE -ne 0 -or $taskPaths.Count -ne 1 -or !$taskPaths[0].StartsWith
     throw 'No se puede respaldar la APK actual (paquete ausente o dividido). No instalar.'
 }
 $taskBackup = Join-Path $taskRoot ('dist/conversation-g0/before-install-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '.apk')
-& $taskAdb -s $Serial pull $taskPaths[0].Trim().Substring(8) $taskBackup
-if ($LASTEXITCODE -ne 0) { throw 'Falló el respaldo; no instalar.' }
+Copy-InstalledApk $taskAdb $Serial $taskPaths[0].Trim().Substring(8) $taskBackup
 Assert-OriginalSignature $taskBackup
 Get-FileHash -LiteralPath $taskBackup -Algorithm SHA256
 & $taskAdb -s $Serial install -r $taskOutput
