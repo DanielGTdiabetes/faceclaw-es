@@ -1,7 +1,7 @@
 import { type ConversationTurn } from "./conversation-turns";
 import { type Relation } from "./wearer-identity";
 
-export type LocalConversationModel = "android-system" | "whisper-base-es" | "whisper-small-es" | "whisper-medium-es";
+export type LocalConversationModel = "whisper-base-es" | "whisper-small-es" | "whisper-medium-es";
 /** Label the native speaker tracker gives the wearer's saved profile; other voices are `voz-N`. */
 export const LOCAL_WEARER_SPEAKER = "portador";
 const LOCAL_VOICE = /^voz-\d{1,2}$/;
@@ -52,7 +52,7 @@ function validLocalAttribution(speaker: string | null, relation: Relation): bool
 
 /** A window turn from a local engine, anonymous or speaker-attributed. Never carries association versions. */
 export function isLocalWindowTurn(turn: ConversationTurn): boolean {
-  return ["android-system", "whisper-base-es", "whisper-small-es", "whisper-medium-es"].includes(turn.engine)
+  return ["whisper-base-es", "whisper-small-es", "whisper-medium-es"].includes(turn.engine)
     && validLocalAttribution(turn.speaker, turn.relation) && turn.associationVersion === 0
     && turn.timing === "ventana" && Number.isSafeInteger(turn.startMs) && Number.isSafeInteger(turn.endMs)
     && turn.startMs !== null && turn.endMs !== null && turn.startMs >= 0 && turn.endMs > turn.startMs;

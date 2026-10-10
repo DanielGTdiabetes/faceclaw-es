@@ -7,7 +7,7 @@ import { shell } from "./shell";
  *
  * Product rule: while the experimental detector listens with Hermes armed, the lenses stay dark
  * (real Shell.sleep(), never a black paint) and show no transcript, verdicts, progress or errors.
- * Only the controller's validated final contribution (`conversationHermesMessage`) is shown, in a
+ * Validated contributions and bounded call-limit notices are shown in a
  * shell overlay of its own that never touches the AssistantSession, chat history, tools or audio.
  *
  * This module reads the controller through a structural contract (no import of the controller),
@@ -20,7 +20,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -98,7 +98,7 @@ export class HermesConversationPresenter {
       this.darkPending = false;
       this.display.blankForListening();
     }
-    const message = this.source.conversationHermesMessage;
+    const message = this.message();
     if (!message) {
       this.handled = "";
       this.retire(true);
@@ -133,7 +133,7 @@ export class HermesConversationPresenter {
   }
 
   /** Treat the controller's current message as already handled (restore/reconnect/bind): never shown. */
-  ignoreExisting(): void { this.handled = this.source.conversationHermesMessage; }
+  ignoreExisting(): void { this.handled = this.message(); }
 
   isArmed(): boolean { return this.armed; }
   diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
@@ -141,7 +141,7 @@ export class HermesConversationPresenter {
 
   capturePresentation(): (() => void) | null {
     const layer = this.layer, message = this.source.conversationHermesMessage;
-    if (!layer || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
+    if (!layer || !message || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
     const confirm = this.source.conversationHermes.capturePresentation?.();
     if (!confirm) return null;
     return () => {
@@ -166,11 +166,15 @@ export class HermesConversationPresenter {
     }
   }
 
+  private message(): string {
+    return this.source.conversationHermesMessage || this.source.conversationHermes.snapshot().notice || "";
+  }
+
   /** The layer never stores text: every paint re-reads the controller's current validated message. */
   private liveText(): string {
     if (this.disposed) return "";
     const snapshot = this.snapshot();
-    return snapshot.listening ? sanitizeHermesText(this.source.conversationHermesMessage) : "";
+    return snapshot.listening ? sanitizeHermesText(this.message()) : "";
   }
 
   private retire(restoreSleep: boolean): void {

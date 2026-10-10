@@ -14,12 +14,15 @@ enum class LocalTranscriptSegmentation(val wire: String) { VAD("vad"), WINDOWS("
 /** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
 data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false)
 interface LocalTranscriptDecoder {
+    /** Called on raw audio before conditioning/decoding. Unknown detectors preserve the window. */
+    fun hasSpeech(samples: FloatArray): Boolean = true
     fun decode(samples: FloatArray): LocalDecodedText
     fun release()
     /** Model label for diagnostics only (e.g. "whisper-small"); never a path. */
     val engine: String get() = "whisper"
     /** Runtime knobs for diagnostics only (e.g. "threads=4;provider=cpu;tail=default"); never a path. */
     val runtime: String get() = ""
+    val speechDetector: String get() = "not-configured"
 }
 interface LocalTranscriptHost {
     val dispatcher: CallbackDispatcher
@@ -60,7 +63,7 @@ fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
         if (result.language != "es") return LocalTextRejection.LANGUAGE
     } else if (result.language != "es" && result.language != "ca") return LocalTextRejection.LANGUAGE
     if (text.isEmpty()) return LocalTextRejection.EMPTY
-    if (text.length > 600 || !text.any { it.isLetter() }) return LocalTextRejection.STRUCTURE
+    if (text.length > 600 || !text.any { it.isLetterOrDigit() }) return LocalTextRejection.STRUCTURE
     if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return LocalTextRejection.STRUCTURE
     if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return LocalTextRejection.STRUCTURE
     if (isKnownWhisperHallucination(text) || isRepetitiveWhisperText(text)) return LocalTextRejection.HALLUCINATION
@@ -389,6 +392,7 @@ class LocalTranscriptSession(
         var pcmChunks = 0L; var loadingChunks = 0L; var dropped = 0L
         var decodeCalls = 0L; var decodedSamples = 0L; var decodeTotalMs = 0L; var decodeMaxMs = 0L
         var rejectedLanguage = 0L; var rejectedEmpty = 0L; var rejectedStructure = 0L; var rejectedHallucination = 0L
+        var rejectedNoVoice = 0L
         var decodeErrors = 0L; var processingErrors = 0L; var invalidatedDecodes = 0L
         var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
         var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
@@ -423,6 +427,7 @@ class LocalTranscriptSession(
     private val levels = LocalAsrLevelStats()
     private var engine = ""
     private var runtime = ""
+    private var speechDetector = "not-configured"
     /** Speaker attribution requested by the accepted start (needs a pause window policy). */
     private var speakersRequested = false
     private var speakerStatus = "off"
@@ -511,7 +516,7 @@ class LocalTranscriptSession(
             timings.fill(0); timingCount = 0
             inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
-            levels.reset(); engine = ""; runtime = ""
+            levels.reset(); engine = ""; runtime = ""; speechDetector = "not-configured"
             speakersRequested = speakers; speakerStatus = if (speakers) "cargando" else "off"; speakerVoices = 0
             speakerWearer = 0; speakerOther = 0; speakerUnknown = 0; speakerClustered = 0; speakerErrors = 0; pendingVoiced = 0
         }
@@ -568,7 +573,7 @@ class LocalTranscriptSession(
             ",\"dropped\":${s.dropped},\"decodeCalls\":${s.decodeCalls},\"decodedAudioMs\":${s.decodedSamples / 16}," +
             "\"decodeTotalMs\":${s.decodeTotalMs},\"decodeMaxMs\":${s.decodeMaxMs}," +
             "\"rejectedLanguage\":${s.rejectedLanguage},\"rejectedEmpty\":${s.rejectedEmpty}," +
-            "\"rejectedStructure\":${s.rejectedStructure},\"rejectedHallucination\":${s.rejectedHallucination},\"decodeErrors\":${s.decodeErrors}," +
+            "\"rejectedNoVoice\":${s.rejectedNoVoice},\"rejectedStructure\":${s.rejectedStructure},\"rejectedHallucination\":${s.rejectedHallucination},\"decodeErrors\":${s.decodeErrors}," +
             "\"processingErrors\":${s.processingErrors},\"invalidatedDecodes\":${s.invalidatedDecodes}," +
             "\"languageEs\":${s.languageEs},\"languageCa\":${s.languageCa},\"languageOther\":${s.languageOther}," +
             "\"languageForced\":${s.languageForced},\"forcedMismatch\":${s.forcedMismatch}," +
@@ -585,14 +590,14 @@ class LocalTranscriptSession(
             buffer.diagnostics() + ",\"decodeCalls\":${sum { it.decodeCalls }},\"decodedAudioMs\":${sum { it.decodedSamples } / 16}," +
             "\"decodeTotalMs\":${sum { it.decodeTotalMs }},\"decodeMaxMs\":${stats.maxOf { it.decodeMaxMs }}," +
             "\"rejectedLanguage\":${sum { it.rejectedLanguage }},\"rejectedEmpty\":${sum { it.rejectedEmpty }}," +
-            "\"rejectedStructure\":${sum { it.rejectedStructure }},\"rejectedHallucination\":${sum { it.rejectedHallucination }},\"decodeErrors\":${sum { it.decodeErrors }}," +
+            "\"rejectedNoVoice\":${sum { it.rejectedNoVoice }},\"rejectedStructure\":${sum { it.rejectedStructure }},\"rejectedHallucination\":${sum { it.rejectedHallucination }},\"decodeErrors\":${sum { it.decodeErrors }}," +
             "\"processingErrors\":${sum { it.processingErrors }}," +
             "\"invalidatedDecodes\":${sum { it.invalidatedDecodes }},\"languageEs\":${sum { it.languageEs }}," +
             "\"languageCa\":${sum { it.languageCa }},\"languageOther\":${sum { it.languageOther }},\"delivered\":${sum { it.delivered }}," +
             "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
             "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
             "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":$conditionAudio," +
-            "\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"attemptedAudioMs\":${attemptedChunks * 50}," +
+            "\"vadStatus\":\"$speechDetector\",\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"attemptedAudioMs\":${attemptedChunks * 50}," +
             "\"coveredAudioMs\":${coveredChunks * 50}," +
             "\"deliveryLatencyCount\":$latencyCount,\"deliveryLatencyTotalMs\":$latencyTotalMs,\"deliveryLatencyMaxMs\":$latencyMaxMs," +
             "\"speakers\":{\"status\":\"$speakerStatus\",\"voices\":$speakerVoices,\"wearer\":$speakerWearer," +
@@ -627,6 +632,7 @@ class LocalTranscriptSession(
                     ready = decoder != null
                     engine = decoder?.engine ?: ""
                     runtime = decoder?.runtime ?: ""
+                    speechDetector = decoder?.speechDetector ?: "unavailable"
                     status = if (ready) "listo" else "modelo no disponible"
                     if (speakersRequested) speakerStatus = if (attributor != null) "activo" else "no disponible"
                     if (!ready) running = false
@@ -638,14 +644,22 @@ class LocalTranscriptSession(
                 next.audio.fill(0)
                 // Voice prints use the raw level: the ASR conditioner reshapes loudness per frame.
                 val raw = if (attributor != null) floats.copyOf() else null
-                if (conditionAudio) {
-                    val level = LocalAsrConditioner.condition(floats)
-                    condition.withLock { levels.add(level) }
-                }
                 var decodeStarted: Long? = null
                 var decodeFailed = false
                 try {
                     val canDecode = condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }
+                    if (canDecode && decoder?.hasSpeech(floats) == false) {
+                        condition.withLock {
+                            if (running && generation == next.generation) {
+                                stats[next.phase].rejectedNoVoice++; stats[next.phase].abstentions++
+                            }
+                        }
+                        continue // finally erases PCM and releases busy state; no Whisper inference
+                    }
+                    if (conditionAudio) {
+                        val level = LocalAsrConditioner.condition(floats)
+                        condition.withLock { levels.add(level) }
+                    }
                     if (canDecode) {
                         decodeStarted = platform.elapsedRealtimeMs()
                         condition.withLock {

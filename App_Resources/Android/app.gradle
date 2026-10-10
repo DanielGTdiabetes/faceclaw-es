@@ -244,6 +244,32 @@ tasks.register("prepareFaceclawLlama") {
   }
 }
 
+// Independent classic VAD: no llama dependency, model download or shared build cache.
+tasks.register("prepareFaceclawVad") {
+  def vadSo = file("$faceclawJniLibsDir/libfaceclaw_vad.so")
+  inputs.dir(file("$projectDir/src/main/native/vad"))
+  outputs.file(vadSo)
+  doLast {
+    def ndkRoot = faceclawFindNdkRoot()
+    def cmakeDir = faceclawFindSdkCmakeDir()
+    if (ndkRoot == null || cmakeDir == null) throw new GradleException("Android NDK/CMake required for WebRTC VAD")
+    def cmake = file("$cmakeDir/bin/cmake")
+    def buildDir = file("$faceclawNativeBuildDir/vad-build")
+    exec {
+      commandLine([cmake.absolutePath, "-S", file("$projectDir/src/main/native/vad").absolutePath,
+        "-B", buildDir.absolutePath, "-G", "Ninja",
+        "-DCMAKE_MAKE_PROGRAM=${file("$cmakeDir/bin/ninja").absolutePath}",
+        "-DCMAKE_TOOLCHAIN_FILE=${file("$ndkRoot/build/cmake/android.toolchain.cmake").absolutePath}",
+        "-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-24", "-DCMAKE_BUILD_TYPE=Release"])
+    }
+    exec { commandLine([cmake.absolutePath, "--build", buildDir.absolutePath, "-j", "8"]) }
+    copy { from file("$buildDir/libfaceclaw_vad.so"); into faceclawJniLibsDir }
+    def stripName = Os.isFamily(Os.FAMILY_WINDOWS) ? "llvm-strip.exe" : "llvm-strip"
+    def strip = file("$ndkRoot/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin/$stripName")
+    exec { commandLine([strip.absolutePath, "--strip-unneeded", vadSo.absolutePath]) }
+  }
+}
+
 // versionName tracks FACECLAW_VERSION in app/version.ts, the single source of
 // truth for the Faceclaw version. The gradle root project is platforms/android,
 // so the repo root is two levels up from rootDir.
@@ -285,7 +311,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.5-conversation.s2.9-speakers"
+    versionName "${faceclawVersionName}-es.5-conversation.s2.11-recovery"
     
     generatedDensities = []
   }
@@ -304,6 +330,8 @@ android {
 // project. Remove the former copy before Kotlin compilation after this move.
 def removeLegacyKotlinBridgeSource = tasks.register("removeLegacyKotlinBridgeSource", Delete) {
   delete file("$projectDir/src/main/java/com/faceclaw/shared/KotlinBridge.kt")
+  delete file("$projectDir/src/main/java/com/faceclaw/app/FaceclawGatekeeperRunner.kt")
+  delete file("$projectDir/src/main/java/com/faceclaw/app/FaceclawSystemTranscriber.kt")
   // Explicit, reviewed source moves: never infer deletions from class names.
   def migrations = new groovy.json.JsonSlurper().parse(file("$rootDir/../../native/kotlin/migrated-java-sources.json"))
   migrations.each { migration ->
@@ -321,4 +349,5 @@ tasks.matching { it.name == "preBuild" }.configureEach {
   dependsOn removeLegacyKotlinBridgeSource
   dependsOn tasks.named("prepareFaceclawNativeLibs")
   dependsOn tasks.named("prepareFaceclawLlama")
+  dependsOn tasks.named("prepareFaceclawVad")
 }

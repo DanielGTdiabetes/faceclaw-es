@@ -16,7 +16,6 @@
     "../app/conversation-detection/coordinator.ts",
     "../app/conversation-detection/conversation-episodes.ts",
     "../app/conversation-detection/conversation-hermes.ts",
-    "../app/conversation-detection/gatekeeper-benchmark.ts",
     "../app/conversation-detection/conversation-ui.ts",
     "../app/conversation-detection/session-controls.ts",
     "../app/conversation-detection/profile-guide.ts",

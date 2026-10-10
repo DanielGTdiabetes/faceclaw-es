@@ -66,6 +66,8 @@ export class AssistantBridgeClient {
   private stopped = true;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelayMs = RECONNECT_MIN_MS;
+  /** Callbacks from an earlier socket (closed, replaced or stopped) are ignored. */
+  private socketGeneration = 0;
   private activeTurn: ActiveTurn | null = null;
   private turnSeq = 0;
   private mcpServer: AssistantMcpServer | null = null;
@@ -107,7 +109,9 @@ export class AssistantBridgeClient {
   /** Disconnect and stay down until the next configure(). */
   stop(): void {
     this.stopped = true;
-    this.conversation.reset();
+    this.socketGeneration++;
+    // A later configure() may name another server or token: armed conversation sessions never resume.
+    this.conversation.revoke();
     this.clearReconnectTimer();
     this.failActiveTurn("Bridge connection closed");
     if (this.unsubscribeToolsChanged) {
@@ -168,9 +172,11 @@ export class AssistantBridgeClient {
     const { host, port } = this.options;
     const url = `ws://${host}:${port}`;
     this.setState("connecting", `Connecting to ${host}:${port}...`);
+    const generation = ++this.socketGeneration;
+    const stale = () => this.stopped || generation !== this.socketGeneration;
     this.listenerProxy = new com.faceclaw.app.FaceclawWebSocketListener({
       onOpen: () => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.setState("connecting", "Authenticating...");
         this.send({
           chan: "ctl",
@@ -182,17 +188,17 @@ export class AssistantBridgeClient {
         });
       },
       onTextMessage: (message: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleMessage(String(message));
       },
       onClosed: (code: number, reason: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleConnectionLost(
           `Connection closed (${Number(code)}${reason ? `: ${String(reason)}` : ""})`,
         );
       },
       onFailure: (message: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleConnectionLost(`Connection failed: ${String(message)}`);
       },
     });
@@ -248,6 +254,8 @@ export class AssistantBridgeClient {
       // re-dial. Record the reason so the status is more useful than a bare
       // close code (especially for a bad token).
       this.status = `Bridge error: ${String(frame.message ?? "unknown")}`;
+      // Rejected auth or protocol: an armed conversation must not resume on a later handshake.
+      this.conversation.revoke();
       return;
     }
   }
@@ -282,6 +290,8 @@ export class AssistantBridgeClient {
   }
 
   private handleConnectionLost(status: string): void {
+    this.socketGeneration++;
+    // Same destination: an armed conversation may resume after the next authenticated hello-ack.
     this.conversation.reset();
     this.ws = null;
     this.listenerProxy = null;

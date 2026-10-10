@@ -28,8 +28,12 @@ export type DetectorSnapshot = {
   /** C1 acoustics per user-marked phase; present only when diagnostics were chosen before ON. */
   phases?: PhaseDiagnosticsSnapshot;
   enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
+  /** `silence` is historical (S2.9 and earlier): continuous listening no longer ends without voice. */
   stopReason: "none" | "manual" | "expired" | "silence" | "saved" | "error";
-  /** Null: manual continuous listening, no time limit (native engines keep a 24 h safety bound). */
+  /**
+   * Null: manual continuous listening without a silence or session limit. Native engines keep a 24 h
+   * technical bound; reaching it ends the session visibly (stopReason `expired`), never silently.
+   */
   sessionLimitMs: number | null;
   manualConversation: boolean;
   /**
@@ -85,7 +89,8 @@ export class ConversationCaptureCoordinator {
   private expectedTextEngine: "soniox" | "local" = "soniox";
   private optionalProfile = false;
   private voiceProfile: VoiceProfileUse = "no-aplica";
-  private silenceSince: number | null = null;
+  /** Local engine reported ready in this session: a later "inactivo" while ON is the native bound. */
+  private engineReady = false;
   private lastDiagnostics = "";
   private transcribing = false;
   private language: TextLanguage | null = null;
@@ -225,6 +230,7 @@ export class ConversationCaptureCoordinator {
       return;
     }
     this.metrics = emptyMetrics();
+    this.engineReady = false;
     this.enabledAt = this.host.now();
     this.vad = new LocalEnergyVad();
     this.lastVadStopAtMs = null;
@@ -290,6 +296,13 @@ export class ConversationCaptureCoordinator {
         return;
       }
       const status = this.host.transcription?.snapshot().status ?? "error";
+      if (this.expectedTextEngine === "local" && this.host.transcription?.snapshot().engine !== "soniox") {
+        if (status === "listo") this.engineReady = true;
+        else if (status === "inactivo" && this.engineReady && this.manualConversation) {
+          this.expire(`OFF · Límite técnico de ${NATIVE_SESSION_SAFETY_MS / 3_600_000} h del reconocimiento alcanzado. Puedes iniciar otra sesión.`);
+          return;
+        }
+      }
       if (["error", "modelo no disponible"].includes(status)) {
         this.fail("El motor de texto local no está disponible. Captura OFF, sin alternativa en red.");
         return;
@@ -311,7 +324,6 @@ export class ConversationCaptureCoordinator {
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
       if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
-      if (this.endForSilence(now)) return;
       if (now - (this.lastPcm || this.startedAt) > 2_000) {
         this.fail("No llega PCM válido desde hace 2 s. Captura OFF; puedes reintentar cuando termine el cierre.");
       } else {
@@ -360,7 +372,6 @@ export class ConversationCaptureCoordinator {
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
     if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
-    if (this.endForSilence(now)) return;
     this.lastPcm = now;
     this.gapCounted = false;
     this.phases?.chunk();
@@ -376,15 +387,9 @@ export class ConversationCaptureCoordinator {
     this.metrics.samples += 800;
     this.metrics.bytes += pcm.length;
     const vadBefore = this.vad.snapshot();
-    const positiveBefore = vadBefore.positiveMs;
     this.vad.accept(pcm);
     if (this.vad.snapshot().completed > vadBefore.completed) this.lastVadStopAtMs = now;
-    if (this.manualConversation) {
-      // Acoustic activity is conservative: noise/TV can extend the session. Missing audio and
-      // priority suspensions never prove silence; resetAcousticStream clears this interval.
-      if (this.vad.snapshot().positiveMs > positiveBefore) this.silenceSince = null;
-      else if (this.silenceSince === null) this.silenceSince = now;
-    }
+    // Silence never ends continuous listening: it only saves inference (native VAD vetoes windows).
     if (this.manualConversation && this.participationMode !== "off") {
       for (const match of this.host.participation?.drainProfileMatches?.() ?? []) this.host.transcription?.acceptProfileMatch?.(match);
     }
@@ -426,11 +431,12 @@ export class ConversationCaptureCoordinator {
     return remaining === null ? NATIVE_SESSION_SAFETY_MS : Math.max(1, remaining);
   }
 
-  private expire(): void {
+  private expire(reason?: string): void {
     if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
+    const limitMs = this.sessionLimitMs;
     this.setEnabled(false);
     this.stopReason = "expired";
-    this.reason = `OFF · Tiempo agotado (${(this.sessionLimitMs ?? 0) / 60_000} min). La sesión ha terminado; puedes iniciar otra.`;
+    this.reason = reason ?? `OFF · Tiempo agotado (${(limitMs ?? 0) / 60_000} min). La sesión ha terminado; puedes iniciar otra.`;
     this.emit();
   }
 
@@ -482,19 +488,9 @@ export class ConversationCaptureCoordinator {
 
   private resetAcousticStream(): void {
     this.lastVadStopAtMs = null;
-    this.silenceSince = null;
     this.vad.resetStream();
     this.host.transcription?.resetStream();
     this.host.participation?.resetStream();
-  }
-
-  private endForSilence(now: number): boolean {
-    if (!this.manualConversation || this.silenceSince === null || now - this.silenceSince <= 300_000) return false;
-    this.setEnabled(false);
-    this.stopReason = "silence";
-    this.reason = "OFF · Más de 5 minutos sin actividad de voz. La sesión ha terminado.";
-    this.emit();
-    return true;
   }
 
   private emit(): void {

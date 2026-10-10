@@ -200,6 +200,25 @@ function fakeController({ supported = true } = {}) {
 
 function topLayer(shell) { return shell.stack.layers.at(-1); }
 
+test('lens quota notice wakes once, cannot acknowledge a Hermes message, and retires after expiry or dismissal', () => {
+  const { ui }=realShell();
+  let notice='Hermes en pausa. Disponible en 20 min.', shown=0, retired=0, acknowledgements=0, text, hooks;
+  const source={ conversationHermesMessage:'', dismissConversationHermesMessage() {},
+    onConversationHermesChange:()=>()=>{},
+    conversationHermes:{ snapshot:()=>({enabled:true,listening:true,notice}),
+      capturePresentation:()=>()=>acknowledgements++ } };
+  const presenter=new ui.HermesConversationPresenter(source,{
+    blankForListening:()=>true, present:()=>{shown++;return {woke:true};},
+    retire:()=>retired++, repaint() {},
+  },(getText,callbacks)=>{text=getText;hooks=callbacks;return {retire(){}};});
+  presenter.update(); presenter.update(); assert.equal(shown,1); assert.match(text(),/20 min/);
+  assert.equal(presenter.capturePresentation(),null); assert.equal(acknowledgements,0);
+  hooks.dismiss(); presenter.update(); assert.equal(retired,1); assert.equal(shown,1);
+  notice=''; presenter.update(); notice='Hermes vuelve a estar disponible.'; presenter.update();
+  assert.equal(shown,2); notice=''; presenter.update(); assert.equal(retired,2);
+  presenter.dispose();
+});
+
 test('presentation receipt follows a visible current overlay, never a refused, paused or replaced one', () => {
   for (const reason of ['current', 'keyboard', 'pause', 'replacement', 'off', 'disposed', 'covered']) {
     const h = realShell(), f = fakeController(); let receipts = 0;
@@ -252,7 +271,7 @@ test('glasses system menu offers three explicit listening modes and stale starts
   } });
   h.shell.wake('window'); h.shell.openEscapeMenu();
   const actions = topLayer(h.shell).items;
-  const gate = actions.find(i => i.label === 'Escucha continua con Gatekeeper');
+  const gate = actions.find(i => i.label === 'Escucha con filtros locales');
   const direct = actions.find(i => i.label === 'Escuchar con Hermes');
   const text = actions.find(i => i.label === 'Solo transcribir');
   assert.ok(gate && direct && text);
@@ -613,12 +632,12 @@ test('local conversation without Hermes keeps the classic transcript view and sc
 test('glasses product conversation uses the shared manual owner with model/mode controls while OFF', () => {
   const h = localConversation(false, true);
   h.patch({ enabled: false, state: 'desactivado' });
-  assert.match(h.paint(), /Sin\s+lí\s*mite\s+de\s+tiempo/);
+  assert.match(h.paint(), /silencio\s+no\s+la\s+de\s*tiene/);
   assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
   assert.equal(h.counts().reads, 0);
   assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');
   assert.equal(h.options.menuItems().length, 5);
-  assert.equal(h.options.menuItems()[0].label, 'Escucha continua con Gatekeeper');
+  assert.equal(h.options.menuItems()[0].label, 'Escucha con filtros locales');
   assert.equal(h.options.menuItems()[1].label, 'Escuchar con Hermes');
   assert.equal(h.options.menuItems()[2].label, 'Solo transcribir');
   assert.match(h.options.menuItems()[3].label, /Motor/);
@@ -657,7 +676,7 @@ function phoneHarness(f) {
       supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {},
     conversationTextEngine: () => 'soniox', conversationUsesHermes: () => true,
-    conversationGatekeeperSettings: () => ({ mode: 'off' }),
+    conversationFiltersEnabled: () => false,
     conversationDailyContextSelected: () => false,
     conversationSessionOptions: () => ({ language: 'auto' }),
   });
@@ -687,7 +706,7 @@ function phoneHarness(f) {
     'native/asr-model': { onAsrModelStateChanged: tracked('asr') },
     'apps/microphones/mic-models': { onMicModelStateChanged: tracked('mic') },
     'conversation-detection/session-controls': { onConversationTextSelected: tracked('text'), conversationUsesHermes: () => true,
-      conversationGatekeeperSettings: () => ({ mode: 'off', model: 'lfm2.5-1.2b-q4', wait: false }),
+      conversationFiltersEnabled: () => false,
       conversationDailyContextSelected: () => false },
     'graphics/image': { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 },
   }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
@@ -703,7 +722,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   const f = fakeController();
   f.supported = true;
   const { view, captureCalls, notified, unsubscribed, bridgeListeners } = phoneHarness(f);
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationModeSummary', 'conversationGatekeeperStatus']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary', 'conversationGatekeeperStatus']);
   notified.length = 0;
   for (let i = 0; i < 5; i++) f.emit();
   assert.deepEqual(notified, [], 'unchanged labels are not re-notified on runtime ticks');
@@ -714,7 +733,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   assert.equal(captureCalls[0][2], 'conversation');
   assert.equal(captureCalls[0][3].manualConversation, true);
   assert.equal(captureCalls[0][3].language, 'auto');
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationModeSummary']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary', 'conversationGatekeeperStatus']);
   notified.length = 0;
   f.deliver('Aportación de prueba', new Date(2026, 9, 5, 16, 7).getTime());
   assert.equal(view.conversationHermesHistory, 'Mensajes de Hermes (esta sesión):\n16:07 · Aportación de prueba');

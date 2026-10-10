@@ -87,8 +87,11 @@ export function wearerLine(snapshot: DetectorSnapshot): string {
   }
 }
 
-export type ManualHermesRuntimeView = { enabled: boolean; listening: boolean; requests: number; modality?: string };
-const MANUAL_BASE = "Manual · sin límite de tiempo · cierre tras más de 5 min sin voz";
+export type ManualHermesRuntimeView = { enabled: boolean; listening: boolean; requests: number; modality?: string;
+  link?: "listo" | "sin-red" | "revocado"; stopCause?: string };
+const MANUAL_BASE = "Escucha continua sin cierre por silencio (límite técnico 24 h)";
+const STOP_CAUSES: Record<string, string> = { motor: "el motor de texto cambió", "fin-sesion": "terminó la sesión de texto",
+  captura: "la captura se detuvo" };
 
 /**
  * Phone status for manual «Hermes en conversación». Recognising the wearer is optional on a conv/2
@@ -98,8 +101,14 @@ export function manualHermesStatus(detector: DetectorSnapshot, runtime: ManualHe
   bridge: { supported: boolean; optionalIdentity: boolean }): string {
   if (detector.enabled && runtime.enabled) {
     const left = detector.remainingMs === null ? "sin límite" : `${Math.ceil(detector.remainingMs / 60_000)} min restantes`;
+    if (runtime.link === "sin-red") return `Activo · ${left} · sin conexión con Hermes; la transcripción continúa y Hermes se reanudará al volver la red.`;
+    if (runtime.link === "revocado") return `Activo · ${left} · Hermes desconectado en esta sesión (servidor o acceso cambiado); la transcripción continúa.`;
     const head = `Activo · ${runtime.listening ? "escuchando" : "en pausa"} · ${left} · ${runtime.requests} evaluaciones`;
     return `${head} · ${manualVoiceNote(detector, runtime.modality)}`;
+  }
+  if (detector.enabled && detector.manualConversation) {
+    const cause = STOP_CAUSES[runtime.stopCause ?? ""];
+    return `Transcripción activa · Hermes detenido${cause ? ` (${cause})` : ""}. Detén e inicia de nuevo para volver a usar Hermes.`;
   }
   if (detector.enabled) return "Sesión diagnóstica activa. Toca para detenerla.";
   if (!bridge.supported) return "Hermes no disponible en el puente actual.";

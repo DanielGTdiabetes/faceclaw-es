@@ -13,6 +13,11 @@ and others who contributed to documenting the G2's bluetooth protocol and firmwa
 
 G2 microphone LC3 decoding uses Google's liblc3: https://github.com/google/liblc3
 
+Local speech filtering uses the classic WebRTC VAD, vendored from
+https://github.com/wiseman/py-webrtcvad (e283ca41df3a84b0e87fb1f5cb9b21580a286b09).
+Copyright 2011 The WebRTC project authors. BSD license: bundled in
+about/webrtc-vad-LICENSE.txt and App_Resources/Android/src/main/native/vad/LICENSE.
+
 The Terminus font is by Dimitar Zhekov's Terminus: https://framagit.org/ohnonot/terv-terc
 and is distributed under the SIL Open Font License; see app/fonts/terminus/LICENSE.
 

@@ -2,7 +2,6 @@ import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
 import { conversationModel, conversationLocalModel, conversationLocalSpeakers } from "../conversation-detection/session-controls";
 import { isMicModelReady } from "../apps/microphones/mic-models";
-import { isSystemTranscriptionReady } from "./system-transcription";
 import { LocalConversationTurns } from "../conversation-detection/local-conversation-turns";
 import { type ConversationTurn } from "../conversation-detection/conversation-turns";
 import { type Relation } from "../conversation-detection/wearer-identity";
@@ -21,7 +20,6 @@ export class LocalTranscription implements DetectorTranscription {
   private lines: string[] = [];
   private status = "inactivo";
   private readonly turnLog = new LocalConversationTurns();
-  private engineKind = "";
 
   /**
    * `profileAssociation` (manual conversation) asks Whisper for speakers when the RAM choice allows it and
@@ -32,20 +30,14 @@ export class LocalTranscription implements DetectorTranscription {
     this.lines = [];
     const selected = conversationModel();
     const model = selected === "soniox" ? conversationLocalModel() : selected;
-    const system = model === "android-system";
-    if (!global.isAndroid || !(system ? isSystemTranscriptionReady() : isAsrModelReady(model))) {
+    if (!global.isAndroid || !isAsrModelReady(model)) {
       this.status = "modelo no disponible";
       return false;
     }
     try {
-      if (this.engine && this.engineKind !== (system ? "system" : "whisper")) {
-        if (this.snapshot().worker || this.snapshot().busy) { this.status = "ocupado"; return false; }
-        this.engine.stop(); this.engine = null;
-      }
       if (!this.engine) {
-        const NativeEngine = system ? com.faceclaw.app.FaceclawSystemTranscriber : com.faceclaw.app.FaceclawLocalTranscriber;
+        const NativeEngine = com.faceclaw.app.FaceclawLocalTranscriber;
         this.engine = new NativeEngine(Utils.android.getApplicationContext());
-        this.engineKind = system ? "system" : "whisper";
         this.listener = new com.faceclaw.app.FaceclawLocalTranscriptListener({
           onText: (text: string, _language: string) => {
             this.appendText(String(text));
@@ -67,8 +59,8 @@ export class LocalTranscription implements DetectorTranscription {
       }
       // Kotlin captures the language only if this start is accepted; a rejected start changes nothing.
       this.turnLog.start(model);
-      const wire = system || language === "es" ? "es" : "auto";
-      const speakers = !system && profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
+      const wire = language === "es" ? "es" : "auto";
+      const speakers = profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
       this.enabled = Boolean(speakers ? this.engine.startWithSpeakers(wire, model, maxMs) : this.engine.start(wire, model, maxMs));
       if (!this.enabled) this.turnLog.stop();
       this.status = this.enabled ? "cargando" : "ocupado";

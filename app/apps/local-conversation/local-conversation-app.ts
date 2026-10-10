@@ -46,10 +46,10 @@ export class LocalConversationLayer implements Layer {
     if (this.session.setManualEnabled) {
       const state = snapshot.enabled ? "ON" : "OFF";
       image.drawText(titleFont, inset, inset, `Conversación · ${state}`, 255);
-      const detail = snapshot.enabled ? conversationUsesHermes() ? HERMES_LISTENING_LINE
+      const detail = snapshot.enabled ? conversationUsesHermes() ? this.session.filterStatus?.() || HERMES_LISTENING_LINE
         : snapshot.state === "escuchando" ? this.session.detector.transcriptText() || "Escuchando todas las voces…"
         : snapshot.reason
-        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Sin límite de tiempo; termina tras más de 5 min sin voz.`;
+        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Escucha continua: el silencio no la detiene.`;
       let y = inset + lineStep(titleFont) + 4;
       const lines = wrapText(font, detail, available);
       const count = Math.max(1, Math.floor((height - y - 2 * step - inset) / step));
@@ -182,7 +182,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
             if (stopping) session.setManualEnabled!(false);
           },
         }] : (["gatekeeper", "hermes", "text"] as const).map(mode => ({
-          label: mode === "gatekeeper" ? "Escucha continua con Gatekeeper" : mode === "hermes" ? "Escuchar con Hermes" : "Solo transcribir",
+          label: mode === "gatekeeper" ? "Escucha con filtros locales" : mode === "hermes" ? "Escuchar con Hermes" : "Solo transcribir",
           onSelect: (ctx: LayerContext) => { ctx.stack.pop();
             const notice = start(mode);
             if (notice) openModalMenu(ctx, "Conversación", [{ label: notice, onSelect: inner => { inner.stack.pop(); } }]);
@@ -193,9 +193,9 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
           openModalMenu(ctx, "Motor de conversación", CONVERSATION_MODELS.map((id) => ({
             label: conversationModelOption(id), onSelect: (inner) => { inner.stack.pop(); setConversationModel(id); },
           })));
-        } }, { label: `Idioma: ${model === "android-system" ? "Español (Pixel)" : conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {
-          ctx.stack.pop(); if (model !== "android-system") setConversationTextLanguage(conversationTextLanguage() === "auto" ? "es" : "auto");
-        } }, ...(model === "soniox" || model === "android-system" || asrModelState(model).status === "ready" ? [] : [{
+        } }, { label: `Idioma: ${conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {
+          ctx.stack.pop(); setConversationTextLanguage(conversationTextLanguage() === "auto" ? "es" : "auto");
+        } }, ...(model === "soniox" || asrModelState(model).status === "ready" ? [] : [{
           label: `${asrModelState(model).status === "downloading" ? "Pausar descarga" : "Descargar"}: ${conversationModelOption(model)}`,
           onSelect: (ctx: LayerContext) => {
             ctx.stack.pop(); if (session.detector.snapshot().enabled) return;
@@ -251,7 +251,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
   };
   unsubscribe = session.detector.subscribe(() => refresh());
   unsubscribeChoice = onConversationTextSelected(() => refresh());
-  const modelSubscriptions = CONVERSATION_MODELS.flatMap((id) => id === "soniox" || id === "android-system" ? [] : [onAsrModelStateChanged(id, () => refresh())]);
+  const modelSubscriptions = CONVERSATION_MODELS.flatMap((id) => id === "soniox" ? [] : [onAsrModelStateChanged(id, () => refresh())]);
   const oldUnsubscribeChoice = unsubscribeChoice;
   unsubscribeChoice = () => { oldUnsubscribeChoice(); for (const off of modelSubscriptions) off(); };
   try {

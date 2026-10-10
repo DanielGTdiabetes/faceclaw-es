@@ -223,7 +223,8 @@ test('runtime: one anonymous voice → assess → topic → one final contributi
   assert.deepEqual(h.outputs.filter(Boolean), ['La isla roba espacio; mejor una península.']);
   const d = h.runtime.diagnostics();
   assert.deepEqual(d.counters, { turnsAccepted: 1, turnsIgnored: 0, candidates: 1, assessments: 1, assists: 1,
-    topics: 1, abstentions: 0, messages: 1, delivered: 1, failures: 0 });
+    topics: 1, abstentions: 0, messages: 1, delivered: 1, failures: 0,
+    turnsOffline: 0, linkLosses: 0, linkResumes: 0, offlineMs: 0 });
   assert.ok(!JSON.stringify(d).includes('península') && !JSON.stringify(d).includes('cocina'));
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
@@ -267,7 +268,8 @@ test('runtime: suspension, OFF, episode close and reconnection invalidate old re
     if (change === 'reconnect') { h.channel.negotiate(CONV2); h.advance(500); }
     h.reply('assist', {}, assist);
     assert.deepEqual(h.outputs.filter(Boolean), [], change);
-    if (change === 'reconnect') assert.equal(h.runtime.snapshot().enabled, false, 'no automatic re-arm');
+    // Same destination: the armed session resumes with a new connection; the old reply stays invalid.
+    if (change === 'reconnect') assert.equal(h.runtime.snapshot().link, 'listo', 'resumed without replay');
     h.runtime.dispose();
   }
 });
@@ -488,9 +490,8 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
   const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional,
     supportsDailyContext: () => false, setDailyContextEnabled: value => !value } },
     conversationDailyContextSelected: () => false,
-    conversationGatekeeperSettings: () => ({ mode: gate ? 'active' : 'off', model: 'lfm2.5-1.2b-q4' }),
+    conversationFiltersEnabled: () => gate,
     conversationSingleVoiceFilter: () => false,
-    gatekeeperModelReady: () => gateReady,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
     conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
     conversationModel: () => 'whisper-medium-es',
@@ -543,10 +544,10 @@ test('controller: selected local model uses optional Hermes without a key/profil
   assert.equal(text.calls[0][3].manualConversation, true); assert.deepEqual(text.begins, []);
 });
 
-test('controller: an explicit Gatekeeper start requires its weights but direct Hermes still works', () => {
+test('controller: mechanical filtering and direct Hermes require no classifier weights', () => {
   const missing = manualOwner({ optional: true, profile: false, local: true, gate: true, gateReady: false });
-  assert.match(missing.owner.setManualConversationEnabled(true), /Descarga el modelo de Gatekeeper/);
-  assert.equal(missing.calls.length, 0); assert.equal(missing.begins.length, 0);
+  assert.equal(missing.owner.setManualConversationEnabled(true), '');
+  assert.equal(missing.calls.length, 1); assert.equal(missing.begins.length, 1);
   const ready = manualOwner({ optional: true, profile: false, local: true, gate: true });
   assert.equal(ready.owner.setManualConversationEnabled(true), ''); assert.equal(ready.calls.length, 1);
   const direct = manualOwner({ optional: true, profile: false, local: true, gateReady: false });

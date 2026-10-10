@@ -66,3 +66,18 @@ por esta sesión: confirmar el estado de Jarvis antes de desplegar nada.
 > propón dónde corre el modelo (PC con llama-server o junto a Hermes en Jarvis) y con qué fallback, y
 > mide latencia y decisiones antes de desplegar. Aparte, queda abierto el fallo de «en reposo no se
 > ven las respuestas en las gafas»: reprodúcelo con el móvil conectado por ADB y log en vivo.
+
+## Decisión posterior (10-10-2026): plan B aparcado
+
+- El PC con la RTX 5090 queda descartado (no está siempre encendido). Además el servicio
+  `llama-server` apunta a `/mnt/e/models/qwen3.6/Qwen3.6-35B-A3B-Q6_K.gguf`, que ya no existe.
+- Jarvis (Celeron N5095, 4 núcleos, 7 GB, sin GPU) no tiene AVX/AVX2, solo SSE4.2: un LLM local ahí
+  sería más lento que en el Pixel.
+- El usuario descarta pagar un clasificador cloud por cada fragmento: el problema de fondo es el coste
+  de evaluar continuamente. Gatekeeper aparcado; prioridad al fallo de reposo.
+- Queda preparado sin desplegar ni integrar en el puente: `integrations/hermes/gatekeeper.py`
+  (prompt/gramática/parser idénticos al móvil, pass-through ante cualquier fallo),
+  `gatekeeper_replay.py` (60 casos → predicciones para `gatekeeper-replay.cjs`) y
+  `test_gatekeeper.py` (6 pruebas, incluida la paridad del prompt con `gatekeeper.ts`). Sin medidas.
+- Si se retoma: reglas gratuitas en el móvil (pregunta/intercambio entre voces) y/o tope de llamadas
+  por hora antes que cualquier modelo.

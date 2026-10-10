@@ -46,7 +46,7 @@ export type LocalTranscriptionSnapshot = {
     languageForced?: number; forcedMismatch?: number; deliveredChars?: number; deliveryDiscarded?: number;
     languageMode?: TextLanguage; mixedAudioMsByPhase?: number[]; phases?: TranscriptPhaseAnalysis[];
     /** A3: model in use, ASR-copy level conditioning and aggregate window-level histograms (dBFS). */
-    engine?: string; conditioned?: boolean; rejectedHallucination?: number;
+    engine?: string; conditioned?: boolean; rejectedHallucination?: number; rejectedNoVoice?: number; vadStatus?: string;
     levels?: { windows: number; bucketsDbfs: string; loudWindows: number[]; quietActiveWindows: number[];
       avgNoiseDb: number; avgGainDb: number; maxGainDb: number };
   };

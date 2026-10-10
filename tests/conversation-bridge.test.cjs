@@ -89,3 +89,31 @@ test('the native sendText false result is treated as a failed conversation send'
   assert.equal(h.request(), false); assert.deepEqual(h.results, [null]); assert.equal(h.timers.size, 0);
   h.bridge.stop();
 });
+
+test('socket loss keeps the destination; stop, reconfigure and ctl errors revoke it', () => {
+  const h = harness(); h.ready();
+  const start = h.bridge.conversation.destination();
+  h.socket.listener.onClosed(1006, '');
+  assert.equal(h.bridge.conversation.isEnabled(), false);
+  assert.equal(h.bridge.conversation.destination(), start, 'a plain loss may resume');
+  h.message({ chan: 'ctl', type: 'error', message: 'invalid token' });
+  h.bridge.stop();
+  assert.ok(h.bridge.conversation.destination() > start);
+  const g = harness(); g.ready(); const before = g.bridge.conversation.destination();
+  g.message({ chan: 'ctl', type: 'error', message: 'invalid token' });
+  assert.ok(g.bridge.conversation.destination() > before, 'auth error never resumes');
+  g.bridge.stop();
+});
+
+test('callbacks from a replaced socket are ignored after reconnecting', () => {
+  const h = harness(); h.ready();
+  const old = h.socket;
+  old.listener.onClosed(1006, '');
+  for (const cb of [...h.timers]) { h.timers.delete(cb); cb(); }
+  // The reconnect timer dialed a new socket; the old listener must no longer reach the client.
+  old.listener.onTextMessage(JSON.stringify({ chan: 'ctl', type: 'hello-ack', capabilities: ['chat', 'mcp', 'conv/1'] }));
+  assert.equal(h.bridge.conversation.isSupported(), false, 'stale hello-ack ignored');
+  old.listener.onClosed(1000, 'late');
+  assert.notEqual(h.bridge.state().status, 'Connection closed (1000: late)');
+  h.bridge.stop();
+});

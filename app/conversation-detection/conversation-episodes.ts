@@ -192,12 +192,6 @@ export class ConversationEpisodeTracker {
     return this.state === "activa" ? this.context() : null;
   }
 
-  /** Bounded local-only view; does not replace the in-flight Hermes assessment reference. */
-  gatekeeperContext(mode: "assess" | "assist"): EpisodeContext | null {
-    this.tick();
-    return this.state === (mode === "assess" ? "candidata" : "activa") && this.eligible() ? this.context() : null;
-  }
-
   /**
    * Late outputs must match the current episode as well as the session and association. A newer
    * revision of the same episode (people kept talking while Hermes answered) is still accepted.

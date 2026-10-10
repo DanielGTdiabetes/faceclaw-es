@@ -89,26 +89,12 @@ test('medium download is pinned, verifies all files and pause invalidates late d
   assert.equal(downloads.length, 4);
 });
 
-test('Pixel selects its public native adapter without Whisper downloads and freezes Spanish for that choice only', () => {
-  const starts = [], turns = [];
-  const native = { setListener(value) { this.callback = value; }, start(...args) { starts.push(args); return true; }, stop() {} };
-  const { LocalTranscription } = moduleUnderTest('app/native/local-transcription.ts', {
-    '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
-    './asr-model': { isAsrModelReady: () => { throw new Error('Pixel does not require Whisper weights'); } },
-    './system-transcription': { isSystemTranscriptionReady: () => true },
-    '../conversation-detection/session-controls': controls,
-    '../conversation-detection/local-conversation-turns': { LocalConversationTurns },
-    '../apps/microphones/mic-models': { isMicModelReady: () => speakerModel },
-  }, { com: { faceclaw: { app: { FaceclawSystemTranscriber: function () { return native; },
-    FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
-  controls.setConversationTextLanguage('auto'); controls.setConversationModel('android-system');
-  assert.equal(controls.conversationSessionOptions().language, 'es');
-  const engine = new LocalTranscription(); engine.subscribeTurns(t => turns.push(t));
-  assert.equal(engine.start('auto', false, 1200000), true);
-  assert.deepEqual(starts[0], ['es', 'android-system', 1200000]);
-  native.callback.onSegment('Texto sintético', 'es', 0, 6000);
-  assert.equal(turns[0].engine, 'android-system'); assert.equal(turns[0].speaker, null);
-  engine.stop(); controls.setConversationModel('soniox'); assert.equal(controls.conversationSessionOptions().language, 'auto');
+test('removed Pixel system recognizer is not selectable and does not force Spanish', () => {
+  controls.setConversationModel('whisper-small-es'); controls.setConversationTextLanguage('auto');
+  controls.setConversationModel('android-system');
+  assert.equal(controls.conversationModel(),'whisper-small-es');
+  assert.equal(controls.CONVERSATION_MODELS.includes('android-system'),false);
+  assert.equal(controls.conversationSessionOptions().language,'auto');
 });
 
 test('local windows remain anonymous and cannot enter required-identity episodes or invent timing', () => {

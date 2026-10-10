@@ -50,6 +50,8 @@ export class ConversationChannel {
   private stats = emptyStats();
   private chatActive = false;
   private connection = 0;
+  /** Changes only on configure/stop or a ctl error: a new server, token or rejected auth. */
+  private destinationId = 0;
   private sequence = 0;
   private pending: Pending | null = null;
 
@@ -118,7 +120,19 @@ export class ConversationChannel {
     if (active) this.cancel();
   }
 
-  /** Disconnect/reconfigure clears consent for this connection; no replay after reconnect. */
+  /**
+   * Same authorized destination since the last revoke. An armed session may re-enable the channel after
+   * a fresh authenticated hello-ack only while this value is unchanged.
+   */
+  destination(): number { return this.destinationId; }
+
+  /** Server/token change or authentication error: nothing armed before this may re-enable the channel. */
+  revoke(): void {
+    this.destinationId++;
+    this.reset();
+  }
+
+  /** Connection loss clears this connection's consent and pending work; never replays after reconnect. */
   reset(): void {
     this.enabled = false;
     this.supported = false;

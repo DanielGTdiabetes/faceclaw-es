@@ -62,9 +62,12 @@ internal object LocalWhisperModels {
         val recognizer = OfflineRecognizer(AndroidSpeechEngines.recognizerConfig(
             File(root, model.directoryName), model.kind, if (language == LocalTranscriptLanguage.ES) "es" else "",
             performance.threads, performance.provider, performance.tailPaddingFrames))
+        val vad = FaceclawSpeechVad()
         return object : LocalTranscriptDecoder {
             override val engine: String = model.label
-            override val runtime: String = performance.wire
+            override val speechDetector: String = if (vad.available) "webrtc-mode1" else "unavailable"
+            override val runtime: String = performance.wire + ";vad=" + if (vad.available) "webrtc-mode1" else "unavailable"
+            override fun hasSpeech(samples: FloatArray): Boolean = vad.containsSpeech(samples)
             override fun decode(samples: FloatArray): LocalDecodedText {
                 val stream = recognizer.createStream()
                 try {

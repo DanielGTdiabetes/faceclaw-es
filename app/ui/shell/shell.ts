@@ -1856,7 +1856,7 @@ class Shell {
     if (conversation) {
       const wanted = !conversation.enabled();
       if (wanted && conversation.start) {
-        for (const [label, mode] of [["Escucha continua con Gatekeeper", "gatekeeper"],
+        for (const [label, mode] of [["Escucha con filtros locales", "gatekeeper"],
           ["Escuchar con Hermes", "hermes"], ["Solo transcribir", "text"]] as const) {
           items.push({ label, onSelect: (ctx) => {
             ctx.stack.pop();

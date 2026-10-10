@@ -121,32 +121,59 @@ test('manual continuous listening has no time limit, also across priority suspen
   assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
 });
 
-test('manual conversation closes only after MORE than five minutes of valid quiet audio', async () => {
+test('continuous manual listening survives long silence and resumes text without restarting', async () => {
   const transcription = manualPort(), h = harness({ transcription });
   await h.on(true, 'off', { manualConversation: true });
   const lease = h.leases[0]; lease.pcm(new Uint8Array(1600));
-  await quiet(h, 300000); assert.equal(h.detector.snapshot().enabled, true);
-  h.tick(50); assert.equal(h.detector.snapshot().stopReason, 'silence');
-  assert.equal(transcription.snapshot().enabled, false);
-  assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
-  lease.pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
-  assert.equal(h.detector.snapshot().enabled, false);
+  await quiet(h, 20 * 60_000);
+  assert.equal(h.detector.snapshot().enabled, true);
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+  assert.equal(h.detector.snapshot().stopReason, 'none');
+  assert.equal(h.detector.snapshot().remainingMs, null);
+  assert.deepEqual(h.counts(), { starts: 1, stops: 0, timer: true });
+  // The same session still accepts audio after the quiet stretch.
+  const before = transcription.events.length; lease.pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
+  assert.equal(transcription.events.length, before + 1);
+  h.detector.setEnabled(false); assert.equal(h.detector.snapshot().stopReason, 'manual');
 });
 
-test('voice resets silence; a delivery gap or priority pause is not silence', async () => {
+test('silence after priority pauses and gaps never ends continuous listening', async () => {
   const h = harness({ transcription: manualPort() });
   await h.on(true, 'off', { manualConversation: true });
   h.leases[0].pcm(new Uint8Array(1600)); await quiet(h, 240000);
-  const voice = new Uint8Array(1600);
-  for (let i = 0; i < voice.length; i += 2) { const value = (i % 4 ? -2000 : 2000) & 65535; voice[i] = value & 255; voice[i + 1] = value >> 8; }
-  h.tick(50); h.leases[0].pcm(voice); await quiet(h, 120000);
-  assert.equal(h.detector.snapshot().enabled, true);
   h.env({ available: false, reason: 'Hey Even' }); h.tick(310000);
   assert.equal(h.detector.snapshot().enabled, true);
   h.env({ available: true }); await Promise.resolve();
-  h.leases.at(-1).pcm(new Uint8Array(1600)); await quiet(h, 300000);
+  h.leases.at(-1).pcm(new Uint8Array(1600)); await quiet(h, 400000);
   assert.equal(h.detector.snapshot().enabled, true);
-  h.tick(50); assert.equal(h.detector.snapshot().stopReason, 'silence');
+  assert.equal(h.detector.snapshot().stopReason, 'none');
+});
+
+test('the local engine reaching its native bound ends the session visibly instead of silently', async () => {
+  const transcription = transcriptPort();
+  let status = 'cargando';
+  const base = transcription.snapshot;
+  transcription.snapshot = () => ({ ...base(), engine: 'local', status });
+  const h = harness({ transcription });
+  await h.on(true, 'off', { manualConversation: true, textEngine: 'local' });
+  status = 'listo'; h.tick(); await Promise.resolve(); await Promise.resolve();
+  h.leases[0].pcm(new Uint8Array(1600)); h.tick(50);
+  assert.equal(h.detector.snapshot().enabled, true);
+  status = 'inactivo'; h.tick(50);
+  const snapshot = h.detector.snapshot();
+  assert.equal(snapshot.enabled, false); assert.equal(snapshot.stopReason, 'expired');
+  assert.match(snapshot.reason, /Límite técnico de 24 h/);
+  assert.equal(h.counts().timer, false);
+});
+
+test('a local engine that was never ready is not mistaken for the native bound', async () => {
+  const transcription = transcriptPort();
+  const base = transcription.snapshot;
+  transcription.snapshot = () => ({ ...base(), engine: 'local', status: 'cargando' });
+  const h = harness({ transcription });
+  await h.on(true, 'off', { manualConversation: true, textEngine: 'local' });
+  h.tick(); assert.equal(h.detector.snapshot().enabled, true);
+  assert.equal(h.detector.snapshot().stopReason, 'none');
 });
 
 test('manual conversation fails closed on local fallback; enrollment keeps its two-minute limit', async () => {

@@ -21,7 +21,7 @@ function harness(lockEnabled = false) {
       setDailyContextEnabled: () => true, supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
     conversationUsesHermes: () => true,
-    conversationGatekeeperSettings: () => ({ mode: 'off' }),
+    conversationFiltersEnabled: () => false,
     conversationSingleVoiceFilter: () => false,
     conversationDailyContextSelected: () => false,
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },

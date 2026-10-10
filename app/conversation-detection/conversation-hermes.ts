@@ -6,20 +6,31 @@ import { emptyConversationMetrics, LatencyMetric, LATENCY_BUCKETS_MS } from "./c
 import { type WearerAssociationEvent } from "./wearer-identity";
 import { type ConversationChannel, type ConversationResult } from "../assistant/conversation-channel";
 import { emptyPrefilterCounters, isSingleForeignVoice } from "./conversation-prefilter";
-import { type GatekeeperEngine, type GatekeeperInput } from "./gatekeeper";
+import { MechanicalGatekeeper, FILTER_POLICY } from "./mechanical-gatekeeper";
 
 type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">;
-type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number; gateKey: string;
+type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number;
   baseline: { chunks?: number; sentMs?: number; finalTokens?: number } };
 type Channel = Pick<ConversationChannel, "isReady" | "isEnabled" | "setEnabled" | "request" | "cancel">
-  & Partial<Pick<ConversationChannel, "supportsOptionalIdentity" | "statistics" | "resetStatistics">>;
+  & Partial<Pick<ConversationChannel, "supportsOptionalIdentity" | "statistics" | "resetStatistics" | "isSupported"
+    | "destination" | "supportsDailyContext" | "setDailyContextEnabled">>;
+/**
+ * Hermes link of an armed session, independent of capture. `sin-red`: the socket dropped and the same
+ * authorized destination may come back; `revocado`: server/token changed or auth failed, no resume.
+ */
+export type HermesLink = "listo" | "sin-red" | "revocado";
+/** Why the last armed session stopped; kept after OFF until the next ON. */
+export type HermesStopCause = "" | "off" | "captura" | "motor" | "fin-sesion";
 /** Aggregate diagnostics of the current/last armed session. Counters only, never text or labels. */
 export type ConversationHermesCounters = {
   turnsAccepted: number; turnsIgnored: number; candidates: number; assessments: number; assists: number;
   topics: number; abstentions: number; messages: number; delivered: number; failures: number;
+  /** Turns heard while the link was down: dropped, never replayed after reconnecting. */
+  turnsOffline: number; linkLosses: number; linkResumes: number; offlineMs: number;
 };
 const emptyCounters = (): ConversationHermesCounters => ({ turnsAccepted: 0, turnsIgnored: 0, candidates: 0,
-  assessments: 0, assists: 0, topics: 0, abstentions: 0, messages: 0, delivered: 0, failures: 0 });
+  assessments: 0, assists: 0, topics: 0, abstentions: 0, messages: 0, delivered: 0, failures: 0,
+  turnsOffline: 0, linkLosses: 0, linkResumes: 0, offlineMs: 0 });
 /** A delivered message is kept at least this long even while the conversation goes on. */
 export const HERMES_MESSAGE_MIN_MS = 12_000;
 /** Upper bound for a delivered message on the lenses. */
@@ -40,9 +51,8 @@ export type ConversationHermesHost = {
   every(callback: () => void, ms: number): () => void;
   onOutput(text: string | null): void;
   changed(): void;
-  onStopped?(): void;
   /** Created only at explicit ON; absence preserves the original route exactly. */
-  gatekeeper?(): GatekeeperEngine | null;
+  mechanicalFilterEnabled?(): boolean;
   dailyContextEnabled?(): boolean;
 };
 
@@ -73,12 +83,19 @@ export class ConversationHermesRuntime {
   private wasListening = false;
   private outputTurnAt = 0;
   private outputPresented = false;
-  private gatekeeper: GatekeeperEngine | null = null;
-  private gatekeeperReport: ReturnType<GatekeeperEngine["snapshot"]> | null = null;
-  private gateFlight: object | null = null;
-  private memoryEnabled = false;
-  private sentThroughSeq = 0;
+  private readonly filter = new MechanicalGatekeeper();
+  private filtered = false;
+  private pendingTextAt: number | null = null;
+  private budgetBlocked = false;
+  private notice = "";
+  private noticeUntil = 0;
   private singleVoice = { enabled: false, skipped: 0 };
+  private link: HermesLink = "listo";
+  private linkLostAt = 0;
+  private destination: number | undefined;
+  /** Daily-memory consent frozen at ON; a reconnect can only restore this, never widen it. */
+  private dailyContext = false;
+  private stopCause: HermesStopCause = "";
   private readonly unsubscribe: (() => void)[];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
@@ -101,10 +118,13 @@ export class ConversationHermesRuntime {
     if (modality === "identidad-opcional" && !this.channel.supportsOptionalIdentity?.()) return false;
     if (!this.channel.setEnabled(true)) return false;
     this.enabled = true;
-    this.memoryEnabled = !!this.host.dailyContextEnabled?.();
-    this.gatekeeperReport = null;
-    this.sentThroughSeq = 0;
-    this.gatekeeper = this.host.gatekeeper?.() ?? null;
+    this.link = "listo"; this.linkLostAt = 0; this.stopCause = "";
+    this.destination = this.channel.destination?.();
+    this.dailyContext = this.host.dailyContextEnabled?.() === true;
+    this.filtered = this.host.mechanicalFilterEnabled?.() === true;
+    this.filter.begin();
+    this.pendingTextAt = null;
+    this.budgetBlocked = false; this.notice = ""; this.noticeUntil = 0;
     this.modality = modality;
     this.counters = emptyCounters();
     this.prefilter = emptyPrefilterCounters();
@@ -121,14 +141,15 @@ export class ConversationHermesRuntime {
     return true;
   }
 
-  stop(): void {
+  /**
+   * Ends the armed session. Never touches capture: losing Hermes (network, engine, server) leaves the
+   * local transcript running; only the user's OFF or the capture itself ends listening.
+   */
+  stop(cause: HermesStopCause = "off"): void {
     const wasEnabled = this.enabled;
-    if (wasEnabled) { this.updateClock(false); this.finishFlight(); }
+    if (wasEnabled) { this.updateClock(false); this.finishFlight(); this.closeOffline(); this.stopCause = cause; }
     this.enabled = false;
-    this.gateFlight = null;
-    if (this.gatekeeper) {
-      this.gatekeeper.dispose(); this.gatekeeperReport = this.gatekeeper.snapshot(); this.gatekeeper = null;
-    }
+    this.filter.interrupt(); this.pendingTextAt = null;
     this.flight = null;
     this.channel.setEnabled(false);
     this.cancelTimer?.(); this.cancelTimer = null;
@@ -136,7 +157,6 @@ export class ConversationHermesRuntime {
     this.associationVersion = 0;
     this.clearOutput();
     this.messageHistory = [];
-    if (wasEnabled) this.host.onStopped?.();
     this.host.changed();
   }
 
@@ -166,22 +186,45 @@ export class ConversationHermesRuntime {
   }
 
   snapshot() {
-    return { enabled: this.enabled, busy: this.flight !== null || this.gateFlight !== null, requests: this.requests, modality: this.modality,
-      delivered: this.counters.delivered,
+    return { enabled: this.enabled, busy: this.flight !== null, requests: this.requests, modality: this.modality,
+      delivered: this.counters.delivered, link: this.link, stopCause: this.stopCause,
+      notice: this.enabled && this.host.now() < this.noticeUntil ? this.notice : "",
+      filterStatus: this.filterStatus(),
       listening: this.enabled && this.source.snapshot().state === "escuchando", episode: this.tracker.snapshot() };
   }
 
   /** Session diagnostics kept after OFF until the next ON: aggregate counters only. */
   diagnostics() {
     if (this.enabled) this.updateClock(this.source.snapshot().state === "escuchando");
+    if (this.enabled && this.link !== "listo") this.closeOffline(true);
     const metrics = Object.fromEntries(Object.entries(this.metrics).map(([key, value]) =>
       [key, value instanceof LatencyMetric ? value.snapshot() : typeof value === "object" ? { ...value } : value]));
     return { modality: this.modality, requests: this.requests, counters: { ...this.counters },
       prefilter: { ...this.prefilter }, singleVoice: { ...this.singleVoice },
-      gatekeeper: this.gatekeeper?.snapshot() ?? this.gatekeeperReport,
+      filters: { enabled: this.filtered, ...this.filter.snapshot(this.host.now()) },
       channel: this.channel.statistics?.() ?? null, metrics: { ...metrics,
         latencyBucketsMs: [...LATENCY_BUCKETS_MS], requestsPerListeningMinute: this.metrics.listeningMs
           ? Math.round(this.requests * 60_000 / this.metrics.listeningMs * 100) / 100 : null } };
+  }
+
+  filterStatus(): string {
+    if (this.enabled && this.link === "sin-red") return "Sin conexión con Hermes. La transcripción continúa; se reanudará al volver la red.";
+    if (this.enabled && this.link === "revocado") return "Hermes desconectado en esta sesión (servidor o acceso cambiado). La transcripción continúa.";
+    if (!this.enabled || !this.filtered) return "";
+    const report = this.filter.snapshot(this.host.now());
+    return report.remaining === 0
+      ? `Hermes en pausa por límite de llamadas. Disponible en ${Math.max(1, Math.ceil(report.retryAfterMs / 60_000))} min. La transcripción continúa.`
+      : "";
+  }
+
+  private updateFilterNotice(): void {
+    if (this.link !== "listo") return;
+    const blocked = !!this.filterStatus();
+    if (blocked === this.budgetBlocked) return;
+    this.budgetBlocked = blocked;
+    this.notice = blocked ? this.filterStatus() : "Hermes vuelve a estar disponible. La escucha continúa.";
+    this.noticeUntil = this.host.now() + 30_000;
+    this.host.changed();
   }
 
   private updateClock(listening: boolean): void {
@@ -210,10 +253,10 @@ export class ConversationHermesRuntime {
   private observe(snapshot: DetectorSnapshot): void {
     if (!this.enabled) return;
     this.updateClock(snapshot.enabled && snapshot.state === "escuchando");
-    if (!snapshot.enabled || snapshot.state === "error"
-      || (snapshot.transcription?.engine && snapshot.transcription.engine !== "soniox"
-        && !(this.modality === "identidad-opcional" && snapshot.transcription.engine === "local"))) {
-      this.stop(); return;
+    if (!snapshot.enabled || snapshot.state === "error") { this.stop("captura"); return; }
+    if (snapshot.transcription?.engine && snapshot.transcription.engine !== "soniox"
+      && !(this.modality === "identidad-opcional" && snapshot.transcription.engine === "local")) {
+      this.stop("motor"); return;
     }
     if (snapshot.state !== "escuchando") this.interrupt();
     this.host.changed();
@@ -223,7 +266,7 @@ export class ConversationHermesRuntime {
     if (!this.enabled || !this.source.snapshot().enabled) return;
     if (event.kind === "fin-sesion") {
       if (this.current?.sessionId === event.sessionId && this.current.streamId === event.streamId
-        && event.version >= this.associationVersion) this.stop();
+        && event.version >= this.associationVersion) this.stop("fin-sesion");
       return;
     }
     if (!event.sessionId || !event.streamId) return;
@@ -239,14 +282,14 @@ export class ConversationHermesRuntime {
     if (!this.tracker.association(event)) return;
     this.associationVersion = event.version;
     if (this.tracker.snapshot().chars !== before.chars || event.kind === "borrado") {
-      this.gatekeeper?.interrupt(); this.gateFlight = null;
-      this.sentThroughSeq = 0;
+      this.filter.interrupt(); this.pendingTextAt = null;
       this.finishFlight(); this.channel.cancel(); this.attempted = ""; this.clearOutput();
     }
     this.host.changed();
   }
 
   private turn(turn: ConversationTurn): void {
+    if (this.enabled && this.link !== "listo") { this.counters.turnsOffline++; return; }
     if (!this.enabled || !this.channel.isReady() || !this.source.snapshot().enabled
       || this.source.snapshot().state !== "escuchando") return;
     if (this.modality === "identidad-opcional" && this.source.snapshot().transcription?.engine === "local" && isLocalWindowTurn(turn)
@@ -263,6 +306,7 @@ export class ConversationHermesRuntime {
     this.prefilter.duplicate += after.prefilter.duplicate - before.prefilter.duplicate;
     if (accepted) {
       this.lastTextAt = this.host.now();
+      this.pendingTextAt ??= this.lastTextAt;
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
@@ -275,7 +319,7 @@ export class ConversationHermesRuntime {
     } else if (before.chars > 0 && this.tracker.snapshot().chars === 0) {
       // The episode ended: its pending evaluation no longer applies.
       this.finishFlight(); this.channel.cancel();
-      this.gatekeeper?.interrupt(); this.gateFlight = null;
+      this.filter.interrupt(); this.pendingTextAt = null;
       if (this.outputRef) this.outputStale = true;
     }
     this.host.changed();
@@ -283,7 +327,7 @@ export class ConversationHermesRuntime {
 
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
-    this.gatekeeper?.interrupt(); this.gateFlight = null; this.sentThroughSeq = 0;
+    this.filter.interrupt(); this.pendingTextAt = null;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
     this.attempted = "";
     if (this.outputRef) this.outputStale = true;
@@ -304,75 +348,92 @@ export class ConversationHermesRuntime {
     this.observe(snapshot);
     if (!this.enabled) return;
     this.expireOutput();
-    // A disconnected channel does not re-arm this runtime when the bridge returns.
-    if (!this.channel.isEnabled()) { this.stop(); return; }
+    this.updateFilterNotice();
+    if (!this.channel.isEnabled() && !this.followLink()) return;
     if (!this.channel.isReady()) { this.interrupt(); return; }
     this.tracker.tick();
-    this.gatekeeper?.tick();
     const state = this.tracker.snapshot().state;
     if (this.flight && state !== (this.flight.mode === "assess" ? "candidata" : "activa")) {
       this.finishFlight(); this.channel.cancel();
     }
-    if (snapshot.state !== "escuchando" || this.flight || this.gateFlight || (this.maxRequests !== null && this.requests >= this.maxRequests)
-      || this.host.now() - this.lastTextAt < 2000 || this.host.now() - this.lastRequestAt < 5000) return;
+    if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
+      || (this.host.now() - this.lastTextAt < 2000
+        && (!this.filtered || this.pendingTextAt === null || this.host.now() - this.pendingTextAt < FILTER_POLICY.continuousSpeechMs))
+      || this.host.now() - this.lastRequestAt < 5000) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
     if (context) this.request(context, state === "candidata" ? "assess" : "assist");
+  }
+
+  /**
+   * The channel was disabled under an armed session (socket loss resets consent). Capture is never
+   * stopped here. Returns true once the channel is re-armed after a fresh authenticated handshake of the
+   * same destination with the capabilities this session needs; old context is not replayed.
+   */
+  private followLink(): boolean {
+    const revoked = this.destination !== undefined && this.channel.destination?.() !== this.destination;
+    if (this.link === "listo" || (revoked && this.link === "sin-red")) {
+      if (this.link === "listo") {
+        this.linkLostAt = this.host.now(); this.counters.linkLosses++;
+        this.interrupt(); this.clearOutput();
+      }
+      this.link = revoked ? "revocado" : "sin-red";
+      this.notice = this.filterStatus(); this.noticeUntil = this.host.now() + 30_000;
+      this.host.changed();
+    }
+    if (this.link === "revocado" || this.channel.isSupported?.() !== true) return false;
+    if (this.modality === "identidad-opcional" && !this.channel.supportsOptionalIdentity?.()) return false;
+    // Restore only the consent frozen at ON; a server without daily context gets the plain contract.
+    this.channel.setDailyContextEnabled?.(this.dailyContext && this.channel.supportsDailyContext?.() === true);
+    if (!this.channel.setEnabled(true)) return false;
+    this.closeOffline();
+    this.counters.linkResumes++;
+    // New context only: the episode heard before/during the outage is not sent after reconnecting.
+    this.tracker.stop(); this.current = null; this.associationVersion = 0; this.attempted = "";
+    this.filter.interrupt(); this.pendingTextAt = null; this.lastRequestAt = -Infinity;
+    this.notice = "Hermes reconectado. La escucha continúa con lo que se diga a partir de ahora.";
+    this.noticeUntil = this.host.now() + 30_000;
+    this.host.changed();
+    return true;
+  }
+
+  /** Accumulates offline time; `keepOpen` only measures the running outage for diagnostics. */
+  private closeOffline(keepOpen = false): void {
+    if (this.link === "listo") return;
+    const now = this.host.now();
+    this.counters.offlineMs += Math.max(0, now - this.linkLostAt);
+    this.linkLostAt = now;
+    if (!keepOpen) this.link = "listo";
   }
 
   private request(context: EpisodeContext, mode: "assess" | "assist"): void {
     const key = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}/${context.ref.revision}/${mode}`;
     if (key === this.attempted || (this.maxRequests !== null && this.requests >= this.maxRequests)
       || !this.enabled || !this.channel.isReady()) return;
-    this.attempted = key;
-    // Deterministic and before any classifier: a newer revision with another voice is evaluated again.
-    if (this.singleVoice.enabled && isSingleForeignVoice(context.turns)) { this.singleVoice.skipped++; this.host.changed(); return; }
-    const gate = this.gatekeeper;
-    if (!gate || gate.mode() === "off") { this.sendHermes(context, mode, key); return; }
-    const input = (): GatekeeperInput | null => {
-      const current = this.tracker.gatekeeperContext(mode);
-      if (!this.enabled || this.source.snapshot().state !== "escuchando" || !this.source.snapshot().enabled
-        || !current || current.ref.sessionId !== context.ref.sessionId || current.ref.streamId !== context.ref.streamId
-        || current.ref.associationVersion !== context.ref.associationVersion || current.ref.episodeId !== context.ref.episodeId) return null;
-      return { context: current, mode, lastTextAt: this.lastTextAt, sentThroughSeq: this.sentThroughSeq,
-        memoryEnabled: this.memoryEnabled, final: false };
-    };
-    const first = input();
-    if (!first) return;
-    {
-      const ticket = {}; this.gateFlight = ticket;
-      gate.evaluate(key, first, input, answer => {
-        if (this.gateFlight !== ticket) return;
-        this.gateFlight = null;
-        if (answer.cancelled) { this.attempted = ""; return; }
-        const latest = input();
-        if (!latest) return;
-        // Never suppress newer speech using an old classification. Re-enter the normal cadence.
-        if (answer.action === "ignore") {
-          this.attempted = latest.context.ref.revision !== answer.revision ? ""
-            : `${latest.context.ref.sessionId}/${latest.context.ref.streamId}/${latest.context.ref.associationVersion}/${latest.context.ref.episodeId}/${latest.context.ref.revision}/${mode}`;
-          return;
-        }
-        const next = mode === "assess" ? this.tracker.assessmentContext() : this.tracker.confirmedContext();
-        if (next) {
-          this.attempted = `${next.ref.sessionId}/${next.ref.streamId}/${next.ref.associationVersion}/${next.ref.episodeId}/${next.ref.revision}/${mode}`;
-          this.sendHermes(next, mode, key);
-        }
-      });
+    if (this.singleVoice.enabled && isSingleForeignVoice(context.turns)) {
+      this.attempted = key; this.singleVoice.skipped++; this.host.changed(); return;
     }
+    if (this.filtered) {
+      const decision = this.filter.decide(context, mode, this.host.now());
+      // Time-based deferrals retry the latest bounded context. Short turns stay available to grow.
+      if (decision !== "send") { this.host.changed(); return; }
+    }
+    this.attempted = key;
+    this.sendHermes(context, mode);
   }
 
-  private sendHermes(context: EpisodeContext, mode: "assess" | "assist", gateKey: string): void {
+  private sendHermes(context: EpisodeContext, mode: "assess" | "assist"): void {
     if (!this.enabled || !this.channel.isReady() || this.source.snapshot().state !== "escuchando"
       || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
     this.lastRequestAt = this.host.now();
-    if (mode === "assist") this.sentThroughSeq = Math.max(...context.turns.map(t => t.seq), 0);
+    if (this.filtered) this.filter.submitted(context, mode, this.host.now());
+    this.pendingTextAt = null;
     this.requests++;
     if (mode === "assess") this.counters.assessments++; else this.counters.assists++;
     const snapshot = this.source.snapshot();
     this.metrics.turnToRequest.add(this.host.now() - this.lastTextAt);
     if (snapshot.lastVadStopAtMs != null) this.metrics.vadStopToRequest.add(this.host.now() - snapshot.lastVadStopAtMs);
-    const flight: Flight = { ref: { ...context.ref }, mode, gateKey, at: this.host.now(), turnAt: this.lastTextAt,
+    const flight: Flight = { ref: { ...context.ref }, mode, at: this.host.now(), turnAt: this.lastTextAt,
       baseline: { chunks: snapshot.metrics?.chunks, sentMs: snapshot.transcription?.soniox?.sentMs,
         finalTokens: snapshot.transcription?.soniox?.finalTokens } };
     this.flight = flight;
@@ -383,10 +444,6 @@ export class ConversationHermesRuntime {
 
   private result(flight: Flight, result: ConversationResult | null): void {
     if (this.flight !== flight) return;
-    if (result) this.gatekeeper?.observe(flight.gateKey, {
-      message: result.mode === "assist" && !!result.text, nada: result.mode === "assist" && !result.text,
-      memoryUpdated: result.memoryUpdated,
-    });
     this.metrics[flight.mode === "assess" ? "assessRoundTrip" : "assistRoundTrip"].add(this.host.now() - flight.at);
     this.finishFlight();
     if (result?.timing) {

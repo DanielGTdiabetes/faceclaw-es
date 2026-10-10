@@ -2,15 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
-const { GatekeeperEngine } = require('../.test-build/app/conversation-detection/gatekeeper.js');
+const { FILTER_POLICY } = require('../.test-build/app/conversation-detection/mechanical-gatekeeper.js');
 
 function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, gateOptions) {
   let now = 1000, seq = 0, ref = null;
   const state = { enabled: false, state: 'desactivado', transcription: { engine: 'soniox' } };
   const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set();
   const frames = [], outputs = [];
-  const gateCalls = [];
-  let gate, priority = false, priorityCallback = () => {};
   const source = { snapshot: () => state, wearerActionRef: () => ref,
     subscribe(cb) { observers.add(cb); cb(state); return () => observers.delete(cb); },
     subscribeTurns(cb) { turns.add(cb); return () => turns.delete(cb); },
@@ -20,11 +18,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
     dailyContextEnabled: () => !!gateOptions?.memory,
-    gatekeeper: () => !gateOptions ? null : (gate = new GatekeeperEngine({ isLoaded: () => true, unload() {},
-      classify(input, done) { gateCalls.push({ input, done }); return () => {}; } }, {
-      now: () => now, after: (cb, ms) => timer(cb, ms, false), changed() {}, priorityActive: () => priority,
-      subscribePriority(cb) { priorityCallback = cb; return () => { priorityCallback = () => {}; }; },
-    }, gateOptions)),
+    mechanicalFilterEnabled: () => !!gateOptions?.filtered,
     every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
     policy);
   const notify = () => { for (const cb of [...observers]) cb(state); };
@@ -51,9 +45,6 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
   return { runtime, channel, frames, outputs, timers, source, state, ref: () => ref, association, turn, advance, reply,
-    gateCalls, gate: () => gate,
-    gateReply(action, reason = 'uncertain', index = gateCalls.length - 1) { gateCalls[index].done(JSON.stringify({ action, reason })); },
-    priority(value) { priority = value; priorityCallback(value); },
     begin(budget, receipts = false) { channel.negotiate(['conv/1', ...(receipts ? ['conv/memory-ack/1'] : [])]); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
@@ -63,46 +54,25 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
 
-test('active allowed assist observes the real Hermes abstention after filtering', () => {
-  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
-  assert.equal(h.sent().length, 0); h.gateReply('assist'); h.reply('assess');
-  assert.equal(h.sent().length, 1); assert.equal(h.gateCalls.at(-1).input.mode, 'assist');
-  h.gateReply('assist'); h.reply('assist', { kind: 'nada', text: undefined });
-  assert.equal(h.runtime.diagnostics().gatekeeper.counters.observedNada, 1);
-  h.runtime.dispose();
-});
-
-test('active gates assess and the immediate assist independently; ignored assist does not close episode', () => {
-  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
-  assert.equal(h.sent().length, 0); h.gateReply('assist'); assert.equal(h.sent()[0].type, 'assess');
-  h.reply('assess'); assert.equal(h.sent().length, 1); h.gateReply('ignore', 'courtesy');
-  assert.equal(h.gateCalls.at(-1).input.sentThroughSeq, 0);
-  assert.equal(h.sent().length, 1); assert.equal(h.runtime.snapshot().episode.state, 'activa');
-  h.turn('2', '¿Cuándo sale el próximo tren?'); h.advance(6000); h.gateReply('assist');
-  assert.equal(h.sent().length, 2); h.reply('assist'); assert.equal(h.outputs.filter(Boolean).length, 1);
-  h.runtime.dispose();
-});
-
-test('active stale ignore cannot suppress newly arrived evidence', () => {
-  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
-  h.turn('2', 'Ha cambiado la hora del tren'); h.gateReply('ignore');
-  h.advance(2000); assert.equal(h.gateCalls.length, 2); h.gateReply('assist');
-  assert.equal(h.sent().length, 1); assert.equal(h.sent()[0].turns.at(-1).text, 'Ha cambiado la hora del tren');
-  h.runtime.dispose();
-});
-
-test('priority cancellation never sends Hermes before the source pause event', () => {
-  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
-  h.priority(true); h.gateReply('assist'); assert.equal(h.sent().length, 0);
-  h.update({ state: 'suspendido' }); h.priority(false); h.update({ state: 'escuchando' });
-  h.runtime.dispose(); assert.equal(h.sent().length, 0);
-});
-
-test('OFF prevents late gate dispatch and keeps aggregate diagnostics', () => {
-  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate(); h.runtime.stop();
-  h.gateReply('assist'); assert.equal(h.sent().length, 0);
-  assert.equal(h.runtime.diagnostics().gatekeeper.counters.cancelled, 1); assert.equal(h.timers.size, 0);
-  h.runtime.dispose();
+test('exhausted quota stops dispatch, announces a bounded notice/countdown, then resumes without restarting capture', () => {
+  const h=harness({ candidateMs:60000, silenceMs:30000, maxTurns:12, maxChars:6000 },{filtered:true});
+  h.begin(null); h.candidate(); h.reply('assess'); h.reply('assist',{kind:'nada',text:undefined});
+  for(let i=2;i<120;i++) {
+    h.turn(i % 2 ? '1' : '2', 'Otro detalle sobre el viaje'); h.advance(20000);
+    h.reply('assist',{kind:'nada',text:undefined});
+  }
+  h.advance(500);
+  assert.equal(h.sent().length,120);
+  assert.match(h.runtime.snapshot().notice,/Disponible en \d+ min/);
+  assert.match(h.runtime.snapshot().filterStatus,/transcripción continúa/);
+  h.turn('2','Una nueva frase debe esperar'); h.advance(30000);
+  assert.equal(h.sent().length,120); assert.equal(h.runtime.snapshot().notice,'');
+  assert.match(h.runtime.snapshot().filterStatus,/límite/);
+  h.advance(FILTER_POLICY.hourMs);
+  assert.match(h.runtime.snapshot().notice,/vuelve a estar disponible/);
+  assert.equal(h.runtime.snapshot().filterStatus,'');
+  assert.equal(h.state.enabled,true);
+  h.runtime.stop(); assert.equal(h.runtime.snapshot().notice,''); h.runtime.dispose();
 });
 
 test('metrics follow listening, concurrent transcription and native sent without retaining speech', () => {
@@ -258,15 +228,88 @@ test('identity correction, OFF, suspension and capture boundary reject pending o
   }
 });
 
-test('normal chat suspends evaluation and resumes with new context; disconnect cannot auto-enable', () => {
+test('normal chat suspends evaluation and resumes with new context', () => {
   const h = harness(); h.begin(); h.candidate(); h.channel.setChatActive(true);
   h.update({ state: 'suspendido' }); h.advance(1000);
   assert.equal(h.runtime.snapshot().enabled, true);
   h.channel.setChatActive(false); h.update({ state: 'escuchando' }); h.turn('1'); h.turn('2'); h.advance(5000);
   assert.equal(h.sent().length, 2); assert.equal(h.runtime.snapshot().enabled, true);
-  h.channel.reset(); h.advance(500); assert.equal(h.runtime.snapshot().enabled, false);
-  h.channel.negotiate(['conv/1']); h.turn('1'); h.turn('2'); h.advance(5000);
-  assert.equal(h.sent().length, 2); h.runtime.dispose(); assert.equal(h.timers.size, 0);
+  h.runtime.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test('ten socket losses never stop the armed session; each reconnect sends only new context', () => {
+  const h = harness(); h.begin(null); h.candidate();
+  assert.equal(h.sent().length, 1);
+  for (let i = 0; i < 10; i++) {
+    const before = h.sent().length;
+    h.channel.reset(); h.advance(500);
+    assert.equal(h.runtime.snapshot().enabled, true, `loss ${i}`);
+    assert.equal(h.runtime.snapshot().link, 'sin-red');
+    assert.match(h.runtime.filterStatus(), /transcripción continúa/);
+    assert.equal(h.state.enabled, true);
+    // Heard while offline: dropped, never replayed.
+    h.turn('1', `OFFLINE_${i}`); h.turn('2', `OFFLINE_${i}b`); h.advance(6000);
+    assert.equal(h.sent().length, before);
+    h.channel.negotiate(['conv/1']); h.advance(500);
+    assert.equal(h.runtime.snapshot().link, 'listo');
+    assert.equal(h.channel.isEnabled(), true);
+    h.association(); h.turn('1', `Nuevo tema ${i}`); h.turn('2', `Respuesta ${i}`); h.advance(6000);
+    assert.equal(h.sent().length, before + 1, `resume ${i}`);
+  }
+  assert.equal(h.sent().some((f) => JSON.stringify(f).includes('OFFLINE_')), false);
+  const counters = h.runtime.diagnostics().counters;
+  assert.equal(counters.linkLosses, 10); assert.equal(counters.linkResumes, 10);
+  assert.equal(counters.turnsOffline, 20); assert.ok(counters.offlineMs >= 10 * 6000);
+  h.runtime.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test('a reply from before the loss never reaches the lenses after reconnecting', () => {
+  const h = harness(); h.begin(); h.candidate();
+  const stale = h.sent()[0];
+  h.channel.reset(); h.advance(500); h.channel.negotiate(['conv/1']); h.advance(500);
+  h.reply('assess', {}, stale);
+  h.association(); h.turn('1'); h.turn('2'); h.advance(6000);
+  const fresh = h.sent().at(-1);
+  assert.notEqual(fresh.requestId, stale.requestId);
+  h.reply('assist', {}, stale);
+  assert.deepEqual(h.outputs.filter(Boolean), []);
+  h.runtime.dispose();
+});
+
+test('OFF during an outage never revives Hermes on reconnect', () => {
+  const h = harness(); h.begin(); h.candidate();
+  h.channel.reset(); h.advance(500);
+  h.runtime.stop(); h.update({ enabled: false, state: 'desactivado' });
+  h.channel.negotiate(['conv/1']); h.advance(5000);
+  assert.equal(h.runtime.snapshot().enabled, false); assert.equal(h.channel.isEnabled(), false);
+  assert.equal(h.runtime.snapshot().stopCause, 'off');
+  h.runtime.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test('a revoked destination (server, token or auth change) keeps capture but never re-arms Hermes', () => {
+  const h = harness(); h.begin(); h.candidate();
+  h.channel.revoke(); h.advance(500);
+  assert.equal(h.runtime.snapshot().enabled, true); assert.equal(h.runtime.snapshot().link, 'revocado');
+  h.channel.negotiate(['conv/1']); h.advance(5000);
+  assert.equal(h.channel.isEnabled(), false); assert.equal(h.runtime.snapshot().link, 'revocado');
+  assert.equal(h.state.enabled, true);
+  // A plain loss that turns into a revoke while offline also stays down.
+  const g = harness(); g.begin(); g.channel.reset(); g.advance(500); g.channel.revoke(); g.advance(500);
+  g.channel.negotiate(['conv/1']); g.advance(500);
+  assert.equal(g.runtime.snapshot().link, 'revocado'); assert.equal(g.channel.isEnabled(), false);
+  h.runtime.dispose(); g.runtime.dispose();
+});
+
+test('optional identity resumes only on a bridge that still announces conv/2', () => {
+  const h = harness();
+  h.channel.negotiate(['conv/1', 'conv/2']); h.runtime.begin(null, 'identidad-opcional');
+  h.state.enabled = true; h.state.state = 'escuchando'; h.update({});
+  h.channel.reset(); h.advance(500);
+  h.channel.negotiate(['conv/1']); h.advance(500);
+  assert.equal(h.channel.isEnabled(), false); assert.equal(h.runtime.snapshot().link, 'sin-red');
+  h.channel.reset(); h.channel.negotiate(['conv/1', 'conv/2']); h.advance(500);
+  assert.equal(h.channel.isEnabled(), true); assert.equal(h.runtime.snapshot().link, 'listo');
+  h.runtime.dispose();
 });
 
 test('local fallback and errors shut down the channel without disabling normal capture independently', () => {
@@ -373,4 +416,25 @@ test('phone history: last five of this session with time, only while ON', () => 
   h.update({ enabled: false, state: 'desactivado' });
   assert.equal(hermesHistoryText(true, h.runtime.history()), '');
   h.runtime.dispose();
+});
+
+test('mechanical filter retains short replies, batches new text and permits one assessed follow-up', () => {
+  const h = harness({ candidateMs: 60000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, { filtered: true });
+  h.begin(); h.turn('1', 'No'); h.turn('2', 'Mañana'); h.advance(2000);
+  assert.equal(h.sent().length, 0);
+  h.turn('1', 'El tren sale mañana'); h.advance(2000);
+  assert.equal(h.sent().length, 1); assert.equal(h.sent()[0].turns[0].text, 'No');
+  h.reply('assess'); assert.equal(h.sent().length, 2); h.reply('assist', { kind: 'nada', text: undefined });
+  h.turn('2', 'Ahora cambia la hora'); h.advance(5000);
+  assert.equal(h.sent().length, 2); h.advance(15000); assert.equal(h.sent().length, 3);
+  h.reply('assist', { kind: 'nada', text: undefined }); h.turn('1', 'No'); h.advance(20000);
+  assert.equal(h.sent().length, 3); assert.equal(h.runtime.diagnostics().filters.counters.short > 0, true);
+  h.runtime.stop(); assert.equal(h.timers.size, 0); h.runtime.dispose();
+});
+test('continuous speech cannot starve the mechanical batching timer', () => {
+  const h = harness({ candidateMs: 60000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, { filtered: true });
+  h.begin();
+  for (let i=0; i<12; i++) { h.turn(i%2 ? '2' : '1', 'Otra frase en la conversación'); h.advance(1000); }
+  assert.equal(h.sent().length, 1); h.runtime.stop(); h.reply('assess');
+  assert.equal(h.sent().length, 1); h.runtime.dispose();
 });

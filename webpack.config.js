@@ -27,6 +27,10 @@ module.exports = (env) => {
 			to: "about/",
 		});
 	}
+	webpack.Utils.addCopyRule({
+		from: resolve(__dirname, "App_Resources/Android/src/main/native/vad/LICENSE"),
+		to: "about/webrtc-vad-LICENSE.txt",
+	});
 
 	return webpack.resolveConfig();
 };

@@ -56,13 +56,11 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
-import { isSystemTranscriptionReady } from "../native/system-transcription";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationFiltersEnabled, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
-import { createNativeGatekeeper, gatekeeperModelReady } from "../native/gatekeeper";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { ShellResourceLimitError } from "../graphics/shell-scene";
@@ -388,12 +386,13 @@ class DashboardController {
 
   constructor() {
     bindConversationSession({
+      filterStatus: () => this.conversationHermes.filterStatus(),
       detector: this.conversationDetector,
       setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
       setManualEnabled: (enabled) => this.setManualConversationEnabled(enabled),
       voiceModel: () => micModelState("speaker-embedding").status,
       textModel: () => conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
-        : conversationModel() === "android-system" ? (isSystemTranscriptionReady() ? "ready" : "absent") : conversationTextModelStatus(conversationLocalModel()),
+        : conversationTextModelStatus(conversationLocalModel()),
     });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {
@@ -2124,24 +2123,14 @@ class DashboardController {
 
   readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
     dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
-    gatekeeper: () => {
-      const settings = conversationGatekeeperSettings();
-      return createNativeGatekeeper(settings.model, settings, () => this.emitConversationHermes(), () => {
-        const snapshot = this.conversationDetector.snapshot(), t = snapshot.transcription;
-        if (!t?.model?.startsWith("whisper") || !t.analysis) return null;
-        return { scope: `${snapshot.epoch}/${t.model}`, calls: t.analysis.decodeCalls,
-          totalMs: t.analysis.decodeTotalMs, dropped: t.dropped, busy: t.busy };
-      });
-    },
+    mechanicalFilterEnabled: () => conversationFiltersEnabled(),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
     onOutput: (text) => this.setConversationHermesMessage(text),
-    onStopped: () => {
-      const snapshot = this.conversationDetector.snapshot();
-      if (snapshot.enabled && snapshot.manualConversation) this.conversationDetector.setEnabled(false);
-    },
+    // No capture hook: losing Hermes (network, server, engine) never ends local listening. Only the
+    // user's OFF or the capture's own error does.
     changed: () => this.emitConversationHermes(),
-  }, { candidateMs: 15_000, silenceMs: 30_000, maxTurns: 12, maxChars: 6000 });
+  }, { candidateMs: 60_000, silenceMs: 30_000, maxTurns: 12, maxChars: 6000 });
 
   /** Session options (language, diagnostics) default to the RAM selectors, read once at ON. */
   setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
@@ -2177,17 +2166,13 @@ class DashboardController {
     }
     if (this.conversationDetector.snapshot().enabled) return "";
     const withHermes = conversationUsesHermes();
-    if (withHermes && conversationGatekeeperSettings().mode === "active" && !gatekeeperModelReady(conversationGatekeeperSettings().model)) {
-      return "Descarga el modelo de Gatekeeper desde Conversación > Ajustes en el móvil.";
-    }
     if (withHermes && conversationDailyContextSelected() && !assistantBridge.conversation.supportsDailyContext()) {
       return "La memoria de 24 h no está disponible. Conecta el servidor preparado o desactívala para iniciar.";
     }
     const local = conversationTextEngine() === "local";
     if (withHermes && !assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
     if (!local && !sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
-    if (local && conversationModel() === "android-system" && !isSystemTranscriptionReady()) return "El motor local del Pixel no está disponible en este móvil.";
-    if (local && conversationModel() !== "android-system" && conversationTextModelStatus(conversationLocalModel()) !== "ready") return "Descarga el modelo seleccionado antes de iniciar.";
+    if (local && conversationTextModelStatus(conversationLocalModel()) !== "ready") return "Descarga el modelo seleccionado antes de iniciar.";
     // conv/2 bridge: recognising the wearer is optional. An old conv/1 bridge only accepts
     // wearer+other contexts, so it keeps the previous requirement of a saved profile.
     const optionalIdentity = !withHermes || assistantBridge.conversation.supportsOptionalIdentity();

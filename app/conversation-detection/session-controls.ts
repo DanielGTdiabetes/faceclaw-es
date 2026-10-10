@@ -3,14 +3,13 @@ import { conversationStartPlan } from "./conversation-ui";
 import { type ParticipationMode } from "./participation";
 import { type TextLanguage } from "./transcription";
 import { type SpeakerRef } from "./wearer-identity";
-import { type GatekeeperMode } from "./gatekeeper";
-import { GATEKEEPER_MODELS, type GatekeeperModelId } from "./gatekeeper-models";
 
 export type ConversationSessionPort = {
   detector: ConversationCaptureCoordinator;
   setEnabled(enabled: boolean, transcribe?: boolean, participation?: ParticipationMode, options?: SessionOptions): void;
   /** The product ON/OFF; legacy diagnostic controls remain available separately. */
   setManualEnabled?(enabled: boolean): string;
+  filterStatus?(): string;
   voiceModel(): string;
   textModel(): string;
 };
@@ -21,18 +20,15 @@ let withText = true;
 /** Automatic Spanish/Catalan recognition by default. RAM only; assistant settings unchanged. */
 let textLanguage: TextLanguage = "auto";
 let diagnostics = false;
-/** Soniox (cloud, diarized) by default; local Whisper on demand. RAM only. */
-let textEngine: "soniox" | "local" = "soniox";
-export const CONVERSATION_MODELS = ["soniox", "android-system", "whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const;
+/** Local Whisper by default for continuous listening without cloud transcription charges. RAM only. */
+let textEngine: "soniox" | "local" = "local";
+export const CONVERSATION_MODELS = ["soniox", "whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const;
 export type ConversationModel = typeof CONVERSATION_MODELS[number];
-let localModel: Exclude<ConversationModel, "soniox" | "android-system"> = "whisper-small-es";
-let systemSelected = false;
+let localModel: Exclude<ConversationModel, "soniox"> = "whisper-small-es";
 let useHermes = true;
 /** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
 let dailyContext = false;
-let gatekeeperMode: GatekeeperMode = "off";
-let gatekeeperModelId: GatekeeperModelId = "lfm2.5-1.2b-q4";
-let gatekeeperWait = false;
+let mechanicalFilters = true;
 /** Whisper speaker attribution in manual conversations (pause windows + session voices). RAM only. */
 let localSpeakers = true;
 /** Skip evaluating contexts heard from a single non-wearer voice (TV, radio, someone else's call). */
@@ -49,19 +45,18 @@ export function setConversationSingleVoiceFilter(value: boolean): void {
   singleVoiceFilter = value;
   for (const listener of listeners) listener();
 }
-/** Experimental session choices, frozen at ON and cleared by process restart. */
-export function conversationGatekeeperSettings() { return { mode: gatekeeperMode, model: gatekeeperModelId, wait: gatekeeperWait }; }
-export function setConversationGatekeeper(mode: GatekeeperMode, model: GatekeeperModelId, wait: boolean): boolean {
-  if (port?.detector.snapshot().enabled || !["off", "active"].includes(mode)
-    || !GATEKEEPER_MODELS.some(m => m.id === model)) return false;
-  gatekeeperMode = mode; gatekeeperModelId = model; gatekeeperWait = !!wait;
+/** Frozen at ON; no model, download, classifier or background task. */
+export function conversationFiltersEnabled(): boolean { return mechanicalFilters; }
+export function setConversationFiltersEnabled(value: boolean): boolean {
+  if (port?.detector.snapshot().enabled) return false;
+  mechanicalFilters = !!value;
   for (const listener of listeners) listener();
   return true;
 }
 /** One explicit listening choice, shared by phone and lenses; never starts audio by itself. */
 export function selectConversationListeningMode(mode: "gatekeeper" | "hermes" | "text"): boolean {
   if (port?.detector.snapshot().enabled) return false;
-  setConversationGatekeeper(mode === "gatekeeper" ? "active" : "off", gatekeeperModelId, gatekeeperWait);
+  setConversationFiltersEnabled(mode === "gatekeeper");
   setConversationUsesHermes(mode !== "text");
   return true;
 }
@@ -71,12 +66,11 @@ export function setConversationDailyContextSelected(value: boolean): void {
   dailyContext = value;
   for (const listener of listeners) listener();
 }
-export function conversationLocalModel(): Exclude<ConversationModel, "soniox" | "android-system"> { return localModel; }
-export function conversationModel(): ConversationModel { return textEngine === "soniox" ? "soniox" : systemSelected ? "android-system" : localModel; }
+export function conversationLocalModel(): Exclude<ConversationModel, "soniox"> { return localModel; }
+export function conversationModel(): ConversationModel { return textEngine === "soniox" ? "soniox" : localModel; }
 export function setConversationModel(value: ConversationModel): void {
   if (port?.detector.snapshot().enabled || !CONVERSATION_MODELS.includes(value)) return;
-  if (value !== "soniox" && value !== "android-system") localModel = value;
-  systemSelected = value === "android-system";
+  if (value !== "soniox") localModel = value;
   textEngine = value === "soniox" ? "soniox" : "local";
   for (const listener of listeners) listener();
 }
@@ -119,7 +113,7 @@ export function setConversationTextEngine(value: "soniox" | "local"): void {
   for (const listener of listeners) listener();
 }
 /** Options read once at start; every entry point (phone, lenses, "Solo transcripción") uses them. */
-export function conversationSessionOptions(): SessionOptions { return { language: systemSelected && textEngine === "local" ? "es" : textLanguage, diagnostics }; }
+export function conversationSessionOptions(): SessionOptions { return { language: textLanguage, diagnostics }; }
 export function onConversationTextSelected(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
