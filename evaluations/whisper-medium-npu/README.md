@@ -86,8 +86,9 @@ velocidad de ese conjunto de operadores; no es Whisper ni tiene significado de p
 Conclusiones:
 
 - **La NPU (EdgeTPU vía NNAPI) no acepta un bloque de encoder Whisper ni siquiera con formas estáticas**, ni en
-  float ni en int8 completo. La separación encoder/decoder no basta para usar la NPU por NNAPI en este Pixel. Queda
-  solo la ruta Google Tensor SDK/AOT, que requiere un acceso que no se ha solicitado.
+  float ni en int8 completo en las exportaciones sintéticas probadas. La separación encoder/decoder no basta
+  para esos artefactos y ese driver NNAPI. Esto no descarta otras exportaciones, cuantizaciones o runtimes:
+  Google Tensor SDK/AOT es otra vía documentada pendiente, cuyo acceso no se ha solicitado.
 - **La GPU sí acepta el bloque estático entero** y es ~25–30 % más rápida que la CPU con el mismo bloque en float.
   Pero 24 bloques × ~0,19–0,21 s ≈ 4,6–5 s de encoder en GPU, **más lento** que el encoder real híbrido int8 en
   CPU medido arriba (≈ 3,0 s dentro de los 4,06 s). Es una extrapolación con pesos sintéticos, no una medición del
@@ -96,7 +97,8 @@ Conclusiones:
 
 ## Lectura útil para Faceclaw
 
-El coste del encoder sobre 30 s fijos domina tanto en TFLite como en ONNX. Para ventanas de 6 s, un encoder que
+El perfil TFLite atribuye la mayor parte del tiempo al encoder sobre 30 s fijos; no se midió aquí el desglose
+encoder/decoder de ONNX. Para ventanas de 6 s, un encoder que
 procese solo el audio real (p. ej. contexto de audio reducido, como `audio_ctx` de whisper.cpp) podría reducir
 ese coste, pero eso **no está medido** aquí y puede degradar la precisión. Es la siguiente hipótesis, no un
 resultado.

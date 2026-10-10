@@ -1,5 +1,7 @@
 # Continuar Faceclaw desde otro PC
 
+**Revisión vigente, 10-10-2026:** [S2.6.13-r2 contrastada por Codex](revision-codex-s2.6.13-2026-10-10.md). APK instalada extraída igual a `c99eacf4…362b`, firma original/805; respaldos de 35 ajustes antes/después idénticos, runtime package.json recuperado y siete nativas iguales a S2.6.12. Publicaciones principal `0baff52`/banco `137225d` contrastadas antes de la revisión; Pixel sin audio ni wakelock de Faceclaw, auxiliares/reserva ausentes. No nueva instalación/captura ni selección RAM observada. Medium CPU no sostiene ref-6-3; pruebas NNAPI/GPU no acreditan aceleración completa ni descartan todos los artefactos futuros. Corregida presentación no-voz del banco conservando JSON. Precisión humana a dos metros pendiente. Prevalece sobre estados históricos inferiores; sin nueva copia NAS.
+
 **Incremento local pendiente de relevo Pixel, revisión posterior, 09-10-2026:**
 conservar `e5d361b`, `2fd320a` y `09564de`; no están cerrados. En el árbol de
 trabajo queda la corrección de OFF: la instantánea retenida se refresca solo del
