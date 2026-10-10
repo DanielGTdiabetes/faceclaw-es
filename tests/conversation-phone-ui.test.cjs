@@ -11,7 +11,6 @@ function harness() {
   let snapshot = { enabled: false, state: 'desactivado', stopReason: 'none', reason: '', remainingMs: 0 };
   let textModel = 'ready', downloads = 0;
   let selectedText = true;
-  let gatekeeperMode = 'off';
   let usesHermes = true, gateReady = true;
   const listeningStarts = [], gateDownloads = [];
   const starts = [], alerts = [], timers = new Map(), delays = [];
@@ -38,8 +37,8 @@ function harness() {
       if (name === '../g2/dashboard-controller') return { dashboardController: { conversationDetector: detector,
         setConversationCaptureEnabled: (...args) => starts.push(args), shellRenderDiagnostics: () => ({ total: 0, resourceLimit: 0 }),
         toggleManualConversation() { return this.setManualConversationEnabled(!snapshot.enabled); },
-        setManualConversationEnabled(enabled) { if (enabled === snapshot.enabled) return ''; if (enabled) listeningStarts.push({ gatekeeperMode, usesHermes }); snapshot = { ...snapshot, enabled, state: enabled ? 'escuchando' : 'desactivado' }; return ''; },
-        conversationHermes: { snapshot: () => ({ enabled: snapshot.enabled, listening: snapshot.enabled, requests: 0, modality: 'identidad-opcional' }), history: () => [], diagnostics: () => ({ filters: { remaining: 120 } }) } } };
+        setManualConversationEnabled(enabled) { if (enabled === snapshot.enabled) return ''; if (enabled) listeningStarts.push({ usesHermes }); snapshot = { ...snapshot, enabled, state: enabled ? 'escuchando' : 'desactivado' }; return ''; },
+        conversationHermes: { snapshot: () => ({ enabled: snapshot.enabled, listening: snapshot.enabled, requests: 0, modality: 'identidad-opcional' }), history: () => [], diagnostics: () => ({}) } } };
       if (name === '../ui/shell/conversation-hermes-ui') return { hermesPresentationDiagnostics: () => ({ presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 }) };
       if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), conversationTextModelStatus: () => textModel, preciseTextModelLabel: () => 'Modelo preciso (small): descargar 375 MB', startAsrModelDownload: () => downloads++ };
       if (name === '../native/conversation-model-options') return { conversationModelLabel: () => 'Whisper small', conversationModelOption: id => id };
@@ -47,10 +46,9 @@ function harness() {
       if (name === '../conversation-detection/conversation-ui') return ui;
       if (name === '../assistant/bridge-client') return { assistantBridge: { conversation: { supportsDailyContext: () => false, isSupported: () => true, supportsOptionalIdentity: () => true } } };
       if (name === '../conversation-detection/session-controls') return {
-        conversationFiltersEnabled: () => gatekeeperMode === 'active',
         selectConversationListeningMode: mode => {
-          if(snapshot.enabled) return false;
-          gatekeeperMode = mode === 'gatekeeper' ? 'active' : 'off'; usesHermes = mode !== 'text'; return true;
+          if(snapshot.enabled || (mode !== 'hermes' && mode !== 'text')) return false;
+          usesHermes = mode !== 'text'; return true;
         },
         setConversationUsesHermes: value => { if (!snapshot.enabled) usesHermes = value; },
         conversationDailyContextSelected: () => false,
@@ -78,43 +76,35 @@ function harness() {
   return { view, starts, alerts, timers, delays, listeningStarts, gateDownloads, downloads: () => downloads, wearerCalls, actionLists, choose(v) { actionChoice = v; },
     snapshot(patch) { snapshot = { ...snapshot, ...patch }; },
     textModel(value) { textModel = value; },
-    gatekeeperMode(value) { gatekeeperMode = value; },
     gateReady(value) { gateReady = value; },
     poll() { const [id, callback] = timers.entries().next().value; timers.delete(id); callback(); },
   };
 }
 
-test('filter status reports readiness and active rules without starting capture or downloads', () => {
-  const h=harness(); assert.match(h.view.conversationGatekeeperStatus,/preparados/);
-  h.snapshot({ enabled:true, state:'escuchando' });
-  assert.match(h.view.conversationGatekeeperStatus,/desactivados/);
-  h.gatekeeperMode('active'); assert.match(h.view.conversationGatekeeperStatus,/activos/);
+test('only the voice-filter warning remains in the status line; no call filter or download', () => {
+  const h=harness(); assert.equal(h.view.conversationVadStatus, '');
+  h.snapshot({ enabled:true, state:'escuchando', transcription: { analysis: { vadStatus: 'unavailable' } } });
+  assert.match(h.view.conversationVadStatus,/WebRTC VAD no disponible/);
   assert.equal(h.starts.length,0); assert.equal(h.downloads(),0);
+  assert.equal(typeof h.view.onConversationGatekeeperStartTap, 'undefined', 'the local-filter mode is gone');
 });
 
-test('the three listening buttons start exactly their named mode and never toggle an existing session', () => {
+test('the two listening buttons start exactly their named mode and never toggle an existing session', () => {
   const h = harness(); h.view.onConversationPanelTap(); h.view.onConversationSettingsTap();
   assert.equal(h.listeningStarts.length, 0);
   assert.equal(h.view.conversationPanelVisibility, 'visible');
   assert.equal(h.view.remotePanelVisibility, 'collapse', 'the Conversation entry disappears inside its panel');
-  h.view.onConversationGatekeeperStartTap(); h.view.onConversationGatekeeperStartTap();
-  h.view.onConversationDirectStartTap(); h.view.onConversationTextStartTap();
-  assert.deepEqual(h.listeningStarts, [{ gatekeeperMode: 'active', usesHermes: true }]);
+  h.view.onConversationDirectStartTap(); h.view.onConversationDirectStartTap(); h.view.onConversationTextStartTap();
+  assert.deepEqual(h.listeningStarts, [{ usesHermes: true }]);
   assert.equal(h.view.conversationStopVisibility, 'visible');
   h.view.onConversationStopTap(); h.view.onConversationStopTap();
-  assert.match(h.view.conversationGatekeeperStatus, /preparados/);
-  h.view.onConversationDirectStartTap(); h.view.onConversationStopTap(); h.view.onConversationTextStartTap();
-  assert.deepEqual(h.listeningStarts, [{ gatekeeperMode: 'active', usesHermes: true },
-    { gatekeeperMode: 'off', usesHermes: true }, { gatekeeperMode: 'off', usesHermes: false }]);
+  h.view.onConversationTextStartTap(); h.view.onConversationStopTap(); h.view.onConversationDirectStartTap();
+  assert.deepEqual(h.listeningStarts, [{ usesHermes: true }, { usesHermes: false }, { usesHermes: true }]);
+  assert.equal(h.view.conversationModeSummary, 'Escucha activa · Hermes');
   assert.equal(h.view.closeConversationPanel(), true); assert.equal(h.view.closeConversationPanel(), false);
   assert.equal(h.view.remotePanelVisibility, 'visible');
   assert.equal(h.view.conversationEntryLabel, 'Conversación · escuchando');
   assert.equal(h.view.conversationStopVisibility, 'visible'); // Navigation never stops capture.
-});
-
-test('mechanical filtering starts immediately without a downloaded Gatekeeper model', () => {
-  const h=harness(); h.gateReady(false); h.view.onConversationGatekeeperStartTap();
-  assert.equal(h.gateDownloads.length,0); assert.equal(h.listeningStarts.length,1);
 });
 
 test('the phone start uses the existing profile with optional ASR and never downloads weights', () => {
@@ -170,8 +160,8 @@ test('a refused start and an error stay visible in the OFF screen and restart wo
   h.view.onConversationTextStartTap();
   assert.equal(h.view.conversationStopVisibility, 'visible'); assert.equal(h.view.conversationStartNotice, '');
   h.view.onConversationStopTap(); h.view.onConversationDirectStartTap();
-  assert.deepEqual(h.listeningStarts, [{ gatekeeperMode: 'off', usesHermes: false }, { gatekeeperMode: 'off', usesHermes: true }]);
-  for (let i = 0; i < 20; i++) { h.view.onConversationStopTap(); h.view.onConversationGatekeeperStartTap(); }
+  assert.deepEqual(h.listeningStarts, [{ usesHermes: false }, { usesHermes: true }]);
+  for (let i = 0; i < 20; i++) { h.view.onConversationStopTap(); h.view.onConversationDirectStartTap(); }
   assert.equal(h.listeningStarts.length, 22); assert.equal(h.view.conversationStopVisibility, 'visible');
 });
 

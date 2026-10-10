@@ -172,7 +172,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
       const stopping = opened.enabled;
       if (session.setManualEnabled) {
         const model = conversationModel();
-        const start = (mode: "gatekeeper" | "hermes" | "text") => {
+        const start = (mode: "hermes" | "text") => {
           if (selectConversationListeningMode(mode)) return session.setManualEnabled!(true);
           return "";
         };
@@ -181,8 +181,8 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
           onSelect: (ctx) => { ctx.stack.pop();
             if (stopping) session.setManualEnabled!(false);
           },
-        }] : (["gatekeeper", "hermes", "text"] as const).map(mode => ({
-          label: mode === "gatekeeper" ? "Escucha con filtros locales" : mode === "hermes" ? "Escuchar con Hermes" : "Solo transcribir",
+        }] : (["hermes", "text"] as const).map(mode => ({
+          label: mode === "hermes" ? "Escuchar con Hermes" : "Solo transcribir",
           onSelect: (ctx: LayerContext) => { ctx.stack.pop();
             const notice = start(mode);
             if (notice) openModalMenu(ctx, "Conversación", [{ label: notice, onSelect: inner => { inner.stack.pop(); } }]);

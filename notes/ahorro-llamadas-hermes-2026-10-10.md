@@ -247,3 +247,27 @@ Cierre comprobado: móvil **Conectado / Escucha apagada**, sin wakelock Faceclaw
 aplazada hasta otra prueba conjunta; no hay ahorro físico general ni coste por hora acreditados.
 Notas de continuidad y copia compartida del NAS actualizadas; no se copiaron APKs ni ajustes
 privados al NAS en esta entrega. Código y notas publicados en `codex/conversation-detection-g0`.
+## 9. S2.13: retirada de «Escucha continua con filtros locales»
+
+Decidido por el usuario el 10-10-2026, con S2.12 ya instalada por Codex. Motivos comprobados en el código:
+
+- Con `assess` eliminado, la excepción de la ayuda inmediata tras `tema` ya no se daba: en ese modo todas
+  las respuestas, preguntas incluidas, esperaban la cadencia fija de 20 s.
+- Desactivaba la espera creciente (5→60 s), que gasta menos con TV o ruido de fondo (~78/h frente a
+  hasta 180/h, con tope de 120/h) y responde antes en conversación.
+- Venía **activado por defecto** (`mechanicalFilters = true`): un ON desde el interruptor de las gafas sin
+  elegir modo usaba los filtros.
+- Su tope de 120 llamadas/h pausaba Hermes hasta una hora: contrario a «sin limitarla».
+
+Cambios: quedan dos modos en el móvil, el menú de sistema de las gafas y la app Conversación: «Escuchar con
+Hermes» (con espera creciente) y «Solo transcribir». Retirados `mechanical-gatekeeper.ts`, su prueba, el
+ajuste `conversationFiltersEnabled`, la sección «Filtros locales» de los ajustes y la entrada de su
+diagnóstico. El estado de la tarjeta de ON solo muestra el aviso de VAD (`conversationVadStatus`); los avisos
+de enlace con Hermes (`sin-red`, `revocado`) se conservan. Sin cambios en el puente ni en Kotlin.
+
+No incluido, a decidir con datos: tope de seguridad alto en el modo sin límite (p. ej. 400/h), y si hace
+falta evaluar durante habla continua sin pausas de 2 s (los filtros lo permitían a los 12 s; el modo sin
+límite espera a una pausa, como antes).
+
+Versión `0.8.2-es.5-conversation.s2.13-hermes-only`/805. Node 1088/1094 (4 fallos previos ajenos,
+2 omitidas), TypeScript y oxlint correctos. Sin build Android en esta sesión.

@@ -2,7 +2,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
-const { FILTER_POLICY } = require('../.test-build/app/conversation-detection/mechanical-gatekeeper.js');
 
 function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, gateOptions) {
   let now = 1000, seq = 0, ref = null;
@@ -18,7 +17,6 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
     dailyContextEnabled: () => !!gateOptions?.memory,
-    mechanicalFilterEnabled: () => !!gateOptions?.filtered,
     every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
     policy);
   const notify = () => { for (const cb of [...observers]) cb(state); };
@@ -53,27 +51,6 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
-
-test('exhausted quota stops dispatch, announces a bounded notice/countdown, then resumes without restarting capture', () => {
-  const h=harness({ candidateMs:60000, silenceMs:30000, maxTurns:12, maxChars:6000 },{filtered:true});
-  h.begin(null); h.candidate(); h.reply('assess'); h.reply('assist',{kind:'nada',text:undefined});
-  for(let i=2;i<120;i++) {
-    h.turn(i % 2 ? '1' : '2', 'Otro detalle sobre el viaje'); h.advance(20000);
-    h.reply('assist',{kind:'nada',text:undefined});
-  }
-  h.advance(500);
-  assert.equal(h.sent().length,120);
-  assert.match(h.runtime.snapshot().notice,/Disponible en \d+ min/);
-  assert.match(h.runtime.snapshot().filterStatus,/transcripción continúa/);
-  h.turn('2','Una nueva frase debe esperar'); h.advance(30000);
-  assert.equal(h.sent().length,120); assert.equal(h.runtime.snapshot().notice,'');
-  assert.match(h.runtime.snapshot().filterStatus,/límite/);
-  h.advance(FILTER_POLICY.hourMs);
-  assert.match(h.runtime.snapshot().notice,/vuelve a estar disponible/);
-  assert.equal(h.runtime.snapshot().filterStatus,'');
-  assert.equal(h.state.enabled,true);
-  h.runtime.stop(); assert.equal(h.runtime.snapshot().notice,''); h.runtime.dispose();
-});
 
 test('metrics follow listening, concurrent transcription and native sent without retaining speech', () => {
   const h = harness(); h.begin(undefined, true);
@@ -416,25 +393,4 @@ test('phone history: last five of this session with time, only while ON', () => 
   h.update({ enabled: false, state: 'desactivado' });
   assert.equal(hermesHistoryText(true, h.runtime.history()), '');
   h.runtime.dispose();
-});
-
-test('mechanical filter retains short replies, batches new text and permits one assessed follow-up', () => {
-  const h = harness({ candidateMs: 60000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, { filtered: true });
-  h.begin(); h.turn('1', 'No'); h.turn('2', 'Mañana'); h.advance(2000);
-  assert.equal(h.sent().length, 0);
-  h.turn('1', 'El tren sale mañana'); h.advance(2000);
-  assert.equal(h.sent().length, 1); assert.equal(h.sent()[0].turns[0].text, 'No');
-  h.reply('assess'); assert.equal(h.sent().length, 2); h.reply('assist', { kind: 'nada', text: undefined });
-  h.turn('2', 'Ahora cambia la hora'); h.advance(5000);
-  assert.equal(h.sent().length, 2); h.advance(15000); assert.equal(h.sent().length, 3);
-  h.reply('assist', { kind: 'nada', text: undefined }); h.turn('1', 'No'); h.advance(20000);
-  assert.equal(h.sent().length, 3); assert.equal(h.runtime.diagnostics().filters.counters.short > 0, true);
-  h.runtime.stop(); assert.equal(h.timers.size, 0); h.runtime.dispose();
-});
-test('continuous speech cannot starve the mechanical batching timer', () => {
-  const h = harness({ candidateMs: 60000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, { filtered: true });
-  h.begin();
-  for (let i=0; i<12; i++) { h.turn(i%2 ? '2' : '1', 'Otra frase en la conversación'); h.advance(1000); }
-  assert.equal(h.sent().length, 1); h.runtime.stop(); h.reply('assess');
-  assert.equal(h.sent().length, 1); h.runtime.dispose();
 });

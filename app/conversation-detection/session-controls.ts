@@ -28,7 +28,6 @@ let localModel: Exclude<ConversationModel, "soniox"> = "whisper-small-es";
 let useHermes = true;
 /** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
 let dailyContext = false;
-let mechanicalFilters = true;
 /** Whisper speaker attribution in manual conversations (pause windows + session voices). RAM only. */
 let localSpeakers = true;
 /** Skip evaluating contexts heard from a single non-wearer voice (TV, radio, someone else's call). */
@@ -45,18 +44,9 @@ export function setConversationSingleVoiceFilter(value: boolean): void {
   singleVoiceFilter = value;
   for (const listener of listeners) listener();
 }
-/** Frozen at ON; no model, download, classifier or background task. */
-export function conversationFiltersEnabled(): boolean { return mechanicalFilters; }
-export function setConversationFiltersEnabled(value: boolean): boolean {
-  if (port?.detector.snapshot().enabled) return false;
-  mechanicalFilters = !!value;
-  for (const listener of listeners) listener();
-  return true;
-}
 /** One explicit listening choice, shared by phone and lenses; never starts audio by itself. */
-export function selectConversationListeningMode(mode: "gatekeeper" | "hermes" | "text"): boolean {
+export function selectConversationListeningMode(mode: "hermes" | "text"): boolean {
   if (port?.detector.snapshot().enabled) return false;
-  setConversationFiltersEnabled(mode === "gatekeeper");
   setConversationUsesHermes(mode !== "text");
   return true;
 }

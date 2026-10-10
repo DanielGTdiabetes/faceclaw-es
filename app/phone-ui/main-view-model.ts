@@ -38,7 +38,7 @@ import {
   wearerActions, wearerChoices,
   CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
   conversationDailyContextSelected, setConversationDailyContextSelected,
-  conversationFiltersEnabled, selectConversationListeningMode,
+  selectConversationListeningMode,
   conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
@@ -90,7 +90,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Brief refusal notice for «Hermes en conversación»; cleared by the next tap or bridge change. */
   private hermesNotice = "";
-  private hermesShown = { button: "", status: "", history: "", summary: "", gatekeeper: "" };
+  private hermesShown = { button: "", status: "", history: "", summary: "", vad: "" };
 
   // A new view model is built on every navigation to the main page; these
   // module-level subscriptions must die with it (see dispose) or each
@@ -160,7 +160,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
       this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
     }));
-    this.hermesShown = { button: "", status: "", history: "", summary: "", gatekeeper: "" };
+    this.hermesShown = { button: "", status: "", history: "", summary: "", vad: "" };
     this.refreshHermesUi();
     this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
     this.unsubscribers.push(() => {
@@ -198,9 +198,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
     this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
     this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
-    this.notifyPropertyChange("conversationGatekeeperStatus", this.conversationGatekeeperStatus);
+    this.notifyPropertyChange("conversationVadStatus", this.conversationVadStatus);
     for (const name of ["conversationStartVisibility", "conversationStopVisibility", "conversationModeSummary", "conversationEntryLabel",
-      "conversationGatekeeperStartLabel", "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus",
+      "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus",
       "conversationStartNotice", "conversationStartNoticeVisibility"]) {
       this.notifyPropertyChange(name, this[name as keyof MainViewModel]);
     }
@@ -255,10 +255,10 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("conversationHermesHistory", history);
       this.notifyPropertyChange("conversationHermesHistoryVisibility", this.conversationHermesHistoryVisibility);
     }
-    const summary = this.conversationModeSummary, gatekeeper = this.conversationGatekeeperStatus;
+    const summary = this.conversationModeSummary, vad = this.conversationVadStatus;
     if (summary !== this.hermesShown.summary) this.notifyPropertyChange("conversationModeSummary", summary);
-    if (gatekeeper !== this.hermesShown.gatekeeper) this.notifyPropertyChange("conversationGatekeeperStatus", gatekeeper);
-    this.hermesShown = { button, status, history, summary, gatekeeper };
+    if (vad !== this.hermesShown.vad) this.notifyPropertyChange("conversationVadStatus", vad);
+    this.hermesShown = { button, status, history, summary, vad };
   }
 
   get conversationHermesButton(): string {
@@ -302,8 +302,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   get conversationModeSummary(): string {
     if (this.conversationClosing) return "Escucha apagada · terminando reconocimiento";
     if (!this.conversationOn) return "Escucha apagada";
-    return !conversationUsesHermes() ? "Escucha activa · solo transcripción"
-      : conversationFiltersEnabled() ? "Escucha activa · filtros locales + Hermes" : "Escucha activa · Hermes";
+    return !conversationUsesHermes() ? "Escucha activa · solo transcripción" : "Escucha activa · Hermes";
   }
   get conversationSettingsHint(): string {
     return this.localTranscriptionCanStart ? "Elige cómo reconocer la voz y qué recordar."
@@ -326,12 +325,10 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationSettingsVisibility", this.conversationSettingsVisibility);
     this.notifyPropertyChange("conversationSettingsButton", this.conversationSettingsButton);
   }
-  get conversationGatekeeperStartLabel(): string { return "Escucha continua con filtros locales"; }
-  onConversationGatekeeperStartTap(): void { this.startConversation("gatekeeper"); }
   onConversationDirectStartTap(): void { this.startConversation("hermes"); }
   onConversationTextStartTap(): void { this.startConversation("text"); }
   /** The mode applies atomically to the next session; a refusal stays visible in the start card. */
-  private startConversation(mode: "gatekeeper" | "hermes" | "text"): void {
+  private startConversation(mode: "hermes" | "text"): void {
     if (this.conversationOn) return;
     if (this.conversationClosing) { this.refreshConversationUi(); return; }
     if (!selectConversationListeningMode(mode)) return;
@@ -661,26 +658,15 @@ export class MainViewModel extends RemoteControlsViewModel {
   async onConversationOptionsTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
     const choice = await Dialogs.action({ title: "Diagnóstico de conversación", cancelButtonText: "Cerrar",
-      actions: ["Métricas de la última sesión", "Filtros locales"] });
+      actions: ["Métricas de la última sesión"] });
     if (!this.localTranscriptionCanStart) return;
-    if (choice === "Métricas de la última sesión") { this.onConversationDetectorMetricsTap(); return; }
-    if (choice === "Filtros locales") await this.onGatekeeperOptionsTap();
+    if (choice === "Métricas de la última sesión") this.onConversationDetectorMetricsTap();
   }
 
-  get conversationGatekeeperStatus(): string {
+  /** Only the voice-filter warning remains here; call spacing is reported in the session metrics. */
+  get conversationVadStatus(): string {
     const vad = dashboardController.conversationDetector.snapshot().transcription?.analysis?.vadStatus;
-    if (vad === "unavailable") return "Aviso: WebRTC VAD no disponible. Whisper continúa sin ese filtro de voz; consulta las métricas.";
-    if (this.localTranscriptionCanStart) return "Filtros locales preparados · sin modelo ni descarga.";
-    if (!conversationUsesHermes() || !conversationFiltersEnabled()) return "Filtros de llamadas desactivados.";
-    const report = dashboardController.conversationHermes.diagnostics().filters;
-    return report.remaining === 0
-      ? `Límite de 120 llamadas/h alcanzado. Hermes disponible en ${Math.max(1, Math.ceil(report.retryAfterMs / 60_000))} min; la transcripción continúa.`
-      : "Filtros locales activos · fragmentos agrupados · máximo 120 llamadas/h.";
-  }
-  async onGatekeeperOptionsTap(): Promise<void> {
-    if (!this.localTranscriptionCanStart) return;
-    await Dialogs.alert({ title: "Filtros locales · última sesión",
-      message: JSON.stringify(dashboardController.conversationHermes.diagnostics().filters, null, 2), okButtonText: "Cerrar" });
+    return vad === "unavailable" ? "Aviso: WebRTC VAD no disponible. Whisper continúa sin ese filtro de voz; consulta las métricas." : "";
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */

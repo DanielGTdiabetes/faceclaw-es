@@ -311,7 +311,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.5-conversation.s2.12-measurement"
+    versionName "${faceclawVersionName}-es.5-conversation.s2.13-hermes-only"
     
     generatedDensities = []
   }

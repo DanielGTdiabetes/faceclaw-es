@@ -183,7 +183,7 @@ export type ShellConfig = {
   conversationControl?: {
     enabled(): boolean;
     setEnabled(enabled: boolean): string;
-    start?(mode: "gatekeeper" | "hermes" | "text"): string;
+    start?(mode: "hermes" | "text"): string;
     wearerActions(): { label: string; run(): boolean }[];
     wearerChoices(): { label: string; run(): boolean }[];
   };
@@ -1856,8 +1856,7 @@ class Shell {
     if (conversation) {
       const wanted = !conversation.enabled();
       if (wanted && conversation.start) {
-        for (const [label, mode] of [["Escucha con filtros locales", "gatekeeper"],
-          ["Escuchar con Hermes", "hermes"], ["Solo transcribir", "text"]] as const) {
+        for (const [label, mode] of [["Escuchar con Hermes", "hermes"], ["Solo transcribir", "text"]] as const) {
           items.push({ label, onSelect: (ctx) => {
             ctx.stack.pop();
             if (conversation.enabled()) return;

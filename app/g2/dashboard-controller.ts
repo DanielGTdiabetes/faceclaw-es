@@ -56,7 +56,7 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationFiltersEnabled, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
@@ -2123,7 +2123,6 @@ class DashboardController {
 
   readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
     dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
-    mechanicalFilterEnabled: () => conversationFiltersEnabled(),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
     onOutput: (text) => this.setConversationHermesMessage(text),

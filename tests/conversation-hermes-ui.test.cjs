@@ -260,7 +260,7 @@ test('glasses system menu starts from any app and a stale ON menu cannot restart
   action.onSelect({ stack: h.shell.stack });
   assert.equal(enabled, false); assert.deepEqual(calls, [true, false]);
 });
-test('glasses system menu offers three explicit listening modes and stale starts never toggle a live session', () => {
+test('glasses system menu offers two explicit listening modes and stale starts never toggle a live session', () => {
   let enabled = false;
   const calls = [];
   const h = realShell({ conversationControl: {
@@ -271,19 +271,19 @@ test('glasses system menu offers three explicit listening modes and stale starts
   } });
   h.shell.wake('window'); h.shell.openEscapeMenu();
   const actions = topLayer(h.shell).items;
-  const gate = actions.find(i => i.label === 'Escucha con filtros locales');
+  assert.equal(actions.some(i => i.label === 'Escucha con filtros locales'), false, 'the local-filter mode is gone');
   const direct = actions.find(i => i.label === 'Escuchar con Hermes');
   const text = actions.find(i => i.label === 'Solo transcribir');
-  assert.ok(gate && direct && text);
-  gate.onSelect({ stack: h.shell.stack });
+  assert.ok(direct && text);
   direct.onSelect({ stack: h.shell.stack });
-  assert.deepEqual(calls, ['gatekeeper']);
+  text.onSelect({ stack: h.shell.stack });
+  assert.deepEqual(calls, ['hermes']);
   h.shell.openEscapeMenu();
   const stop = topLayer(h.shell).items.find(i => i.label === 'Detener escucha');
   assert.ok(stop); stop.onSelect({ stack: h.shell.stack });
   h.shell.openEscapeMenu();
   topLayer(h.shell).items.find(i => i.label === 'Solo transcribir').onSelect({ stack: h.shell.stack });
-  assert.deepEqual(calls, ['gatekeeper', false, 'text']);
+  assert.deepEqual(calls, ['hermes', false, 'text']);
 });
 
 /** Text drawn by one paint of the top layer, on any image it creates (the layer paints its band apart). */
@@ -636,14 +636,13 @@ test('glasses product conversation uses the shared manual owner with model/mode 
   assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
   assert.equal(h.counts().reads, 0);
   assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');
-  assert.equal(h.options.menuItems().length, 5);
-  assert.equal(h.options.menuItems()[0].label, 'Escucha con filtros locales');
-  assert.equal(h.options.menuItems()[1].label, 'Escuchar con Hermes');
-  assert.equal(h.options.menuItems()[2].label, 'Solo transcribir');
-  assert.match(h.options.menuItems()[3].label, /Motor/);
-  assert.match(h.options.menuItems()[4].label, /Idioma/);
+  assert.equal(h.options.menuItems().length, 4);
+  assert.equal(h.options.menuItems()[0].label, 'Escuchar con Hermes');
+  assert.equal(h.options.menuItems()[1].label, 'Solo transcribir');
+  assert.match(h.options.menuItems()[2].label, /Motor/);
+  assert.match(h.options.menuItems()[3].label, /Idioma/);
   h.options.menuItems()[0].onSelect({ stack: { pop() {} } });
-  assert.deepEqual(h.starts, [['manual', true]], 'Gatekeeper entry starts the shared owner');
+  assert.deepEqual(h.starts, [['manual', true]], 'the Hermes entry starts the shared owner');
   h.starts.length = 0;
   h.options.baseLayer.handleInput({ type: 'click' });
   assert.deepEqual(h.starts, [['manual', true]], 'same controller entry point as phone/system menu');
@@ -722,7 +721,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   const f = fakeController();
   f.supported = true;
   const { view, captureCalls, notified, unsubscribed, bridgeListeners } = phoneHarness(f);
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary', 'conversationGatekeeperStatus']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary']);
   notified.length = 0;
   for (let i = 0; i < 5; i++) f.emit();
   assert.deepEqual(notified, [], 'unchanged labels are not re-notified on runtime ticks');
@@ -733,7 +732,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   assert.equal(captureCalls[0][2], 'conversation');
   assert.equal(captureCalls[0][3].manualConversation, true);
   assert.equal(captureCalls[0][3].language, 'auto');
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary', 'conversationGatekeeperStatus']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationStartNotice', 'conversationStartNoticeVisibility', 'conversationModeSummary']);
   notified.length = 0;
   f.deliver('Aportación de prueba', new Date(2026, 9, 5, 16, 7).getTime());
   assert.equal(view.conversationHermesHistory, 'Mensajes de Hermes (esta sesión):\n16:07 · Aportación de prueba');
