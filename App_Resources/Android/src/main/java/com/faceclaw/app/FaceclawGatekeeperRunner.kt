@@ -20,7 +20,8 @@ class FaceclawGatekeeperRunner {
     private val lock = Any()
     private val callbacks = Handler(Looper.myLooper() ?: Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); runnable.run() }, "FaceclawGatekeeper")
+        // Default priority: background priority confined the 1.2B model to the little cores (~4.3 s p50).
+        Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_DEFAULT); runnable.run() }, "FaceclawGatekeeper")
     }
     // A control exists BEFORE loading: epochs cancel queued jobs, loading and compute alike.
     private var handle = nativeCreate()
@@ -56,7 +57,7 @@ class FaceclawGatekeeperRunner {
                 }
                 if (!current()) { done("cancelled"); return@execute }
                 try {
-                    nativeRun(control, ticket, modelPath, nCtx.coerceIn(512, 4096), nThreads.coerceIn(1, 2),
+                    nativeRun(control, ticket, modelPath, nCtx.coerceIn(512, 4096), nThreads.coerceIn(1, 4),
                         prompt, grammar, maxTokens.coerceIn(1, 96), object : FaceclawLlamaListener {
                             override fun onToken(piece: String?) {
                                 // Native emits this internal event after model+context initialization.

@@ -459,7 +459,7 @@ Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeRun(JNIEnv * env, jclass, j
         const std::string prompt = jstring_to_utf8(env, jprompt);
         const std::string grammar = jstring_to_utf8(env, jgrammar);
         if (path.empty() || prompt.empty() || grammar.empty() || n_ctx < 512 || n_ctx > 4096
-                || n_threads < 1 || n_threads > 2 || max_tokens < 1 || max_tokens > 96) {
+                || n_threads < 1 || n_threads > 4 || max_tokens < 1 || max_tokens > 96) {
             listener.error("Gatekeeper configuration unavailable"); return;
         }
         if (control->model && (control->path != path || control->n_ctx != n_ctx)) control->clear();
@@ -476,8 +476,9 @@ Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeRun(JNIEnv * env, jclass, j
             if (abort.cancelled()) { control->clear(); listener.done("cancelled"); return; }
             llama_context_params cp = llama_context_default_params();
             cp.n_ctx = n_ctx;
-            cp.n_batch = 32;
-            cp.n_ubatch = 32;
+            // Larger prefill batches: the prompt (not the 2-6 output tokens) dominates latency.
+            cp.n_batch = 128;
+            cp.n_ubatch = 128;
             cp.n_threads = n_threads;
             cp.n_threads_batch = n_threads;
             cp.abort_callback = gate_abort;
@@ -487,7 +488,7 @@ Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeRun(JNIEnv * env, jclass, j
             ggml_threadpool_params tp = ggml_threadpool_params_default(n_threads);
             tp.poll = 0; // No resident spinning competes with Whisper.
             tp.paused = true;
-            // No CPU affinity. Worker and inherited compute threads use Android background priority.
+            // No CPU affinity. Compute threads inherit the worker's default Android priority.
             control->pool = ggml_threadpool_new(&tp);
             if (!control->pool) { control->clear(); listener.error("Gatekeeper worker unavailable"); return; }
             llama_attach_threadpool(control->ctx, control->pool, control->pool);

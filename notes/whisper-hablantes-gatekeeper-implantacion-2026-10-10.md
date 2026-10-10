@@ -77,7 +77,15 @@ clasificación de 7,7 s con LFM2.5 1,2B).
 - Instalada con `scripts/install-conversation-g0.ps1 -Install` (autorización del usuario): versión
   `0.8.2-es.5-conversation.s2.9-speakers` en el Pixel, actividad y proceso estables. Reversión S2.8
   (`1fcd56ce…b35f`) en `dist/conversation-g0/before-install-20261010-060145.apk`.
-- Sin sesión de conversación, benchmark ni observación en gafas todavía.
+- Benchmark LFM2.5 con la primera APK (TS pedía 3 hilos, pero runner Kotlin y C++ limitaban a **2**):
+  27/48 casos antes de cancelarse al apagarse la pantalla (la vista se cierra), p50 4302 ms, p95 5140 ms,
+  0 «ignore» (antes, 1 hilo: p50 4645, p95 7940, 1/48 «ignore»). LFM no filtra: siempre «assist».
+- Segunda APK `5f4cda65…6fdd` (misma versión), instalada 08:13 con reversión
+  `before-install-20261010-061313.apk`: el worker llama.cpp pasa de `THREAD_PRIORITY_BACKGROUND` (núcleos
+  pequeños) a prioridad por defecto, límite de hilos 4 en Kotlin y C++ (se usan 3), `n_batch/n_ubatch`
+  32 → 128. Benchmark pendiente: el móvil quedó bloqueado con PIN y no se desbloquea por ADB.
+- Si no baja de ~1,5 s con un modelo que sí filtre, siguiente paso acordado: Gatekeeper en el servidor
+  (BMAX/PC) antes del agente Hermes.
 
 ## Pendiente
 - Medir en el Pixel: latencia del Gatekeeper con 3 hilos y 6 turnos (benchmark local sin audio),
