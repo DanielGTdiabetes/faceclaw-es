@@ -62,6 +62,21 @@ export const HERMES_QUIET_RESET_MS = 30_000;
  */
 export const HERMES_PAUSE_RELEASE_MS = 8_000;
 export type HermesSavings = { short: number; backoff: number; directAssist: number };
+/** Why the back-off went back to 5 s; counted only when the gap was above 5 s. */
+export type HermesResetReason = "question" | "hermes" | "wearer" | "message" | "silence";
+/** Spacing in effect when each adaptive request left, keyed by milliseconds. Measurement only. */
+const GAP_STEPS_MS = [5_000, 10_000, 20_000, 40_000, 60_000] as const;
+const emptyAdaptiveStats = () => ({
+  resets: { question: 0, hermes: 0, wearer: 0, message: 0, silence: 0 } as Record<HermesResetReason, number>,
+  /** Requests sent before the gap elapsed because speech paused for HERMES_PAUSE_RELEASE_MS. */
+  pauseReleases: 0,
+  gapAtSend: Object.fromEntries(GAP_STEPS_MS.map((ms) => [String(ms), 0])) as Record<string, number>,
+  /** Real time between consecutive adaptive requests. */
+  interval: new LatencyMetric(),
+});
+/** Provider usage reported by the bridge in `timing` (new bridges only). Sums, never text. */
+const emptyUsage = () => ({ reported: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, reasoningTokens: 0,
+  promptChars: 0 });
 export type ConversationHermesHistoryEntry = { at: number; text: string };
 
 export type ConversationHermesHost = {
@@ -124,6 +139,9 @@ export class ConversationHermesRuntime {
   private sentThroughSeq = 0;
   private savings: HermesSavings = { short: 0, backoff: 0, directAssist: 0 };
   private savingCounted = "";
+  private adaptiveStats = emptyAdaptiveStats();
+  private pauseRelease = false;
+  private usage = emptyUsage();
   private readonly unsubscribe: (() => void)[];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
@@ -167,6 +185,7 @@ export class ConversationHermesRuntime {
     this.adaptive = this.maxRequests === null && !this.filtered;
     this.quiet = 0; this.sentEpisode = ""; this.sentThroughSeq = 0; this.savingCounted = "";
     this.savings = { short: 0, backoff: 0, directAssist: 0 };
+    this.adaptiveStats = emptyAdaptiveStats(); this.pauseRelease = false; this.usage = emptyUsage();
     this.cancelTimer = this.host.every(() => this.tick(), 500);
     this.host.changed();
     return true;
@@ -232,7 +251,10 @@ export class ConversationHermesRuntime {
       [key, value instanceof LatencyMetric ? value.snapshot() : typeof value === "object" ? { ...value } : value]));
     return { modality: this.modality, requests: this.requests, counters: { ...this.counters },
       prefilter: { ...this.prefilter }, singleVoice: { ...this.singleVoice },
-      savings: { adaptive: this.adaptive, ...this.savings, quiet: this.quiet, gapMs: this.gapMs() },
+      savings: { adaptive: this.adaptive, ...this.savings, quiet: this.quiet, gapMs: this.gapMs(),
+        resets: { ...this.adaptiveStats.resets }, pauseReleases: this.adaptiveStats.pauseReleases,
+        gapAtSend: { ...this.adaptiveStats.gapAtSend }, interval: this.adaptiveStats.interval.snapshot() },
+      usage: this.usageReport(),
       filters: { enabled: this.filtered, ...this.filter.snapshot(this.host.now()) },
       channel: this.channel.statistics?.() ?? null, metrics: { ...metrics,
         latencyBucketsMs: [...LATENCY_BUCKETS_MS], requestsPerListeningMinute: this.metrics.listeningMs
@@ -337,7 +359,7 @@ export class ConversationHermesRuntime {
     this.prefilter.empty += after.prefilter.empty - before.prefilter.empty;
     this.prefilter.duplicate += after.prefilter.duplicate - before.prefilter.duplicate;
     if (accepted) {
-      if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.quiet = 0;
+      if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.resetQuiet("silence");
       this.lastTextAt = this.host.now();
       this.pendingTextAt ??= this.lastTextAt;
       this.counters.turnsAccepted++;
@@ -481,20 +503,47 @@ export class ConversationHermesRuntime {
   private adaptiveHold(context: EpisodeContext): "short" | "backoff" | null {
     const episode = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}`;
     const fresh = context.turns.filter((turn) => episode !== this.sentEpisode || turn.seq > this.sentThroughSeq);
-    if (fresh.some((turn) => turn.relation === "portador" || wakesHermes(turn.text))) this.quiet = 0;
+    const wake: HermesResetReason | null = fresh.some((turn) => mentionsHermes(turn.text)) ? "hermes"
+      : fresh.some((turn) => isQuestion(turn.text)) ? "question"
+      : fresh.some((turn) => turn.relation === "portador") ? "wearer" : null;
+    if (wake) this.resetQuiet(wake);
+    this.pauseRelease = false;
     const question = fresh.some((turn) => isQuestion(turn.text));
     if (!question && fresh.reduce((sum, turn) => sum + wordCount(turn.text), 0) < HERMES_MIN_FRESH_WORDS) return "short";
-    if (this.host.now() - this.lastRequestAt < this.gapMs()
-      && this.host.now() - this.lastTextAt < HERMES_PAUSE_RELEASE_MS) return "backoff";
+    if (this.host.now() - this.lastRequestAt < this.gapMs()) {
+      if (this.host.now() - this.lastTextAt < HERMES_PAUSE_RELEASE_MS) return "backoff";
+      this.pauseRelease = true;
+    }
     return null;
+  }
+
+  /** Same effect as before (quiet = 0); counts the reason only when it shortens a grown gap. */
+  private resetQuiet(reason: HermesResetReason): void {
+    if (this.adaptive && this.gapMs() > HERMES_BASE_GAP_MS) this.adaptiveStats.resets[reason]++;
+    this.quiet = 0;
+  }
+
+  /** Cost of a useful answer: requests and tokens per generated message. */
+  private usageReport() {
+    const messages = this.counters.messages, tokens = this.usage.inputTokens + this.usage.outputTokens;
+    const perMessage = (value: number) => messages ? Math.round(value / messages) : null;
+    return { ...this.usage, messages, requestsPerMessage: messages ? Math.round(this.requests / messages * 10) / 10 : null,
+      inputTokensPerMessage: perMessage(this.usage.inputTokens), outputTokensPerMessage: perMessage(this.usage.outputTokens),
+      tokensPerMessage: perMessage(tokens),
+      cachedInputPercent: this.usage.inputTokens ? Math.round(this.usage.cacheReadTokens / this.usage.inputTokens * 1000) / 10 : null };
   }
 
   private sendHermes(context: EpisodeContext, mode: "assess" | "assist"): void {
     if (!this.enabled || !this.channel.isReady() || this.source.snapshot().state !== "escuchando"
       || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
+    const previousRequestAt = this.lastRequestAt;
     this.lastRequestAt = this.host.now();
     if (this.filtered) this.filter.submitted(context, mode, this.host.now());
     if (this.adaptive && mode === "assist") {
+      const step = String(this.gapMs());
+      if (step in this.adaptiveStats.gapAtSend) this.adaptiveStats.gapAtSend[step]!++;
+      if (Number.isFinite(previousRequestAt)) this.adaptiveStats.interval.add(this.host.now() - previousRequestAt);
+      if (this.pauseRelease) { this.adaptiveStats.pauseReleases++; this.pauseRelease = false; }
       this.sentEpisode = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}`;
       this.sentThroughSeq = Math.max(0, ...context.turns.map((turn) => turn.seq));
     }
@@ -524,6 +573,12 @@ export class ConversationHermesRuntime {
         ["cancelWait", t.cancelWaitMs]] as const) if (ms !== undefined) this.metrics[key].add(ms);
       this.metrics.providerAttempts += t.attempts ?? 0; this.metrics.apiCalls += t.apiCalls ?? 0;
       if (t.fallbackReason) { this.metrics.fallbacks++; this.metrics.fallbackReasons[t.fallbackReason]++; }
+      if (t.inputTokens !== undefined) {
+        this.usage.reported++;
+        for (const key of ["inputTokens", "cacheReadTokens", "outputTokens", "reasoningTokens", "promptChars"] as const) {
+          this.usage[key] += t[key] ?? 0;
+        }
+      }
     }
     if (!result) this.counters.failures++;
     else if (result.mode === "assess") {
@@ -531,7 +586,7 @@ export class ConversationHermesRuntime {
     } else if (result.text) this.counters.messages++;
     else this.counters.abstentions++;
     // Back-off follows what Hermes produced, not what reached the lenses: a valid answer resets it.
-    if (result?.mode === "assist" && result.text) this.quiet = 0;
+    if (result?.mode === "assist" && result.text) this.resetQuiet("message");
     else if (!(result?.mode === "assess" && result.verdict === "tema")) this.quiet = Math.min(this.quiet + 1, 16);
     if (!result || !this.enabled || !this.channel.isReady() || !this.source.snapshot().enabled
       || this.source.snapshot().state !== "escuchando") { this.host.changed(); return; }
@@ -570,7 +625,7 @@ export function isQuestion(text: string): boolean {
   const value = text.trim().toLowerCase().replace(/^[\s¡!«"'.,…-]+/, "");
   return /[¿?]/.test(value) || INTERROGATIVE.test(value + " ");
 }
-/** Naming Hermes or asking something is a reason to answer promptly, whatever the back-off. */
-export function wakesHermes(text: string): boolean {
-  return isQuestion(text) || /(?:^|[^a-záéíóúñ])hermes(?:$|[^a-záéíóúñ])/i.test(text);
+/** Naming Hermes is a reason to answer promptly, whatever the back-off. */
+export function mentionsHermes(text: string): boolean {
+  return /(?:^|[^a-záéíóúñ])hermes(?:$|[^a-záéíóúñ])/i.test(text);
 }

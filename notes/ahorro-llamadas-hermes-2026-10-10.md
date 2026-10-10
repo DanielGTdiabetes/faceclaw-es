@@ -128,3 +128,32 @@ cliente los ignora.
 3. Despliegue reversible del registro de tokens en Jarvis y lectura del journal.
 4. Con los datos: decidir si retirar «Escucha continua con filtros locales». El enfriamiento adaptativo
    cubre el ahorro sin su cadencia fija de 20 s, que retrasaba respuestas.
+
+## 7. Paso 1: solo medición (sin cambio de comportamiento ni despliegue)
+
+Acordado con el usuario tras la revisión de las propuestas de Codex. `FACECLAW_CONV_REASONING_EFFORT`
+sigue en `low` para tener una referencia limpia.
+
+Móvil, «Métricas tras OFF»:
+- `savings.resets`: reinicios de la espera por motivo (`question`, `hermes`, `wearer`, `message`,
+  `silence`), contados solo cuando la espera era mayor de 5 s.
+- `savings.pauseReleases`: envíos adelantados por 8 s de pausa.
+- `savings.gapAtSend`: espera vigente en cada envío (5/10/20/40/60 s). `savings.interval`: tiempo real
+  entre peticiones (media, máximo, p50/p95 por intervalos).
+- `usage`: tokens que informa el puente (entrada, caché, salida, razonamiento, `promptChars`) y por cada
+  «mensaje»: peticiones, tokens de entrada, de salida y totales. Con el puente actual queda a cero.
+
+Puente (`conversation.py`, sin desplegar): cada línea `conv timing` añade `effort`, `primaryOutcome`
+y `fallbackOutcome` (`ok`, `timeout`, `error`, `invalid`, `cancelled`), además de los tokens y
+`promptChars` ya añadidos.
+
+Resumen del journal: `integrations/hermes/conv_journal_summary.py`, solo biblioteca estándar.
+
+```sh
+journalctl -u faceclaw-hermes.service -o short-iso --since "2026-10-11 10:00" --until "2026-10-11 10:15" \
+  | python3 conv_journal_summary.py --since 2026-10-11T10:00 --until 2026-10-11T10:15 --label "A conversación"
+```
+
+Opciones: `--json`, `--duration-min`, `--price-input/--price-cached/--price-output` (por millón).
+Detecta si Hermes informa de la caché o del razonamiento fuera de entrada o salida. Con líneas del puente
+actual (S2.11) ya da llamadas, resultados, respaldo y latencia, sin tokens: sirve como línea base hoy.

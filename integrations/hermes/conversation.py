@@ -576,14 +576,17 @@ class ConversationService:
     async def _evaluate(self, state, payload, timing):
         fields, reason = await self._attempt(state, self.agent, payload,
             min(state["deadline"], self.now() + self.primary_seconds), "primary", timing)
+        # Measurement only: ok/timeout/error/invalid/cancelled per attempt, never text.
+        timing["primaryOutcome"] = reason or "ok"
         if fields is not None or not self._current(state):
             return fields
         # Valid abstentions never trigger a backup. Only a technical failure/invalid JSON/budget does.
         if self.fallback_agent is None or state["deadline"] - self.now() < MIN_FALLBACK_SECONDS:
             return None
         timing["fallbackReason"] = reason
-        fields, _ = await self._attempt(state, self.fallback_agent, payload,
-                                       state["deadline"], "fallback", timing)
+        fields, reason = await self._attempt(state, self.fallback_agent, payload,
+                                            state["deadline"], "fallback", timing)
+        timing["fallbackOutcome"] = reason or "ok"
         return fields
 
     async def _run(self):
@@ -596,6 +599,7 @@ class ConversationService:
                       "primaryMs": None, "fallbackMs": None, "primaryFirstTextMs": None,
                       "fallbackFirstTextMs": None, "cancelWaitMs": 0, "attempts": 0,
                       "apiCalls": 0, "fallbackReason": None, "promptChars": 0,
+                      "effort": conversation_reasoning_effort(), "primaryOutcome": None, "fallbackOutcome": None,
                       **{key: 0 for key in USAGE_COUNTERS}}
             try:
                 if not self._current(state):

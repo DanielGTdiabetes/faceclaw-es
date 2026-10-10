@@ -20,6 +20,8 @@ export type ConversationTiming = {
   queueMs?: number; primaryMs?: number; fallbackMs?: number; primaryFirstTextMs?: number;
   fallbackFirstTextMs?: number; cancelWaitMs?: number; attempts?: number; apiCalls?: number;
   fallbackReason?: "timeout" | "error" | "invalid";
+  /** Provider usage of this request (all attempts), numbers only. Absent from older bridges. */
+  inputTokens?: number; cacheReadTokens?: number; outputTokens?: number; reasoningTokens?: number; promptChars?: number;
 };
 export type ConversationResult = (
   | { ref: EpisodeRef; mode: "assess"; verdict: EpisodeAssessment }
@@ -263,8 +265,10 @@ function readTiming(value: unknown): ConversationTiming | undefined {
   if (!isRecord(value)) return undefined;
   const result: ConversationTiming = {};
   for (const key of ["queueMs", "primaryMs", "fallbackMs", "primaryFirstTextMs", "fallbackFirstTextMs",
-    "cancelWaitMs", "attempts", "apiCalls"] as const) {
-    const n = value[key], limit = key === "attempts" ? 2 : key === "apiCalls" ? 20 : 60_000;
+    "cancelWaitMs", "attempts", "apiCalls", "inputTokens", "cacheReadTokens", "outputTokens", "reasoningTokens",
+    "promptChars"] as const) {
+    const n = value[key], limit = key === "attempts" ? 2 : key === "apiCalls" ? 20
+      : key.endsWith("Tokens") || key === "promptChars" ? 1_000_000 : 60_000;
     if (typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= limit) result[key] = n;
   }
   if (value.fallbackReason === "timeout" || value.fallbackReason === "error" || value.fallbackReason === "invalid") {

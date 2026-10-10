@@ -403,6 +403,51 @@ test('ten minutes of TV that Hermes never joins cost about a minute-paced trickl
   h.runtime.dispose();
 });
 
+test('measurement: reset reasons, spacing at send, pause releases and real intervals (no behaviour change)', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  h.say('1'); h.advance(2000);
+  const streak = (n) => { for (let i = 0; i < n; i++) { h.reply('assist', { kind: 'nada' }); h.say('2', { text: `Comentario largo sin pregunta ${i}` }); untilSent(h); } };
+  streak(3);
+  let d = h.runtime.diagnostics().savings;
+  // 1 first send + 3 after nada. Without more speech the 10 s and 20 s gaps are cut by the 8 s pause release.
+  assert.deepEqual(d.gapAtSend, { 5000: 2, 10000: 1, 20000: 1, 40000: 0, 60000: 0 });
+  assert.equal(d.pauseReleases, 2);
+  assert.equal(d.interval.count, 3);
+  assert.deepEqual(d.resets, { question: 0, hermes: 0, wearer: 0, message: 0, silence: 0 });
+  // Each reason is counted once, only when the gap had grown, in priority hermes > question > wearer.
+  h.reply('assist', { kind: 'nada' }); h.say('2', { text: '¿Hermes, tú qué dices?' }); untilSent(h);
+  streak(2); h.reply('assist', { kind: 'nada' }); h.say('2', { text: '¿Y cuándo llega el horno?' }); untilSent(h);
+  streak(2); h.reply('assist'); h.say('2', { text: 'Pues entonces lo dejamos así' }); untilSent(h);
+  streak(2); h.reply('assist', { kind: 'nada' }); h.advance(31000); h.say('1', { text: 'Cambiando de tema por completo ahora' }); untilSent(h);
+  streak(2); h.association(1, '1'); h.say('1', { relation: 'portador', associationVersion: 1, text: 'Yo pondría la isla aquí mismo' }); untilSent(h);
+  d = h.runtime.diagnostics().savings;
+  assert.deepEqual(d.resets, { question: 1, hermes: 1, wearer: 1, message: 1, silence: 1 });
+  // A base-level question is not a reset: nothing had grown.
+  h.reply('assist', { kind: 'nada' }); h.say('1', { relation: 'portador', associationVersion: 1, text: '¿Y tú?' }); untilSent(h);
+  assert.equal(h.runtime.diagnostics().savings.resets.question, 1);
+  h.runtime.dispose();
+});
+
+test('measurement: provider usage from the bridge gives requests and tokens per useful message', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  const usage = (input, cached, output) => ({ timing: { inputTokens: input, cacheReadTokens: cached, outputTokens: output,
+    reasoningTokens: 10, promptChars: 2500, attempts: 1, apiCalls: 1 } });
+  h.say('1'); h.advance(2000); h.reply('assist', { kind: 'nada', ...usage(3000, 1800, 20) });
+  h.say('2', { text: '¿Y la encimera de qué material?' }); untilSent(h);
+  h.reply('assist', { kind: 'nada', ...usage(3100, 1800, 20) });
+  h.say('1', { text: '¿Qué opinas tú de la piedra?' }); untilSent(h);
+  h.reply('assist', usage(3200, 1800, 60));
+  const u = h.runtime.diagnostics().usage;
+  assert.deepEqual(u, { reported: 3, inputTokens: 9300, cacheReadTokens: 5400, outputTokens: 100, reasoningTokens: 30,
+    promptChars: 7500, messages: 1, requestsPerMessage: 3, inputTokensPerMessage: 9300, outputTokensPerMessage: 100,
+    tokensPerMessage: 9400, cachedInputPercent: 58.1 });
+  // Old bridges report no usage: counters stay at zero instead of inventing values.
+  const old = runtimeHarness(); old.on(OPTIONAL, null); old.say('1'); old.advance(2000); old.reply('assist');
+  assert.equal(old.runtime.diagnostics().usage.reported, 0);
+  assert.equal(old.runtime.diagnostics().usage.cachedInputPercent, null);
+  h.runtime.dispose(); old.runtime.dispose();
+});
+
 test('finite diagnostic budgets and the call filter keep their own cadence (no adaptive back-off)', () => {
   const h = runtimeHarness(); h.on(OPTIONAL, 80);
   h.say('1'); h.advance(2000);
