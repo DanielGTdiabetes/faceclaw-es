@@ -9,7 +9,6 @@ const { ConversationEpisodeTracker } = require('../.test-build/app/conversation-
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
 const { isSingleForeignVoice } = require('../.test-build/app/conversation-detection/conversation-prefilter.js');
-const { gatekeeperPrompt } = require('../.test-build/app/conversation-detection/gatekeeper.js');
 const replay = require('../scripts/gatekeeper-replay.cjs');
 const POLICY = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 };
 
@@ -124,13 +123,13 @@ test('the opt-in single-voice filter skips a TV monologue and resumes when the w
   h.local.accept('Hoy lloverá en el litoral.', 3000, 6000, 'voz-1', 'otro');
   h.local.accept('Y bajarán las temperaturas.', 6000, 9000, 'voz-1', 'otro');
   h.advance(2500);
-  assert.equal(h.frames.filter(f => f.type === 'assess').length, 0);
+  assert.equal(h.frames.filter(f => f.type === 'assist').length, 0);
   assert.equal(h.runtime.diagnostics().singleVoice.skipped, 1);
   h.local.accept('¿Mañana llueve aquí?', 9000, 11000, 'portador', 'portador');
   h.advance(5500);
-  const assess = h.frames.find(f => f.type === 'assess');
-  assert.ok(assess);
-  assert.deepEqual(assess.turns.map(t => [t.speaker, t.relation]),
+  const assist = h.frames.find(f => f.type === 'assist');
+  assert.ok(assist);
+  assert.deepEqual(assist.turns.map(t => [t.speaker, t.relation]),
     [['voz-1', 'otro'], ['voz-1', 'otro'], ['voz-1', 'otro'], ['portador', 'portador']]);
   h.runtime.dispose();
 
@@ -139,19 +138,9 @@ test('the opt-in single-voice filter skips a TV monologue and resumes when the w
   off.local.accept('Hoy lloverá en el litoral.', 3000, 6000, 'voz-1', 'otro');
   off.local.accept('Y bajarán las temperaturas.', 6000, 9000, 'voz-1', 'otro');
   off.advance(2500);
-  assert.equal(off.frames.filter(f => f.type === 'assess').length, 1);
+  assert.equal(off.frames.filter(f => f.type === 'assist').length, 1);
   assert.deepEqual(off.runtime.diagnostics().singleVoice, { enabled: false, skipped: 0 });
   off.runtime.dispose();
-});
-
-test('the Gatekeeper prompt shows who speaks without inventing labels', () => {
-  const turns = [{ seq: 1, speaker: 'voz-1', relation: 'otro', text: '¿Sabes a qué hora cierra?' },
-    { seq: 2, speaker: null, relation: 'desconocido', text: 'Ni idea.' }];
-  const prompt = gatekeeperPrompt({ mode: 'assess', final: false, memoryEnabled: false, sentThroughSeq: 0, lastTextAt: 0,
-    context: { modality: 'identidad-opcional', turns, ref: {} } }, 'chatml');
-  assert.ok(prompt.includes('"speaker":"voz-1","relation":"otro"'));
-  assert.ok(prompt.includes('"speaker":null,"relation":"desconocido"'));
-  assert.ok(prompt.includes('relation portador es quien lleva las gafas'));
 });
 
 test('replay validates optional speakers and scores the deterministic single-voice rule', () => {

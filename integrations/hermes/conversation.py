@@ -31,6 +31,17 @@ DELIVERY_TTL = 45
 PRIMARY_SECONDS = 6.0
 MIN_FALLBACK_SECONDS = 1.0
 REF_KEYS = ("sessionId", "streamId", "associationVersion", "episodeId", "revision")
+# Cumulative Hermes counters; each attempt logs its delta (numbers only) so the cost of continuous
+# listening is measurable per request: inputTokens, cacheReadTokens, outputTokens, reasoningTokens.
+USAGE_COUNTERS = {"inputTokens": "session_input_tokens", "cacheReadTokens": "session_cache_read_tokens",
+                  "outputTokens": "session_output_tokens", "reasoningTokens": "session_reasoning_tokens"}
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+
+
+def conversation_reasoning_effort():
+    """FACECLAW_CONV_REASONING_EFFORT lowers paid reasoning for conv only; chat keeps its own setting."""
+    effort = os.environ.get("FACECLAW_CONV_REASONING_EFFORT", "low").strip().lower()
+    return effort if effort in REASONING_EFFORTS else "low"
 RUNTIME_HASHES = {
     "run_agent.py": "2dda8e9bb530d8da54cfb1625f624a5b9533300f1be828b689cfd5e73bbae373",
     "agent/agent_init.py": "6c94abccb46c52b6e92123c01e1fda32c69f946d2923785f05106c3ca78d8195",
@@ -201,7 +212,7 @@ def create_conversation_agent(*, backup=False):
         verbose_logging=False, max_iterations=2, max_tokens=400,
         session_id="faceclaw-conv-" + str(uuid.uuid4()), session_db=None,
         skip_context_files=True, skip_memory=True, skip_background_review=True,
-        ephemeral_system_prompt=STYLE, reasoning_config={"effort": "low"},
+        ephemeral_system_prompt=STYLE, reasoning_config={"effort": conversation_reasoning_effort()},
         run_budget_seconds=25, checkpoints_enabled=False, fallback_model=[])
     # ConversationService owns the one-primary/one-backup ladder and wall deadline. Instance-only;
     # never change global Hermes configuration or the normal chat agent's fallback policy.
@@ -504,6 +515,7 @@ class ConversationService:
         if hasattr(agent, "run_budget_seconds"):
             agent.run_budget_seconds = max(0.001, deadline - started)
         before_calls = getattr(agent, "session_api_calls", 0) or 0
+        before_usage = {key: getattr(agent, name, 0) or 0 for key, name in USAGE_COUNTERS.items()}
         self.running_agent = agent
         state["running"] = True
 
@@ -554,6 +566,8 @@ class ConversationService:
                 timing[role + "FirstTextMs"] = None if first_text is None else round((first_text - started) * 1000)
             timing["cancelWaitMs"] += 0 if aborted_at is None else round((ended - aborted_at) * 1000)
             timing["apiCalls"] += max(0, (getattr(agent, "session_api_calls", 0) or 0) - before_calls)
+            for key, name in USAGE_COUNTERS.items():
+                timing[key] += max(0, (getattr(agent, name, 0) or 0) - before_usage[key])
             timing["attempts"] += 1
             state["running"] = False
             if self.running_agent is agent:
@@ -581,7 +595,8 @@ class ConversationService:
                       "queueMs": round((started - state["received"]) * 1000),
                       "primaryMs": None, "fallbackMs": None, "primaryFirstTextMs": None,
                       "fallbackFirstTextMs": None, "cancelWaitMs": 0, "attempts": 0,
-                      "apiCalls": 0, "fallbackReason": None}
+                      "apiCalls": 0, "fallbackReason": None, "promptChars": 0,
+                      **{key: 0 for key in USAGE_COUNTERS}}
             try:
                 if not self._current(state):
                     continue
@@ -604,6 +619,7 @@ class ConversationService:
                     continue
                 payload = json.dumps(request,
                                      ensure_ascii=False)
+                timing["promptChars"] = len(payload)
                 state["turns"] = []
                 value = await self._evaluate(state, payload, timing)
                 if not self._current(state):

@@ -186,6 +186,19 @@ export class ConversationEpisodeTracker {
     return true;
   }
 
+  /**
+   * Optional identity only: an eligible candidate becomes active without a separate `assess` call.
+   * The assist prompt already abstains on greetings and courtesy, so assess only added one paid
+   * request and one round trip before the first answer of every episode.
+   */
+  promote(): boolean {
+    this.tick();
+    if (this.modality !== "identidad-opcional" || this.state !== "candidata" || !this.eligible()) return false;
+    this.state = "activa";
+    this.request = null;
+    return true;
+  }
+
   /** Only a confirmed, current episode provides the context for later assistance. */
   confirmedContext(): EpisodeContext | null {
     this.tick();

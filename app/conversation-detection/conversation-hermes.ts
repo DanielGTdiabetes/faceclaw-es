@@ -42,6 +42,26 @@ export const HERMES_HISTORY_MAX = 5;
  * no turn able to finish; the bridge accepts up to 30 s.
  */
 export const HERMES_REQUEST_TIMEOUT_MS = 15_000;
+/**
+ * Adaptive spacing for unlimited manual listening (no request budget, no call filter). Every call
+ * resends the whole prompt and context, so evaluations that keep ending in silence (TV, radio, other
+ * people's private talk) back off: 5, 10, 20, 40, then at most 60 s between requests. A delivered
+ * message, a question, the wearer speaking, naming Hermes or a long silence resets to 5 s at once.
+ * Nothing heard is dropped: the next request carries the whole bounded episode context.
+ */
+export const HERMES_BASE_GAP_MS = 5_000;
+export const HERMES_MAX_GAP_MS = 60_000;
+/** Fresh speech below this many words (and no question) only grows the context: "vale", "sí, sí". */
+export const HERMES_MIN_FRESH_WORDS = 3;
+/** A pause this long starts a new exchange: the back-off no longer reflects it. */
+export const HERMES_QUIET_RESET_MS = 30_000;
+/**
+ * The back-off only spaces requests while speech keeps flowing (TV, radio, a long monologue). Once
+ * people pause this long, the held context is evaluated: a pause is when a reply fits best, and it
+ * must happen well before the episode closes for silence and its context is gone.
+ */
+export const HERMES_PAUSE_RELEASE_MS = 8_000;
+export type HermesSavings = { short: number; backoff: number; directAssist: number };
 export type ConversationHermesHistoryEntry = { at: number; text: string };
 
 export type ConversationHermesHost = {
@@ -96,6 +116,14 @@ export class ConversationHermesRuntime {
   /** Daily-memory consent frozen at ON; a reconnect can only restore this, never widen it. */
   private dailyContext = false;
   private stopCause: HermesStopCause = "";
+  /** Unlimited manual session without the call filter: adaptive spacing applies. Frozen at ON. */
+  private adaptive = false;
+  /** Consecutive evaluations that delivered nothing (abstention, courtesy, failure). */
+  private quiet = 0;
+  private sentEpisode = "";
+  private sentThroughSeq = 0;
+  private savings: HermesSavings = { short: 0, backoff: 0, directAssist: 0 };
+  private savingCounted = "";
   private readonly unsubscribe: (() => void)[];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
@@ -136,6 +164,9 @@ export class ConversationHermesRuntime {
     this.maxRequests = maxRequests === null ? null
       : Number.isFinite(maxRequests) ? Math.max(1, Math.min(80, Math.floor(maxRequests))) : 8;
     this.lastRequestAt = -Infinity;
+    this.adaptive = this.maxRequests === null && !this.filtered;
+    this.quiet = 0; this.sentEpisode = ""; this.sentThroughSeq = 0; this.savingCounted = "";
+    this.savings = { short: 0, backoff: 0, directAssist: 0 };
     this.cancelTimer = this.host.every(() => this.tick(), 500);
     this.host.changed();
     return true;
@@ -201,6 +232,7 @@ export class ConversationHermesRuntime {
       [key, value instanceof LatencyMetric ? value.snapshot() : typeof value === "object" ? { ...value } : value]));
     return { modality: this.modality, requests: this.requests, counters: { ...this.counters },
       prefilter: { ...this.prefilter }, singleVoice: { ...this.singleVoice },
+      savings: { adaptive: this.adaptive, ...this.savings, quiet: this.quiet, gapMs: this.gapMs() },
       filters: { enabled: this.filtered, ...this.filter.snapshot(this.host.now()) },
       channel: this.channel.statistics?.() ?? null, metrics: { ...metrics,
         latencyBucketsMs: [...LATENCY_BUCKETS_MS], requestsPerListeningMinute: this.metrics.listeningMs
@@ -305,6 +337,7 @@ export class ConversationHermesRuntime {
     this.prefilter.empty += after.prefilter.empty - before.prefilter.empty;
     this.prefilter.duplicate += after.prefilter.duplicate - before.prefilter.duplicate;
     if (accepted) {
+      if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.quiet = 0;
       this.lastTextAt = this.host.now();
       this.pendingTextAt ??= this.lastTextAt;
       this.counters.turnsAccepted++;
@@ -352,7 +385,13 @@ export class ConversationHermesRuntime {
     if (!this.channel.isEnabled() && !this.followLink()) return;
     if (!this.channel.isReady()) { this.interrupt(); return; }
     this.tracker.tick();
-    const state = this.tracker.snapshot().state;
+    let state = this.tracker.snapshot().state;
+    // Optional identity: assist directly. A separate assess call only cost one more request and one
+    // more round trip before the first answer; assist abstains on greetings and courtesy itself.
+    if (state === "candidata" && !this.flight && snapshot.state === "escuchando" && this.tracker.promote()) {
+      this.savings.directAssist++;
+      state = "activa";
+    }
     if (this.flight && state !== (this.flight.mode === "assess" ? "candidata" : "activa")) {
       this.finishFlight(); this.channel.cancel();
     }
@@ -406,7 +445,8 @@ export class ConversationHermesRuntime {
     if (!keepOpen) this.link = "listo";
   }
 
-  private request(context: EpisodeContext, mode: "assess" | "assist"): void {
+  /** `followUp`: the one immediate assist after a `tema` verdict, already paced by its assess. */
+  private request(context: EpisodeContext, mode: "assess" | "assist", followUp = false): void {
     const key = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}/${context.ref.revision}/${mode}`;
     if (key === this.attempted || (this.maxRequests !== null && this.requests >= this.maxRequests)
       || !this.enabled || !this.channel.isReady()) return;
@@ -418,8 +458,35 @@ export class ConversationHermesRuntime {
       // Time-based deferrals retry the latest bounded context. Short turns stay available to grow.
       if (decision !== "send") { this.host.changed(); return; }
     }
+    if (this.adaptive && mode === "assist" && !followUp) {
+      const held = this.adaptiveHold(context);
+      // Not marked as attempted: the same revision is retried when the gap elapses or speech grows.
+      if (held) {
+        const counted = `${key}/${held}`;
+        if (counted !== this.savingCounted) { this.savingCounted = counted; this.savings[held]++; this.host.changed(); }
+        return;
+      }
+    }
     this.attempted = key;
     this.sendHermes(context, mode);
+  }
+
+  /** Current minimum spacing between requests for this session. */
+  private gapMs(): number {
+    if (!this.adaptive || this.quiet < 2) return HERMES_BASE_GAP_MS;
+    return Math.min(HERMES_MAX_GAP_MS, HERMES_BASE_GAP_MS * 2 ** (this.quiet - 1));
+  }
+
+  /** Free, synchronous rules for unlimited listening. Short speech stays in the context for later. */
+  private adaptiveHold(context: EpisodeContext): "short" | "backoff" | null {
+    const episode = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}`;
+    const fresh = context.turns.filter((turn) => episode !== this.sentEpisode || turn.seq > this.sentThroughSeq);
+    if (fresh.some((turn) => turn.relation === "portador" || wakesHermes(turn.text))) this.quiet = 0;
+    const question = fresh.some((turn) => isQuestion(turn.text));
+    if (!question && fresh.reduce((sum, turn) => sum + wordCount(turn.text), 0) < HERMES_MIN_FRESH_WORDS) return "short";
+    if (this.host.now() - this.lastRequestAt < this.gapMs()
+      && this.host.now() - this.lastTextAt < HERMES_PAUSE_RELEASE_MS) return "backoff";
+    return null;
   }
 
   private sendHermes(context: EpisodeContext, mode: "assess" | "assist"): void {
@@ -427,6 +494,10 @@ export class ConversationHermesRuntime {
       || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
     this.lastRequestAt = this.host.now();
     if (this.filtered) this.filter.submitted(context, mode, this.host.now());
+    if (this.adaptive && mode === "assist") {
+      this.sentEpisode = `${context.ref.sessionId}/${context.ref.streamId}/${context.ref.associationVersion}/${context.ref.episodeId}`;
+      this.sentThroughSeq = Math.max(0, ...context.turns.map((turn) => turn.seq));
+    }
     this.pendingTextAt = null;
     this.requests++;
     if (mode === "assess") this.counters.assessments++; else this.counters.assists++;
@@ -459,13 +530,16 @@ export class ConversationHermesRuntime {
       if (result.verdict === "tema") this.counters.topics++; else this.counters.abstentions++;
     } else if (result.text) this.counters.messages++;
     else this.counters.abstentions++;
+    // Back-off follows what Hermes produced, not what reached the lenses: a valid answer resets it.
+    if (result?.mode === "assist" && result.text) this.quiet = 0;
+    else if (!(result?.mode === "assess" && result.verdict === "tema")) this.quiet = Math.min(this.quiet + 1, 16);
     if (!result || !this.enabled || !this.channel.isReady() || !this.source.snapshot().enabled
       || this.source.snapshot().state !== "escuchando") { this.host.changed(); return; }
     if (result.mode === "assess") {
       if (this.tracker.assess(result.ref, result.verdict) && result.verdict === "tema") {
         const context = this.tracker.confirmedContext();
         // One immediate assistance request after classification; no token/word-triggered loop.
-        if (context) this.request(context, "assist");
+        if (context) this.request(context, "assist", true);
       }
     } else if (this.tracker.acceptsOutput(result.ref) && result.text) {
       this.counters.delivered++;
@@ -483,3 +557,20 @@ export class ConversationHermesRuntime {
   }
 }
 import { isLocalWindowTurn } from "./local-conversation-turns";
+
+// Android's embedded V8 lacks ICU property escapes: explicit Spanish/Catalan letters only.
+const WORD = /[a-záéíóúüñàèòïç0-9]+/g;
+const wordCount = (text: string): number => text.toLowerCase().match(WORD)?.length ?? 0;
+/**
+ * Question marks, or an interrogative opening: Whisper sometimes drops the punctuation. Unaccented
+ * Spanish "que/como/donde" open statements too often ("que sí", "como te decía") to count.
+ */
+const INTERROGATIVE = /^(?:y\s+)?(?:qué|cómo|cuándo|dónde|adónde|quién|quiénes|cuál|cuáles|cuánto|cuánta|cuántos|cuántas|por\s?qué|què|com|quan|on|qui|quin|quina|quins|quines|quant|quanta|per\s?què)\s/;
+export function isQuestion(text: string): boolean {
+  const value = text.trim().toLowerCase().replace(/^[\s¡!«"'.,…-]+/, "");
+  return /[¿?]/.test(value) || INTERROGATIVE.test(value + " ");
+}
+/** Naming Hermes or asking something is a reason to answer promptly, whatever the back-off. */
+export function wakesHermes(text: string): boolean {
+  return isQuestion(text) || /(?:^|[^a-záéíóúñ])hermes(?:$|[^a-záéíóúñ])/i.test(text);
+}

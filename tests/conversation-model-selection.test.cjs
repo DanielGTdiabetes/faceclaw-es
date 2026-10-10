@@ -126,10 +126,9 @@ test('local text reaches Hermes over conv/2, produces an answer, and OFF rejects
   assert.equal(runtime.begin(null, 'identidad-opcional'), true);
   local.start('whisper-medium-es'); local.accept('Tenemos que escoger la fecha de la reunión', 0, 6000);
   now += 2500; for (const t of [...timers]) if (t.at <= now) { if (t.repeat) t.at = now + t.ms; else timers.delete(t); t.fn(); }
-  const assessment = frames.find(f => f.type === 'assess'); assert.ok(assessment);
-  assert.equal(assessment.modality, 'identidad-opcional'); assert.equal(assessment.turns[0].speaker, null);
-  channel.handle({ ...assessment, type: 'result', mode: 'assess', verdict: 'tema' });
+  assert.equal(frames.some(f => f.type === 'assess'), false, 'optional identity assists directly');
   const assistance = frames.find(f => f.type === 'assist'); assert.ok(assistance);
+  assert.equal(assistance.modality, 'identidad-opcional'); assert.equal(assistance.turns[0].speaker, null);
   channel.handle({ ...assistance, type: 'result', mode: 'assist', kind: 'mensaje', text: 'Conviene confirmar quién puede asistir.' });
   assert.ok(outputs.includes('Conviene confirmar quién puede asistir.'));
   enabled = false; runtime.stop(); local.stop();

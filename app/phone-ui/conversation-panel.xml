@@ -8,9 +8,9 @@
         <StackLayout class="conversation-content">
             <StackLayout visibility="{{ conversationStartVisibility }}" class="conversation-card">
                 <Label text="Escucha continua" class="conversation-section-title" />
-                <Label text="Los filtros locales agrupan frases antes de consultar a Hermes. Las palabras sueltas se conservan como contexto." class="conversation-description" textWrap="true" />
+                <Label text="Los filtros locales agrupan frases antes de consultar a Hermes. Las palabras sueltas se conservan como contexto. Sin límite, Hermes espacia las consultas mientras no tiene nada que aportar y vuelve a responder enseguida ante una pregunta, una pausa o tu voz." class="conversation-description" textWrap="true" />
                 <Button id="conversationGatekeeperStart" text="{{ conversationGatekeeperStartLabel }}" tap="{{ onConversationGatekeeperStartTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-primary" textWrap="true" />
-                <Button text="Escuchar con Hermes sin reducir llamadas" tap="{{ onConversationDirectStartTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-secondary" textWrap="true" />
+                <Button text="Escuchar con Hermes sin límite de llamadas" tap="{{ onConversationDirectStartTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-secondary" textWrap="true" />
                 <Button text="Solo transcribir" tap="{{ onConversationTextStartTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-text-action" />
                 <Label text="Tú decides cuándo empezar y cuándo parar. Las tres opciones escuchan de forma continua; el silencio no detiene la escucha." class="conversation-caption" textWrap="true" />
                 <Label text="{{ conversationStartNotice }}" visibility="{{ conversationStartNoticeVisibility }}" class="conversation-description" textWrap="true" />

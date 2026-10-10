@@ -137,3 +137,38 @@ class TransportExitTests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class UsageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_each_request_reports_its_own_token_deltas_without_text(self):
+        agent, phone = Agent(), Phone()
+        agent.response = {"kind": "nada"}
+        original = agent.run_conversation
+        def billed(prompt, conversation_history):
+            agent.session_input_tokens = getattr(agent, "session_input_tokens", 0) + 2000
+            agent.session_cache_read_tokens = getattr(agent, "session_cache_read_tokens", 0) + 1500
+            agent.session_output_tokens = getattr(agent, "session_output_tokens", 0) + 20
+            agent.session_reasoning_tokens = getattr(agent, "session_reasoning_tokens", 0) + 64
+            return original(prompt, conversation_history)
+        agent.run_conversation = billed
+        service = ConversationService(lambda: agent)
+        await service.warmup()
+        try:
+            for _ in range(2):
+                self.assertTrue(service.submit(phone, request(mode="assist")))
+                await asyncio.wait_for(service.task, 3)
+            timing = phone.frames[-1]["timing"]
+            self.assertEqual((timing["inputTokens"], timing["cacheReadTokens"], timing["outputTokens"],
+                              timing["reasoningTokens"]), (2000, 1500, 20, 64))
+            self.assertGreater(timing["promptChars"], 0)
+        finally:
+            await service.close()
+
+    def test_conv_reasoning_effort_is_configurable_and_falls_back_to_low(self):
+        from conversation import conversation_reasoning_effort
+        for value, expected in ((None, "low"), ("minimal", "minimal"), (" NONE ", "none"), ("turbo", "low")):
+            env = {} if value is None else {"FACECLAW_CONV_REASONING_EFFORT": value}
+            with patch.dict("os.environ", env, clear=False):
+                if value is None:
+                    import os; os.environ.pop("FACECLAW_CONV_REASONING_EFFORT", None)
+                self.assertEqual(conversation_reasoning_effort(), expected)

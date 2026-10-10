@@ -209,22 +209,22 @@ test('runtime: optional identity is refused on an old bridge and keeps required 
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
 
-test('runtime: one anonymous voice → assess → topic → one final contribution, with no identity action', () => {
+test('runtime: one anonymous voice → direct assist (no assess call) → one final contribution, with no identity action', () => {
   const h = runtimeHarness(); assert.equal(h.on(), true);
   assert.equal(h.runtime.snapshot().modality, OPTIONAL);
   h.say('1'); h.advance(2000);
-  const assess = h.sent()[0];
-  assert.equal(assess.type, 'assess'); assert.equal(assess.modality, OPTIONAL); assert.equal(assess.ref.associationVersion, 0);
-  assert.deepEqual(assess.turns.map(t => [t.speaker, t.relation]), [['1', 'desconocido']]);
+  assert.equal(h.sent().length, 1, 'a single request: no separate assess');
+  const assist = h.sent()[0];
+  assert.equal(assist.type, 'assist'); assert.equal(assist.modality, OPTIONAL); assert.equal(assist.ref.associationVersion, 0);
+  assert.deepEqual(assist.turns.map(t => [t.speaker, t.relation]), [['1', 'desconocido']]);
   assert.deepEqual(h.outputs.filter(Boolean), []);
-  h.reply('assess');
-  assert.equal(h.sent()[1].type, 'assist', 'immediate assistance after topic');
   h.reply('assist');
   assert.deepEqual(h.outputs.filter(Boolean), ['La isla roba espacio; mejor una península.']);
   const d = h.runtime.diagnostics();
-  assert.deepEqual(d.counters, { turnsAccepted: 1, turnsIgnored: 0, candidates: 1, assessments: 1, assists: 1,
-    topics: 1, abstentions: 0, messages: 1, delivered: 1, failures: 0,
+  assert.deepEqual(d.counters, { turnsAccepted: 1, turnsIgnored: 0, candidates: 1, assessments: 0, assists: 1,
+    topics: 0, abstentions: 0, messages: 1, delivered: 1, failures: 0,
     turnsOffline: 0, linkLosses: 0, linkResumes: 0, offlineMs: 0 });
+  assert.equal(d.savings.directAssist, 1);
   assert.ok(!JSON.stringify(d).includes('península') && !JSON.stringify(d).includes('cocina'));
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
 });
@@ -233,24 +233,22 @@ test('runtime: two anonymous voices and a later profile match keep unknown relat
   const h = runtimeHarness(); h.on();
   h.say('1'); h.say('2'); h.advance(2000);
   assert.deepEqual(h.sent()[0].turns.map(t => t.relation), ['desconocido', 'desconocido']);
-  h.reply('assess');
-  const assist = h.sent()[1];
+  const assist = h.sent()[0];
+  assert.equal(assist.type, 'assist');
   // Profile recognises voice 1 while assistance is in flight: the old reply is invalid.
   h.association(1, '1');
   h.reply('assist', {}, assist);
   assert.deepEqual(h.outputs.filter(Boolean), []);
   h.say('1', { relation: 'portador' }); h.say('2'); h.advance(5000);
   const next = h.sent().at(-1);
-  assert.equal(next.type, 'assess'); assert.equal(next.ref.associationVersion, 1);
+  assert.equal(next.type, 'assist'); assert.equal(next.ref.associationVersion, 1);
   assert.deepEqual(next.turns.map(t => t.relation), ['portador', 'desconocido']);
   h.runtime.dispose();
 });
 
-test('runtime: courtesy, uncertainty, nada and errors stay silent and are counted as abstentions/failures', () => {
-  for (const [mode, patch, counter] of [['assess', { verdict: 'cortesia' }, 'abstentions'], ['assess', { verdict: 'incierto' }, 'abstentions'],
-    ['assist', { kind: 'nada' }, 'abstentions'], ['assist', { type: 'error' }, 'failures']]) {
+test('runtime: nada and errors stay silent and are counted as abstentions/failures', () => {
+  for (const [mode, patch, counter] of [['assist', { kind: 'nada' }, 'abstentions'], ['assist', { type: 'error' }, 'failures']]) {
     const h = runtimeHarness(); h.on(); h.say('1'); h.advance(2000);
-    if (mode === 'assist') h.reply('assess');
     h.reply(mode, patch); h.advance(6000);
     assert.deepEqual(h.outputs.filter(Boolean), [], JSON.stringify(patch));
     assert.equal(h.runtime.diagnostics().counters[counter], 1, JSON.stringify(patch));
@@ -260,7 +258,7 @@ test('runtime: courtesy, uncertainty, nada and errors stay silent and are counte
 
 test('runtime: suspension, OFF, episode close and reconnection invalidate old replies', () => {
   for (const change of ['suspend', 'off', 'close', 'reconnect']) {
-    const h = runtimeHarness(); h.on(); h.say('1'); h.advance(2000); h.reply('assess');
+    const h = runtimeHarness(); h.on(); h.say('1'); h.advance(2000);
     const assist = h.sent().at(-1);
     if (change === 'suspend') h.update({ state: 'suspendido' });
     if (change === 'off') { h.runtime.stop(); h.update({ enabled: false, state: 'desactivado' }); }
@@ -278,12 +276,12 @@ test('runtime: an explicit finite diagnostic budget preserves 5 s spacing and th
   const h = runtimeHarness(); h.on(OPTIONAL, 80);
   h.say('1'); h.advance(1500); assert.equal(h.sent().length, 0, 'waits 2 s without new turns');
   h.advance(500); assert.equal(h.sent().length, 1);
-  h.reply('assess', { verdict: 'incierto' });
+  h.reply('assist', { kind: 'nada' });
   h.say('1'); h.advance(2000); assert.equal(h.sent().length, 1, 'minimum 5 s between requests');
   h.advance(3000); assert.equal(h.sent().length, 2);
   for (let i = 0; i < 200; i++) {
     const last = h.sent().at(-1);
-    if (h.runtime.snapshot().busy) h.reply(last.type, { verdict: 'incierto' });
+    if (h.runtime.snapshot().busy) h.reply(last.type, { kind: 'nada' });
     h.say('1'); h.advance(5000);
   }
   assert.equal(h.runtime.snapshot().requests, 80); assert.equal(h.sent().length, 80);
@@ -293,11 +291,11 @@ test('runtime: an explicit finite diagnostic budget preserves 5 s spacing and th
 test('runtime: manual listening can deliver after 80 abstentions while preserving cadence, one flight and OFF', () => {
   const h = runtimeHarness(); assert.equal(h.on(OPTIONAL, null), true);
   h.say('1'); h.advance(1500); assert.equal(h.sent().length, 0);
-  h.advance(500); h.reply('assess', { verdict: 'tema' });
-  h.reply('assist', { kind: 'nada' });
+  h.advance(500); h.reply('assist', { kind: 'nada' });
   for (let i = 0; i < 80; i++) {
     const count = h.sent().length;
-    h.say('1'); h.advance(1500);
+    // Questions keep the 5 s cadence available whatever the abstention streak.
+    h.say('1', { text: '¿Y la isla de la cocina?' }); h.advance(1500);
     assert.equal(h.sent().length, count, 'waits 2 s without a new turn');
     h.advance(3500);
     assert.equal(h.sent().length, count + 1, `evaluation ${i + 1} remains available`);
@@ -307,8 +305,8 @@ test('runtime: manual listening can deliver after 80 abstentions while preservin
     h.reply('assist', { kind: 'nada' }, flight);
   }
   assert.equal(h.channel.statistics().nada, 81);
-  assert.equal(h.runtime.snapshot().requests, 82);
-  h.say('1'); h.advance(5000);
+  assert.equal(h.runtime.snapshot().requests, 81);
+  h.say('1', { text: '¿Al final qué hacemos con la cocina?' }); h.advance(5000);
   h.reply('assist', { kind: 'mensaje', text: 'Una aportación después de ochenta abstenciones.' });
   assert.deepEqual(h.outputs.filter(Boolean), ['Una aportación después de ochenta abstenciones.']);
   h.say('2'); h.advance(5000);
@@ -321,6 +319,96 @@ test('runtime: manual listening can deliver after 80 abstentions while preservin
   assert.equal(h.outputs.at(-1), null);
   assert.deepEqual(h.runtime.history(), []);
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
+});
+
+/** Advance in runtime ticks until a new request is sent; returns the elapsed milliseconds. */
+function untilSent(h, limit = 120000, talk = null) {
+  const count = h.sent().length;
+  for (let elapsed = 500; elapsed <= limit; elapsed += 500) {
+    // Continuous speech: a new short window every 3 s, the way TV or a monologue arrives.
+    if (talk && elapsed % 3000 === 0) talk(elapsed);
+    h.advance(500); if (h.sent().length > count) return elapsed;
+  }
+  return null;
+}
+
+test('unlimited listening backs off after abstentions (5, 10, 20, 40, 60 s) without dropping speech', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  h.say('1'); h.advance(2000); assert.equal(h.sent().length, 1);
+  const gaps = [];
+  for (let i = 0; i < 6; i++) {
+    h.reply('assist', { kind: 'nada' });
+    h.say(i % 2 ? '1' : '2', { text: `Sigue la conversación sobre la cocina, detalle ${i}` });
+    // Speech continues without a 2 s gap: the request goes out at the first pause after the gap.
+    gaps.push(untilSent(h, 120000, (at) => at % 6000 === 0 && h.say('2', { text: `Y además otra cosa más, ${at}` })));
+  }
+  assert.ok(gaps[0] <= 8000 && gaps[1] >= 10000 && gaps[2] >= 20000 && gaps[3] >= 40000 && gaps[4] >= 60000, String(gaps));
+  assert.ok(gaps[4] <= 64000 && gaps[5] <= 64000, 'capped at 60 s: at least one evaluation a minute');
+  // Everything heard while waiting is in the next context (bounded by maxTurns).
+  assert.equal(h.sent().at(-1).turns.length, 12);
+  // A pause releases the held context long before the episode closes for silence.
+  h.reply('assist', { kind: 'nada' });
+  h.say('1', { text: 'Bueno, ya veremos qué pasa con todo esto' });
+  assert.equal(untilSent(h), 8000);
+  const d = h.runtime.diagnostics().savings;
+  assert.equal(d.adaptive, true); assert.equal(d.gapMs, 60000); assert.ok(d.backoff >= 5);
+  h.runtime.dispose();
+});
+
+test('a question, naming Hermes, the wearer or a delivered message resets the back-off at once', () => {
+  for (const [wake, patch] of [['question', { text: 'y cuándo llega el horno nuevo' }], ['hermes', { text: 'Hermes, tú qué harías con esto' }],
+    ['wearer', { relation: 'portador' }], ['message', null]]) {
+    const h = runtimeHarness(); h.on(OPTIONAL, null);
+    h.say('1'); h.advance(2000);
+    for (let i = 0; i < 4; i++) { h.reply('assist', { kind: 'nada' }); h.say('2', { text: `Otro comentario sin pregunta número ${i}` }); untilSent(h); }
+    assert.equal(h.runtime.diagnostics().savings.gapMs, 40000, wake);
+    if (wake === 'message') h.reply('assist');
+    else if (wake === 'wearer') { h.association(1, '1'); h.reply('assist', { kind: 'nada' }); }
+    else h.reply('assist', { kind: 'nada' });
+    if (patch) h.say(wake === 'wearer' ? '1' : '2', { ...patch, associationVersion: wake === 'wearer' ? 1 : 0 });
+    else h.say('2', { text: 'Pues entonces lo dejamos así de momento' });
+    assert.ok(untilSent(h) <= 5000, wake);
+    h.runtime.dispose();
+  }
+});
+
+test('backchannel speech only grows the context and a long silence restarts at 5 s', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  h.say('1'); h.advance(2000); h.reply('assist', { kind: 'nada' });
+  h.say('2', { text: 'Vale, sí.' }); h.advance(20000);
+  assert.equal(h.sent().length, 1, 'two words never trigger a paid request');
+  assert.equal(h.runtime.diagnostics().savings.short, 1);
+  h.say('1', { text: 'Pues el horno nuevo no cabe' });
+  assert.equal(untilSent(h), 2000);
+  assert.deepEqual(h.sent().at(-1).turns.map(t => t.text).slice(-2), ['Vale, sí.', 'Pues el horno nuevo no cabe']);
+  for (let i = 0; i < 4; i++) { h.reply('assist', { kind: 'nada' }); h.say('2', { text: `Comentario largo sin pregunta ${i}` }); untilSent(h); }
+  h.reply('assist', { kind: 'nada' });
+  h.advance(31000);
+  h.say('1', { text: 'Cambiando de tema, mañana viene el fontanero' });
+  assert.equal(untilSent(h), 2000, 'a new exchange after silence answers promptly');
+  h.runtime.dispose();
+});
+
+test('ten minutes of TV that Hermes never joins cost about a minute-paced trickle, not one call per turn', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  for (let t = 0; t < 600000; t += 3000) {
+    const busy = h.runtime.snapshot().busy;
+    if (busy) h.reply('assist', { kind: 'nada' });
+    h.say('2', { text: `El presentador sigue hablando del tiempo, bloque ${t}` });
+    h.advance(1500); h.advance(1500);
+  }
+  // Fixed 5 s spacing alone would send ~100 requests here.
+  assert.ok(h.sent().length <= 16, `sent ${h.sent().length}`);
+  assert.ok(h.sent().length >= 10);
+  h.runtime.dispose();
+});
+
+test('finite diagnostic budgets and the call filter keep their own cadence (no adaptive back-off)', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, 80);
+  h.say('1'); h.advance(2000);
+  for (let i = 0; i < 6; i++) { h.reply('assist', { kind: 'nada' }); h.say('2', { text: `Comentario sin pregunta ${i} más` }); assert.equal(untilSent(h), 5000); }
+  assert.equal(h.runtime.diagnostics().savings.adaptive, false);
+  h.runtime.dispose();
 });
 
 // ---------------------------------------------------------------- integration with real Soniox module
@@ -363,17 +451,17 @@ function sonioxStack(caps = CONV2) {
     off() { runtime.dispose(); engine.stop(); enabled = false; } };
 }
 
-test('integration: manual ON without any profile evidence still reaches assess, topic and a final contribution', () => {
+test('integration: manual ON without any profile evidence still reaches a direct assist and a final contribution', () => {
   const s = sonioxStack(); assert.equal(s.on(), true);
   s.speech('1', 3000, ' ¿Reservamos el tren de las nueve?');
   s.speech('2', 3000, ' Mejor el de las diez, hay obras.');
   s.tick(2000);
   assert.equal(s.engine.snapshot().identity.state, 'sin-identificar');
-  const assess = s.frames.find(f => f.type === 'assess');
-  assert.ok(assess, 'anonymous voices are assessed');
-  assert.equal(assess.modality, OPTIONAL); assert.equal(assess.ref.associationVersion, 0);
-  assert.deepEqual(assess.turns.map(t => t.relation), ['desconocido', 'desconocido']);
-  s.reply('assess', { verdict: 'tema' });
+  assert.equal(s.frames.some(f => f.type === 'assess'), false, 'no separate assess call');
+  const assist = s.frames.find(f => f.type === 'assist');
+  assert.ok(assist, 'anonymous voices are evaluated');
+  assert.equal(assist.modality, OPTIONAL); assert.equal(assist.ref.associationVersion, 0);
+  assert.deepEqual(assist.turns.map(t => t.relation), ['desconocido', 'desconocido']);
   s.reply('assist', { kind: 'mensaje', text: 'Las obras siempre van con retraso, como los trenes.' });
   assert.deepEqual(s.outputs.filter(Boolean), ['Las obras siempre van con retraso, como los trenes.']);
   s.off();
@@ -387,8 +475,8 @@ test('integration: uncertain profile evidence abstains and never blocks the anon
   }
   s.tick(2000);
   assert.notEqual(s.engine.snapshot().identity.source, 'perfil');
-  const assess = s.frames.find(f => f.type === 'assess');
-  assert.ok(assess); assert.ok(assess.turns.every(t => t.relation === 'desconocido'));
+  const assist = s.frames.find(f => f.type === 'assist');
+  assert.ok(assist); assert.ok(assist.turns.every(t => t.relation === 'desconocido'));
   s.off();
 });
 
