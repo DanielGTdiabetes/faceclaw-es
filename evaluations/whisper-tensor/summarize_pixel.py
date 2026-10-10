@@ -10,6 +10,8 @@ that are not valid as stored:
   (timingsComplete false): they would describe only the tail of the run.
 - Coverage from runs without coverageSemantics "decoded-ok-v2" counted windows handed to the
   decoder, including attempts that failed; it is labelled as such.
+- Corpus non-speech totals also included streams with speech in older runners. Derive them
+  from silence/noise fixtures, or withhold them when those observations are not available.
 """
 import glob
 import json
@@ -36,6 +38,13 @@ def fmt(value, digits=0):
 
 def is_loop(case):
     return str(case.get("stream", "")).startswith("sustained")
+
+
+def corpus_non_speech_words(case):
+    fixtures = [f for f in case.get("fixtures", []) if f.get("kind") in ("silence", "noise")]
+    if not fixtures or any(f.get("hypWords") is None for f in fixtures):
+        return None
+    return sum(f["hypWords"] for f in fixtures)
 
 
 def realtime_row(c, notes):
@@ -87,13 +96,15 @@ def main(root):
             for case in run.get("cases", []):
                 for key in sorted(k for k in case if k.startswith("conditioning_")):
                     c = case[key]
-                    print("| %s | %s | %s | %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s | %s→%s |" % (
+                    print("| %s | %s | %s | %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s→%s |" % (
                         case["model"], case["runtime"] + (" (%s)" % case["effectiveProvider"] if case.get("effectiveProvider", "cpu") != "cpu" else ""),
                         key.split("_")[1], case["verifyMs"], case["loadMs"], "/".join(str(x) for x in case["warmupMs"]),
                         c["decodes"], c["decodeP50Ms"], c["decodeP95Ms"], c["decodeMaxMs"], fmt(c["rtf"], 3),
                         fmt(c["wer"].get("es"), 3), fmt(c["wer"].get("ca"), 3), fmt(c["cer"].get("es"), 3), fmt(c["cer"].get("ca"), 3),
-                        c["nonSpeechWordsDelivered"], ",".join("%s:%d" % kv for kv in c["rejections"].items()),
+                        fmt(corpus_non_speech_words(c)), ",".join("%s:%d" % kv for kv in c["rejections"].items()),
                         case["thermalBefore"]["thermalStatus"], case["thermalAfter"]["thermalStatus"]))
+            print("\nPalabras no-voz: solo fixtures de silencio/ruido; se excluyen streams con voz. "
+                  "– indica ausencia de fixtures o recuentos utilizables. Los JSON originales se conservan.\n")
         else:
             notes = set()
             print("| Ronda | Modelo | Runtime | Política | Secuencia | Audio s | Ventanas | Descartes | % desc. | Cobertura % | Voz cubierta % | Errores decod. | p50 ms | p95 ms | máx ms | Lat. media/máx ms | Entregas | WER | Rechazo idioma | Drenaje OFF ms | Fragm. tarde |")

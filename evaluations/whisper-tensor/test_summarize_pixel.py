@@ -96,5 +96,25 @@ class NewFormat(unittest.TestCase):
         self.assertNotIn("³", text)
 
 
+class CorpusPresentation(unittest.TestCase):
+    def test_medium_baseline_excludes_speech_streams_without_rewriting_evidence(self):
+        root = os.path.join(HERE, "results", "pixel-medium-2026-10-09")
+        path = os.path.join(root, "medium-baseline-corpus", "run.json")
+        with open(path, encoding="utf-8") as handle:
+            case = json.load(handle)["cases"][0]["conditioning_on"]
+        self.assertEqual(425, case["nonSpeechWordsDelivered"])  # Stored total includes speech streams.
+        self.assertEqual(0, summarize.corpus_non_speech_words(case))
+        before = digest(path)
+        text = section(render(root), "medium-baseline-corpus")
+        self.assertIn("| 0 | NONE:70,LANGUAGE:16 |", text)
+        self.assertNotIn("| 425 |", text)
+        self.assertEqual(before, digest(path))
+
+    def test_missing_non_speech_observations_are_not_presented_as_zero(self):
+        self.assertIsNone(summarize.corpus_non_speech_words({"nonSpeechWordsDelivered": 100}))
+        self.assertIsNone(summarize.corpus_non_speech_words({"fixtures": [{"kind": "stream", "hypWords": 100}]}))
+        self.assertIsNone(summarize.corpus_non_speech_words({"fixtures": [{"kind": "silence"}]}))
+
+
 if __name__ == "__main__":
     unittest.main()

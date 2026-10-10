@@ -100,6 +100,12 @@ WER/CER idéntico en los cuatro grupos (es `0.1111 / 0.0233`; ca `0.0526 / 0.074
 
 ## Criterio de promoción
 
+Revisión Codex, 10-10-2026: el agregado bruto `nonSpeechWordsDelivered` del modo corpus también sumaba
+las secuencias `stream` con voz (425 en el baseline; 62 en el piloto). No mide falsas palabras en no-voz.
+El resumidor se corrigió para derivar ese recuento solo de fixtures `silence`/`noise`: baseline 0; piloto sin
+fixtures no-voz = dato no disponible. JSON originales conservados; no cambian tiempos, WER es/ca de las
+frases, cobertura ni la decisión sobre hilos. Corregir el contador del runner antes de generar nuevas tandas.
+
 ≥ 20 % menos p95 repetible sin degradación. 1 hilo: −25 % p95 en el piloto de corpus, 0 % en realtime y +25 % en
 sostenido → no se promociona. Ninguna configuración CPU alcanza < 3 s. Para conversación real a dos metros,
 medium en CPU de Tensor G5 con `ref-6-3` no es viable en flujo continuo; las vías que quedan son ventanas más
