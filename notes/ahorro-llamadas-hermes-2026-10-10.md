@@ -7,6 +7,8 @@ mínimo de créditos de `gpt-6-luna` en el puente Hermes (BMAX/Jarvis) **sin lim
 La preparación inicial de Claude fue sin APK ni despliegue. **Actualización Codex, 10-10-2026:**
 S2.12 instalada con firma original y medición desplegada en Jarvis; evidencia y reversión en §8.
 **Actualización posterior:** S2.13 instalada sobre S2.12, sin tocar Jarvis; cierre en §9.
+**Prueba mínima posterior completada:** 2 min 51 s, 10 llamadas/5 mensajes entregados,
+tokens brutos móvil/journal idénticos y esfuerzo low; evidencia y discrepancia de cálculo en §10.
 
 ## 1. Dónde se van los créditos
 
@@ -275,6 +277,9 @@ Versión `0.8.2-es.5-conversation.s2.13-hermes-only`/805. Node 1088/1094 (4 fall
 
 ### Instalación y cierre Codex — 10-10-2026
 
+La prueba aplazada en este cierre se completó después con el usuario: véase §10. La observación
+física de las dos opciones del menú de gafas y la batería A/B/C siguen pendientes.
+
 Autorización directa del usuario para S2.13 con firma original/`install -r`, sin desinstalar ni borrar
 datos y sin tocar Jarvis. Checkout `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`;
 árbol inicial limpio, pull fast-forward `a0ee061` → `f71a7fc`. Ningún cambio local descartado.
@@ -314,3 +319,75 @@ datos y sin tocar Jarvis. Checkout `E:\projects\faceclaw-es`, rama `codex/conver
 - **Jarvis no se consultó ni modificó en esta entrega**: continúa la medición S2.12 desplegada en §8,
   sin cambios de puente, proveedor, credenciales ni esfuerzo. Notas compartidas/NAS actualizadas;
   commit y push en `codex/conversation-detection-g0`, sin APKs nuevas copiadas al NAS.
+
+## 10. Prueba mínima conjunta S2.13 — 10-10-2026, 19:30–19:34 Europe/Madrid
+
+Usuario pide «hagamos la prueba». S2.13/805 ya instalada; árbol limpio en `a31ec35` al comenzar.
+El móvil ya estaba escuchando al primer chequeo (19:30:20), por lo que el agente no inició ni
+reinició captura. Jarvis consultado **solo en lectura**: ambos servicios activos y `conversation.py`
+con el mismo hash `5b9020d0…6db1a`. Sin cambios de código/APK, modelos, proveedor, esfuerzo,
+credenciales ni servicios. No se imprimió audio, texto de conversación ni secretos.
+
+El usuario terminó la prueba y confirmó **«OFF; vi aportaciones en las gafas»**. Después se comprobaron
+Conectado/Escucha apagada, ambos workers/busy falsos, buffers de entrada a cero y ningún wakelock
+Faceclaw activo. Se leyeron `savings` y `usage` del diagnóstico únicamente después de OFF.
+
+### Correspondencia entre móvil y journal
+
+El resumen provisional de la ventana 19:28–19:34 dio **17 peticiones/7 mensajes**, con un timeout
+resuelto por el respaldo. Esa ventana incluye un tramo anterior a la última sesión retenida y **no
+se usa como resultado de la prueba final**. Los contadores del móvil se refieren a **171261 ms
+(2 min 51,261 s), 10 peticiones**. Las últimas diez líneas `conv timing` (secuencias 8–17, de
+19:31:00 a 19:33:34) coinciden exactamente con el móvil en número de peticiones/mensajes y las
+cuatro sumas de tokens. Selección realizada en memoria con las funciones de
+`conv_journal_summary.py`; sin exportar el journal bruto. No hay identificador de sesión en esas
+líneas: la correspondencia se acredita por los recuentos y las sumas coincidentes.
+
+| Métrica | Última sesión retenida |
+|---|---:|
+| Duración de escucha, ms | 171261 |
+| Llamadas / assess / assist | 10 / 0 / 10 |
+| mensaje / nada / entregados móvil | 5 / 5 / 5 |
+| Esfuerzo | low en 10/10 |
+| inputTokens / cacheReadTokens | 13511 / 7168 |
+| outputTokens / reasoningTokens | 198 / 0 |
+| promptChars total / media / p50 / p95 | 7071 / 707 / 685 / 1099 |
+| Total tokens según resumidor (caché aparte) | 20877 |
+| Llamadas por mensaje | 2 |
+| Inválidos / timeouts / errores / respaldos | 0 / 0 / 0 / 0 |
+| Latencia servidor total p50 / p95, ms | 1193 / 1651 |
+| Roundtrip móvil medio / máximo, ms | 1349 / 1826 |
+| Resultado → envío nativo medio / máximo, ms | 500 / 613 |
+| Turno → envío nativo medio / máximo, ms | 4800 / 7423 |
+
+`reasoningTokens=0` es el contador informado; no implica que se haya cambiado el esfuerzo ni permite
+asegurar ausencia de razonamiento facturado. Cinco entregas del móvil, junto a la confirmación del
+usuario, acreditan aportaciones en esta prueba; no una garantía general de entrega o precisión ASR.
+
+### Espera adaptativa observada
+
+`adaptive=true`, identidad opcional, 11 turnos aceptados/0 ignorados, 5 candidatos y 5 ayudas directas
+sin `assess`; `short=0`, `backoff=1`. Nueve envíos con espera vigente de 5 s y uno con 10 s;
+`pauseReleases=0`, un reinicio de espera por `message` y cero por los demás motivos. Nueve intervalos
+entre envíos: media 17111 ms, máximo 39000 ms; p50 del histograma ≤15000 ms y p95 ≤39000 ms.
+Cero pérdidas/reanudaciones de enlace, cero turnos offline. El contador de reinicios por pregunta
+solo aumenta cuando la espera supera 5 s: su cero no demuestra ausencia de preguntas.
+
+### Hallazgo: cálculos derivados de caché del móvil
+
+Los **tokens brutos coinciden**, pero el resumidor detecta caché informada aparte de la entrada
+(`cacheReportedApart=true`). Por ello usa entrada total 13511 + 7168 = 20679, caché **34,7 %** y
+**4175 tokens por mensaje**, mientras el móvil divide caché/entrada y muestra **53,1 %** y
+**2742 tokens por mensaje** al omitir la caché de ese total. `usageReport()` asume que la caché está
+incluida en `inputTokens`. **Discrepancia documentada, sin corregir código en esta prueba.** Para
+analizar este tramo, usar los contadores brutos y el total del resumidor. No se estima dinero sin
+precios verificados ni se compara ahorro porcentual con S2.11: son sesiones distintas.
+
+La tasa de esta sesión es 210,2 llamadas/h si se extrapolan sus 2,85 min; **no es una medición de
+una hora ni ahorro validado**. No se ejercitaron los escalones 20/40/60 s ni TV/silencios de A/B/C.
+Quedan pendientes A/B/C, observación física de las dos opciones del menú de gafas y la corrección
+del cálculo derivado móvil. La prueba mínima de tokens/esfuerzo/aportaciones sí está completada.
+
+Artefactos locales de solo métricas: `.tools/s2.13-mobile-metrics.json`,
+`.tools/s2.13-test-summary-session.json` y `.tools/s2.13-test-summary-window.txt`.
+Notas/continuidad/copia NAS actualizadas y publicadas en `codex/conversation-detection-g0`.
