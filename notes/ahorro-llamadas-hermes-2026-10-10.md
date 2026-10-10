@@ -6,6 +6,7 @@ mínimo de créditos de `gpt-6-luna` en el puente Hermes (BMAX/Jarvis) **sin lim
 
 La preparación inicial de Claude fue sin APK ni despliegue. **Actualización Codex, 10-10-2026:**
 S2.12 instalada con firma original y medición desplegada en Jarvis; evidencia y reversión en §8.
+**Actualización posterior:** S2.13 instalada sobre S2.12, sin tocar Jarvis; cierre en §9.
 
 ## 1. Dónde se van los créditos
 
@@ -271,3 +272,45 @@ límite espera a una pausa, como antes).
 
 Versión `0.8.2-es.5-conversation.s2.13-hermes-only`/805. Node 1088/1094 (4 fallos previos ajenos,
 2 omitidas), TypeScript y oxlint correctos. Sin build Android en esta sesión.
+
+### Instalación y cierre Codex — 10-10-2026
+
+Autorización directa del usuario para S2.13 con firma original/`install -r`, sin desinstalar ni borrar
+datos y sin tocar Jarvis. Checkout `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`;
+árbol inicial limpio, pull fast-forward `a0ee061` → `f71a7fc`. Ningún cambio local descartado.
+
+- `npm test` en Windows: **1088 correctas, 5 fallos, 1 omitida / 1094**. Son los cuatro fallos
+  previos de eventos de entrada/ajustes iOS-Android y el de permisos POSIX `0600` del codec iOS en
+  Windows. Sin nuevos fallos respecto a la entrega anterior. TypeScript app/pruebas y oxlint de
+  los seis módulos modificados: correctos.
+- Pixel conectado tras confirmación del usuario. OFF previo observado en UI y diagnóstico:
+  `enabled=false`, ambos `worker=false`/`busy=false`, buffers de entrada `0` y sin wakelock Faceclaw.
+- Build con `.tools/s2.13-build.ps1`, derivada de S2.12 cambiando la versión y los nombres de
+  log/artefacto; entorno `.tools/s2.10-env.ps1`. `ns prepare android --release --env.production` y
+  Gradle offline `assembleRelease lintVitalRelease`, saltando preparación de nativas: correctos.
+  Las **8 `.so` son byte idénticas a S2.12**, sin cambios Kotlin ni nativos.
+- Instalada **`com.faceclaw.app` / `0.8.2-es.5-conversation.s2.13-hermes-only` / 805** con
+  `scripts/install-conversation-g0.ps1 -Install`. Certificado original comprobado:
+  `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`.
+- APK firmada: `dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.13-hermes-only.apk`, SHA-256
+  **`976aab3fda58364f7a027a084b26b49cb13b35e20b8c263009e95ce345a3922b`**. APK extraída
+  `.tools/s2.13-installed.apk`: mismo hash. Unsigned:
+  `3ed77e3d03ef5c8c1670167b76fa4fe70b378699e60b9ec5644ea5f8cda0850a`.
+- **35 ajustes idénticos** antes/después. Respaldo privado con ACL usuario/SYSTEM en
+  `.tools/s2.13-hermes-only-private/`, sin contenido en chat/Git/NAS. Perfil sin leer/copiar/reenrolar.
+- Reversión fresca a S2.12: `dist/conversation-g0/before-install-20261010-172440.apk`, SHA-256
+  **`f062cc3ceceb92ab2dc5199f5c6e70a81f74f3bc52d70baf173b33c30ec452a0`**.
+  Solo con OFF: `adb -s 61161FDCG0013L install -r <ruta de reversión>`.
+- Apertura estable comprobada por el instalador. UI del móvil comprobada: **«Escuchar con Hermes»
+  y «Solo transcribir»**, sin el tercer inicio de filtros ni el nombre anterior «sin límite de
+  llamadas». Cierre **Conectado / Escucha apagada**, sin wakelock Faceclaw activo.
+- Menú de sistema y app Conversación de las gafas: código de los dos inicios y tests de los menús
+  correctos. Se intentó abrir el menú desde el mando sin seleccionar inicio, pero **no se consiguió
+  confirmar visualmente en las lentes**. Esa observación física queda pendiente; no atribuir al
+  test de software una comprobación física.
+- **Prueba mínima de 2–3 min aplazada por el usuario** («Ahora no; deja la prueba pendiente»).
+  No captura ni llamadas reales iniciadas. Tokens reales/`cacheReadTokens`/`effort low`, `savings`
+  y `usage` tras una sesión siguen pendientes de validación conjunta; A/B/C también pendiente.
+- **Jarvis no se consultó ni modificó en esta entrega**: continúa la medición S2.12 desplegada en §8,
+  sin cambios de puente, proveedor, credenciales ni esfuerzo. Notas compartidas/NAS actualizadas;
+  commit y push en `codex/conversation-detection-g0`, sin APKs nuevas copiadas al NAS.
