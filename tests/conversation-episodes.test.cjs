@@ -17,6 +17,84 @@ function harness(config = policy) {
     candidate() { tracker.accept(turn()); tracker.accept(turn('2')); return tracker.assessmentContext(); } };
 }
 
+test('punctuation-only turns cannot open, extend or promote an episode', () => {
+  const h = harness();
+  assert.equal(h.tracker.accept(h.turn('1', ' … ¿?! ')), false);
+  assert.equal(h.tracker.accept(h.turn('1', '   ')), false);
+  assert.equal(h.tracker.snapshot().state, 'esperando');
+  const request = h.candidate();
+  h.tracker.assess(request.ref, 'tema');
+  h.advance(29_000);
+  assert.equal(h.tracker.accept(h.turn('2', '...')), false);
+  h.advance(1000);
+  assert.equal(h.tracker.confirmedContext(), null, 'noise did not postpone silence expiry');
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 3, duplicate: 0 });
+});
+
+test('only exact audio replays by the same source are deduplicated', () => {
+  const h = harness();
+  const first = h.turn('1', ' Cuesta  2,5 euros. ');
+  assert.equal(h.tracker.accept(first), true);
+  const replay = h.turn('1', 'cuesta 2,5 euros.', { startMs: first.startMs, endMs: first.endMs });
+  assert.equal(h.tracker.accept(replay), false);
+  assert.equal(h.tracker.accept({ ...replay, text: 'Ahora son 25 euros.' }), false, 'the sequence was consumed');
+  assert.equal(h.tracker.accept(h.turn('1', first.text)), true, 'later speech can repeat the same words');
+  assert.equal(h.tracker.accept(h.turn('2', first.text, { startMs: first.startMs, endMs: first.endMs })), true);
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 0, duplicate: 1 });
+});
+
+test('short questions, changed quantities, negations and punctuation remain evidence', () => {
+  const h = harness();
+  for (const text of ['¿Cuánto?', 'No.', '15', '2,5', '25', 'Sí.', 'Si.', '¿Vamos?', 'Vamos.', '€', '+']) {
+    assert.equal(h.tracker.accept(h.turn('1', text, { startMs: 0, endMs: 500 })), true, text);
+  }
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 0, duplicate: 0 });
+});
+
+test('overlapping anonymous Whisper windows are retained, even with equal text', () => {
+  const h = harness(); h.tracker.start('local', 1, 'identidad-opcional');
+  const local = { sessionId: 'local', engine: 'whisper-small-es', speaker: null, relation: 'desconocido',
+    associationVersion: 0, timing: 'ventana' };
+  assert.equal(h.tracker.accept(h.turn(null, '¿Cuánto cuesta el billete?', { ...local, startMs: 0, endMs: 6000 })), true);
+  assert.equal(h.tracker.accept(h.turn(null, '¿Cuánto cuesta el billete?', { ...local, startMs: 3000, endMs: 9000 })), true);
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 0, duplicate: 0 });
+});
+
+test('duplicate rejection does not extend candidate lifetime or invalidate its pending verdict', () => {
+  const h = harness(); const first = h.turn(); h.tracker.accept(first); h.tracker.accept(h.turn('2'));
+  const request = h.tracker.assessmentContext();
+  h.advance(14_000);
+  assert.equal(h.tracker.accept(h.turn('1', first.text, { startMs: first.startMs, endMs: first.endMs })), false);
+  assert.equal(h.tracker.assess(request.ref, 'cortesia'), true, 'replay did not create a newer revision');
+  const expired = harness(); expired.tracker.accept(first);
+  expired.advance(14_000);
+  expired.tracker.accept(expired.turn('1', first.text, { seq: 2, startMs: first.startMs, endMs: first.endMs }));
+  expired.advance(1000);
+  assert.equal(expired.tracker.snapshot().state, 'esperando');
+});
+
+test('lifecycle boundaries take precedence over noise filtering and clear duplicate evidence', () => {
+  const h = harness(); const first = h.turn(); h.tracker.accept(first);
+  assert.equal(h.tracker.accept(h.turn('1', '...', { closedBy: 'frontera' })), false);
+  assert.equal(h.tracker.snapshot().lastEnd, 'interrupcion');
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 0, duplicate: 0 });
+  assert.equal(h.tracker.accept(h.turn('1', first.text, { startMs: first.startMs, endMs: first.endMs })), true);
+  h.tracker.accept(h.turn('1', '...'));
+  h.tracker.stop();
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 1, duplicate: 0 });
+  h.tracker.start('s2', 2);
+  assert.deepEqual(h.tracker.snapshot().prefilter, { empty: 0, duplicate: 0 });
+});
+
+test('prefilter diagnostics are copies containing counts only', () => {
+  const h = harness(); const first = h.turn('1', 'PRIVATE_SPEECH');
+  h.tracker.accept(first);
+  h.tracker.accept(h.turn('1', first.text, { startMs: first.startMs, endMs: first.endMs }));
+  const snapshot = h.tracker.snapshot(); snapshot.prefilter.duplicate = 999;
+  assert.equal(h.tracker.snapshot().prefilter.duplicate, 1);
+  assert.equal(JSON.stringify(h.tracker.snapshot()).includes(first.text), false);
+});
+
 test('endpoints, elapsed time and two voices alone never confirm a topic', () => {
   const h = harness();
   assert.equal(h.tracker.accept(h.turn()), true);

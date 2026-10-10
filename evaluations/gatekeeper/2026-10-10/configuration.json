@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-10",
+  "device": "Pixel 10 Pro Fold",
+  "source": "synthetic",
+  "review": "pending",
+  "hermesReferences": 0,
+  "microphone": false,
+  "whisperConcurrent": false,
+  "context": 4096,
+  "batch": 32,
+  "threads": 1,
+  "maxTokens": 64,
+  "kvReuse": false,
+  "grammar": "GATEKEEPER_GRAMMAR",
+  "measurementWarmMs": 30000,
+  "measurementColdMs": 45000,
+  "productionWarmDeadlineMs": 1500,
+  "productionColdDeadlineMs": 8000,
+  "datasetSha256": "0e84205445bdb8bce41f6ed52475adb93448745a6622794dc4fc0b0aa8c3148f",
+  "qwenApkSha256": "5d6525de2b1b2a039762e4648e7743313e1151ee4c3a74faa4c1fcf35d21a7b3",
+  "lfmRepeatApkSha256": "5f0b6a5c37668cbc9b7c93685bee884c9eb6be0c131ddbdc0db80bae73306d83",
+  "sourceSha256": {
+    "app/conversation-detection/gatekeeper.ts": "d4dcdb615ee6a12a643bbb8b7bc5bd2b2d25def124eb7c872aa2c4ae0b3413b9",
+    "app/conversation-detection/gatekeeper-benchmark.ts": "bd5f93e274e3528ce575cdc46a6e5fe79c4ab42191720479cea444226906868b",
+    "app/conversation-detection/gatekeeper-pilot.ts": "b25f826a74d3605bc205baefafbeb67ad33b1ff6365332abb24a167f3540bbc4",
+    "App_Resources/Android/src/main/java/com/faceclaw/app/FaceclawGatekeeperRunner.kt": "5e440a03777843ab39baf7d39d16bb4fcba7ab4a3bbb25b8853a32783a8a02ff",
+    "App_Resources/Android/src/main/native/llama/faceclaw_llama.cpp": "45f2473e44f647d3374eb7483fd9a105bf883c2980dc9a99ce27f7a83710af44"
+  }
+}

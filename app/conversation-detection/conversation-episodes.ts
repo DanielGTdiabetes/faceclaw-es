@@ -1,6 +1,7 @@
 import { type ConversationTurn } from "./conversation-turns";
 import { isAnonymousLocalTurn } from "./local-conversation-turns";
 import { type WearerAssociationEvent } from "./wearer-identity";
+import { emptyPrefilterCounters, prefilterTurn, type PrefilterCounters } from "./conversation-prefilter";
 
 /** Proposed policy is supplied by the caller: none of these limits changes installed listening. */
 export type EpisodePolicy = {
@@ -35,6 +36,7 @@ export type EpisodeSnapshot = {
   eligible: boolean;
   accepted: number;
   ignored: number;
+  prefilter: PrefilterCounters;
   lastEnd: EpisodeEnd | null;
 };
 
@@ -61,6 +63,7 @@ export class ConversationEpisodeTracker {
   private lastEnd: EpisodeEnd | null = null;
   private accepted = 0;
   private ignored = 0;
+  private prefilter = emptyPrefilterCounters();
 
   constructor(private readonly now: () => number, private readonly policy: EpisodePolicy) {
     if (![policy.candidateMs, policy.silenceMs, policy.maxTurns, policy.maxChars]
@@ -85,6 +88,7 @@ export class ConversationEpisodeTracker {
     this.lastEnd = null;
     this.accepted = 0;
     this.ignored = 0;
+    this.prefilter = emptyPrefilterCounters();
   }
 
   /** Old stream events cannot reset a newer stream. Association changes retire all prior context. */
@@ -117,8 +121,14 @@ export class ConversationEpisodeTracker {
       : turn.relation === "otro" ? !!this.wearer && !!turn.speaker && turn.speaker !== this.wearer
       : turn.relation === "desconocido" && (turn.speaker === null || turn.speaker !== this.wearer);
     const local = this.modality === "identidad-opcional" && isAnonymousLocalTurn(turn);
-    if (!labelled || this.contradicts(turn) || !(turn.engine === "soniox" && turn.timing === "valido" || local) || !turn.text.trim()
+    if (!labelled || this.contradicts(turn) || !(turn.engine === "soniox" && turn.timing === "valido" || local)
       || turn.text.length > this.policy.maxChars) {
+      this.ignored++;
+      return false;
+    }
+    const skipped = prefilterTurn(turn, this.buffer);
+    if (skipped) {
+      this.prefilter[skipped]++;
       this.ignored++;
       return false;
     }
@@ -181,6 +191,12 @@ export class ConversationEpisodeTracker {
     return this.state === "activa" ? this.context() : null;
   }
 
+  /** Bounded local-only view; does not replace the in-flight Hermes assessment reference. */
+  gatekeeperContext(mode: "assess" | "assist"): EpisodeContext | null {
+    this.tick();
+    return this.state === (mode === "assess" ? "candidata" : "activa") && this.eligible() ? this.context() : null;
+  }
+
   /**
    * Late outputs must match the current episode as well as the session and association. A newer
    * revision of the same episode (people kept talking while Hermes answered) is still accepted.
@@ -193,7 +209,7 @@ export class ConversationEpisodeTracker {
   snapshot(): EpisodeSnapshot {
     this.tick();
     return { state: this.state, modality: this.modality, turns: this.buffer.length, chars: this.chars(), eligible: this.eligible(),
-      accepted: this.accepted, ignored: this.ignored, lastEnd: this.lastEnd };
+      accepted: this.accepted, ignored: this.ignored, prefilter: { ...this.prefilter }, lastEnd: this.lastEnd };
   }
 
   private eligible(): boolean {

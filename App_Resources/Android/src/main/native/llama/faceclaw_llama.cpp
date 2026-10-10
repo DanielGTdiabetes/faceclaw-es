@@ -389,3 +389,149 @@ Java_com_faceclaw_app_FaceclawLlamaRunner_nativeGenerate(
     llama_sampler_free(chain);
     listener.done(stop_reason);
 }
+
+// Gatekeeper is deliberately a separate control/model/context. Legacy assistant JNI above is unchanged.
+namespace {
+struct FcGatekeeper {
+    std::atomic<int64_t> epoch{0};
+    llama_model * model = nullptr;
+    llama_context * ctx = nullptr;
+    ggml_threadpool * pool = nullptr;
+    const llama_vocab * vocab = nullptr;
+    std::string path;
+    int n_ctx = 0;
+    void clear() {
+        if (ctx) { llama_free(ctx); ctx = nullptr; }
+        if (model) { llama_model_free(model); model = nullptr; }
+        if (pool) { ggml_threadpool_free(pool); pool = nullptr; }
+        vocab = nullptr; path.clear(); n_ctx = 0;
+    }
+    ~FcGatekeeper() { clear(); }
+};
+struct GateAbort {
+    FcGatekeeper * control;
+    int64_t ticket;
+    bool cancelled() const { return control->epoch.load(std::memory_order_acquire) != ticket; }
+};
+bool gate_abort(void * data) { return static_cast<GateAbort *>(data)->cancelled(); }
+bool gate_progress(float, void * data) { return !gate_abort(data); }
+// Never retain a partially decoded KV, even on exception/abort. Park the persistent pool between jobs.
+struct GateCleanup {
+    FcGatekeeper * control;
+    llama_sampler * sampler = nullptr;
+    ~GateCleanup() {
+        if (sampler) llama_sampler_free(sampler);
+        if (control->ctx) {
+            llama_set_abort_callback(control->ctx, nullptr, nullptr);
+            llama_memory_clear(llama_get_memory(control->ctx), true);
+        }
+        if (control->pool) ggml_threadpool_pause(control->pool);
+    }
+};
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeCreate(JNIEnv *, jclass) {
+    return reinterpret_cast<jlong>(new FcGatekeeper());
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeSetEpoch(JNIEnv *, jclass, jlong handle, jlong epoch) {
+    auto * control = reinterpret_cast<FcGatekeeper *>(handle);
+    if (control) control->epoch.store(epoch, std::memory_order_release);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeFree(JNIEnv *, jclass, jlong handle) {
+    delete reinterpret_cast<FcGatekeeper *>(handle);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_faceclaw_app_FaceclawGatekeeperRunner_nativeRun(JNIEnv * env, jclass, jlong handle, jlong epoch,
+        jstring jpath, jint n_ctx, jint n_threads, jstring jprompt, jstring jgrammar, jint max_tokens,
+        jobject jlistener) {
+    auto * control = reinterpret_cast<FcGatekeeper *>(handle);
+    const Listener listener = Listener::resolve(env, jlistener);
+    if (!control) { listener.error("Gatekeeper unavailable"); return; }
+    GateAbort abort{control, epoch};
+    if (abort.cancelled()) { listener.done("cancelled"); return; }
+    GateCleanup cleanup{control};
+    try {
+        ensure_backend_init();
+        const std::string path = jstring_to_utf8(env, jpath);
+        const std::string prompt = jstring_to_utf8(env, jprompt);
+        const std::string grammar = jstring_to_utf8(env, jgrammar);
+        if (path.empty() || prompt.empty() || grammar.empty() || n_ctx < 512 || n_ctx > 4096
+                || n_threads < 1 || n_threads > 2 || max_tokens < 1 || max_tokens > 96) {
+            listener.error("Gatekeeper configuration unavailable"); return;
+        }
+        if (control->model && (control->path != path || control->n_ctx != n_ctx)) control->clear();
+        if (!control->model) {
+            llama_model_params mp = llama_model_default_params();
+            mp.n_gpu_layers = 0;
+            mp.progress_callback = gate_progress;
+            mp.progress_callback_user_data = &abort;
+            control->model = llama_model_load_from_file(path.c_str(), mp);
+            if (!control->model) {
+                if (abort.cancelled()) listener.done("cancelled"); else listener.error("Gatekeeper model unavailable");
+                return;
+            }
+            if (abort.cancelled()) { control->clear(); listener.done("cancelled"); return; }
+            llama_context_params cp = llama_context_default_params();
+            cp.n_ctx = n_ctx;
+            cp.n_batch = 32;
+            cp.n_ubatch = 32;
+            cp.n_threads = n_threads;
+            cp.n_threads_batch = n_threads;
+            cp.abort_callback = gate_abort;
+            cp.abort_callback_data = &abort;
+            control->ctx = llama_init_from_model(control->model, cp);
+            if (!control->ctx) { control->clear(); listener.error("Gatekeeper context unavailable"); return; }
+            ggml_threadpool_params tp = ggml_threadpool_params_default(n_threads);
+            tp.poll = 0; // No resident spinning competes with Whisper.
+            tp.paused = true;
+            // No CPU affinity. Worker and inherited compute threads use Android background priority.
+            control->pool = ggml_threadpool_new(&tp);
+            if (!control->pool) { control->clear(); listener.error("Gatekeeper worker unavailable"); return; }
+            llama_attach_threadpool(control->ctx, control->pool, control->pool);
+            control->vocab = llama_model_get_vocab(control->model);
+            control->path = path; control->n_ctx = n_ctx;
+        }
+        if (abort.cancelled()) { listener.done("cancelled"); return; }
+        // Internal null event updates Kotlin's loaded flag without emitting any model content.
+        env->CallVoidMethod(jlistener, listener.on_token, nullptr);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        llama_set_abort_callback(control->ctx, gate_abort, &abort);
+        llama_memory_clear(llama_get_memory(control->ctx), true);
+        std::vector<llama_token> tokens = tokenize(control->vocab, prompt, true);
+        if (tokens.empty() || tokens.size() + max_tokens > static_cast<size_t>(control->n_ctx)) {
+            listener.error("Gatekeeper context limit"); return;
+        }
+        llama_sampler * constrained = llama_sampler_init_grammar(control->vocab, grammar.c_str(), "root");
+        if (!constrained) { listener.error("Gatekeeper grammar unavailable"); return; }
+        cleanup.sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        if (!cleanup.sampler) { llama_sampler_free(constrained); listener.error("Gatekeeper sampler unavailable"); return; }
+        llama_sampler_chain_add(cleanup.sampler, constrained);
+        llama_sampler_chain_add(cleanup.sampler, llama_sampler_init_greedy());
+        for (size_t at = 0; at < tokens.size(); at += 32) {
+            if (abort.cancelled()) { listener.done("cancelled"); return; }
+            const int count = static_cast<int>(std::min<size_t>(32, tokens.size() - at));
+            if (llama_decode(control->ctx, llama_batch_get_one(tokens.data() + at, count)) != 0) {
+                if (abort.cancelled()) listener.done("cancelled"); else listener.error("Gatekeeper prefill unavailable");
+                return;
+            }
+        }
+        for (int i = 0; i < max_tokens; i++) {
+            if (abort.cancelled()) { listener.done("cancelled"); return; }
+            llama_token token = llama_sampler_sample(cleanup.sampler, control->ctx, -1);
+            if (llama_vocab_is_eog(control->vocab, token)) { listener.done("stop"); return; }
+            // The schema permits only ASCII JSON; no split UTF-8 or arbitrary text is admitted.
+            listener.token(token_piece(control->vocab, token));
+            if (abort.cancelled()) { listener.done("cancelled"); return; }
+            if (llama_decode(control->ctx, llama_batch_get_one(&token, 1)) != 0) {
+                if (abort.cancelled()) listener.done("cancelled"); else listener.error("Gatekeeper decode unavailable");
+                return;
+            }
+        }
+        listener.done("length");
+    } catch (...) {
+        listener.error("Gatekeeper inference unavailable");
+    }
+}

@@ -295,7 +295,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     const identity = this.identity.snapshot();
     if (this.mode === "local") {
       const local = this.local.snapshot();
-      return { ...local, model: local.engine, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
+      return { ...local, model: local.analysis?.engine ?? local.engine, engine: this.stats.fallbacks > 0 ? "local (sin red)" : "local", soniox: this.scalars(),
         identity, turnsAvailable: this.stats.fallbacks === 0 && local.enabled && !!this.local.subscribeTurns };
     }
     if (this.mode === "off" && this.lastLocalSnapshot && this.retainedLocalDiagnosticsEpoch === this.localDiagnosticsEpoch) {
@@ -311,7 +311,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       }
       const retained = this.lastLocalSnapshot;
       return { ...retained, enabled: false,
-        model: retained.engine, engine: this.lastLocalFallback ? "local (sin red)" : "local", soniox: this.scalars(), identity,
+        model: retained.analysis?.engine ?? retained.engine, engine: this.lastLocalFallback ? "local (sin red)" : "local", soniox: this.scalars(), identity,
         turnsAvailable: false };
     }
     return {

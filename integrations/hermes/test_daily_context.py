@@ -145,6 +145,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(CAPABILITY, self.service.capabilities())
         frame = await self.complete({"kind": "nada", "memoryUpdate": update()}, consent=False)
         self.assertEqual(frame["kind"], "nada")
+        self.assertIs(frame["memoryUpdated"], False)
         self.assertNotIn("dailyContextPolicy", self.agent.calls[-1][0])
         self.assertNotIn("dailyContext", self.agent.calls[-1][0])
         self.assertEqual(self.memory.snapshot("máquina")[1], [])
@@ -154,6 +155,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_summary_and_recall_share_existing_calls_and_keep_wire_json(self):
         first = await self.complete({"kind": "nada", "memoryUpdate": update()})
         self.assertEqual(first["kind"], "nada")
+        self.assertIs(first["memoryUpdated"], True)
         self.assertNotIn("_memoryUpdate", first)
         self.assertNotIn("memoryUpdate", first)
         self.assertEqual(len(self.agent.calls), 1)
@@ -164,6 +166,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["dailyContext"]), 1)
         self.assertEqual(payload["dailyContext"][0]["summary"], update()["summary"])
         self.assertEqual(second["kind"], "mensaje")
+        self.assertIs(second["memoryUpdated"], False)
         self.assertEqual(len(self.agent.calls), 2)
 
     async def test_courtesy_uncertainty_and_invalid_memory_never_store_or_retry(self):
@@ -172,6 +175,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         malformed = update(); malformed["evidenceSeqs"] = [999]
         frame = await self.complete({"kind": "mensaje", "text": "Idea válida.", "memoryUpdate": malformed})
         self.assertEqual(frame["kind"], "mensaje")
+        self.assertIs(frame["memoryUpdated"], False)
         self.assertEqual(self.memory.snapshot("máquina")[1], [])
         self.assertEqual(len(self.agent.calls), 3)
 

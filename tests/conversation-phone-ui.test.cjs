@@ -39,7 +39,10 @@ function harness() {
       if (name === '../native/conversation-model-options') return { conversationModelLabel: () => 'Whisper small', conversationModelOption: id => id };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
+      if (name === '../assistant/bridge-client') return { assistantBridge: { conversation: { supportsDailyContext: () => false } } };
       if (name === '../conversation-detection/session-controls') return {
+        conversationGatekeeperSettings: () => ({ mode: 'off', model: 'qwen3-0.6b-q8', wait: false }),
+        conversationDailyContextSelected: () => false,
         conversationTextSelected: () => selectedText,
         setConversationTextSelected: value => { if (!snapshot.enabled) selectedText = value; },
         // C1 RAM selectors (defaults): automatic language, diagnostics off.

@@ -56,12 +56,13 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
+import { createNativeGatekeeper } from "../native/gatekeeper";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { ShellResourceLimitError } from "../graphics/shell-scene";
@@ -2121,6 +2122,16 @@ class DashboardController {
   });
 
   readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
+    dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
+    gatekeeper: () => {
+      const settings = conversationGatekeeperSettings();
+      return createNativeGatekeeper(settings.model, settings, () => this.emitConversationHermes(), () => {
+        const snapshot = this.conversationDetector.snapshot(), t = snapshot.transcription;
+        if (!t?.model?.startsWith("whisper") || !t.analysis) return null;
+        return { scope: `${snapshot.epoch}/${t.model}`, calls: t.analysis.decodeCalls,
+          totalMs: t.analysis.decodeTotalMs, dropped: t.dropped, busy: t.busy };
+      });
+    },
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
     onOutput: (text) => this.setConversationHermesMessage(text),

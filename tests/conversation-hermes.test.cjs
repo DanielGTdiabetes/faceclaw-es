@@ -2,12 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
+const { GatekeeperEngine } = require('../.test-build/app/conversation-detection/gatekeeper.js');
 
-function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }) {
+function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, gateOptions) {
   let now = 1000, seq = 0, ref = null;
   const state = { enabled: false, state: 'desactivado', transcription: { engine: 'soniox' } };
   const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set();
   const frames = [], outputs = [];
+  const gateCalls = [];
+  let gate, priority = false, priorityCallback = () => {};
   const source = { snapshot: () => state, wearerActionRef: () => ref,
     subscribe(cb) { observers.add(cb); cb(state); return () => observers.delete(cb); },
     subscribeTurns(cb) { turns.add(cb); return () => turns.delete(cb); },
@@ -16,6 +19,12 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   const channel = new ConversationChannel({ now: () => now, send: frame => { frames.push(frame); return true; },
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
+    dailyContextEnabled: () => !!gateOptions?.memory,
+    gatekeeper: () => !gateOptions ? null : (gate = new GatekeeperEngine({ isLoaded: () => true, unload() {},
+      classify(input, done) { gateCalls.push({ input, done }); return () => {}; } }, {
+      now: () => now, after: (cb, ms) => timer(cb, ms, false), changed() {}, priorityActive: () => priority,
+      subscribePriority(cb) { priorityCallback = cb; return () => { priorityCallback = () => {}; }; },
+    }, gateOptions)),
     every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
     policy);
   const notify = () => { for (const cb of [...observers]) cb(state); };
@@ -42,6 +51,9 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
   return { runtime, channel, frames, outputs, timers, source, state, ref: () => ref, association, turn, advance, reply,
+    gateCalls, gate: () => gate,
+    gateReply(action, reason = 'uncertain', index = gateCalls.length - 1) { gateCalls[index].done(JSON.stringify({ action, reason })); },
+    priority(value) { priority = value; priorityCallback(value); },
     begin(budget, receipts = false) { channel.negotiate(['conv/1', ...(receipts ? ['conv/memory-ack/1'] : [])]); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
@@ -50,6 +62,48 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
+
+test('shadow preserves baseline Hermes calls while measuring whether assist nada could be avoided', () => {
+  const h = harness(undefined, { mode: 'shadow' }); h.begin(); h.candidate();
+  assert.equal(h.sent().length, 1); h.gateReply('assist'); h.reply('assess');
+  assert.equal(h.sent().length, 2); assert.equal(h.gateCalls.at(-1).input.mode, 'assist');
+  h.reply('assist', { kind: 'nada', text: undefined }); h.gateReply('ignore', 'redundant');
+  assert.equal(h.runtime.diagnostics().gatekeeper.counters.avoidedNada, 1);
+  h.runtime.dispose();
+});
+
+test('active gates assess and the immediate assist independently; ignored assist does not close episode', () => {
+  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
+  assert.equal(h.sent().length, 0); h.gateReply('assist'); assert.equal(h.sent()[0].type, 'assess');
+  h.reply('assess'); assert.equal(h.sent().length, 1); h.gateReply('ignore', 'courtesy');
+  assert.equal(h.gateCalls.at(-1).input.sentThroughSeq, 0);
+  assert.equal(h.sent().length, 1); assert.equal(h.runtime.snapshot().episode.state, 'activa');
+  h.turn('2', '¿Cuándo sale el próximo tren?'); h.advance(6000); h.gateReply('assist');
+  assert.equal(h.sent().length, 2); h.reply('assist'); assert.equal(h.outputs.filter(Boolean).length, 1);
+  h.runtime.dispose();
+});
+
+test('active stale ignore cannot suppress newly arrived evidence', () => {
+  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
+  h.turn('2', 'Ha cambiado la hora del tren'); h.gateReply('ignore');
+  h.advance(2000); assert.equal(h.gateCalls.length, 2); h.gateReply('assist');
+  assert.equal(h.sent().length, 1); assert.equal(h.sent()[0].turns.at(-1).text, 'Ha cambiado la hora del tren');
+  h.runtime.dispose();
+});
+
+test('priority cancellation never sends Hermes before the source pause event', () => {
+  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
+  h.priority(true); h.gateReply('assist'); assert.equal(h.sent().length, 0);
+  h.update({ state: 'suspendido' }); h.priority(false); h.update({ state: 'escuchando' });
+  h.runtime.dispose(); assert.equal(h.sent().length, 0);
+});
+
+test('OFF prevents late gate dispatch and keeps aggregate diagnostics', () => {
+  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate(); h.runtime.stop();
+  h.gateReply('assist'); assert.equal(h.sent().length, 0);
+  assert.equal(h.runtime.diagnostics().gatekeeper.counters.cancelled, 1); assert.equal(h.timers.size, 0);
+  h.runtime.dispose();
+});
 
 test('metrics follow listening, concurrent transcription and native sent without retaining speech', () => {
   const h = harness(); h.begin(undefined, true);
@@ -138,6 +192,34 @@ test('a topic can begin without any greeting, followed by one validated assistan
   h.reply('assist'); assert.deepEqual(h.outputs.filter(Boolean), ['Una aportación útil']);
   h.advance(5000); assert.equal(h.sent().length, 2);
   h.runtime.dispose(); assert.equal(h.timers.size, 0);
+});
+
+test('deterministic replay filtering covers active assist without canceling useful work or changing cadence', () => {
+  const h = harness(); h.begin(); h.candidate(); h.reply('assess');
+  h.turn('1', 'PRIVATE_DETAIL', { startMs: 10_000, endMs: 11_000 });
+  h.turn('1', 'private_detail', { startMs: 10_000, endMs: 11_000 });
+  assert.equal(h.runtime.snapshot().busy, true, 'in-flight assist is not canceled');
+  h.reply('assist', { kind: 'nada', text: undefined });
+  h.advance(5000);
+  assert.equal(h.sent().length, 3, 'the real new detail still reaches Hermes');
+  h.reply('assist', { kind: 'nada', text: undefined });
+  h.turn('1', 'PRIVATE_DETAIL', { startMs: 10_000, endMs: 11_000 });
+  h.turn('1', '...'); h.advance(5000);
+  assert.equal(h.sent().length, 3, 'replay and punctuation cannot trigger another assist');
+  h.turn('1', 'PRIVATE_DETAIL', { startMs: 12_000, endMs: 13_000 }); h.advance(2000);
+  assert.equal(h.sent().length, 4, 'actual repeated speech remains eligible, including for memory');
+  h.runtime.stop();
+  assert.deepEqual(h.runtime.diagnostics().prefilter, { empty: 1, duplicate: 2 });
+  assert.equal(JSON.stringify(h.runtime.diagnostics()).includes('PRIVATE_DETAIL'), false);
+  h.runtime.begin(); assert.deepEqual(h.runtime.diagnostics().prefilter, { empty: 0, duplicate: 0 }, 'reset before any new association');
+  h.runtime.dispose();
+});
+
+test('punctuation-only input does not create an assess request', () => {
+  const h = harness(); h.begin(); h.turn('1', '...'); h.turn('2', '¿?'); h.advance(5000);
+  assert.equal(h.sent().length, 0);
+  assert.deepEqual(h.runtime.diagnostics().prefilter, { empty: 2, duplicate: 0 });
+  h.runtime.dispose();
 });
 
 test('speech during a pending evaluation does not cancel it; the late answer is still delivered', () => {

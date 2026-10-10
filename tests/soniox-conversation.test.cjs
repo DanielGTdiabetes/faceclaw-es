@@ -46,6 +46,18 @@ function harness({ key = 'sk-test', engine = 'soniox' } = {}) {
 
 const msg = (tokens, extra = {}) => JSON.stringify({ tokens, ...extra });
 
+test('actual native model is read from analysis during capture and retained after OFF', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('auto');
+  // Android emits model identity inside analysis, not at the diagnostics root.
+  h.local.setDiagnostics({ analysis: { engine: 'whisper-small', decodeCalls: 2 }, worker: false });
+  assert.equal(h.engine.snapshot().model, 'whisper-small');
+  h.engine.stop();
+  assert.equal(h.engine.snapshot().model, 'whisper-small');
+  h.local.setDiagnostics({ analysis: { engine: 'whisper-base', decodeCalls: 0 } });
+  assert.equal(h.engine.snapshot().model, 'whisper-small', 'OFF cannot acquire another decoder identity');
+});
+
 test('saved-profile matches automatically associate finalized labels without a phrase or manual choice', () => {
   const h = harness(); h.engine.start('auto', true); h.sockets[0].listener.onOpen();
   const events = []; h.engine.subscribeAssociation(e => events.push(e));

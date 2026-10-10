@@ -38,6 +38,15 @@ test('optional timing is bounded, text-free and cannot invalidate a valid result
   assert.equal(h.results[0].verdict, 'tema');
 });
 
+test('memory observation accepts only a boolean and keeps old bridge outcomes unknown', () => {
+  for (const memoryUpdated of [true, false, undefined, 'private', 1, { text: 'private' }]) {
+    const h = harness(); h.ready(); h.request('assist'); h.reply({ kind: 'nada', memoryUpdated });
+    assert.equal(h.results[0].text, null);
+    assert.equal(h.results[0].memoryUpdated, typeof memoryUpdated === 'boolean' ? memoryUpdated : undefined);
+    assert.ok(!JSON.stringify(h.results).includes('private'));
+  }
+});
+
 test('old bridge, malformed capability and capability without explicit ON send no text', () => {
   const h = harness();
   for (const caps of [undefined, {}, 'conv/1', ['chat', 'mcp']]) {

@@ -3,6 +3,8 @@ import { conversationStartPlan } from "./conversation-ui";
 import { type ParticipationMode } from "./participation";
 import { type TextLanguage } from "./transcription";
 import { type SpeakerRef } from "./wearer-identity";
+import { type GatekeeperMode } from "./gatekeeper";
+import { GATEKEEPER_MODELS, type GatekeeperModelId } from "./gatekeeper-models";
 
 export type ConversationSessionPort = {
   detector: ConversationCaptureCoordinator;
@@ -28,6 +30,18 @@ let systemSelected = false;
 let useHermes = true;
 /** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
 let dailyContext = false;
+let gatekeeperMode: GatekeeperMode = "off";
+let gatekeeperModelId: GatekeeperModelId = GATEKEEPER_MODELS[0].id;
+let gatekeeperWait = false;
+/** Experimental session choices, frozen at ON and cleared by process restart. */
+export function conversationGatekeeperSettings() { return { mode: gatekeeperMode, model: gatekeeperModelId, wait: gatekeeperWait }; }
+export function setConversationGatekeeper(mode: GatekeeperMode, model: GatekeeperModelId, wait: boolean): boolean {
+  if (port?.detector.snapshot().enabled || !["off", "shadow", "active"].includes(mode)
+    || !GATEKEEPER_MODELS.some(m => m.id === model)) return false;
+  gatekeeperMode = mode; gatekeeperModelId = model; gatekeeperWait = !!wait;
+  for (const listener of listeners) listener();
+  return true;
+}
 export function conversationDailyContextSelected(): boolean { return dailyContext; }
 export function setConversationDailyContextSelected(value: boolean): void {
   if (port?.detector.snapshot().enabled || dailyContext === value) return;

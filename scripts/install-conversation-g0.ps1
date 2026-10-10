@@ -4,8 +4,8 @@ param(
     [string]$AndroidSdk = $env:ANDROID_HOME,
     [string]$JavaDirectory = $env:JAVA_HOME,
     [string]$Serial = '',
-    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1', '0.8.2-es.5-conversation.s2', '0.8.2-es.5-conversation.s2.1', '0.8.2-es.5-conversation.s2.2', '0.8.2-es.5-conversation.s2.3', '0.8.2-es.5-conversation.s2.4-hermes', '0.8.2-es.5-conversation.s2.5-manual', '0.8.2-es.5-conversation.s2.6-manual-context', '0.8.2-es.5-conversation.s2.6.1-manual-context', '0.8.2-es.5-conversation.s2.6.2-manual-context', '0.8.2-es.5-conversation.s2.6.3-manual-context', '0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context', '0.8.2-es.5-conversation.s2.6.6-manual-context', '0.8.2-es.5-conversation.s2.6.7-manual-context', '0.8.2-es.5-conversation.s2.6.8-manual-context', '0.8.2-es.5-conversation.s2.6.9-manual-context', '0.8.2-es.5-conversation.s2.6.10-model-selector', '0.8.2-es.5-conversation.s2.6.11-daily-context', '0.8.2-es.5-conversation.s2.6.12-whisper-performance', '0.8.2-es.5-conversation.s2.6.13-whisper-medium')]
-    [string]$ExpectedVersion = '0.8.2-es.5-conversation.s2.6.13-whisper-medium',
+    [ValidateSet('0.8.1-es.5-conversation.g0.1', '0.8.1-es.5-conversation.g0.2', '0.8.1-es.5-conversation.g2.1', '0.8.1-es.5-conversation.g2.2', '0.8.1-es.5-conversation.g2.3', '0.8.1-es.5-conversation.g3.0', '0.8.1-es.5-conversation.g3.1', '0.8.1-es.5-conversation.g3.2', '0.8.1-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.3', '0.8.2-es.5-conversation.g3.4', '0.8.2-es.5-conversation.g3.4.1', '0.8.2-es.5-conversation.g3.4.2', '0.8.2-es.5-conversation.c1', '0.8.2-es.5-conversation.a2', '0.8.2-es.5-conversation.a3', '0.8.2-es.5-conversation.a4', '0.8.2-es.5-conversation.s1', '0.8.2-es.5-conversation.s2', '0.8.2-es.5-conversation.s2.1', '0.8.2-es.5-conversation.s2.2', '0.8.2-es.5-conversation.s2.3', '0.8.2-es.5-conversation.s2.4-hermes', '0.8.2-es.5-conversation.s2.5-manual', '0.8.2-es.5-conversation.s2.6-manual-context', '0.8.2-es.5-conversation.s2.6.1-manual-context', '0.8.2-es.5-conversation.s2.6.2-manual-context', '0.8.2-es.5-conversation.s2.6.3-manual-context', '0.8.2-es.5-conversation.s2.6.4-manual-context', '0.8.2-es.5-conversation.s2.6.5-manual-context', '0.8.2-es.5-conversation.s2.6.6-manual-context', '0.8.2-es.5-conversation.s2.6.7-manual-context', '0.8.2-es.5-conversation.s2.6.8-manual-context', '0.8.2-es.5-conversation.s2.6.9-manual-context', '0.8.2-es.5-conversation.s2.6.10-model-selector', '0.8.2-es.5-conversation.s2.6.11-daily-context', '0.8.2-es.5-conversation.s2.6.12-whisper-performance', '0.8.2-es.5-conversation.s2.6.13-whisper-medium', '0.8.2-es.5-conversation.s2.7-gatekeeper-shadow')]
+    [string]$ExpectedVersion = '0.8.2-es.5-conversation.s2.7-gatekeeper-shadow',
     [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
@@ -88,3 +88,17 @@ Get-FileHash -LiteralPath $taskBackup -Algorithm SHA256
 & $taskAdb -s $Serial install -r $taskOutput
 if ($LASTEXITCODE -ne 0) { throw 'La actualización falló. No desinstalar ni regenerar la firma.' }
 Write-Output "Instalada conservando datos. Reversión: adb -s $Serial install -r $taskBackup"
+# Desktop tests cannot validate syntax accepted by Android's embedded V8 (without full ICU).
+# Verify a real launch before treating a successful package installation as a working update.
+$taskLaunch = & $taskAdb -s $Serial shell am start -W -n com.faceclaw.app/com.tns.NativeScriptActivity 2>&1
+if ($LASTEXITCODE -ne 0 -or ($taskLaunch -join "`n") -match 'Error:|Exception') {
+    throw "La APK se instaló pero no abrió. Revisar el arranque; reversión disponible en $taskBackup"
+}
+for ($taskCheck = 0; $taskCheck -lt 5; $taskCheck++) {
+    Start-Sleep -Milliseconds 1000
+    $taskPid = & $taskAdb -s $Serial shell pidof com.faceclaw.app
+    if ($LASTEXITCODE -ne 0 -or !($taskPid -join '').Trim()) {
+        throw "La APK se instaló pero su proceso no continúa. Revisar el arranque; reversión disponible en $taskBackup"
+    }
+}
+Write-Output 'Actividad abierta y proceso estable durante los cinco segundos iniciales. Confirmar también UI/OFF/ajustes.'

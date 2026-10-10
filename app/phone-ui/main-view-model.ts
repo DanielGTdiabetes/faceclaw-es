@@ -39,15 +39,24 @@ import {
   wearerActions, wearerChoices,
   CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
   conversationDailyContextSelected, setConversationDailyContextSelected,
+  conversationGatekeeperSettings, setConversationGatekeeper,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
+import { GATEKEEPER_MODELS, gatekeeperModel } from "../conversation-detection/gatekeeper-models";
+import { gatekeeperDownloadState, onGatekeeperDownloadChanged, startGatekeeperDownload, cancelGatekeeperDownload,
+  createGatekeeperProvider, saveGatekeeperBenchmark } from "../native/gatekeeper";
+import { runGatekeeperBenchmark, type GatekeeperBenchmarkResult } from "../conversation-detection/gatekeeper-benchmark";
+import { assistantAudioPriority } from "../assistant/audio-priority";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
 type LayoutOrientation = "portrait" | "landscape";
 
 export class MainViewModel extends RemoteControlsViewModel {
+  private gatekeeperBenchmarkCancel: ((reason?: "capture" | "cancelled") => void) | null = null;
+  private gatekeeperBenchmarkStatus = "";
+  private gatekeeperBenchmarkResult: GatekeeperBenchmarkResult | null = null;
   private _status = "Disconnected.";
   private _displayPreview: ImageSource | null = null;
   private _displayPreviewMessage = "";
@@ -147,6 +156,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.syncBleBandwidthPolling();
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
     this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
+      if (dashboardController.conversationDetector.snapshot().enabled) this.gatekeeperBenchmarkCancel?.("capture");
       this.refreshConversationUi();
       this.refreshHermesUi();
     }));
@@ -160,6 +170,8 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.hermesShown = { button: "", status: "", history: "" };
     this.refreshHermesUi();
     this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
+    this.unsubscribers.push(onGatekeeperDownloadChanged(() => this.refreshConversationUi()));
+    this.unsubscribers.push(() => this.gatekeeperBenchmarkCancel?.());
     this.unsubscribers.push(() => {
       if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
       this.localCloseTimer = null;
@@ -195,6 +207,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
     this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
     this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+    this.notifyPropertyChange("conversationGatekeeperStatus", this.conversationGatekeeperStatus);
     this.notifyPropertyChange("conversationDownloadButton", this.conversationDownloadButton);
     this.notifyPropertyChange("conversationDownloadVisibility", this.conversationDownloadVisibility);
     this.notifyPropertyChange("conversationModelStatus", this.conversationModelStatus);
@@ -562,7 +575,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     const engineAction = this.conversationEngineButton;
     const choice = await Dialogs.action({ title: "Opciones avanzadas de conversación", cancelButtonText: "Cerrar",
       actions: [engineAction, this.conversationModeButton, "Mi perfil", localDiagnosticsAction, textAction, languageAction, "Solo transcripción", "Solo actividad de voz",
-        "Métricas tras OFF", diagnosticsAction, ownAction] });
+        "Métricas tras OFF", "Gatekeeper experimental", diagnosticsAction, ownAction] });
     if (!this.localTranscriptionCanStart) return;
     if (choice === localDiagnosticsAction) { this.onConversationDetectorTap(); return; }
     if (choice === textAction) { this.onConversationTextTap(); return; }
@@ -570,6 +583,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (choice === diagnosticsAction) { this.onConversationDiagnosticsTap(); return; }
     if (choice === "Mi perfil") { this.onVoiceProfileTap(); return; }
     if (choice === "Métricas tras OFF") { this.onConversationDetectorMetricsTap(); return; }
+    if (choice === "Gatekeeper experimental") { await this.onGatekeeperOptionsTap(); return; }
     if (choice === engineAction) {
       await this.onConversationEngineTap();
       return;
@@ -587,6 +601,66 @@ export class MainViewModel extends RemoteControlsViewModel {
       return;
     }
     this.onVoiceProfileTap();
+  }
+
+  get conversationGatekeeperStatus(): string {
+    if (this.gatekeeperBenchmarkStatus) return this.gatekeeperBenchmarkStatus;
+    const settings = conversationGatekeeperSettings();
+    if (settings.mode === "off") return "";
+    const state = gatekeeperDownloadState(settings.model);
+    return settings.mode === "shadow"
+      ? `Gatekeeper en prueba: Hermes recibe las mismas llamadas. ${gatekeeperModel(settings.model).label}. ${state.ready ? "Modelo descargado." : "Falta descargar el modelo desde Opciones avanzadas."}`
+      : "Gatekeeper filtra llamadas. La memoria del día mantiene su acceso a Hermes.";
+  }
+
+  async onGatekeeperOptionsTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const settings = conversationGatekeeperSettings(), state = gatekeeperDownloadState(settings.model);
+    const download = state.downloading ? `Pausar descarga · ${Math.floor(state.bytes * 100 / state.total)} %`
+      : state.ready ? "Modelo descargado" : `Descargar ${gatekeeperModel(settings.model).label} · ${Math.ceil(state.total / 1e6)} MB`;
+    const wait = `Esperar frases incompletas: ${settings.wait ? "sí" : "no"}`;
+    const benchmark = this.gatekeeperBenchmarkCancel ? "Cancelar prueba sin audio" : "Prueba local sin audio · 48 ejemplos";
+    const choice = await Dialogs.action({ title: "Gatekeeper · evaluación local", cancelButtonText: "Cerrar",
+      message: "Shadow mide las decisiones sin impedir llamadas a Hermes. La activación del filtro queda pendiente del benchmark y la prueba real. Las opciones se eligen con Conversaciones apagado.",
+      actions: ["Desactivado", "Shadow · solo medir", "Elegir modelo", download, wait, benchmark, "Métricas Gatekeeper"] });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === "Desactivado") setConversationGatekeeper("off", settings.model, settings.wait);
+    if (choice === "Shadow · solo medir") setConversationGatekeeper("shadow", settings.model, settings.wait);
+    if (choice === wait) setConversationGatekeeper(settings.mode, settings.model, !settings.wait);
+    if (choice === download && !state.ready) {
+      if (state.downloading) cancelGatekeeperDownload(settings.model); else startGatekeeperDownload(settings.model);
+    }
+    if (choice === "Elegir modelo") {
+      const selected = await Dialogs.action({ title: "Candidatos para comparar", cancelButtonText: "Cerrar",
+        actions: GATEKEEPER_MODELS.map(m => `${m.label} · ${Math.ceil(m.sizeBytes / 1e6)} MB`) });
+      const model = GATEKEEPER_MODELS.find(m => `${m.label} · ${Math.ceil(m.sizeBytes / 1e6)} MB` === selected);
+      if (model && this.localTranscriptionCanStart) setConversationGatekeeper(settings.mode, model.id, settings.wait);
+    }
+    if (choice === benchmark) {
+      if (this.gatekeeperBenchmarkCancel) this.gatekeeperBenchmarkCancel();
+      else if (state.ready && !assistantAudioPriority.isActive()) {
+        this.gatekeeperBenchmarkStatus = "Prueba sintética local: 0/48. Sin micrófono ni llamadas a Hermes.";
+        this.gatekeeperBenchmarkCancel = runGatekeeperBenchmark(createGatekeeperProvider(settings.model), {
+          now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(), changed() {},
+          after: (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
+          priorityActive: () => assistantAudioPriority.isActive(), subscribePriority: cb => assistantAudioPriority.subscribe(cb),
+        }, () => this.localTranscriptionCanStart, (completed, total) => {
+          this.gatekeeperBenchmarkStatus = `Prueba sintética local: ${completed}/${total}. Sin audio.`;
+          this.notifyPropertyChange("conversationGatekeeperStatus", this.conversationGatekeeperStatus);
+        }, result => {
+          this.gatekeeperBenchmarkCancel = null; this.gatekeeperBenchmarkResult = result;
+          this.gatekeeperBenchmarkStatus = `Prueba ${result.completed ? "completa" : "interrumpida"}: ${result.rows.length}/48, ${result.failures} fallos. Etiquetas pendientes de revisión.`;
+          if (!result.completed) this.gatekeeperBenchmarkStatus += result.stopReason === "priority" ? " Prioridad del asistente."
+            : result.stopReason === "capture" ? " Captura iniciada." : " Cancelada.";
+          try { saveGatekeeperBenchmark(settings.model, result); } catch { this.gatekeeperBenchmarkStatus += " No se pudo exportar."; }
+          this.notifyPropertyChange("conversationGatekeeperStatus", this.conversationGatekeeperStatus);
+        });
+      } else this.gatekeeperBenchmarkStatus = "Descarga primero el modelo y espera a que termine la interacción del asistente.";
+    }
+    if (choice === "Métricas Gatekeeper") await Dialogs.alert({ title: "Gatekeeper · última sesión",
+      message: JSON.stringify({ shadow: dashboardController.conversationHermes.diagnostics().gatekeeper,
+        benchmark: this.gatekeeperBenchmarkResult }, null, 2), okButtonText: "Cerrar" });
+    this.refreshConversationUi();
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */

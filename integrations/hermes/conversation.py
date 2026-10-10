@@ -598,17 +598,20 @@ class ConversationService:
                 if value is None:
                     raise ValueError("No valid response within budget")
                 update = value.pop("_memoryUpdate", None)
+                memory_updated = False
                 if update is not None and self._current(state):
                     try:
-                        await asyncio.to_thread(self.daily_context.remember, update,
+                        memory_updated = bool(await asyncio.to_thread(self.daily_context.remember, update,
                             generation=state["dailyGeneration"], evidence_seqs=state["evidenceSeqs"],
-                            allowed_ids=state["dailyIds"])
+                            allowed_ids=state["dailyIds"]))
                     except Exception as error:
                         LOG.warning("conv daily write unavailable type=%s", type(error).__name__)
                 if not self._current(state):
                     continue
                 fields = {"type": "result", "requestId": state["requestId"], "ref": state["ref"], "mode": state["mode"]}
                 fields.update(value)
+                # Additive observation only: no summary/evidence leaves the server in this field.
+                fields["memoryUpdated"] = memory_updated
                 fields["timing"] = {key: val for key, val in timing.items() if key not in ("sequence", "mode")}
                 outcome = fields.get("verdict") or fields.get("kind")
                 if not self._current(state):

@@ -32,6 +32,7 @@
             <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
             <Button text="{{ conversationMemoryButton }}" tap="{{ onConversationMemoryTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
             <Label text="{{ conversationMemoryStatus }}" textWrap="true" fontSize="11" />
+            <Label text="{{ conversationGatekeeperStatus }}" textWrap="true" fontSize="11" />
             <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
             <Label text="{{ conversationHermesHistory }}" visibility="{{ conversationHermesHistoryVisibility }}" textWrap="true" fontSize="12" />
             <Label text="{{ localTranscript }}" visibility="{{ conversationTranscriptVisibility }}" textWrap="true" fontSize="12" maxLines="5" />

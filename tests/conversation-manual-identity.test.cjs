@@ -484,7 +484,9 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
   const klass = file.statements.find(n => ts.isClassDeclaration(n) && n.name?.text === 'DashboardController');
   const methods = klass.members.filter(m => ['setManualConversationEnabled', 'setConversationCaptureEnabled'].includes(m.name?.getText(file)));
   const calls = [], begins = [];
-  const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional } },
+  const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional,
+    supportsDailyContext: () => false, setDailyContextEnabled: value => !value } },
+    conversationDailyContextSelected: () => false,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
     conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
     conversationModel: () => 'whisper-medium-es',

@@ -5,9 +5,11 @@ import { type ConversationTurn } from "./conversation-turns";
 import { emptyConversationMetrics, LatencyMetric, LATENCY_BUCKETS_MS } from "./conversation-metrics";
 import { type WearerAssociationEvent } from "./wearer-identity";
 import { type ConversationChannel, type ConversationResult } from "../assistant/conversation-channel";
+import { emptyPrefilterCounters } from "./conversation-prefilter";
+import { type GatekeeperEngine, type GatekeeperInput } from "./gatekeeper";
 
 type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">;
-type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number;
+type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number; gateKey: string;
   baseline: { chunks?: number; sentMs?: number; finalTokens?: number } };
 type Channel = Pick<ConversationChannel, "isReady" | "isEnabled" | "setEnabled" | "request" | "cancel">
   & Partial<Pick<ConversationChannel, "supportsOptionalIdentity" | "statistics" | "resetStatistics">>;
@@ -39,6 +41,9 @@ export type ConversationHermesHost = {
   onOutput(text: string | null): void;
   changed(): void;
   onStopped?(): void;
+  /** Created only at explicit ON; absence preserves the original route exactly. */
+  gatekeeper?(): GatekeeperEngine | null;
+  dailyContextEnabled?(): boolean;
 };
 
 /** Wiring owner: explicit opt-in, bounded evaluation rate, no capture or screen operations. */
@@ -62,11 +67,17 @@ export class ConversationHermesRuntime {
   private maxRequests: number | null = 8;
   private modality: EpisodeModality = "identidad-requerida";
   private counters = emptyCounters();
+  private prefilter = emptyPrefilterCounters();
   private metrics = emptyConversationMetrics();
   private clockAt = 0;
   private wasListening = false;
   private outputTurnAt = 0;
   private outputPresented = false;
+  private gatekeeper: GatekeeperEngine | null = null;
+  private gatekeeperReport: ReturnType<GatekeeperEngine["snapshot"]> | null = null;
+  private gateFlight: object | null = null;
+  private memoryEnabled = false;
+  private sentThroughSeq = 0;
   private readonly unsubscribe: (() => void)[];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
@@ -88,8 +99,13 @@ export class ConversationHermesRuntime {
     if (modality === "identidad-opcional" && !this.channel.supportsOptionalIdentity?.()) return false;
     if (!this.channel.setEnabled(true)) return false;
     this.enabled = true;
+    this.memoryEnabled = !!this.host.dailyContextEnabled?.();
+    this.gatekeeperReport = null;
+    this.sentThroughSeq = 0;
+    this.gatekeeper = this.host.gatekeeper?.() ?? null;
     this.modality = modality;
     this.counters = emptyCounters();
+    this.prefilter = emptyPrefilterCounters();
     this.metrics = emptyConversationMetrics();
     this.clockAt = this.host.now(); this.wasListening = false;
     this.channel.resetStatistics?.();
@@ -106,6 +122,10 @@ export class ConversationHermesRuntime {
     const wasEnabled = this.enabled;
     if (wasEnabled) { this.updateClock(false); this.finishFlight(); }
     this.enabled = false;
+    this.gateFlight = null;
+    if (this.gatekeeper) {
+      this.gatekeeper.dispose(); this.gatekeeperReport = this.gatekeeper.snapshot(); this.gatekeeper = null;
+    }
     this.flight = null;
     this.channel.setEnabled(false);
     this.cancelTimer?.(); this.cancelTimer = null;
@@ -143,7 +163,7 @@ export class ConversationHermesRuntime {
   }
 
   snapshot() {
-    return { enabled: this.enabled, busy: this.flight !== null, requests: this.requests, modality: this.modality,
+    return { enabled: this.enabled, busy: this.flight !== null || this.gateFlight !== null, requests: this.requests, modality: this.modality,
       delivered: this.counters.delivered,
       listening: this.enabled && this.source.snapshot().state === "escuchando", episode: this.tracker.snapshot() };
   }
@@ -154,6 +174,8 @@ export class ConversationHermesRuntime {
     const metrics = Object.fromEntries(Object.entries(this.metrics).map(([key, value]) =>
       [key, value instanceof LatencyMetric ? value.snapshot() : typeof value === "object" ? { ...value } : value]));
     return { modality: this.modality, requests: this.requests, counters: { ...this.counters },
+      prefilter: { ...this.prefilter },
+      gatekeeper: this.gatekeeper?.snapshot() ?? this.gatekeeperReport,
       channel: this.channel.statistics?.() ?? null, metrics: { ...metrics,
         latencyBucketsMs: [...LATENCY_BUCKETS_MS], requestsPerListeningMinute: this.metrics.listeningMs
           ? Math.round(this.requests * 60_000 / this.metrics.listeningMs * 100) / 100 : null } };
@@ -214,6 +236,8 @@ export class ConversationHermesRuntime {
     if (!this.tracker.association(event)) return;
     this.associationVersion = event.version;
     if (this.tracker.snapshot().chars !== before.chars || event.kind === "borrado") {
+      this.gatekeeper?.interrupt(); this.gateFlight = null;
+      this.sentThroughSeq = 0;
       this.finishFlight(); this.channel.cancel(); this.attempted = ""; this.clearOutput();
     }
     this.host.changed();
@@ -231,11 +255,13 @@ export class ConversationHermesRuntime {
     }
     const before = this.tracker.snapshot();
     const accepted = this.tracker.accept(turn);
+    const after = this.tracker.snapshot();
+    this.prefilter.empty += after.prefilter.empty - before.prefilter.empty;
+    this.prefilter.duplicate += after.prefilter.duplicate - before.prefilter.duplicate;
     if (accepted) {
       this.lastTextAt = this.host.now();
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
-      const after = this.tracker.snapshot();
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
     } else this.counters.turnsIgnored++;
     if (accepted) {
@@ -246,6 +272,7 @@ export class ConversationHermesRuntime {
     } else if (before.chars > 0 && this.tracker.snapshot().chars === 0) {
       // The episode ended: its pending evaluation no longer applies.
       this.finishFlight(); this.channel.cancel();
+      this.gatekeeper?.interrupt(); this.gateFlight = null;
       if (this.outputRef) this.outputStale = true;
     }
     this.host.changed();
@@ -253,6 +280,7 @@ export class ConversationHermesRuntime {
 
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
+    this.gatekeeper?.interrupt(); this.gateFlight = null; this.sentThroughSeq = 0;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
     this.attempted = "";
     if (this.outputRef) this.outputStale = true;
@@ -277,11 +305,12 @@ export class ConversationHermesRuntime {
     if (!this.channel.isEnabled()) { this.stop(); return; }
     if (!this.channel.isReady()) { this.interrupt(); return; }
     this.tracker.tick();
+    this.gatekeeper?.tick();
     const state = this.tracker.snapshot().state;
     if (this.flight && state !== (this.flight.mode === "assess" ? "candidata" : "activa")) {
       this.finishFlight(); this.channel.cancel();
     }
-    if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
+    if (snapshot.state !== "escuchando" || this.flight || this.gateFlight || (this.maxRequests !== null && this.requests >= this.maxRequests)
       || this.host.now() - this.lastTextAt < 2000 || this.host.now() - this.lastRequestAt < 5000) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
@@ -293,13 +322,56 @@ export class ConversationHermesRuntime {
     if (key === this.attempted || (this.maxRequests !== null && this.requests >= this.maxRequests)
       || !this.enabled || !this.channel.isReady()) return;
     this.attempted = key;
+    const gate = this.gatekeeper;
+    if (!gate || gate.mode() === "off") { this.sendHermes(context, mode, key); return; }
+    const input = (): GatekeeperInput | null => {
+      const current = this.tracker.gatekeeperContext(mode);
+      if (!this.enabled || this.source.snapshot().state !== "escuchando" || !this.source.snapshot().enabled
+        || !current || current.ref.sessionId !== context.ref.sessionId || current.ref.streamId !== context.ref.streamId
+        || current.ref.associationVersion !== context.ref.associationVersion || current.ref.episodeId !== context.ref.episodeId) return null;
+      return { context: current, mode, lastTextAt: this.lastTextAt, sentThroughSeq: this.sentThroughSeq,
+        memoryEnabled: this.memoryEnabled, final: false };
+    };
+    const first = input();
+    if (!first) return;
+    if (gate.mode() === "shadow") {
+      gate.evaluate(key, first, input, () => {});
+      // Shadow always uses the exact baseline context and cadence, independently of classifier latency.
+      this.sendHermes(context, mode, key);
+    } else {
+      const ticket = {}; this.gateFlight = ticket;
+      gate.evaluate(key, first, input, answer => {
+        if (this.gateFlight !== ticket) return;
+        this.gateFlight = null;
+        if (answer.cancelled) { this.attempted = ""; return; }
+        const latest = input();
+        if (!latest) return;
+        // Never suppress newer speech using an old classification. Re-enter the normal cadence.
+        if (answer.action === "ignore") {
+          this.attempted = latest.context.ref.revision !== answer.revision ? ""
+            : `${latest.context.ref.sessionId}/${latest.context.ref.streamId}/${latest.context.ref.associationVersion}/${latest.context.ref.episodeId}/${latest.context.ref.revision}/${mode}`;
+          return;
+        }
+        const next = mode === "assess" ? this.tracker.assessmentContext() : this.tracker.confirmedContext();
+        if (next) {
+          this.attempted = `${next.ref.sessionId}/${next.ref.streamId}/${next.ref.associationVersion}/${next.ref.episodeId}/${next.ref.revision}/${mode}`;
+          this.sendHermes(next, mode, key);
+        }
+      });
+    }
+  }
+
+  private sendHermes(context: EpisodeContext, mode: "assess" | "assist", gateKey: string): void {
+    if (!this.enabled || !this.channel.isReady() || this.source.snapshot().state !== "escuchando"
+      || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
     this.lastRequestAt = this.host.now();
+    if (mode === "assist") this.sentThroughSeq = Math.max(...context.turns.map(t => t.seq), 0);
     this.requests++;
     if (mode === "assess") this.counters.assessments++; else this.counters.assists++;
     const snapshot = this.source.snapshot();
     this.metrics.turnToRequest.add(this.host.now() - this.lastTextAt);
     if (snapshot.lastVadStopAtMs != null) this.metrics.vadStopToRequest.add(this.host.now() - snapshot.lastVadStopAtMs);
-    const flight: Flight = { ref: { ...context.ref }, mode, at: this.host.now(), turnAt: this.lastTextAt,
+    const flight: Flight = { ref: { ...context.ref }, mode, gateKey, at: this.host.now(), turnAt: this.lastTextAt,
       baseline: { chunks: snapshot.metrics?.chunks, sentMs: snapshot.transcription?.soniox?.sentMs,
         finalTokens: snapshot.transcription?.soniox?.finalTokens } };
     this.flight = flight;
@@ -310,6 +382,10 @@ export class ConversationHermesRuntime {
 
   private result(flight: Flight, result: ConversationResult | null): void {
     if (this.flight !== flight) return;
+    if (result) this.gatekeeper?.observe(flight.gateKey, {
+      message: result.mode === "assist" && !!result.text, nada: result.mode === "assist" && !result.text,
+      memoryUpdated: result.memoryUpdated,
+    });
     this.metrics[flight.mode === "assess" ? "assessRoundTrip" : "assistRoundTrip"].add(this.host.now() - flight.at);
     this.finishFlight();
     if (result?.timing) {

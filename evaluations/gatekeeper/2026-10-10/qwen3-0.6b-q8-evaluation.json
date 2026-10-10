@@ -1,0 +1,54 @@
+{
+  "status": "offline-predictions",
+  "candidates": 48,
+  "humanReviewed": 0,
+  "measuredReferences": 0,
+  "perMode": {
+    "assess": {
+      "candidates": 11,
+      "wouldAvoid": 11
+    },
+    "assist": {
+      "candidates": 37,
+      "wouldAvoid": 32
+    }
+  },
+  "confusion": {
+    "ignore": {
+      "ignore": 8,
+      "wait": 0,
+      "assist": 1
+    },
+    "wait": {
+      "ignore": 3,
+      "wait": 0,
+      "assist": 0
+    },
+    "assist": {
+      "ignore": 32,
+      "wait": 0,
+      "assist": 4
+    }
+  },
+  "annotationAssistRecall": 0.1111111111111111,
+  "usefulRecall": null,
+  "usefulReferenceCount": 0,
+  "usefulBlocked": 0,
+  "usefulPending": 0,
+  "avoidedNada": 0,
+  "memoryUpdatesBlocked": 0,
+  "memoryRelevantBlocked": 9,
+  "avoidedWithoutReference": 43,
+  "waits": 0,
+  "unresolvedWaits": 0,
+  "bypasses": 0,
+  "latencyMs": {
+    "p50": 3002,
+    "p95": 3172
+  },
+  "cpu": null,
+  "ram": null,
+  "temperature": null,
+  "whisperInterference": null,
+  "quotaSavings": null
+}

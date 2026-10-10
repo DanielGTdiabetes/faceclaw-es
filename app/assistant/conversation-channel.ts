@@ -23,7 +23,7 @@ export type ConversationTiming = {
 };
 export type ConversationResult = (
   | { ref: EpisodeRef; mode: "assess"; verdict: EpisodeAssessment }
-  | { ref: EpisodeRef; mode: "assist"; text: string | null; confirmPresented?: () => boolean }) & { timing?: ConversationTiming };
+  | { ref: EpisodeRef; mode: "assist"; text: string | null; confirmPresented?: () => boolean }) & { timing?: ConversationTiming; memoryUpdated?: boolean };
 export type ConversationChannelHost = {
   send(frame: object): boolean;
   now(): number;
@@ -76,6 +76,7 @@ export class ConversationChannel {
   isReady(): boolean { return this.supported && this.enabled && !this.chatActive; }
   isSupported(): boolean { return this.supported; }
   supportsDailyContext(): boolean { return this.dailyContextSupported; }
+  isDailyContextEnabled(): boolean { return this.dailyContextEnabled; }
   /** The UI freezes consent at ON. Old bridges receive the exact old wire contract. */
   setDailyContextEnabled(enabled: boolean): boolean {
     if (this.enabled || (enabled && !this.dailyContextSupported)) return false;
@@ -194,16 +195,17 @@ export class ConversationChannel {
     if (!this.isReady() || this.host.now() >= pending.expiresAt) { this.stats.caducados++; this.cancel(); return; }
     if (frame.type === "error") { this.stats.errores++; this.finish(null); return; }
     if (frame.type !== "result" || frame.mode !== pending.mode) return;
+    const memory = typeof frame.memoryUpdated === "boolean" ? { memoryUpdated: frame.memoryUpdated } : {};
     if (pending.mode === "assess") {
       if (frame.verdict !== "tema" && frame.verdict !== "cortesia" && frame.verdict !== "incierto") {
         this.stats.invalidos++; this.finish(null); return;
       }
       this.stats.verdicts++; this.stats[frame.verdict]++;
-      this.finish({ mode: "assess", ref: { ...pending.ref }, verdict: frame.verdict, timing: readTiming(frame.timing) });
+      this.finish({ mode: "assess", ref: { ...pending.ref }, verdict: frame.verdict, timing: readTiming(frame.timing), ...memory });
     } else {
       // Only a final answer can reach the owner. Thinking/tool/status messages stay invisible.
       if (frame.kind !== "mensaje" && frame.kind !== "nada") { this.stats.invalidos++; this.finish(null); return; }
-      if (frame.kind === "nada") { this.stats.nada++; this.finish({ mode: "assist", ref: { ...pending.ref }, text: null, timing: readTiming(frame.timing) }); return; }
+      if (frame.kind === "nada") { this.stats.nada++; this.finish({ mode: "assist", ref: { ...pending.ref }, text: null, timing: readTiming(frame.timing), ...memory }); return; }
       if (typeof frame.text !== "string" || !frame.text.trim() || frame.text.length > 1200) {
         this.stats.invalidos++; this.finish(null); return;
       }
@@ -221,6 +223,7 @@ export class ConversationChannel {
           return confirmed;
         } : undefined;
       this.finish({ mode: "assist", ref, text: frame.text.trim(), timing: readTiming(frame.timing),
+        ...memory,
         ...(confirmPresented ? { confirmPresented } : {}) });
     }
   }
