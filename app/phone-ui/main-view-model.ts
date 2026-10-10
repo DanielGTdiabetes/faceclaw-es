@@ -696,6 +696,10 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   get conversationGatekeeperStatus(): string {
     const settings = conversationGatekeeperSettings();
+    // A running synthetic benchmark (OFF only) shows its progress; a finished one stays in its dialog.
+    if (this.localTranscriptionCanStart && this.gatekeeperBenchmarkCancel) {
+      return `Gatekeeper: OFF. ${this.gatekeeperBenchmarkStatus} Mantén la pantalla encendida.`;
+    }
     if (this.localTranscriptionCanStart || settings.mode === "off" || !conversationUsesHermes()) return "Gatekeeper: OFF.";
     const report = dashboardController.conversationHermes?.diagnostics?.().gatekeeper;
     return report?.circuit === "open" ? "Gatekeeper: bypass temporal. Hermes recibe las llamadas directamente."

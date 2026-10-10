@@ -12,7 +12,7 @@
                 <Button id="conversationGatekeeperStart" text="{{ conversationGatekeeperStartLabel }}" tap="{{ onConversationGatekeeperStartTap }}" class="conversation-primary" textWrap="true" />
                 <Button text="Escuchar con Hermes sin Gatekeeper" tap="{{ onConversationDirectStartTap }}" class="conversation-secondary" textWrap="true" />
                 <Button text="Solo transcribir" tap="{{ onConversationTextStartTap }}" class="conversation-text-action" />
-                <Label text="Tú decides cuándo empezar. Máximo 20 min; se detiene tras 5 min sin voz." class="conversation-caption" textWrap="true" />
+                <Label text="Tú decides cuándo empezar. Sin límite de tiempo; se detiene tras 5 min sin voz." class="conversation-caption" textWrap="true" />
             </StackLayout>
             <StackLayout visibility="{{ conversationStopVisibility }}" class="conversation-card">
                 <Label text="{{ conversationHermesStatus }}" textWrap="true" class="conversation-description" />

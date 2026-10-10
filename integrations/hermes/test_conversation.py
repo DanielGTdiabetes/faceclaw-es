@@ -149,10 +149,11 @@ class ValidationTests(unittest.TestCase):
     def test_style_never_assumes_the_wearer_and_keeps_balanced_tone(self):
         for phrase in ("identity is opcional", "Never assume who said a desconocido turn",
                        "neither two voices, alternation nor a greeting is required",
-                       "never obliges you to contribute", "Humor, irony and mild sarcasm are optional", "Do not force jokes",
-                       "Most contributions should be", "Prefer silence", "drop humor",
-                       "Do not repeat any of them", "Silence is the default",
-                       "A witty reaction alone does not justify", "Do not answer an old question again"):
+                       "never obliges you to contribute", "Humor, irony and mild sarcasm may be used when they fit",
+                       "Do not force jokes", "Most contributions should be", "drop humor",
+                       "Do not repeat any of them", "participate as a natural third person",
+                       "Do not use nada merely because", "Avoid empty acknowledgments",
+                       "Never guess current facts you cannot verify", "Do not answer an old question again"):
             self.assertIn(phrase, STYLE)
 
     def test_dispatch_is_denied_and_persistence_entry_points_are_disabled(self):

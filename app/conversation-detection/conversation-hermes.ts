@@ -91,7 +91,7 @@ export class ConversationHermesRuntime {
   /**
    * Called immediately before explicit ON. Never starts capture and never runs on reconnect.
    * The modality is captured for the whole session; optional identity needs a conv/2 bridge.
-   * A null request budget follows the capture session's lifetime (manual ON: at most 20 minutes).
+   * A null request budget follows the capture session's lifetime (manual ON: no time limit, 24 h native safety bound).
    * Cadence, one pending evaluation and per-request deadlines still apply.
    */
   begin(maxRequests: number | null = 8, modality: EpisodeModality = "identidad-requerida",
