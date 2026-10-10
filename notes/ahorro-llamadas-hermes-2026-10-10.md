@@ -9,6 +9,7 @@ S2.12 instalada con firma original y medición desplegada en Jarvis; evidencia y
 **Actualización posterior:** S2.13 instalada sobre S2.12, sin tocar Jarvis; cierre en §9.
 **Prueba mínima posterior completada:** 2 min 51 s, 10 llamadas/5 mensajes entregados,
 tokens brutos móvil/journal idénticos y esfuerzo low; evidencia y discrepancia de cálculo en §10.
+Menú físico de gafas confirmado después por el usuario. Protección de cuota Plus pendiente: §11.
 
 ## 1. Dónde se van los créditos
 
@@ -385,9 +386,39 @@ precios verificados ni se compara ahorro porcentual con S2.11: son sesiones dist
 
 La tasa de esta sesión es 210,2 llamadas/h si se extrapolan sus 2,85 min; **no es una medición de
 una hora ni ahorro validado**. No se ejercitaron los escalones 20/40/60 s ni TV/silencios de A/B/C.
-Quedan pendientes A/B/C, observación física de las dos opciones del menú de gafas y la corrección
-del cálculo derivado móvil. La prueba mínima de tokens/esfuerzo/aportaciones sí está completada.
+El usuario confirmó después que al mantener pulsada la patilla aparece el menú con
+«Escuchar con Hermes» y «Solo transcribir», sin filtros locales. Comprobación física completada,
+sin seleccionar un inicio. Quedan pendientes A/B/C y la corrección del cálculo derivado móvil.
+La prueba mínima de tokens/esfuerzo/aportaciones sí está completada.
 
 Artefactos locales de solo métricas: `.tools/s2.13-mobile-metrics.json`,
 `.tools/s2.13-test-summary-session.json` y `.tools/s2.13-test-summary-window.txt`.
 Notas/continuidad/copia NAS actualizadas y publicadas en `codex/conversation-detection-g0`.
+
+## 11. Prioridad del usuario: conservar la cuota Plus de Codex
+
+El usuario pide sobre todo asegurarse de que Faceclaw no consuma todo su plan Plus. **La versión
+actual no ofrece esa garantía.** El proceso activo de Jarvis se consultó solo en lectura y usa
+`FACECLAW_PROVIDER=openai-codex`, modelo `gpt-6-luna` y esfuerzo efectivo `low`; el código de Hermes
+resuelve ese proveedor mediante credenciales OAuth de Codex. Sus llamadas consumen la cuota Codex
+de la cuenta conectada. No se comparó la identidad de esa cuenta con la del escritorio.
+
+La lectura de límites del escritorio del 10-10-2026 muestra Plus, **24 % usado / 76 % disponible**
+tanto en la ventana de **5 horas** como en la **semanal**. Es consumo global de esa cuenta,
+incluido el trabajo de desarrollo: no hay lectura anterior a la prueba que permita atribuir una
+variación a Faceclaw. No se guardaron identificadores de cuenta ni credenciales en las notas.
+
+La [documentación oficial](https://developers.openai.com/codex/pricing#what-are-the-usage-limits-for-my-plan)
+indica que el consumo depende del modelo, contexto, razonamiento, herramientas y caché; no existe
+una conversión fija de estos tokens a porcentaje de cuota. Por ello ni `low`, ni la caché, ni el
+enfriamiento adaptativo acreditan por sí solos que una escucha prolongada sea sostenible. Las diez
+llamadas en 171261 ms solo caracterizan esta prueba breve; no predicen la semana.
+
+**Siguiente prioridad antes de recomendar uso prolongado:** diseñar una protección que reserve
+cuota para el usuario, comprobando ambos límites y suspendiendo nuevas llamadas a Hermes antes
+de agotar la reserva. Debe definirse la reserva, comprobar la cuenta real de Hermes y decidir el
+comportamiento cuando la cuota no pueda consultarse. No basta con esperar al 429 ni con limitar
+solo llamadas por hora. Esta protección **no está implementada**; no se ha fijado un umbral ni
+reintroducido un límite de llamadas. Requeriría un encargo de código y despliegue distinto del
+cierre S2.13, que prohíbe modificar Jarvis. Modelo, proveedor, esfuerzo, credenciales y servicios
+siguen intactos. Conversación queda OFF.
