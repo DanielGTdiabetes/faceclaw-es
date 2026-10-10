@@ -33,6 +33,22 @@ let dailyContext = false;
 let gatekeeperMode: GatekeeperMode = "off";
 let gatekeeperModelId: GatekeeperModelId = "lfm2.5-1.2b-q4";
 let gatekeeperWait = false;
+/** Whisper speaker attribution in manual conversations (pause windows + session voices). RAM only. */
+let localSpeakers = true;
+/** Skip evaluating contexts heard from a single non-wearer voice (TV, radio, someone else's call). */
+let singleVoiceFilter = false;
+export function conversationLocalSpeakers(): boolean { return localSpeakers; }
+export function setConversationLocalSpeakers(value: boolean): void {
+  if (port?.detector.snapshot().enabled || localSpeakers === value) return;
+  localSpeakers = value;
+  for (const listener of listeners) listener();
+}
+export function conversationSingleVoiceFilter(): boolean { return singleVoiceFilter; }
+export function setConversationSingleVoiceFilter(value: boolean): void {
+  if (port?.detector.snapshot().enabled || singleVoiceFilter === value) return;
+  singleVoiceFilter = value;
+  for (const listener of listeners) listener();
+}
 /** Experimental session choices, frozen at ON and cleared by process restart. */
 export function conversationGatekeeperSettings() { return { mode: gatekeeperMode, model: gatekeeperModelId, wait: gatekeeperWait }; }
 export function setConversationGatekeeper(mode: GatekeeperMode, model: GatekeeperModelId, wait: boolean): boolean {

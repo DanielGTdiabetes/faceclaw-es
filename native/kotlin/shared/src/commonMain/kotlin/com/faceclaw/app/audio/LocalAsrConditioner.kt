@@ -99,6 +99,34 @@ fun isKnownWhisperHallucination(text: String): Boolean {
         "música", "musica", "aplausos", "risas")
 }
 
+/**
+ * Whisper decoding loops ("y luego y luego y luego…", one word repeated many times, a sentence repeated).
+ * Stand-in for the reference implementation's compression-ratio check (>2.4), which needs zlib.
+ * Tuned to keep natural repetitions such as "no, no, no" or "sí, sí, sí":
+ *  - one word repeated 5+ times in a row,
+ *  - an n-gram of 2..6 words repeated 3+ times in a row,
+ *  - 12+ words with fewer than 35 % distinct (a long low-information text).
+ */
+fun isRepetitiveWhisperText(text: String): Boolean {
+    val words = Regex("[\\p{L}\\p{N}]+").findAll(text.lowercase()).map { it.value }.toList()
+    if (words.size < 5) return false
+    var run = 1
+    for (i in 1 until words.size) {
+        run = if (words[i] == words[i - 1]) run + 1 else 1
+        if (run >= 5) return true
+    }
+    for (n in 2..6) {
+        for (start in 0..words.size - n * 3) {
+            val unit = words.subList(start, start + n)
+            var repeats = 1
+            while (start + (repeats + 1) * n <= words.size &&
+                words.subList(start + repeats * n, start + (repeats + 1) * n) == unit) repeats++
+            if (repeats >= 3) return true
+        }
+    }
+    return words.size >= 12 && words.toSet().size < words.size * 0.35
+}
+
 /** Aggregate histogram of window levels. Scalars only, reset per session. */
 class LocalAsrLevelStats {
     companion object {

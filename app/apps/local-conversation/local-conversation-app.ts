@@ -49,7 +49,7 @@ export class LocalConversationLayer implements Layer {
       const detail = snapshot.enabled ? conversationUsesHermes() ? HERMES_LISTENING_LINE
         : snapshot.state === "escuchando" ? this.session.detector.transcriptText() || "Escuchando todas las voces…"
         : snapshot.reason
-        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Máximo 20 min; termina tras más de 5 min sin voz.`;
+        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Sin límite de tiempo; termina tras más de 5 min sin voz.`;
       let y = inset + lineStep(titleFont) + 4;
       const lines = wrapText(font, detail, available);
       const count = Math.max(1, Math.floor((height - y - 2 * step - inset) / step));
@@ -82,7 +82,8 @@ export class LocalConversationLayer implements Layer {
     const lines = wrapText(font, detail, available);
     // Keep the deadline visible independently of a long reason or error message.
     if (snapshot.enabled) {
-      image.drawText(font, inset, y, `${Math.ceil(snapshot.remainingMs / 1000)} s restantes · máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min`, 220);
+      image.drawText(font, inset, y, snapshot.remainingMs === null ? "Sin límite de tiempo"
+        : `${Math.ceil(snapshot.remainingMs / 1000)} s restantes · máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min`, 220);
       y += step;
     }
     const footerY = height - 2 * step - inset;
@@ -238,7 +239,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
     cancelPoll();
     const snapshot = session.detector.snapshot();
     if (snapshot.enabled && hermesArmed()) {
-      const key = `${snapshot.epoch}|${snapshot.state}|${Math.ceil(snapshot.remainingMs / 1000)}|${wearerLine(snapshot)}`;
+      const key = `${snapshot.epoch}|${snapshot.state}|${snapshot.remainingMs === null ? "-" : Math.ceil(snapshot.remainingMs / 1000)}|${wearerLine(snapshot)}`;
       if (key !== hermesPaintKey) { hermesPaintKey = key; app.requestRender(); }
       return;
     }

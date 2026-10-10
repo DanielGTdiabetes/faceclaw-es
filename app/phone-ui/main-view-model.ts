@@ -40,6 +40,7 @@ import {
   CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
   conversationDailyContextSelected, setConversationDailyContextSelected,
   conversationGatekeeperSettings, setConversationGatekeeper,
+  conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
@@ -212,7 +213,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationGatekeeperStatus", this.conversationGatekeeperStatus);
     for (const name of ["conversationStartVisibility", "conversationStopVisibility", "conversationModeSummary", "conversationEntryLabel",
       "conversationGatekeeperStartLabel", "conversationGatekeeperModelButton", "conversationGatekeeperDownloadLabel",
-      "conversationGatekeeperDownloadVisibility", "conversationSettingsHint"]) {
+      "conversationGatekeeperDownloadVisibility", "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus"]) {
       this.notifyPropertyChange(name, this[name as keyof MainViewModel]);
     }
     this.notifyPropertyChange("conversationDownloadButton", this.conversationDownloadButton);
@@ -255,7 +256,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   get conversationHermesStatus(): string {
     if (!conversationUsesHermes()) {
       const snapshot = dashboardController.conversationDetector.snapshot();
-      return this.hermesNotice || (snapshot.enabled ? `Solo transcripción · ${snapshot.reason}` : "Solo texto, sin consultas a Hermes. Máximo 20 min; OFF borra el texto.");
+      return this.hermesNotice || (snapshot.enabled ? `Solo transcripción · ${snapshot.reason}` : "Solo texto, sin consultas a Hermes. Sin límite de tiempo; OFF borra el texto.");
     }
     const runtime = dashboardController.conversationHermes.snapshot();
     if (this.hermesNotice) return this.hermesNotice;
@@ -543,6 +544,30 @@ export class MainViewModel extends RemoteControlsViewModel {
     return conversationUsesHermes()
       ? "Resúmenes en tu servidor durante 24 h. Se borran automáticamente; consultarlos no renueva el plazo."
       : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
+  }
+  get conversationSpeakersButton(): string {
+    return "Voces: " + (conversationLocalSpeakers() ? "distinguir con Whisper" : "sin distinguir")
+      + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "");
+  }
+  get conversationSpeakersStatus(): string {
+    const speakers = conversationLocalSpeakers()
+      ? "Con Whisper local, cada frase se corta en las pausas y se asocia a tu voz (si tienes perfil) o a otra voz de la sesión. Necesita el modelo de voz descargado."
+      : "Whisper local entrega el texto sin saber quién habla.";
+    return conversationSingleVoiceFilter()
+      ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
+      : speakers;
+  }
+  async onConversationSpeakersTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const actions = [
+      conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces con Whisper",
+      conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
+    ];
+    const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === actions[0]) setConversationLocalSpeakers(!conversationLocalSpeakers());
+    else if (choice === actions[1]) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
+    this.refreshConversationUi();
   }
   async onConversationMemoryTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;

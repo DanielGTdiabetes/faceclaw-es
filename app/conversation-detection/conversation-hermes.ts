@@ -5,7 +5,7 @@ import { type ConversationTurn } from "./conversation-turns";
 import { emptyConversationMetrics, LatencyMetric, LATENCY_BUCKETS_MS } from "./conversation-metrics";
 import { type WearerAssociationEvent } from "./wearer-identity";
 import { type ConversationChannel, type ConversationResult } from "../assistant/conversation-channel";
-import { emptyPrefilterCounters } from "./conversation-prefilter";
+import { emptyPrefilterCounters, isSingleForeignVoice } from "./conversation-prefilter";
 import { type GatekeeperEngine, type GatekeeperInput } from "./gatekeeper";
 
 type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">;
@@ -78,6 +78,7 @@ export class ConversationHermesRuntime {
   private gateFlight: object | null = null;
   private memoryEnabled = false;
   private sentThroughSeq = 0;
+  private singleVoice = { enabled: false, skipped: 0 };
   private readonly unsubscribe: (() => void)[];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
@@ -93,7 +94,8 @@ export class ConversationHermesRuntime {
    * A null request budget follows the capture session's lifetime (manual ON: at most 20 minutes).
    * Cadence, one pending evaluation and per-request deadlines still apply.
    */
-  begin(maxRequests: number | null = 8, modality: EpisodeModality = "identidad-requerida"): boolean {
+  begin(maxRequests: number | null = 8, modality: EpisodeModality = "identidad-requerida",
+    options: { singleVoiceFilter?: boolean } = {}): boolean {
     this.stop();
     if (!EPISODE_MODALITIES.includes(modality)) return false;
     if (modality === "identidad-opcional" && !this.channel.supportsOptionalIdentity?.()) return false;
@@ -106,6 +108,7 @@ export class ConversationHermesRuntime {
     this.modality = modality;
     this.counters = emptyCounters();
     this.prefilter = emptyPrefilterCounters();
+    this.singleVoice = { enabled: options.singleVoiceFilter === true, skipped: 0 };
     this.metrics = emptyConversationMetrics();
     this.clockAt = this.host.now(); this.wasListening = false;
     this.channel.resetStatistics?.();
@@ -174,7 +177,7 @@ export class ConversationHermesRuntime {
     const metrics = Object.fromEntries(Object.entries(this.metrics).map(([key, value]) =>
       [key, value instanceof LatencyMetric ? value.snapshot() : typeof value === "object" ? { ...value } : value]));
     return { modality: this.modality, requests: this.requests, counters: { ...this.counters },
-      prefilter: { ...this.prefilter },
+      prefilter: { ...this.prefilter }, singleVoice: { ...this.singleVoice },
       gatekeeper: this.gatekeeper?.snapshot() ?? this.gatekeeperReport,
       channel: this.channel.statistics?.() ?? null, metrics: { ...metrics,
         latencyBucketsMs: [...LATENCY_BUCKETS_MS], requestsPerListeningMinute: this.metrics.listeningMs
@@ -246,7 +249,7 @@ export class ConversationHermesRuntime {
   private turn(turn: ConversationTurn): void {
     if (!this.enabled || !this.channel.isReady() || !this.source.snapshot().enabled
       || this.source.snapshot().state !== "escuchando") return;
-    if (this.modality === "identidad-opcional" && this.source.snapshot().transcription?.engine === "local" && isAnonymousLocalTurn(turn)
+    if (this.modality === "identidad-opcional" && this.source.snapshot().transcription?.engine === "local" && isLocalWindowTurn(turn)
       && (this.current?.sessionId !== turn.sessionId || this.current.streamId !== turn.streamId)) {
       this.interrupt(); this.clearOutput();
       this.current = { sessionId: turn.sessionId, streamId: turn.streamId };
@@ -322,6 +325,8 @@ export class ConversationHermesRuntime {
     if (key === this.attempted || (this.maxRequests !== null && this.requests >= this.maxRequests)
       || !this.enabled || !this.channel.isReady()) return;
     this.attempted = key;
+    // Deterministic and before any classifier: a newer revision with another voice is evaluated again.
+    if (this.singleVoice.enabled && isSingleForeignVoice(context.turns)) { this.singleVoice.skipped++; this.host.changed(); return; }
     const gate = this.gatekeeper;
     if (!gate || gate.mode() === "off") { this.sendHermes(context, mode, key); return; }
     const input = (): GatekeeperInput | null => {
@@ -420,4 +425,4 @@ export class ConversationHermesRuntime {
     this.host.changed();
   }
 }
-import { isAnonymousLocalTurn } from "./local-conversation-turns";
+import { isLocalWindowTurn } from "./local-conversation-turns";

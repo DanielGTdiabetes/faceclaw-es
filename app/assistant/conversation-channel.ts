@@ -288,7 +288,7 @@ function validContext(context: EpisodeContext, optionalSupported: boolean): bool
   for (const turn of context.turns) {
     if (!turn || turn.engine !== engine || turn.sessionId !== context.ref.sessionId || turn.streamId !== context.ref.streamId
       || turn.associationVersion !== context.ref.associationVersion
-      || !(turn.engine === "soniox" && turn.timing === "valido" || optional && isAnonymousLocalTurn(turn))
+      || !(turn.engine === "soniox" && turn.timing === "valido" || optional && isLocalWindowTurn(turn))
       || !Number.isSafeInteger(turn.seq) || turn.seq <= previousSeq
       || typeof turn.text !== "string" || !turn.text.trim()
       || (turn.speaker !== null && (typeof turn.speaker !== "string" || turn.speaker.length > 32))
@@ -313,4 +313,4 @@ function validContext(context: EpisodeContext, optionalSupported: boolean): bool
   if (chars > 6000 || (wearer !== null && others.has(wearer))) return false;
   return optional || (!!wearer && others.size > 0);
 }
-import { isAnonymousLocalTurn } from "../conversation-detection/local-conversation-turns";
+import { isLocalWindowTurn } from "../conversation-detection/local-conversation-turns";

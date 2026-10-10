@@ -7,6 +7,11 @@ import { gatekeeperModel, type GatekeeperModelId } from "../conversation-detecti
 declare const com: any;
 declare const java: any;
 type Download = { native: any; bytes: number; error: boolean };
+/**
+ * One thread made the 1.2B prompt prefill take ~7.7 s on the Pixel, beyond every deadline, so every
+ * request bypassed. Three threads leave the remaining cores to Whisper (4 threads) on the 8-core Tensor.
+ */
+const GATEKEEPER_THREADS = 3;
 const downloads = new Map<GatekeeperModelId, Download>();
 const listeners = new Set<() => void>();
 const changed = () => { for (const listener of listeners) listener(); };
@@ -96,7 +101,7 @@ class NativeGatekeeper implements GatekeeperProvider {
       onDone(reason: string) { finish(reason !== "cancelled" && reason !== "length"); },
       onError() { finish(false); },
     });
-    try { runner.generate(modelPath(this.modelId), 4096, 1,
+    try { runner.generate(modelPath(this.modelId), 4096, GATEKEEPER_THREADS,
       gatekeeperPrompt(input, gatekeeperModel(this.modelId).template), GATEKEEPER_GRAMMAR, 64, listener); }
     catch { finish(false); }
     return () => { if (!settled) { runner.cancel(); finish(false, false); } };

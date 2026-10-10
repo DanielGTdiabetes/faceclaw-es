@@ -1,6 +1,7 @@
 import { GATEKEEPER_PILOT } from "./gatekeeper-pilot";
 import { parseGatekeeperDecision, type GatekeeperHost, type GatekeeperInput, type GatekeeperProvider } from "./gatekeeper";
 import { type ConversationTurn } from "./conversation-turns";
+import { type Relation } from "./wearer-identity";
 
 export type GatekeeperBenchmarkRow = { id: string; action: "ignore" | "wait" | "assist"; latencyMs: number; bypass?: true };
 export type GatekeeperBenchmarkResult = {
@@ -28,11 +29,16 @@ export function runGatekeeperBenchmark(provider: GatekeeperProvider, host: Gatek
     const example = GATEKEEPER_PILOT[rows.length];
     if (!example) { finish(true, "completed"); return; }
     const now = host.now();
-    const turns: ConversationTurn[] = [...example.recent.map(t => ({ text: t.text, atMs: t.atMs })),
-      { text: example.fragment, atMs: example.atMs }].map((t, i) => ({
+    // Optional attribution fields (speakers.jsonl style); the pilot rows stay unattributed.
+    const labelled = example as typeof example & { fragmentSpeaker?: string | null; fragmentRelation?: Relation };
+    const turns: ConversationTurn[] = [...example.recent.map(t => {
+      const turn = t as typeof t & { speaker?: string | null; relation?: Relation };
+      return { text: t.text, atMs: t.atMs, speaker: turn.speaker ?? null, relation: turn.relation ?? "desconocido" };
+    }), { text: example.fragment, atMs: example.atMs, speaker: labelled.fragmentSpeaker ?? null,
+      relation: labelled.fragmentRelation ?? "desconocido" }].map((t, i) => ({
         v: 1, sessionId: "synthetic-pilot", streamId: 1, associationVersion: 0, seq: i + 1,
         text: t.text, startMs: t.atMs, endMs: t.atMs + 1, timing: "ventana", engine: "whisper-small-es",
-        speaker: null, relation: "desconocido", closedBy: "endpoint",
+        speaker: t.speaker, relation: t.relation, closedBy: "endpoint",
       }));
     const input: GatekeeperInput = { mode: example.mode as "assess" | "assist", final: false,
       lastTextAt: now, memoryEnabled: false, sentThroughSeq: example.mode === "assist" ? turns.length - 1 : 0,

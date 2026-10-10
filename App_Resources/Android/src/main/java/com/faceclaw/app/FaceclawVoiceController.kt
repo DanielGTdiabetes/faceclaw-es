@@ -155,7 +155,8 @@ class FaceclawVoiceController(context: Context) {
     private var experimentalSessionLimitMs = 120_000L
 
     fun setExperimentalSessionLimitMs(durationMs: Int) {
-        experimentalSessionLimitMs = durationMs.toLong().coerceIn(1L, 1_200_000L)
+        // 24 h: safety bound for manual listening without a time limit; stop() releases earlier.
+        experimentalSessionLimitMs = durationMs.toLong().coerceIn(1L, 86_400_000L)
     }
 
     fun setExperimentalRawMode(enabled: Boolean) {

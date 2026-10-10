@@ -21,7 +21,7 @@ import javax.crypto.spec.GCMParameterSpec
 private const val OWN_VOICE_MODEL_HASH = "c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef"
 
 /** Isolated from historical microphone profiles. Android noBackupFilesDir excludes biometric backup. */
-private class OwnLocalVoiceStore(context: Context) {
+internal class OwnLocalVoiceStore(context: Context) {
     private val directory = File(context.noBackupFilesDir, "faceclaw-own-voice")
     private val target = File(directory, "profile.aes")
     private val alias = "faceclaw.conversation.own-voice.v1"
@@ -90,35 +90,42 @@ private class OwnLocalVoiceStore(context: Context) {
     }
 }
 
+/** Speaker-embedding model shared by own-voice participation and Whisper speaker attribution. */
+internal fun ownVoiceModelFile(context: Context): File =
+    File(context.applicationContext.filesDir, "faceclaw-mic-models/speaker-embedding/speaker-embedding.onnx")
+
+/** Loads the speaker model only when its SHA-256 matches the one the saved profile was made with. */
+internal fun loadOwnVoiceDecoder(context: Context): LocalVoiceDecoder? {
+    val model = ownVoiceModelFile(context)
+    if (!model.isFile) return null
+    val digest = MessageDigest.getInstance("SHA-256")
+    model.inputStream().use { input ->
+        val block = ByteArray(65536)
+        while (true) { val count = input.read(block); if (count < 0) break; digest.update(block, 0, count) }
+        block.fill(0)
+    }
+    if (digest.digest().joinToString("") { "%02x".format(it) } != OWN_VOICE_MODEL_HASH) return null
+    val extractor = SpeakerEmbeddingExtractor(SpeakerEmbeddingExtractorConfig.builder()
+        .setModel(model.absolutePath).setNumThreads(1).setDebug(false).setProvider("cpu").build())
+    return object : LocalVoiceDecoder {
+        override val dimension: Int = extractor.dim
+        override fun embed(samples: FloatArray): FloatArray? {
+            val stream = extractor.createStream()
+            try {
+                stream.acceptWaveform(samples, 16000); stream.inputFinished()
+                return if (extractor.isReady(stream)) extractor.compute(stream) else null
+            } finally { stream.release() }
+        }
+        override fun release() { extractor.release() }
+    }
+}
+
 /** No networking, recording, legacy speaker registry, content logs or positive fallback. */
 class FaceclawLocalParticipation(context: Context) {
     private val app = context.applicationContext
     private val store = OwnLocalVoiceStore(app)
-    private val model = File(app.filesDir, "faceclaw-mic-models/speaker-embedding/speaker-embedding.onnx")
     private val session = LocalParticipationSession(object : LocalParticipationHost {
-        override fun loadDecoder(): LocalVoiceDecoder? {
-            if (!model.isFile) return null
-            val digest = MessageDigest.getInstance("SHA-256")
-            model.inputStream().use { input ->
-                val block = ByteArray(65536)
-                while (true) { val count = input.read(block); if (count < 0) break; digest.update(block, 0, count) }
-                block.fill(0)
-            }
-            if (digest.digest().joinToString("") { "%02x".format(it) } != OWN_VOICE_MODEL_HASH) return null
-            val extractor = SpeakerEmbeddingExtractor(SpeakerEmbeddingExtractorConfig.builder()
-                .setModel(model.absolutePath).setNumThreads(1).setDebug(false).setProvider("cpu").build())
-            return object : LocalVoiceDecoder {
-                override val dimension: Int = extractor.dim
-                override fun embed(samples: FloatArray): FloatArray? {
-                    val stream = extractor.createStream()
-                    try {
-                        stream.acceptWaveform(samples, 16000); stream.inputFinished()
-                        return if (extractor.isReady(stream)) extractor.compute(stream) else null
-                    } finally { stream.release() }
-                }
-                override fun release() { extractor.release() }
-            }
-        }
+        override fun loadDecoder(): LocalVoiceDecoder? = loadOwnVoiceDecoder(app)
         override fun loadProfile(dimension: Int): FloatArray? = store.load(dimension)
         override fun prepareProfile(vector: FloatArray): PreparedLocalVoiceProfile = store.prepare(vector)
     })

@@ -50,7 +50,7 @@ class FaceclawSystemTranscriber(context: Context) {
     fun start(language: String, modelId: String, maxMs: Long): Boolean {
         if (Looper.myLooper() != Looper.getMainLooper() || active || worker || modelId != "android-system" ||
             language != "es" || !isAvailable(app)) return false
-        deadline = SystemClock.elapsedRealtime() + maxMs.coerceIn(1, 1200000)
+        deadline = SystemClock.elapsedRealtime() + maxMs.coerceIn(1, 86_400_000)
         synchronized(lock) { chunks = 0; delivered = 0; dropped = 0; lastSegmentMs = 0; errors = 0; liveError = "" }
         active = true
         openStream()

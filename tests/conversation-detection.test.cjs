@@ -64,7 +64,7 @@ function manualPort() {
   return transcription;
 }
 
-test('manual profile comparison receives exactly the successfully sent Soniox timeline and twenty-minute duration', async () => {
+test('manual profile comparison receives exactly the successfully sent Soniox timeline and the 24 h native safety bound', async () => {
   const participation = participationPort(), transcription = manualPort();
   let sentMs = 0, duration, profiles = 0;
   const deliveries = [];
@@ -77,7 +77,7 @@ test('manual profile comparison receives exactly the successfully sent Soniox ti
   transcription.acceptProfileMatch = () => { profiles++; };
   const h = harness({ participation, transcription });
   await h.on(true, 'conversation', { manualConversation: true });
-  assert.equal(duration, 1200000);
+  assert.equal(duration, 86400000);
   h.leases[0].pcm(new Uint8Array(1600)); h.detector.acceptNativePcm({});
   assert.deepEqual(deliveries, [0]);
   transcription.acceptNative = () => {}; // Rejected/not yet open: this chunk must not enter profile time.
@@ -107,14 +107,17 @@ test('VAD completion timestamp measures release and is cleared at capture bounda
   h.detector.setEnabled(false);
 });
 
-test('manual conversation has a twenty-minute deadline including priority suspension', async () => {
+test('manual continuous listening has no time limit, also across priority suspension', async () => {
   const h = harness({ transcription: manualPort() });
   await h.on(true, 'off', { manualConversation: true, language: 'auto' });
-  assert.equal(h.detector.snapshot().remainingMs, 1200000);
+  assert.equal(h.detector.snapshot().remainingMs, null);
+  assert.equal(h.detector.snapshot().sessionLimitMs, null);
+  assert.equal(h.detector.nativeLimitMs(), 86400000);
   h.env({ available: false, reason: 'PTT' });
   h.tick(120000); assert.equal(h.detector.snapshot().enabled, true);
-  h.tick(1079999); assert.equal(h.detector.snapshot().remainingMs, 1);
-  h.tick(1); assert.equal(h.detector.snapshot().stopReason, 'expired');
+  h.tick(1080000); assert.equal(h.detector.snapshot().enabled, true);
+  h.tick(3600000); assert.equal(h.detector.snapshot().stopReason, 'none');
+  h.detector.setEnabled(false);
   assert.deepEqual(h.counts(), { starts: 1, stops: 1, timer: false });
 });
 

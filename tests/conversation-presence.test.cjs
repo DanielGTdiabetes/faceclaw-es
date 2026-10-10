@@ -22,6 +22,7 @@ function harness(lockEnabled = false) {
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
     conversationUsesHermes: () => true,
     conversationGatekeeperSettings: () => ({ mode: 'off' }),
+    conversationSingleVoiceFilter: () => false,
     conversationDailyContextSelected: () => false,
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },
     // C1: default RAM session options read once at ON.

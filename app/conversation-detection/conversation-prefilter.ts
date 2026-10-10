@@ -31,3 +31,14 @@ export function prefilterTurn(turn: ConversationTurn, recent: readonly Conversat
     && previous.startMs === turn.startMs && previous.endMs === turn.endMs && textKey(previous.text) === key)
     ? "duplicate" : null;
 }
+
+/**
+ * A context heard entirely from one labelled voice that is not the wearer (TV, radio, someone else's
+ * phone call). Needs three turns so a single remark addressed to the wearer is still evaluated; unlabelled
+ * turns and any wearer turn keep the context. Opt-in: a lone guest telling a story also matches.
+ */
+export function isSingleForeignVoice(turns: readonly ConversationTurn[]): boolean {
+  if (turns.length < 3) return false;
+  const speaker = turns[0]!.speaker;
+  return speaker !== null && turns.every((turn) => turn.speaker === speaker && turn.relation !== "portador");
+}

@@ -56,7 +56,7 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
@@ -2102,7 +2102,7 @@ class DashboardController {
     acquire: (pcm, revoked, failed) => voiceControlBridge.acquireExperimentalRaw(
       this.communicator?.getNativeCommunicator(), pcm, revoked, failed,
       (nativePcm) => this.conversationDetector.acceptNativePcm(nativePcm),
-      Math.max(1, this.conversationDetector.snapshot().remainingMs),
+      this.conversationDetector.nativeLimitMs(),
     ),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => {
@@ -2154,7 +2154,8 @@ class DashboardController {
         // Optional identity only for the manual ON that asked for it; diagnostics keep required identity.
         // Manual Hermes stays available for the full capture session; diagnostic sessions keep their budget.
         const armed = this.conversationHermes.begin(options.manualConversation ? null : 8,
-          options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida");
+          options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida",
+          { singleVoiceFilter: conversationSingleVoiceFilter() });
         if (!armed && options.manualConversation) return;
       }
     } else if (!enabled) this.conversationHermes.stop();

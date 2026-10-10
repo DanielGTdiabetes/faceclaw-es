@@ -55,8 +55,16 @@ data class LocalWhisperPerformance(val threads: Int, val provider: String = "cpu
  *   window with a fixed tail, so one 9 s window costs much less than two overlapping 6 s windows; this
  *   trades extra latency under load for less repeated work and fewer lost windows. It adds no VAD/energy
  *   gate: every PCM sample still reaches a window regardless of level or speaker.
+ * - [PAUSE] closes a window at a pause instead of every hop, so one window usually holds one speaker
+ *   and whole phrases: after [windowSamples] (2 s) a run of quiet VAD chunks closes it without carrying
+ *   audio over. It keeps growing while the decoder is busy and is cut at [maxWindowSamples] (12 s),
+ *   keeping [overlapSamples] (1 s) so a word cut by the limit is deduplicated like the reference.
+ *   While nothing voiced has arrived only a short pre-roll is kept, and a window whose chunks were all
+ *   quiet is not decoded. "Voiced" is VAD activity OR a chunk level above about -52 dBFS, so quiet far
+ *   speech the energy VAD misses still reaches the decoder.
  */
-data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, val hopSamples: Int, val maxWindowSamples: Int) {
+data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, val hopSamples: Int, val maxWindowSamples: Int,
+    val closesOnPause: Boolean = false) {
     val overlapSamples: Int get() = windowSamples - hopSamples
     val coalesces: Boolean get() = maxWindowSamples > windowSamples
 
@@ -66,7 +74,8 @@ data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, v
         const val MAX_SAMPLES = 16000 * 28
         val REFERENCE = LocalTranscriptWindowPolicy("ref-6-3", 16000 * 6, 16000 * 3, 16000 * 6)
         val COALESCE = LocalTranscriptWindowPolicy("coalesce-6-3-max12", 16000 * 6, 16000 * 3, 16000 * 12)
-        val ALL = listOf(REFERENCE, COALESCE)
+        val PAUSE = LocalTranscriptWindowPolicy("pause-2-12", 16000 * 2, 16000, 16000 * 12, closesOnPause = true)
+        val ALL = listOf(REFERENCE, COALESCE, PAUSE)
 
         fun byId(id: String?): LocalTranscriptWindowPolicy? = ALL.firstOrNull { it.id == id }
 

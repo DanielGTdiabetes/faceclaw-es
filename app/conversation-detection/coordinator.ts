@@ -7,6 +7,8 @@ import { PhaseDiagnostics, type DiagnosticPhase, type PhaseDiagnosticsSnapshot }
 import { type DetectorParticipation, type LocalParticipationSnapshot, type ParticipationMode } from "./participation";
 
 /** Local capture, optional own-profile comparison and ASR; no network or assistant actions. */
+/** Upper bound handed to native workers and the capture wakelock when listening has no time limit. */
+export const NATIVE_SESSION_SAFETY_MS = 86_400_000;
 export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
 export type DetectorMetrics = {
   chunks: number; samples: number; bytes: number; maxGapMs: number;
@@ -27,7 +29,8 @@ export type DetectorSnapshot = {
   phases?: PhaseDiagnosticsSnapshot;
   enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
   stopReason: "none" | "manual" | "expired" | "silence" | "saved" | "error";
-  sessionLimitMs: number;
+  /** Null: manual continuous listening, no time limit (native engines keep a 24 h safety bound). */
+  sessionLimitMs: number | null;
   manualConversation: boolean;
   /**
    * Own-profile attribution in a manual session with optional identity. `no-aplica` outside that
@@ -35,7 +38,8 @@ export type DetectorSnapshot = {
    * stops Soniox/Hermes. No score, label or vector is exposed.
    */
   voiceProfile: VoiceProfileUse;
-  remainingMs: number;
+  /** Null while listening without a time limit. */
+  remainingMs: number | null;
 };
 export type VoiceProfileUse = "no-aplica" | "sin-perfil" | "cargando" | "activo" | "no-disponible";
 /** Upper bound for an optional profile to load before the manual session continues without it. */
@@ -76,7 +80,7 @@ export class ConversationCaptureCoordinator {
   private lastPcm = 0;
   private startedAt = 0;
   private enabledAt = 0;
-  private sessionLimitMs = 120_000;
+  private sessionLimitMs: number | null = 120_000;
   private manualConversation = false;
   private expectedTextEngine: "soniox" | "local" = "soniox";
   private optionalProfile = false;
@@ -105,7 +109,8 @@ export class ConversationCaptureCoordinator {
       sessionLimitMs: this.sessionLimitMs,
       manualConversation: this.manualConversation,
       voiceProfile: this.voiceProfile,
-      remainingMs: this.enabled ? Math.max(0, this.sessionLimitMs - (this.host.now() - this.enabledAt)) : 0,
+      remainingMs: !this.enabled ? 0 : this.sessionLimitMs === null ? null
+        : Math.max(0, this.sessionLimitMs - (this.host.now() - this.enabledAt)),
       resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
       ...(this.host.transcription ? { transcription: this.host.transcription.snapshot() } : {}),
       ...(this.host.participation ? { participation: this.host.participation.snapshot() } : {}) };
@@ -208,7 +213,8 @@ export class ConversationCaptureCoordinator {
     this.manualConversation = enabled && this.transcribing && options.manualConversation === true;
     this.expectedTextEngine = options.textEngine === "local" ? "local" : "soniox";
     this.optionalProfile = this.manualConversation && options.optionalProfile === true;
-    if (enabled) this.sessionLimitMs = this.manualConversation ? 1_200_000 : 120_000;
+    // Manual continuous listening has no time limit; diagnostics and enrollment keep 2 min.
+    if (enabled) this.sessionLimitMs = this.manualConversation ? null : 120_000;
     this.participationMode = enabled ? participation : "off";
     // Kept after OFF for the aggregate diagnostics; replaced at the next ON.
     if (enabled) this.voiceProfile = !this.optionalProfile ? "no-aplica" : participation === "conversation" ? "cargando" : "sin-perfil";
@@ -227,19 +233,20 @@ export class ConversationCaptureCoordinator {
     this.language = this.transcribing ? (options.language === "auto" ? "auto" : "es") : null;
     this.phases = options.diagnostics ? new PhaseDiagnostics(() => this.host.now()) : null;
     this.vad.setObserver(this.phases);
-    if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment", this.manualConversation ? this.sessionLimitMs : undefined)) {
+    if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment", this.manualConversation ? this.nativeLimitMs() : undefined)) {
       if (this.optionalProfile) this.withoutProfile();
       else {
         this.fail("El perfil local no está disponible. Revisa el modelo de voz o espera al cierre anterior.");
         return;
       }
     }
-    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto", this.manualConversation, this.sessionLimitMs)) {
+    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto", this.manualConversation, this.nativeLimitMs())) {
       this.fail("El motor seleccionado no está disponible. Revisa su descarga o espera al cierre anterior.");
       return;
     }
     this.state = "suspendido";
-    this.reason = `Preparando captura. Máximo ${this.sessionLimitMs / 60_000} minutos.`;
+    this.reason = this.sessionLimitMs === null ? "Preparando captura. Sin límite de tiempo."
+      : `Preparando captura. Máximo ${this.sessionLimitMs / 60_000} minutos.`;
     this.cancelTimer = this.host.every(() => this.refresh(), 500);
     this.refresh();
   }
@@ -248,7 +255,7 @@ export class ConversationCaptureCoordinator {
   refresh(): void {
     if (!this.enabled || this.state === "error") return;
     const now = this.host.now();
-    if (now - this.enabledAt >= this.sessionLimitMs) {
+    if (this.timedOut(now)) {
       this.expire(); return;
     }
     if (this.participationMode !== "off") {
@@ -321,7 +328,7 @@ export class ConversationCaptureCoordinator {
     this.emit();
     void this.host.prepare().then((ready) => {
       if (epoch !== this.epoch || !this.enabled) return;
-      if (this.host.now() - this.enabledAt >= this.sessionLimitMs) { this.expire(); return; }
+      if (this.timedOut(this.host.now())) { this.expire(); return; }
       this.preparing = false;
       const current = this.host.environment();
       if (!current.available || current.session !== this.session) { this.refresh(); return; }
@@ -349,7 +356,7 @@ export class ConversationCaptureCoordinator {
     // Existing LC3 decoder: 5 x 10 ms, 800 samples, mono 16 kHz signed PCM16 LE.
     if (pcm.length !== 1600) { this.fail("Formato PCM inesperado: se requieren 800 muestras / 1600 B por chunk."); return; }
     const now = this.host.now();
-    if (now - this.enabledAt >= this.sessionLimitMs) { this.expire(); return; }
+    if (this.timedOut(now)) { this.expire(); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
     if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
@@ -409,11 +416,21 @@ export class ConversationCaptureCoordinator {
     this.emit();
   }
 
+  private timedOut(now: number): boolean {
+    return this.sessionLimitMs !== null && now - this.enabledAt >= this.sessionLimitMs;
+  }
+
+  /** Native deadline: the session limit, or a 24 h safety bound for unlimited manual listening. */
+  nativeLimitMs(): number {
+    const remaining = this.snapshot().remainingMs;
+    return remaining === null ? NATIVE_SESSION_SAFETY_MS : Math.max(1, remaining);
+  }
+
   private expire(): void {
     if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
     this.setEnabled(false);
     this.stopReason = "expired";
-    this.reason = `OFF · Tiempo agotado (${this.sessionLimitMs / 60_000} min). La sesión ha terminado; puedes iniciar otra.`;
+    this.reason = `OFF · Tiempo agotado (${(this.sessionLimitMs ?? 0) / 60_000} min). La sesión ha terminado; puedes iniciar otra.`;
     this.emit();
   }
 

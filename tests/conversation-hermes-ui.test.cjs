@@ -613,7 +613,7 @@ test('local conversation without Hermes keeps the classic transcript view and sc
 test('glasses product conversation uses the shared manual owner with model/mode controls while OFF', () => {
   const h = localConversation(false, true);
   h.patch({ enabled: false, state: 'desactivado' });
-  assert.match(h.paint(), /Máximo\s+20 min/);
+  assert.match(h.paint(), /Sin\s+lí\s*mite\s+de\s+tiempo/);
   assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
   assert.equal(h.counts().reads, 0);
   assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');

@@ -1,9 +1,11 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
-import { conversationModel, conversationLocalModel } from "../conversation-detection/session-controls";
+import { conversationModel, conversationLocalModel, conversationLocalSpeakers } from "../conversation-detection/session-controls";
+import { isMicModelReady } from "../apps/microphones/mic-models";
 import { isSystemTranscriptionReady } from "./system-transcription";
 import { LocalConversationTurns } from "../conversation-detection/local-conversation-turns";
 import { type ConversationTurn } from "../conversation-detection/conversation-turns";
+import { type Relation } from "../conversation-detection/wearer-identity";
 
 /** A4: rolling RAM-only text, by characters instead of the last three deliveries. */
 const MAX_TEXT_CHARS = 1200;
@@ -21,7 +23,11 @@ export class LocalTranscription implements DetectorTranscription {
   private readonly turnLog = new LocalConversationTurns();
   private engineKind = "";
 
-  start(language: TextLanguage = "es", _profileAssociation = false, maxMs = 120_000): boolean {
+  /**
+   * `profileAssociation` (manual conversation) asks Whisper for speakers when the RAM choice allows it and
+   * the verified speaker model is downloaded: windows then close at pauses and carry a session voice.
+   */
+  start(language: TextLanguage = "es", profileAssociation = false, maxMs = 120_000): boolean {
     if (this.enabled) return false;
     this.lines = [];
     const selected = conversationModel();
@@ -49,12 +55,21 @@ export class LocalTranscription implements DetectorTranscription {
             this.appendText(String(text));
             this.turnLog.accept(String(text), Number(startMs), Number(endMs));
           },
+          onSpeakerSegment: (text: string, _language: string, startMs: number, endMs: number, speaker: string, relation: string) => {
+            if (!this.enabled) return;
+            this.appendText(String(text));
+            const label = String(speaker);
+            this.turnLog.accept(String(text), Number(startMs), Number(endMs), label ? label : null,
+              (["portador", "otro", "desconocido"].includes(String(relation)) ? String(relation) : "desconocido") as Relation);
+          },
         });
         this.engine.setListener(this.listener);
       }
       // Kotlin captures the language only if this start is accepted; a rejected start changes nothing.
       this.turnLog.start(model);
-      this.enabled = Boolean(this.engine.start(system || language === "es" ? "es" : "auto", model, maxMs));
+      const wire = system || language === "es" ? "es" : "auto";
+      const speakers = !system && profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
+      this.enabled = Boolean(speakers ? this.engine.startWithSpeakers(wire, model, maxMs) : this.engine.start(wire, model, maxMs));
       if (!this.enabled) this.turnLog.stop();
       this.status = this.enabled ? "cargando" : "ocupado";
       return this.enabled;

@@ -22,6 +22,22 @@ function indexRows(rows, allowedIds) {
   return result;
 }
 
+const RELATIONS = ['portador', 'otro', 'desconocido'];
+/** Optional attribution, as the app sends it: portador/otro need a speaker; one speaker keeps one relation. */
+function validSpeakers(row) {
+  const voices = [...row.recent.map(turn => [turn.speaker ?? null, turn.relation ?? 'desconocido']),
+    [row.fragmentSpeaker ?? null, row.fragmentRelation ?? 'desconocido']];
+  const relations = new Map();
+  for (const [speaker, relation] of voices) {
+    if (speaker !== null && (typeof speaker !== 'string' || !/^[\w-]{1,32}$/u.test(speaker))) return false;
+    if (!RELATIONS.includes(relation) || relation !== 'desconocido' && speaker === null) return false;
+    if (speaker !== null && relations.has(speaker) && relations.get(speaker) !== relation) return false;
+    if (speaker !== null) relations.set(speaker, relation);
+  }
+  const wearers = new Set(voices.filter(([, relation]) => relation === 'portador').map(([speaker]) => speaker));
+  return wearers.size <= 1;
+}
+
 function validateDataset(rows) {
   if (!rows.length) throw new Error('Dataset is empty');
   indexRows(rows);
@@ -33,6 +49,7 @@ function validateDataset(rows) {
       || row.recent.some(turn => !turn || typeof turn.text !== 'string' || !turn.text.trim()
         || !Number.isFinite(turn.atMs) || turn.atMs < 0 || turn.atMs > row.atMs)
       || row.recent.reduce((n, turn) => n + turn.text.length, row.fragment.length) > 6000
+      || !validSpeakers(row)
       || !row.expected || !ACTIONS.includes(row.expected.action)
       || typeof row.expected.memoryRelevant !== 'boolean') throw new Error('Invalid dataset case');
     for (let i = 1; i < row.recent.length; i++) {
@@ -111,34 +128,46 @@ function evaluate(dataset, predictions, references = []) {
     cpu: null, ram: null, temperature: null, whisperInterference: null, quotaSavings: null };
 }
 
+/** Same rule as conversation-prefilter isSingleForeignVoice: 3+ turns, one labelled non-wearer voice. */
+function singleForeignVoice(row) {
+  const turns = [...row.recent.map(turn => [turn.speaker ?? null, turn.relation ?? 'desconocido']),
+    [row.fragmentSpeaker ?? null, row.fragmentRelation ?? 'desconocido']];
+  const speaker = turns[0][0];
+  return turns.length >= 3 && speaker !== null && turns.every(([s, r]) => s === speaker && r !== 'portador');
+}
+
 function main(args) {
   const values = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (!['--dataset', '--predictions', '--reference', '--baseline-pass'].includes(arg) || values[arg] !== undefined) {
-      throw new Error('Use --dataset FILE [--predictions FILE | --baseline-pass] [--reference FILE]');
+    if (!['--dataset', '--predictions', '--reference', '--baseline-pass', '--single-voice-rule'].includes(arg) || values[arg] !== undefined) {
+      throw new Error('Use --dataset FILE [--predictions FILE | --baseline-pass | --single-voice-rule] [--reference FILE]');
     }
-    if (arg === '--baseline-pass') values[arg] = true;
+    if (arg === '--baseline-pass' || arg === '--single-voice-rule') values[arg] = true;
     else {
       if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Missing file argument');
       values[arg] = args[++i];
     }
   }
-  if (values['--baseline-pass'] && values['--predictions']) throw new Error('Choose one prediction source');
-  if (values['--reference'] && !values['--baseline-pass'] && !values['--predictions']) throw new Error('Reference needs predictions');
+  const sources = ['--baseline-pass', '--predictions', '--single-voice-rule'].filter(key => values[key]);
+  if (sources.length > 1) throw new Error('Choose one prediction source');
+  if (values['--reference'] && !sources.length) throw new Error('Reference needs predictions');
   const dataset = validateDataset(readJsonl(values['--dataset'] ?? DEFAULT_DATASET));
-  if (!values['--baseline-pass'] && !values['--predictions']) {
+  if (!sources.length) {
     return { status: 'dataset-validated-only', candidates: dataset.length,
       episodes: new Set(dataset.map(row => row.episodeId)).size,
       humanReviewed: dataset.filter(row => row.review === 'human').length, modelsRun: 0 };
   }
-  const predictions = values['--baseline-pass']
-    ? dataset.map(row => ({ id: row.id, action: 'assist', latencyMs: 0 })) : readJsonl(values['--predictions']);
-  return { status: values['--baseline-pass'] ? 'pass-through-control-not-hermes' : 'offline-predictions',
+  const predictions = values['--baseline-pass'] ? dataset.map(row => ({ id: row.id, action: 'assist', latencyMs: 0 }))
+    : values['--single-voice-rule']
+      ? dataset.map(row => ({ id: row.id, action: singleForeignVoice(row) ? 'ignore' : 'assist', latencyMs: 0 }))
+      : readJsonl(values['--predictions']);
+  return { status: values['--baseline-pass'] ? 'pass-through-control-not-hermes'
+    : values['--single-voice-rule'] ? 'deterministic-single-voice-rule' : 'offline-predictions',
     ...evaluate(dataset, predictions, values['--reference'] ? readJsonl(values['--reference']) : []) };
 }
 
-module.exports = { readJsonl, validateDataset, evaluate, main, DEFAULT_DATASET };
+module.exports = { readJsonl, validateDataset, evaluate, main, singleForeignVoice, DEFAULT_DATASET };
 if (require.main === module) {
   try { process.stdout.write(`${JSON.stringify(main(process.argv.slice(2)), null, 2)}\n`); }
   catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const controls = require('../.test-build/app/conversation-detection/session-controls.js');
+let speakerModel = false;
 const { LocalConversationTurns, isAnonymousLocalTurn } = require('../.test-build/app/conversation-detection/local-conversation-turns.js');
 const { ConversationEpisodeTracker } = require('../.test-build/app/conversation-detection/conversation-episodes.js');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
@@ -43,6 +44,7 @@ test('base, small and medium pass the exact model and deadline to native decodin
     './system-transcription': { isSystemTranscriptionReady: () => false },
     '../conversation-detection/session-controls': controls,
     '../conversation-detection/local-conversation-turns': { LocalConversationTurns },
+    '../apps/microphones/mic-models': { isMicModelReady: () => speakerModel },
   }, { com: { faceclaw: { app: { FaceclawLocalTranscriber: function () { return native; },
     FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
   const engine = new LocalTranscription(), turns = [];
@@ -96,6 +98,7 @@ test('Pixel selects its public native adapter without Whisper downloads and free
     './system-transcription': { isSystemTranscriptionReady: () => true },
     '../conversation-detection/session-controls': controls,
     '../conversation-detection/local-conversation-turns': { LocalConversationTurns },
+    '../apps/microphones/mic-models': { isMicModelReady: () => speakerModel },
   }, { com: { faceclaw: { app: { FaceclawSystemTranscriber: function () { return native; },
     FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
   controls.setConversationTextLanguage('auto'); controls.setConversationModel('android-system');

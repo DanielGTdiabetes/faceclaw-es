@@ -289,7 +289,7 @@ export class FaceclawVoiceControlBridge {
     this.experimentalFailure = failed;
     try {
       this.ensureController();
-      this.controller?.setExperimentalSessionLimitMs(Math.max(1, Math.min(1_200_000, Math.floor(sessionLimitMs))));
+      this.controller?.setExperimentalSessionLimitMs(Math.max(1, Math.min(86_400_000, Math.floor(sessionLimitMs))));
       if (!this.beginRawCapture(communicator, true)) {
         this.stopExperimentalRaw(id);
         return null;

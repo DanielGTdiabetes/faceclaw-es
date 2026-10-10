@@ -103,7 +103,7 @@ class LocalParticipationSession(
         condition.withLock {
             if (worker) return false
             running = true; worker = true; ready = false; busy = false; enrolling = enrollment
-            generation++; deadline = platform.elapsedRealtimeMs() + (if (enrollment) 120000 else durationMs.coerceIn(1, 1200000)); status = "cargando"
+            generation++; deadline = platform.elapsedRealtimeMs() + (if (enrollment) 120000 else durationMs.coerceIn(1, 86_400_000)); status = "cargando"
             matches.clear(); matchSeq = 0; timedEndMs = null
             eraseVectors(); buffer.resetMetrics(); turns.reset()
             profileSaved = false; comparisons = 0; abstentions = 0; dropped = 0

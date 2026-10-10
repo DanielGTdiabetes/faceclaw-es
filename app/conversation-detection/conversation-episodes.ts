@@ -1,5 +1,5 @@
 import { type ConversationTurn } from "./conversation-turns";
-import { isAnonymousLocalTurn } from "./local-conversation-turns";
+import { isLocalWindowTurn } from "./local-conversation-turns";
 import { type WearerAssociationEvent } from "./wearer-identity";
 import { emptyPrefilterCounters, prefilterTurn, type PrefilterCounters } from "./conversation-prefilter";
 
@@ -116,11 +116,12 @@ export class ConversationEpisodeTracker {
       else this.end("interrupcion");
       return false;
     }
-    // Relations must agree with the live association: no relation is invented or promoted here.
-    const labelled = turn.relation === "portador" ? !!this.wearer && turn.speaker === this.wearer
+    // Local windows carry the native voice-print label (wearer profile or session voice) and no
+    // association; Soniox relations must agree with the live association. Nothing is promoted here.
+    const local = this.modality === "identidad-opcional" && isLocalWindowTurn(turn);
+    const labelled = local || (turn.relation === "portador" ? !!this.wearer && turn.speaker === this.wearer
       : turn.relation === "otro" ? !!this.wearer && !!turn.speaker && turn.speaker !== this.wearer
-      : turn.relation === "desconocido" && (turn.speaker === null || turn.speaker !== this.wearer);
-    const local = this.modality === "identidad-opcional" && isAnonymousLocalTurn(turn);
+      : turn.relation === "desconocido" && (turn.speaker === null || turn.speaker !== this.wearer));
     if (!labelled || this.contradicts(turn) || !(turn.engine === "soniox" && turn.timing === "valido" || local)
       || turn.text.length > this.policy.maxChars) {
       this.ignored++;

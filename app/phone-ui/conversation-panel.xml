@@ -46,6 +46,8 @@
                 <Label text="{{ conversationMemoryStatus }}" textWrap="true" class="conversation-caption" />
                 <Button text="{{ voiceProfileButton }}" tap="{{ onVoiceProfileTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
                 <Label text="Reconocer tu voz es opcional para escuchar con Hermes." class="conversation-caption" textWrap="true" />
+                <Button text="{{ conversationSpeakersButton }}" tap="{{ onConversationSpeakersTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" textWrap="true" />
+                <Label text="{{ conversationSpeakersStatus }}" textWrap="true" class="conversation-caption" />
                 <Button text="Diagnóstico" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-text-action" />
             </StackLayout>
         </StackLayout>

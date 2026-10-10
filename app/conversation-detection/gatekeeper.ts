@@ -35,6 +35,8 @@ export const DEFAULT_GATEKEEPER_OPTIONS: GatekeeperOptions = {
   mode: "off", wait: false, deadlineMs: 1500, coldDeadlineMs: 8000,
   waitMs: 4000, cooldownMs: 180_000, failuresToOpen: 3,
 };
+/** Prefill dominates on-device latency: the classifier sees only the latest turns (Hermes keeps all). */
+export const GATEKEEPER_PROMPT_TURNS = 6;
 /** GBNF is mandatory from token zero; the provider must fail rather than relax it. */
 export const GATEKEEPER_GRAMMAR = String.raw`root ::= "{" ws "\"action\"" ws ":" ws action ws "," ws "\"reason\"" ws ":" ws reason ws "}" ws
 action ::= "\"ignore\"" | "\"wait\"" | "\"assist\""
@@ -59,12 +61,15 @@ export function gatekeeperPrompt(input: GatekeeperInput, template: "qwen3" | "ch
     + "assist si hay una posible aportación útil, una necesidad, duda, riesgo o información relevante para memoria; "
     + "en caso de duda assist. ignore solo si es claramente vacío, cortesía o repetición sin información nueva. "
     + "Una frase corta, negación, fecha, número o cambio de idioma no justifican ignore. "
+    + "relation portador es quien lleva las gafas; otro es otra voz; desconocido no tiene hablante seguro. "
+    + "speaker identifica la misma voz entre turnos; sin speaker no supongas quién habla. "
+    + "Una pregunta o petición de otra voz al portador, o un intercambio entre voces distintas, favorece assist. "
     + "No respondas al interlocutor. En modo assist evalúa la novedad respecto a sentThroughSeq. "
     + (input.final ? "Esta es la única reevaluación final: decide ignore o assist; no wait. "
-      : "wait solo si la frase parece incompleta y el interlocutor va a continuar. ");
+      : "wait solo si el último turno parece incompleto y su misma voz va a continuar. ");
   const data = JSON.stringify({ mode: input.mode, memoryEnabled: input.memoryEnabled,
     sentThroughSeq: input.sentThroughSeq, final: input.final,
-    turns: input.context.turns.slice(-12).map(t => ({ seq: t.seq, relation: t.relation, text: t.text })) })
+    turns: input.context.turns.slice(-GATEKEEPER_PROMPT_TURNS).map(t => ({ seq: t.seq, speaker: t.speaker, relation: t.relation, text: t.text })) })
     .replace(/<\|/g, "〈|");
   return (template === "lfm2" ? "<|startoftext|>" : "")
     + `<|im_start|>system\n${system}<|im_end|>\n<|im_start|>user\n${data}<|im_end|>\n<|im_start|>assistant\n`

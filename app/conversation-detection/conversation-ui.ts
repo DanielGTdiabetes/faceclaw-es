@@ -39,7 +39,8 @@ export function conversationDetail(snapshot: DetectorSnapshot, hint: string, inc
     return snapshot.stopReason === "expired" || snapshot.stopReason === "silence" || snapshot.stopReason === "saved"
       ? `${snapshot.reason}\n${hint}` : hint;
   }
-  const time = includeTime ? `\n${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min, incluidas las esperas).` : "";
+  const time = !includeTime ? "" : snapshot.remainingMs === null ? "\nSin límite de tiempo."
+    : `\n${Math.ceil(snapshot.remainingMs / 1000)} s restantes (máximo ${(snapshot.sessionLimitMs ?? 120_000) / 60_000} min, incluidas las esperas).`;
   if (snapshot.participationMode === "enrollment") {
     const part = snapshot.participation;
     return `${snapshot.reason}\nMi perfil: ${part?.status ?? "preparando"} · ${part?.enrollmentSegments ?? 0}/${part?.requiredSegments ?? 4} muestras · ${((part?.enrollmentMs ?? 0) / 1000).toFixed(1)}/10 s de posible voz.${time}`;
@@ -87,7 +88,7 @@ export function wearerLine(snapshot: DetectorSnapshot): string {
 }
 
 export type ManualHermesRuntimeView = { enabled: boolean; listening: boolean; requests: number; modality?: string };
-const MANUAL_BASE = "Manual · máximo 20 min · cierre tras más de 5 min sin voz";
+const MANUAL_BASE = "Manual · sin límite de tiempo · cierre tras más de 5 min sin voz";
 
 /**
  * Phone status for manual «Hermes en conversación». Recognising the wearer is optional on a conv/2
@@ -96,7 +97,8 @@ const MANUAL_BASE = "Manual · máximo 20 min · cierre tras más de 5 min sin v
 export function manualHermesStatus(detector: DetectorSnapshot, runtime: ManualHermesRuntimeView,
   bridge: { supported: boolean; optionalIdentity: boolean }): string {
   if (detector.enabled && runtime.enabled) {
-    const head = `Activo · ${runtime.listening ? "escuchando" : "en pausa"} · ${Math.ceil(detector.remainingMs / 60_000)} min restantes · ${runtime.requests} evaluaciones`;
+    const left = detector.remainingMs === null ? "sin límite" : `${Math.ceil(detector.remainingMs / 60_000)} min restantes`;
+    const head = `Activo · ${runtime.listening ? "escuchando" : "en pausa"} · ${left} · ${runtime.requests} evaluaciones`;
     return `${head} · ${manualVoiceNote(detector, runtime.modality)}`;
   }
   if (detector.enabled) return "Sesión diagnóstica activa. Toca para detenerla.";

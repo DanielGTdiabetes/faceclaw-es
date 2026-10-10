@@ -52,6 +52,8 @@ function harness() {
         setConversationGatekeeper: mode => { if (snapshot.enabled) return false; gatekeeperMode = mode; return true; },
         setConversationUsesHermes: value => { if (!snapshot.enabled) usesHermes = value; },
         conversationDailyContextSelected: () => false,
+        conversationLocalSpeakers: () => true, setConversationLocalSpeakers: () => {},
+        conversationSingleVoiceFilter: () => false, setConversationSingleVoiceFilter: () => {},
         conversationTextSelected: () => selectedText,
         setConversationTextSelected: value => { if (!snapshot.enabled) selectedText = value; },
         // C1 RAM selectors (defaults): automatic language, diagnostics off.

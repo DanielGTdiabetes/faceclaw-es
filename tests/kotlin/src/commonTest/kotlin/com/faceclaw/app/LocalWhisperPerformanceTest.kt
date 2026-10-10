@@ -124,7 +124,7 @@ class LocalWhisperPerformanceTest {
 
     @Test fun quietVoiceAfterALoudOneReachesTheWindowUntouchedInBothPolicies() {
         // Level test only (not a two-metre speaker): no VAD/energy gate may remove the quiet part.
-        for (policy in LocalTranscriptWindowPolicy.ALL) {
+        for (policy in HOP_POLICIES) {
             val windows = mutableListOf<ShortArray>()
             val buffer = LocalTranscriptBuffer(canSubmit = { true }) { windows.add(it) }
             buffer.resetMetrics(LocalTranscriptSegmentation.WINDOWS, policy)
@@ -134,6 +134,9 @@ class LocalWhisperPerformanceTest {
             assertEquals(12000.toShort(), windows[0][0]); assertEquals(3.toShort(), windows[0][96000 - 2])
         }
     }
+
+    /** Fixed-hop policies; the pause policy has its own tests in LocalSpeakerAttributionTest. */
+    private val HOP_POLICIES = listOf(LocalTranscriptWindowPolicy.REFERENCE, LocalTranscriptWindowPolicy.COALESCE)
 
     private class GatedDecoderHost(platform: ProtocolPlatform, private val outputs: List<String> = emptyList()) : LocalTranscriptHost {
         val entered = Latch(1, platform)
@@ -158,7 +161,7 @@ class LocalWhisperPerformanceTest {
 
     /** Decoder busy across two hops: reference loses a 3 s gap, coalescing defers and covers it. */
     @Test fun slowDecoderReferenceDropsWindowsWhileCoalescingKeepsCoverage() {
-        val results = LocalTranscriptWindowPolicy.ALL.associate { policy ->
+        val results = HOP_POLICIES.associate { policy ->
             val platform = testPlatform()
             val host = GatedDecoderHost(platform)
             val texts = mutableListOf<String>()

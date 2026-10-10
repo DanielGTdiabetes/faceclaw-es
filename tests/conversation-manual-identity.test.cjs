@@ -463,7 +463,7 @@ test('coordinator: profile absent, failing or slow never stops an optional-ident
   assert.equal(ready.detector.snapshot().voiceProfile, 'activo', 'kept for diagnostics after OFF');
 });
 
-test('coordinator: required identity keeps failing closed and the 20 min limit is unchanged', async () => {
+test('coordinator: required identity keeps failing closed and manual listening has no time limit', async () => {
   const p = participation(); p.state.status = 'error';
   const h = coordinator(p);
   h.detector.setEnabled(true, true, 'conversation', { manualConversation: true });
@@ -473,8 +473,9 @@ test('coordinator: required identity keeps failing closed and the 20 min limit i
   assert.equal(refused.detector.snapshot().state, 'error');
   const optional = coordinator(participation());
   optional.detector.setEnabled(true, true, 'off', { manualConversation: true, optionalProfile: true });
-  assert.equal(optional.detector.snapshot().remainingMs, 1200000);
-  optional.tick(1200000); assert.equal(optional.detector.snapshot().stopReason, 'expired');
+  assert.equal(optional.detector.snapshot().remainingMs, null);
+  optional.tick(1200000); assert.equal(optional.detector.snapshot().stopReason, 'none');
+  assert.equal(optional.detector.snapshot().enabled, true);
 });
 
 // ---------------------------------------------------------------- controller decision and phone status
@@ -488,6 +489,7 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
     supportsDailyContext: () => false, setDailyContextEnabled: value => !value } },
     conversationDailyContextSelected: () => false,
     conversationGatekeeperSettings: () => ({ mode: gate ? 'active' : 'off', model: 'lfm2.5-1.2b-q4' }),
+    conversationSingleVoiceFilter: () => false,
     gatekeeperModelReady: () => gateReady,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
     conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
