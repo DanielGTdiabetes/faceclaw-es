@@ -125,3 +125,15 @@ desplegado por Codex (`417dc5c9…`, comprobado por SSH de solo lectura). Observ
   **hilo principal JS/UI** (TID = PID 31366, ~30 %), no en Whisper (ráfagas). Una sola muestra, no
   concluyente. Siguiente paso (P4, antes del banco de modelos): 10–15 min **desenchufado**,
   CPU por hilo + térmica cada 30 s, comparando pantalla encendida/apagada y escucha/OFF.
+
+## Próxima sesión (petición del usuario)
+
+1. **Revisar «Escucha continua con filtros locales»** (`mechanical-gatekeeper.ts`: agrupa 20 s,
+   mínimo de 4 palabras salvo pregunta de 3, 120 llamadas/h). El usuario considera que no tiene
+   sentido mantenerlo si no funciona con los filtros. Decidir con evidencia, sobre la misma sesión o
+   el mismo audio: comparar contra «sin reducir llamadas» en aportaciones, retenciones por regla y
+   latencia; arreglarlo o retirarlo.
+2. Medición de calor desenchufado (CPU por hilo y térmica; depuración inalámbrica o similar).
+3. Exterior y banco ASR (P3).
+
+Publicado en GitHub: `codex/conversation-detection-g0` @ `5be26d8` (S2.10 + S2.11).
