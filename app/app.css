@@ -1,6 +1,7 @@
 @import '@nativescript/theme/css/core.css';
 @import '@nativescript/theme/css/default.css';
 @import './phone-ui/remote-controls.css';
+@import './phone-ui/conversation-panel.css';
 
 Page {
   background-color: #ffffff;

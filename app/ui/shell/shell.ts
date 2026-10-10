@@ -183,6 +183,7 @@ export type ShellConfig = {
   conversationControl?: {
     enabled(): boolean;
     setEnabled(enabled: boolean): string;
+    start?(mode: "gatekeeper" | "hermes" | "text"): string;
     wearerActions(): { label: string; run(): boolean }[];
     wearerChoices(): { label: string; run(): boolean }[];
   };
@@ -1854,8 +1855,22 @@ class Shell {
     const conversation = this.config.conversationControl;
     if (conversation) {
       const wanted = !conversation.enabled();
+      if (wanted && conversation.start) {
+        for (const [label, mode] of [["Escucha continua con Gatekeeper", "gatekeeper"],
+          ["Escuchar con Hermes", "hermes"], ["Solo transcribir", "text"]] as const) {
+          items.push({ label, onSelect: (ctx) => {
+            ctx.stack.pop();
+            if (conversation.enabled()) return;
+            const notice = conversation.start!(mode);
+            if (notice) {
+              ctx.stack.push(new ShellOverlayMenuLayer([{ label: notice, onSelect: (inner) => { inner.stack.pop(); } }], undefined, () => this.yieldFocusToSidebar()));
+              this.config.requestShellRender();
+            }
+          } });
+        }
+      } else {
       items.push({
-        label: `Hermes en conversación: ${wanted ? "OFF · iniciar" : "ON · detener"}`,
+        label: conversation.start ? "Detener escucha" : `Hermes en conversación: ${wanted ? "OFF · iniciar" : "ON · detener"}`,
         onSelect: (ctx) => {
           // Re-read the owner at the moment of the action: an expired session cannot be stopped
           // or resurrected by a stale menu label. Both controls operate the same live session.
@@ -1867,6 +1882,7 @@ class Shell {
           }
         },
       });
+      }
     }
     items.push({
       label: "Debug",

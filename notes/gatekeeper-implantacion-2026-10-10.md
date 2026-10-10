@@ -1,5 +1,9 @@
 # Gatekeeper S2.7 — implantación y evidencia · 10-10-2026
 
+**Historial S2.7.** La decisión posterior del usuario elimina shadow y ofrece ACTIVE mediante un
+inicio explícito en [S2.8](conversacion-integrada-s2.8-2026-10-10.md). Los requisitos de ocultar ACTIVE
+y validar shadow de esta nota quedan superados; sus resultados medidos y límites se conservan.
+
 Estado: instalada versión experimental corregida, **Conversaciones OFF y Gatekeeper OFF**.
 ACTIVE implementado internamente para pruebas, sin entrada en la UI y sin validación de uso real.
 Autorización del usuario: «implantarlo todo»; conserva el orden audio/Whisper → reglas → replay →

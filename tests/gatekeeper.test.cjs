@@ -14,7 +14,7 @@ function harness(options = {}, synchronous, sampleAsr) {
   } };
   const engine = new GatekeeperEngine(provider, { now: () => now, priorityActive: () => priority, changed() {},
     after(cb, ms) { const t = { at: now + ms, cb }; timers.add(t); return () => timers.delete(t); },
-    subscribePriority(cb) { listeners.add(cb); return () => listeners.delete(cb); }, sampleAsr }, { mode: 'shadow', ...options });
+    subscribePriority(cb) { listeners.add(cb); return () => listeners.delete(cb); }, sampleAsr }, { mode: 'active', ...options });
   return { engine, calls, answers, timers, listeners,
     evaluate(key = 'a') { engine.evaluate(key, input, () => input, a => answers.push(a)); },
     reply(action, reason = 'uncertain', index = calls.length - 1) { calls[index].done(JSON.stringify({ action, reason })); },
@@ -129,17 +129,18 @@ test('lost episode during WAIT cancels without sending a fallback to a different
   assert.equal(h.calls.length, 1); assert.equal(h.answers[0].cancelled, true); h.engine.dispose();
 });
 
-test('ACTIVE protects daily memory, SHADOW still measures suppression of nada and updates', () => {
+test('active protects daily memory even when Hermes abstains and updates memory', () => {
   const a = harness({ mode: 'active' }); a.patch({ memoryEnabled: true }); a.evaluate(); a.reply('ignore', 'courtesy');
   assert.equal(a.answers[0].action, 'assist'); assert.equal(a.engine.snapshot().counters.memoryBypasses, 1); a.engine.dispose();
   const h = harness(); h.patch({ memoryEnabled: true }); h.evaluate();
   h.engine.observe('a', { message: false, nada: true, memoryUpdated: true });
   h.reply('ignore', 'courtesy');
-  assert.equal(h.engine.snapshot().counters.avoidedNada, 1); assert.equal(h.engine.snapshot().counters.blockedMemoryUpdates, 1);
+  assert.equal(h.engine.snapshot().counters.avoidedNada, 0); assert.equal(h.engine.snapshot().counters.blockedMemoryUpdates, 0);
+  assert.equal(h.engine.snapshot().counters.observedNada, 1); assert.equal(h.engine.snapshot().counters.memoryBypasses, 1);
   h.engine.dispose();
 });
 
-test('shadow correlation works in either arrival order, once only, without storing content', () => {
+test('offline comparison correlation works in either arrival order without storing content', () => {
   const h = harness(); h.evaluate('a'); h.reply('ignore', 'redundant');
   h.engine.observe('a', { message: true, nada: false }); h.engine.observe('a', { message: true, nada: false });
   h.evaluate('b'); h.engine.observe('b', { message: true, nada: false }); h.reply('assist', 'useful');
@@ -148,7 +149,7 @@ test('shadow correlation works in either arrival order, once only, without stori
   assert.ok(!JSON.stringify(s).includes('¿Podemos')); h.engine.dispose();
 });
 
-test('unmatched shadow comparisons remain bounded and visible as evictions', () => {
+test('unmatched outcome records remain bounded and visible as evictions', () => {
   const h = harness(); for (let i = 0; i < 80; i++) { h.evaluate(String(i)); h.reply('ignore'); }
   const s = h.engine.snapshot(); assert.equal(s.pendingComparisons, 64); assert.equal(s.counters.evictedUnmatched, 16); h.engine.dispose();
 });

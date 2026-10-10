@@ -56,13 +56,13 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationModel, conversationUsesHermes, conversationDailyContextSelected, conversationGatekeeperSettings, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { isSystemTranscriptionReady } from "../native/system-transcription";
 import { conversationTextModelStatus } from "../native/asr-model";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
-import { createNativeGatekeeper } from "../native/gatekeeper";
+import { createNativeGatekeeper, gatekeeperModelReady } from "../native/gatekeeper";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { ShellResourceLimitError } from "../graphics/shell-scene";
@@ -453,6 +453,7 @@ class DashboardController {
       conversationControl: {
         enabled: () => this.conversationDetector.snapshot().enabled,
         setEnabled: (enabled) => this.setManualConversationEnabled(enabled),
+        start: (mode) => selectConversationListeningMode(mode) ? this.setManualConversationEnabled(true) : "",
         wearerActions: () => wearerActions(this.conversationDetector),
         wearerChoices: () => wearerChoices(this.conversationDetector),
       },
@@ -2175,6 +2176,9 @@ class DashboardController {
     }
     if (this.conversationDetector.snapshot().enabled) return "";
     const withHermes = conversationUsesHermes();
+    if (withHermes && conversationGatekeeperSettings().mode === "active" && !gatekeeperModelReady(conversationGatekeeperSettings().model)) {
+      return "Descarga el modelo de Gatekeeper desde Conversación > Ajustes en el móvil.";
+    }
     if (withHermes && conversationDailyContextSelected() && !assistantBridge.conversation.supportsDailyContext()) {
       return "La memoria de 24 h no está disponible. Conecta el servidor preparado o desactívala para iniciar.";
     }

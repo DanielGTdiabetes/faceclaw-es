@@ -479,7 +479,7 @@ test('coordinator: required identity keeps failing closed and the 20 min limit i
 
 // ---------------------------------------------------------------- controller decision and phone status
 
-function manualOwner({ optional, profile, local = false, hermes = true, ready = 'ready' }) {
+function manualOwner({ optional, profile, local = false, hermes = true, ready = 'ready', gate = false, gateReady = true }) {
   const file = ts.createSourceFile('c.ts', fs.readFileSync('app/g2/dashboard-controller.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const klass = file.statements.find(n => ts.isClassDeclaration(n) && n.name?.text === 'DashboardController');
   const methods = klass.members.filter(m => ['setManualConversationEnabled', 'setConversationCaptureEnabled'].includes(m.name?.getText(file)));
@@ -487,6 +487,8 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
   const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional,
     supportsDailyContext: () => false, setDailyContextEnabled: value => !value } },
     conversationDailyContextSelected: () => false,
+    conversationGatekeeperSettings: () => ({ mode: gate ? 'active' : 'off', model: 'lfm2.5-1.2b-q4' }),
+    gatekeeperModelReady: () => gateReady,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
     conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
     conversationModel: () => 'whisper-medium-es',
@@ -537,6 +539,16 @@ test('controller: selected local model uses optional Hermes without a key/profil
   const text = manualOwner({ optional: false, profile: false, local: true, hermes: false });
   text.owner.setManualConversationEnabled(true);
   assert.equal(text.calls[0][3].manualConversation, true); assert.deepEqual(text.begins, []);
+});
+
+test('controller: an explicit Gatekeeper start requires its weights but direct Hermes still works', () => {
+  const missing = manualOwner({ optional: true, profile: false, local: true, gate: true, gateReady: false });
+  assert.match(missing.owner.setManualConversationEnabled(true), /Descarga el modelo de Gatekeeper/);
+  assert.equal(missing.calls.length, 0); assert.equal(missing.begins.length, 0);
+  const ready = manualOwner({ optional: true, profile: false, local: true, gate: true });
+  assert.equal(ready.owner.setManualConversationEnabled(true), ''); assert.equal(ready.calls.length, 1);
+  const direct = manualOwner({ optional: true, profile: false, local: true, gateReady: false });
+  assert.equal(direct.owner.setManualConversationEnabled(true), ''); assert.equal(direct.calls.length, 1);
 });
 
 test('phone status: recognition is optional, never claimed without a live profile association', () => {

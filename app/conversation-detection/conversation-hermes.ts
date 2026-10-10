@@ -334,11 +334,7 @@ export class ConversationHermesRuntime {
     };
     const first = input();
     if (!first) return;
-    if (gate.mode() === "shadow") {
-      gate.evaluate(key, first, input, () => {});
-      // Shadow always uses the exact baseline context and cadence, independently of classifier latency.
-      this.sendHermes(context, mode, key);
-    } else {
+    {
       const ticket = {}; this.gateFlight = ticket;
       gate.evaluate(key, first, input, answer => {
         if (this.gateFlight !== ticket) return;

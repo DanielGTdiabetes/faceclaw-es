@@ -1,10 +1,13 @@
 # Gatekeeper delante de Hermes: evaluación y primera fase · 10-10-2026
 
-Estado: **S2.7 experimental instalada, Gatekeeper OFF; benchmark y shadow real pendientes**.
-El usuario amplía a «implantarlo todo» y conecta el móvil. [Implantación y límites](gatekeeper-implantacion-2026-10-10.md).
-Se han implementado provider llama.cpp, cancelación/prioridad, WAIT, breaker y métricas de shadow;
-ACTIVE queda fuera de la UI hasta validar benchmark y shadow. La autorización no convierte las
-hipótesis ni las etiquetas del piloto en resultados medidos. Gemini Nano queda fuera del camino principal.
+**Decisión posterior del usuario, 10-10-2026:** eliminar shadow y probar directamente con Hermes.
+[S2.8: interfaz integrada, botón de escucha con Gatekeeper y evidencia](conversacion-integrada-s2.8-2026-10-10.md).
+ACTIVE se ofrece como inicio explícito; shadow se elimina del código de ejecución y la UI. Se conservan
+prioridad/cancelación/bypass y resultados desfavorables del replay. No hay ahorro validado; LFM
+puede superar el deadline y activar bypass. Gemini Nano sigue fuera del camino principal.
+
+La evaluación inferior conserva el diseño y los criterios originales como **historial**; sus requisitos
+de shadow previo/ACTIVE oculto quedan reemplazados por esta decisión. No son nuevas barreras de aprobación.
 
 Referencias: [auditoría](auditoria-conversaciones-continuas-2026-10-09.md),
 [revisión S2.6.13-r2](revision-codex-s2.6.13-2026-10-10.md) y
@@ -30,7 +33,7 @@ modelo pequeño local y modelo cloud pequeño fijo. El coste cloud del filtro m�
 debe ser menor que la baseline. Registrar intentos, fallbacks y tokens cuando estén disponibles; no
 confundir número de solicitudes conv con llamadas físicas al proveedor.
 
-## Orden y alcance autorizado
+## Orden original de evaluación (histórico; shadow retirado por el usuario)
 
 1. Captación del interlocutor a ~2 m y fiabilidad/cobertura de Whisper. Sigue siendo la prioridad.
 2. Mejoras deterministas independientes del Gatekeeper, conservadoras y medibles.
@@ -148,7 +151,7 @@ si pasa, recuperación automática, y si falla, reabrir el circuito. No reintent
 degradar permanentemente hasta la siguiente sesión y no contar cancelación por prioridad como avería.
 El bypass mantiene assess en candidata y assist en activa, sin promocionar temas ficticios.
 
-## Shadow real y condiciones antes de ACTIVE
+## Diseño histórico de shadow y criterios de calidad (shadow retirado)
 
 Medir especialmente assist evitables y cuántos fueron nada; bloqueos de mensajes realmente útiles;
 recall de intervenciones útiles con denominador y casos de duda; actualizaciones de memoria que se

@@ -241,6 +241,32 @@ test('glasses system menu starts from any app and a stale ON menu cannot restart
   action.onSelect({ stack: h.shell.stack });
   assert.equal(enabled, false); assert.deepEqual(calls, [true, false]);
 });
+test('glasses system menu offers three explicit listening modes and stale starts never toggle a live session', () => {
+  let enabled = false;
+  const calls = [];
+  const h = realShell({ conversationControl: {
+    enabled: () => enabled,
+    start(mode) { calls.push(mode); enabled = true; return ''; },
+    setEnabled(wanted) { calls.push(wanted); enabled = wanted; return ''; },
+    wearerActions: () => [], wearerChoices: () => [],
+  } });
+  h.shell.wake('window'); h.shell.openEscapeMenu();
+  const actions = topLayer(h.shell).items;
+  const gate = actions.find(i => i.label === 'Escucha continua con Gatekeeper');
+  const direct = actions.find(i => i.label === 'Escuchar con Hermes');
+  const text = actions.find(i => i.label === 'Solo transcribir');
+  assert.ok(gate && direct && text);
+  gate.onSelect({ stack: h.shell.stack });
+  direct.onSelect({ stack: h.shell.stack });
+  assert.deepEqual(calls, ['gatekeeper']);
+  h.shell.openEscapeMenu();
+  const stop = topLayer(h.shell).items.find(i => i.label === 'Detener escucha');
+  assert.ok(stop); stop.onSelect({ stack: h.shell.stack });
+  h.shell.openEscapeMenu();
+  topLayer(h.shell).items.find(i => i.label === 'Solo transcribir').onSelect({ stack: h.shell.stack });
+  assert.deepEqual(calls, ['gatekeeper', false, 'text']);
+});
+
 /** Text drawn by one paint of the top layer, on any image it creates (the layer paints its band apart). */
 function overlayText(shell) {
   const layer = topLayer(shell);
@@ -537,6 +563,7 @@ function localConversation(armed, manual = false) {
     'conversation-detection/session-controls': {
       CONVERSATION_MODELS: ['soniox', 'whisper-base-es', 'whisper-small-es', 'whisper-medium-es'],
       conversationModel: () => 'soniox', conversationUsesHermes: () => true,
+      selectConversationListeningMode: () => !snapshot.enabled,
       conversationSession: () => session, conversationTextLanguage: () => 'es', conversationTextSelected: () => true,
       lensConversationPlan: () => ({ canStart: true, button: 'Iniciar', hint: '' }), onConversationTextSelected: () => () => {},
       setConversationTextSelected() {}, toggleLensConversation: (s) => s.setEnabled(false), wearerActions: () => [], wearerChoices: () => [],
@@ -590,9 +617,15 @@ test('glasses product conversation uses the shared manual owner with model/mode 
   assert.doesNotMatch(h.paint(), /2 min\)|castellano|Identificar|texto privado/);
   assert.equal(h.counts().reads, 0);
   assert.deepEqual(h.starts, [], 'opening and rendering do not start audio');
-  assert.equal(h.options.menuItems().length, 4);
-  assert.match(h.options.menuItems()[1].label, /Motor/);
-  assert.match(h.options.menuItems()[2].label, /Modo/);
+  assert.equal(h.options.menuItems().length, 5);
+  assert.equal(h.options.menuItems()[0].label, 'Escucha continua con Gatekeeper');
+  assert.equal(h.options.menuItems()[1].label, 'Escuchar con Hermes');
+  assert.equal(h.options.menuItems()[2].label, 'Solo transcribir');
+  assert.match(h.options.menuItems()[3].label, /Motor/);
+  assert.match(h.options.menuItems()[4].label, /Idioma/);
+  h.options.menuItems()[0].onSelect({ stack: { pop() {} } });
+  assert.deepEqual(h.starts, [['manual', true]], 'Gatekeeper entry starts the shared owner');
+  h.starts.length = 0;
   h.options.baseLayer.handleInput({ type: 'click' });
   assert.deepEqual(h.starts, [['manual', true]], 'same controller entry point as phone/system menu');
   h.patch({ enabled: true, state: 'escuchando' });
@@ -624,6 +657,7 @@ function phoneHarness(f) {
       supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {},
     conversationTextEngine: () => 'soniox', conversationUsesHermes: () => true,
+    conversationGatekeeperSettings: () => ({ mode: 'off' }),
     conversationDailyContextSelected: () => false,
     conversationSessionOptions: () => ({ language: 'auto' }),
   });
@@ -653,6 +687,7 @@ function phoneHarness(f) {
     'native/asr-model': { onAsrModelStateChanged: tracked('asr') },
     'apps/microphones/mic-models': { onMicModelStateChanged: tracked('mic') },
     'conversation-detection/session-controls': { onConversationTextSelected: tracked('text'), conversationUsesHermes: () => true,
+      conversationGatekeeperSettings: () => ({ mode: 'off', model: 'lfm2.5-1.2b-q4', wait: false }),
       conversationDailyContextSelected: () => false },
     'graphics/image': { G2_LENS_WIDTH: 640, G2_LENS_HEIGHT: 480 },
   }, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
@@ -668,7 +703,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   const f = fakeController();
   f.supported = true;
   const { view, captureCalls, notified, unsubscribed, bridgeListeners } = phoneHarness(f);
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationModeSummary', 'conversationGatekeeperStatus']);
   notified.length = 0;
   for (let i = 0; i < 5; i++) f.emit();
   assert.deepEqual(notified, [], 'unchanged labels are not re-notified on runtime ticks');
@@ -679,7 +714,7 @@ test('phone and actual controller: one tap starts manual bilingual capture, OFF 
   assert.equal(captureCalls[0][2], 'conversation');
   assert.equal(captureCalls[0][3].manualConversation, true);
   assert.equal(captureCalls[0][3].language, 'auto');
-  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus']);
+  assert.deepEqual(notified.map(([name]) => name), ['conversationHermesButton', 'conversationHermesStatus', 'conversationModeSummary']);
   notified.length = 0;
   f.deliver('Aportación de prueba', new Date(2026, 9, 5, 16, 7).getTime());
   assert.equal(view.conversationHermesHistory, 'Mensajes de Hermes (esta sesión):\n16:07 · Aportación de prueba');

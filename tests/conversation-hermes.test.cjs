@@ -63,12 +63,12 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
 
-test('shadow preserves baseline Hermes calls while measuring whether assist nada could be avoided', () => {
-  const h = harness(undefined, { mode: 'shadow' }); h.begin(); h.candidate();
-  assert.equal(h.sent().length, 1); h.gateReply('assist'); h.reply('assess');
-  assert.equal(h.sent().length, 2); assert.equal(h.gateCalls.at(-1).input.mode, 'assist');
-  h.reply('assist', { kind: 'nada', text: undefined }); h.gateReply('ignore', 'redundant');
-  assert.equal(h.runtime.diagnostics().gatekeeper.counters.avoidedNada, 1);
+test('active allowed assist observes the real Hermes abstention after filtering', () => {
+  const h = harness(undefined, { mode: 'active' }); h.begin(); h.candidate();
+  assert.equal(h.sent().length, 0); h.gateReply('assist'); h.reply('assess');
+  assert.equal(h.sent().length, 1); assert.equal(h.gateCalls.at(-1).input.mode, 'assist');
+  h.gateReply('assist'); h.reply('assist', { kind: 'nada', text: undefined });
+  assert.equal(h.runtime.diagnostics().gatekeeper.counters.observedNada, 1);
   h.runtime.dispose();
 });
 

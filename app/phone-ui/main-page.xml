@@ -19,26 +19,11 @@
     </ActionBar>
 
     <GridLayout rows="*,auto">
-        <StackLayout row="1" class="p-10">
-            <GridLayout columns="*,auto">
-                <Button col="0" text="{{ conversationEngineButton }}" tap="{{ onConversationEngineTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
-                <Button col="1" text="{{ conversationDownloadButton }}" tap="{{ onConversationDownloadTap }}" visibility="{{ conversationDownloadVisibility }}" isEnabled="{{ localTranscriptionCanStart }}" />
-            </GridLayout>
-            <Label text="{{ conversationModelStatus }}" textWrap="true" fontSize="11" />
-            <GridLayout columns="*,*">
-                <Button col="0" text="{{ conversationModeButton }}" tap="{{ onConversationModeTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
-                <Button col="1" text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
-            </GridLayout>
-            <Button text="{{ conversationHermesButton }}" tap="{{ onConversationHermesTap }}" />
-            <Button text="{{ conversationMemoryButton }}" tap="{{ onConversationMemoryTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
-            <Label text="{{ conversationMemoryStatus }}" textWrap="true" fontSize="11" />
-            <Label text="{{ conversationGatekeeperStatus }}" textWrap="true" fontSize="11" />
-            <Label text="{{ conversationHermesStatus }}" textWrap="true" fontSize="11" />
-            <Label text="{{ conversationHermesHistory }}" visibility="{{ conversationHermesHistoryVisibility }}" textWrap="true" fontSize="12" />
-            <Label text="{{ localTranscript }}" visibility="{{ conversationTranscriptVisibility }}" textWrap="true" fontSize="12" maxLines="5" />
-            <Label text="{{ voiceProfileSetupLabel }}" textWrap="true" fontSize="11" />
-            <Button text="Opciones avanzadas" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" />
-        </StackLayout>
+        <GridLayout row="1" class="conversation-entry" visibility="{{ remotePanelVisibility }}">
+            <Button text="{{ conversationEntryLabel }}" tap="{{ onConversationPanelTap }}" />
+        </GridLayout>
+        <rc:conversation-panel row="0" visibility="{{ conversationPanelVisibility }}" />
+        <GridLayout row="0" visibility="{{ remotePanelVisibility }}">
         <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
             <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">
                 <Image src="{{ displayPreview }}" stretch="fill" height="{{ displayPreviewHeight }}"
@@ -85,6 +70,7 @@
                     <Button row="1" text="Detener grabación" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
                 </GridLayout>
             </GridLayout>
+        </GridLayout>
         </GridLayout>
         <!-- Developer BLE-bandwidth indicator: overlays the bottom edge of the
              page in both orientations, on every tab. -->

@@ -1,0 +1,54 @@
+<GridLayout xmlns="http://schemas.nativescript.org/tns.xsd" rows="auto,*,auto" class="conversation-panel">
+    <StackLayout row="0" class="conversation-heading">
+        <Button text="‹ Salir" tap="{{ onRemotePanelTap }}" class="conversation-back" horizontalAlignment="left" />
+        <Label text="Conversación" class="conversation-title" />
+        <Label text="{{ conversationModeSummary }}" class="conversation-subtitle" textWrap="true" />
+    </StackLayout>
+    <ScrollView row="1">
+        <StackLayout class="conversation-content">
+            <StackLayout visibility="{{ conversationStartVisibility }}" class="conversation-card">
+                <Label text="Escucha continua" class="conversation-section-title" />
+                <Label text="Hermes escucha y muestra sus aportaciones en las gafas. Gatekeeper decide qué fragmentos enviarle." class="conversation-description" textWrap="true" />
+                <Button id="conversationGatekeeperStart" text="{{ conversationGatekeeperStartLabel }}" tap="{{ onConversationGatekeeperStartTap }}" class="conversation-primary" textWrap="true" />
+                <Button text="Escuchar con Hermes sin Gatekeeper" tap="{{ onConversationDirectStartTap }}" class="conversation-secondary" textWrap="true" />
+                <Button text="Solo transcribir" tap="{{ onConversationTextStartTap }}" class="conversation-text-action" />
+                <Label text="Tú decides cuándo empezar. Máximo 20 min; se detiene tras 5 min sin voz." class="conversation-caption" textWrap="true" />
+            </StackLayout>
+            <StackLayout visibility="{{ conversationStopVisibility }}" class="conversation-card">
+                <Label text="{{ conversationHermesStatus }}" textWrap="true" class="conversation-description" />
+                <Label text="{{ conversationGatekeeperStatus }}" textWrap="true" class="conversation-caption" />
+                <StackLayout visibility="{{ conversationWearerVisibility }}">
+                    <Label text="{{ conversationWearerLabel }}" textWrap="true" class="conversation-caption" />
+                    <Button text="{{ conversationWearerPhraseButton }}" tap="{{ onConversationWearerPhraseTap }}" class="conversation-setting" />
+                </StackLayout>
+            </StackLayout>
+            <StackLayout visibility="{{ conversationHermesHistoryVisibility }}" class="conversation-card">
+                <Label text="{{ conversationHermesHistory }}" textWrap="true" class="conversation-description" />
+            </StackLayout>
+            <StackLayout visibility="{{ conversationTranscriptVisibility }}" class="conversation-card">
+                <Label text="Texto recibido" class="conversation-section-title" />
+                <Label text="{{ localTranscript }}" textWrap="true" class="conversation-description" />
+            </StackLayout>
+            <Button text="{{ conversationSettingsButton }}" tap="{{ onConversationSettingsTap }}" class="conversation-settings-toggle" />
+            <StackLayout visibility="{{ conversationSettingsVisibility }}" class="conversation-card">
+                <Label text="{{ conversationSettingsHint }}" textWrap="true" class="conversation-caption" />
+                <Label text="Reconocimiento de voz" class="conversation-section-title" />
+                <Button text="{{ conversationEngineButton }}" tap="{{ onConversationEngineTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" textWrap="true" />
+                <Label text="{{ conversationModelStatus }}" textWrap="true" class="conversation-caption" />
+                <Button text="{{ conversationDownloadButton }}" tap="{{ onConversationDownloadTap }}" visibility="{{ conversationDownloadVisibility }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
+                <Button text="{{ conversationLanguageButton }}" tap="{{ onConversationLanguageTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
+                <Label text="Gatekeeper" class="conversation-section-title" />
+                <Button text="{{ conversationGatekeeperModelButton }}" tap="{{ onConversationGatekeeperModelTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" textWrap="true" />
+                <Button text="{{ conversationGatekeeperDownloadLabel }}" tap="{{ onConversationGatekeeperDownloadTap }}" visibility="{{ conversationGatekeeperDownloadVisibility }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
+                <Label text="Se usa al iniciar la escucha con Gatekeeper. Si falla, la conversación continúa con Hermes." class="conversation-caption" textWrap="true" />
+                <Label text="Memoria y voz" class="conversation-section-title" />
+                <Button text="{{ conversationMemoryButton }}" tap="{{ onConversationMemoryTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
+                <Label text="{{ conversationMemoryStatus }}" textWrap="true" class="conversation-caption" />
+                <Button text="{{ voiceProfileButton }}" tap="{{ onVoiceProfileTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-setting" />
+                <Label text="Reconocer tu voz es opcional para escuchar con Hermes." class="conversation-caption" textWrap="true" />
+                <Button text="Diagnóstico" tap="{{ onConversationOptionsTap }}" isEnabled="{{ localTranscriptionCanStart }}" class="conversation-text-action" />
+            </StackLayout>
+        </StackLayout>
+    </ScrollView>
+    <Button row="2" id="conversationStop" text="Detener escucha" tap="{{ onConversationStopTap }}" visibility="{{ conversationStopVisibility }}" class="conversation-stop" />
+</GridLayout>

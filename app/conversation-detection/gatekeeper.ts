@@ -2,7 +2,7 @@ import { type EpisodeContext } from "./conversation-episodes";
 import { LatencyMetric } from "./conversation-metrics";
 import { isEmptyConversationText } from "./conversation-prefilter";
 
-export type GatekeeperMode = "off" | "shadow" | "active";
+export type GatekeeperMode = "off" | "active";
 export type GatekeeperAction = "ignore" | "wait" | "assist";
 export const GATEKEEPER_REASONS = ["empty", "courtesy", "redundant", "incomplete", "useful", "memory", "uncertain"] as const;
 export type GatekeeperReason = typeof GATEKEEPER_REASONS[number];
@@ -98,7 +98,7 @@ export class GatekeeperEngine {
   constructor(private readonly provider: GatekeeperProvider, private readonly host: GatekeeperHost,
     options: Partial<GatekeeperOptions>) {
     this.options = { ...DEFAULT_GATEKEEPER_OPTIONS, ...options };
-    if (!["off", "shadow", "active"].includes(this.options.mode)
+    if (!["off", "active"].includes(this.options.mode)
       || ![this.options.deadlineMs, this.options.coldDeadlineMs, this.options.waitMs, this.options.failuresToOpen]
         .every(n => Number.isFinite(n) && n > 0)
       || !Number.isFinite(this.options.cooldownMs) || this.options.cooldownMs < 120_000 || this.options.cooldownMs > 300_000) {

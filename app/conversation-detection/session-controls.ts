@@ -31,15 +31,22 @@ let useHermes = true;
 /** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
 let dailyContext = false;
 let gatekeeperMode: GatekeeperMode = "off";
-let gatekeeperModelId: GatekeeperModelId = GATEKEEPER_MODELS[0].id;
+let gatekeeperModelId: GatekeeperModelId = "lfm2.5-1.2b-q4";
 let gatekeeperWait = false;
 /** Experimental session choices, frozen at ON and cleared by process restart. */
 export function conversationGatekeeperSettings() { return { mode: gatekeeperMode, model: gatekeeperModelId, wait: gatekeeperWait }; }
 export function setConversationGatekeeper(mode: GatekeeperMode, model: GatekeeperModelId, wait: boolean): boolean {
-  if (port?.detector.snapshot().enabled || !["off", "shadow", "active"].includes(mode)
+  if (port?.detector.snapshot().enabled || !["off", "active"].includes(mode)
     || !GATEKEEPER_MODELS.some(m => m.id === model)) return false;
   gatekeeperMode = mode; gatekeeperModelId = model; gatekeeperWait = !!wait;
   for (const listener of listeners) listener();
+  return true;
+}
+/** One explicit listening choice, shared by phone and lenses; never starts audio by itself. */
+export function selectConversationListeningMode(mode: "gatekeeper" | "hermes" | "text"): boolean {
+  if (port?.detector.snapshot().enabled) return false;
+  setConversationGatekeeper(mode === "gatekeeper" ? "active" : "off", gatekeeperModelId, gatekeeperWait);
+  setConversationUsesHermes(mode !== "text");
   return true;
 }
 export function conversationDailyContextSelected(): boolean { return dailyContext; }

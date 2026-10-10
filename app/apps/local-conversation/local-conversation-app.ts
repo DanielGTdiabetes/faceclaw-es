@@ -6,8 +6,8 @@ import {
   conversationSession, conversationTextLanguage, conversationTextSelected, lensConversationPlan,
   onConversationTextSelected, setConversationTextSelected, toggleLensConversation, wearerActions, wearerChoices,
   type ConversationSessionPort,
-  CONVERSATION_MODELS, conversationModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
-  setConversationTextLanguage,
+  CONVERSATION_MODELS, conversationModel, setConversationModel, conversationUsesHermes,
+  setConversationTextLanguage, selectConversationListeningMode,
 } from "../../conversation-detection/session-controls";
 import { openModalMenu, type MenuItem } from "../../ui/menu";
 import { type InputEvent } from "../../ui/gestures";
@@ -171,20 +171,27 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
       const stopping = opened.enabled;
       if (session.setManualEnabled) {
         const model = conversationModel();
-        return [{
+        const start = (mode: "gatekeeper" | "hermes" | "text") => {
+          if (selectConversationListeningMode(mode)) return session.setManualEnabled!(true);
+          return "";
+        };
+        return [...(stopping ? [{
           label: `${conversationUsesHermes() ? "Hermes en conversación" : "Solo texto"}: ${stopping ? "ON · detener" : "OFF · iniciar"}`,
           onSelect: (ctx) => { ctx.stack.pop();
             if (stopping) session.setManualEnabled!(false);
-            else if (!session.detector.snapshot().enabled) session.setManualEnabled!(true);
           },
-        }, ...(stopping ? [] : [{ label: `Motor: ${conversationModelLabel()}`, onSelect: (ctx: LayerContext) => {
+        }] : (["gatekeeper", "hermes", "text"] as const).map(mode => ({
+          label: mode === "gatekeeper" ? "Escucha continua con Gatekeeper" : mode === "hermes" ? "Escuchar con Hermes" : "Solo transcribir",
+          onSelect: (ctx: LayerContext) => { ctx.stack.pop();
+            const notice = start(mode);
+            if (notice) openModalMenu(ctx, "Conversación", [{ label: notice, onSelect: inner => { inner.stack.pop(); } }]);
+          },
+        }))), ...(stopping ? [] : [{ label: `Motor: ${conversationModelLabel()}`, onSelect: (ctx: LayerContext) => {
           ctx.stack.pop();
           if (session.detector.snapshot().enabled) return;
           openModalMenu(ctx, "Motor de conversación", CONVERSATION_MODELS.map((id) => ({
             label: conversationModelOption(id), onSelect: (inner) => { inner.stack.pop(); setConversationModel(id); },
           })));
-        } }, { label: `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`, onSelect: (ctx: LayerContext) => {
-          ctx.stack.pop(); setConversationUsesHermes(!conversationUsesHermes());
         } }, { label: `Idioma: ${model === "android-system" ? "Español (Pixel)" : conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {
           ctx.stack.pop(); if (model !== "android-system") setConversationTextLanguage(conversationTextLanguage() === "auto" ? "es" : "auto");
         } }, ...(model === "soniox" || model === "android-system" || asrModelState(model).status === "ready" ? [] : [{
