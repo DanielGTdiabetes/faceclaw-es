@@ -38,7 +38,7 @@
     <!-- Settings tab -->
     <StackLayout visibility="{{ settingsTabVisibility }}">
       <GridLayout rows="auto" columns="auto,*" class="settings-row">
-        <Label col="0" text="Screen size" class="settings-row-label" verticalAlignment="center" />
+        <Label col="0" text="Display mode" class="settings-row-label" verticalAlignment="center" />
         <Button col="1" text="{{ displayModeLabel }}" tap="{{ onDisplayModeTap }}" class="mode-button" horizontalAlignment="left" />
       </GridLayout>
       <GridLayout rows="auto" columns="auto,*,auto" class="settings-row">

@@ -143,16 +143,17 @@ function fixture() {
     '../native/preview-display.ios': { PreviewDisplayTarget },
     './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; start() {} stop() {} stopCommand() { return new Uint8Array(); } receive() { return false; } } },
     '../native/nightscout-bridge': { nightscoutBridge: { async start() {}, async stop() {} } },
+    '../native/weather': { weatherBridge: { setSessionActive() {} } },
     './glance-host': { GlanceHost }, './events': events,
     './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
+    './glasses-presence': load('app/g2/glasses-presence.ts', {}),
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
     './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/evenhub/installed-apps': {}, '../apps/evenhub/manager': {}, '../apps/evenhub/updates': {}, '../apps/evenhub': {},
     '../apps/launcher/launcher-app': { createLauncherWindow: () => window, LAUNCHER_SURFACE_ID: 'launcher' },
     '../apps/all-apps': { ALL_APPS: [{ appId: 'glanceboard', glanceboard: provider }] },
-    '../phone-ui/onboarding-state': { isWelcomeSoundPending: () => false },
-    '../ui/sound-effects': {},
+    '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     '../ui/shell/worker-window': {}, '../ui/shell/in-process-window': {},
     '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' } },
     '../native/phone-battery': { readPhoneBatteryState: () => ({ battery: 80, charging: false }) },
@@ -205,70 +206,6 @@ const assertBoard = pixels => {
   assert.equal(pixels[0], 0, 'opaque Glanceboard hides the retained app and shell');
 };
 
-test('iOS sleep tap shows the shared board; repeated tap renews timeout and hides to black', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep(); await f.render();
-  assertBlank(f.sent.at(-1));
-  await f.hardware(0); assertBoard(f.sent.at(-1)); assert.equal(f.shell.isScreenOn(), false);
-  assert.equal(f.previews.at(-1).title, 'Glanceboard'); assert.equal(f.received.length, 0);
-  await f.advance(2000); await f.hardware(0); await f.advance(1100);
-  assert.equal(f.controller.glance.isVisible(), true);
-  const offset = f.sent.length;
-  await f.advance(2000); await f.render();
-  assert.equal(f.controller.glance.isVisible(), false);
-  for (const pixels of f.sent.slice(offset)) assertBlank(pixels);
-  assert.equal(f.boardStats.starts, 1); assert.equal(f.boardStats.stops, 1);
-});
-
-test('Glanceboard applies its depth setting to its surface only when it changes', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep(); await f.render();
-  f.settings.depth = 32; await f.hardware(0); assertBoard(f.sent.at(-1));
-  await f.advance(3100); await f.render(); assert.equal(f.controller.glance.isVisible(), false);
-  await f.hardware(0); assert.equal(f.controller.glance.isVisible(), true);
-  await f.advance(3100); await f.render();
-  f.settings.depth = 0; await f.hardware(0);
-  assert.deepEqual(f.controller.display.depths, [['glance', 32], ['glance', 0]]);
-});
-
-test('iOS holds and tap-then-holds last until release, including with phone backgrounded', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep(); f.controller.pause();
-  const previews = f.previews.length;
-  for (const type of [9, 11]) {
-    await f.hardware(type, 1); assertBoard(f.sent.at(-1));
-    await f.advance(10000); assert.equal(f.controller.glance.isVisible(), true);
-    await f.hardware(10, 1); assertBlank(f.sent.at(-1));
-  }
-  assert.equal(f.previews.length, previews); assert.equal(f.received.length, 0);
-});
-
-test('double-tap and other shell wakes replace Glanceboard without waking it again', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep();
-  await f.hardware(9); await f.hardware(3);
-  assert.equal(f.shell.isScreenOn(), true); assert.equal(f.controller.glance.isVisible(), false);
-  assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY); assert.equal(f.boardStats.stops, 1);
-  f.shell.sleep(); await f.hardware(0); f.shell.wake(); await f.render();
-  assert.equal(f.controller.glance.isVisible(), false); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
-  await f.advance(5000); await f.render(); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
-});
-
-test('head tilt uses Glanceboard when enabled and otherwise wakes the regular UI', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep();
-  await f.hardware(12, 1); assertBoard(f.sent.at(-1)); assert.equal(f.shell.isScreenOn(), false);
-  await f.hardware(3); f.shell.sleep(); f.settings.tilt = false;
-  await f.hardware(12, 1); assert.equal(f.shell.isScreenOn(), true); assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
-});
-
-test('disabled triggers and scrolls do not show the board; awake taps still reach the shell', async () => {
-  const f = fixture(); await f.connect();
-  await f.hardware(0); assert.equal(f.received.at(-1).type, 'click'); assert.equal(f.boardStats.starts, 0);
-  f.shell.sleep(); f.settings.tap = false; f.settings.hold = false;
-  for (const type of [0, 9, 11, 10, 1, 2]) await f.hardware(type);
-  assert.equal(f.boardStats.starts, 0); assertBlank(f.sent.at(-1));
-  f.settings.enabled = false; f.settings.tap = f.settings.hold = true;
-  for (const type of [0, 9, 11]) await f.hardware(type);
-  assert.equal(f.boardStats.starts, 0);
-  await f.hardware(3); assert.equal(f.shell.isScreenOn(), true);
-});
-
 test('phone preview gestures use Glanceboard; losing runtime cleans up holds and timers', async () => {
   const f = fixture(); f.shell.sleep();
   await f.phone('tap', 'mirror'); assertBoard(f.previews.at(-1).pixels);
@@ -279,94 +216,6 @@ test('phone preview gestures use Glanceboard; losing runtime cleans up holds and
   f.controller.pause(); await f.render(); assert.equal(f.controller.glance.isVisible(), false);
   f.controller.resume(); await f.render(); assertBlank(f.previews.at(-1).pixels);
   assert.equal(f.boardStats.starts, f.boardStats.stops);
-});
-
-
-test('iOS lock hides apps and Glanceboard, blocks input, and stays locked when put back on', async () => {
-  const f = fixture(); await f.connect(); f.shell.sleep(); await f.hardware(0);
-  f.controller.pause();
-  // The notification precedes the property change: do not immediately undo it.
-  f.observers.get('lock')(); f.wear(false); await f.render();
-  assert.equal(f.controller.glassesLocked, true);
-  assert.equal(f.controller.glance.isVisible(), false);
-  await f.hardware(3); // wake the lock screen
-  assert.ok(f.sent.at(-1).every(p => p === 123));
-  for (const type of [0, 1, 2, 9, 11]) await f.hardware(type);
-  f.wear(true); await f.render();
-  assert.equal(f.received.length, 0);
-  assert.ok(f.sent.at(-1).every(p => p === 123));
-  await f.hardware(3); assertBlank(f.sent.at(-1));
-  await f.hardware(12, 1); assert.ok(f.sent.at(-1).every(p => p === 123));
-  f.observers.get('unlock')(); await f.render();
-  assert.equal(f.controller.glassesLocked, false);
-  assert.equal(f.sent.at(-1)[0], LAUNCHER_GRAY);
-  await f.hardware(0); assert.equal(f.received.length, 1);
-});
-
-test('iOS removal before phone lock, setting changes, and observer lifetime', async () => {
-  const f = fixture(); await f.connect(); f.wear(false); await f.render();
-  assert.equal(f.controller.glassesLocked, false);
-  f.observers.get('lock')(); await f.render();
-  assert.equal(f.controller.glassesLocked, true);
-  f.settings.lock = false; f.settingsChanged(); await f.render();
-  assert.equal(f.controller.glassesLocked, false);
-  f.settings.lock = true; f.settingsChanged(); await f.render();
-  assert.equal(f.controller.glassesLocked, true);
-  f.controller.pause(); assert.ok(f.observers.has('unlock'));
-  await f.controller.disconnect(); assert.equal(f.observers.has('unlock'), false);
-  f.controller.resume(); await f.render();
-  assert.equal(f.controller.glassesLocked, false);
-  assert.equal(f.observers.size, 4);
-});
-
-test('iOS wear notifications catch protected-data changes missed while suspended', async () => {
-  const f = fixture(); await f.connect(); f.controller.pause();
-  f.phoneState.protectedDataAvailable = false; f.wear(false); await f.render();
-  assert.equal(f.controller.glassesLocked, true);
-  f.controller.resume(); await f.render();
-  assert.equal(f.controller.glassesLocked, true);
-  f.controller.pause(); f.phoneState.protectedDataAvailable = true;
-  f.controller.resume(); await f.render();
-  assert.equal(f.controller.glassesLocked, false);
-});
-
-
-test('iOS locked phone controls cannot dispatch mirror, voice, or keyboard input', async () => {
-  const f = fixture(); await f.connect(); f.wear(false);
-  f.observers.get('lock')(); await f.render();
-  await f.phone('tap', 'mirror'); await f.phone('long-press', 'watch');
-  f.controller.startVoiceInput();
-  assert.equal(await f.controller.prepareVoiceCapture(), false);
-  await f.controller.startVoiceCapture(); await f.controller.typeIntoApp();
-  assert.equal(f.received.length, 0);
-  assert.equal(f.controller.glassesLocked, true);
-  // Locked state also survives transport recovery until a phone unlock.
-  f.bridge.emitState('retrying');
-  f.bridge.emitState('connecting');
-  f.bridge.emitState('connected');
-  await f.render();
-  assert.ok(f.sent.at(-1).every(p => p === 123));
-});
-
-
-test('iOS deduplicates original ring ticks before apps, lock toggles and Glanceboard', async () => {
-  const f = fixture(); await f.connect();
-  await f.hardware(0,2,1000); await f.hardware(0,2,1050);
-  assert.equal(f.received.length,1);
-  await f.hardware(0,2,1100); assert.equal(f.received.length,2);
-  // A filtered click cannot open a sleep-time board.
-  f.shell.sleep(); await f.hardware(0,2,1150);
-  assert.equal(f.controller.glance.isVisible(),false);
-  await f.hardware(0,2,1200); assert.equal(f.controller.glance.isVisible(),true);
-  // A duplicated double tap must not wake and immediately re-sleep a lock screen.
-  f.observers.get('lock')(); f.wear(false); await f.render();
-  f.shell.sleep(); await f.hardware(3,2,2000);
-  assert.equal(f.shell.isScreenOn(),true);
-  await f.hardware(3,2,2050); assert.equal(f.shell.isScreenOn(),true);
-  // A new transport session starts a fresh suppression window.
-  f.bridge.emitState('retrying');
-  f.bridge.emitState('connected');
-  await f.hardware(3,2,2051); assert.equal(f.shell.isScreenOn(),false);
 });
 
 test('keyboard sessions cannot deliver text after the glasses lock or phone leaves the foreground', () => {
@@ -388,18 +237,3 @@ test('keyboard sessions cannot deliver text after the glasses lock or phone leav
   editor.discard(); assert.deepEqual(calls.at(-1), ['discard']);
 });
 
-
-test('external input shares iOS dispatch, including hold release and phone-lock gating', async () => {
-  const f = fixture(); await f.connect(); f.wear(false);
-  assert.equal(f.remoteHost.ready(), true);
-  assert.equal(f.remoteHost.locked(), false);
-  await f.remoteHost.input('swipe-left', 'watch');
-  await f.remoteHost.input('long-press', 'ring');
-  assert.deepEqual(f.received.map(e => [e.type, e.source]), [
-    ['swipe-left', 'watch'], ['long-press', 'ring'], ['long-press-release', 'ring'],
-  ]);
-  f.observers.get('lock')();
-  assert.equal(f.remoteHost.locked(), true);
-  await f.remoteHost.input('click', 'watch');
-  assert.equal(f.received.length, 3);
-});

@@ -93,8 +93,9 @@ test('Navigate host releases GPS and compass together and ignores an old stream 
 test('Weather uses the portable location provider with global forecasts', async () => {
   const requests = [], timers = new Set(); let permission = true;
   const weather = { current: { temperature_2m: 21, weather_code: 0 }, hourly: { time: [1790935200], temperature_2m: [22], weather_code: [0] } };
-  const api = loader({ setTimeout, clearTimeout, setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn) }, {
+  const api = loader({ setTimeout: fn => { timers.add(fn); return fn; }, clearTimeout: fn => timers.delete(fn) }, {
     './location-permissions': { hasLocationPermission: () => permission },
+    './settings-store': { getStringSetting: (_key, fallback) => fallback, setStringSetting() {} },
     './location': { getCurrentLocation: async () => fix },
     '../version': { USER_AGENT: 'test' },
     '../util/http': { fetchWithUserAgent: async url => { requests.push(url); return { ok: true, json: async () =>
@@ -115,6 +116,9 @@ test('closing Weather during permission prompt cannot restart polling', async ()
     '../../native/location-permissions': { hasLocationPermission: () => false, ensureLocationPermission: () => new Promise(resolve => { granted = resolve; }) },
     '../../native/weather': { weatherBridge: { start() { starts++; }, stop() { stops++; }, onStateChange: () => () => {}, snapshot() {} } },
     './weather': { WeatherLayer: class {} },
+    './weather-settings': {},
+    '../../ui/dashboard-settings': { toggleSettingMenuItem: () => ({}) },
+    '../../ui/dashboard/settings-panel': { openSettingsSubMenu() {} },
     '../../ui/shell/in-process-window': { YieldAtRootLayer: class {}, createInProcessWindow: opts => { options = opts; return { requestRender() {} }; } },
   })('app/apps/weather/weather-app.ts');
   api.createWeatherAppWindow({ onClosed() {} }); options.onClosed(); granted(true); await flush();

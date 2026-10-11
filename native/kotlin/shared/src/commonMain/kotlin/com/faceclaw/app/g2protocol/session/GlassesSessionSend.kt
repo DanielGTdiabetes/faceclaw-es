@@ -87,6 +87,7 @@ internal fun GlassesSessionCore.driveSession(): Long {
                 val oldest = inFlightMessages.firstOrNull()
                 val replay = CfwMessageWindow.replayWindow(inFlightMessages, now)
                 if (!replay.isEmpty()) {
+                    ConnectionCounters.increment("g2.cfw-replay")
                     logLine("CFW recovery: replay " + replay.size
                             + " unresolved message(s) from id=" + replay[0].magic)
                     for (candidate in replay) {
@@ -646,6 +647,10 @@ internal fun GlassesSessionCore.enqueueCreateLayoutLocked() {
     // New session: re-assert the firmware-debug-flags overlay once
     // the layout is ready (the mode-7 send is gated on this having reset).
     firmwareDebugFlagsLastSent = -1
+    if (customFirmwareDetected) {
+        enqueueEnterEvenHubLocked()
+        return
+    }
     val message = messageBuilder.createLayout()
     message.onAck = MessageCallback {
         startupProbePending = false
@@ -661,10 +666,29 @@ internal fun GlassesSessionCore.enqueueCreateLayoutLocked() {
             }
             startupProbePending = false
         }
-        handleTransportFailure("ack timeout")
+        handleTransportFailure("create layout ack timeout")
     }
     pendingMessages.addLast(message)
     logLine("queue create layout")
+}
+
+/**
+ * The custom-firmware replacement for the stock create layout (CFW mode 31).
+ * A reconnect can find the page from the previous session still up, and stock
+ * firmware never ACKs a repeated create; the CFW ACKs whatever state the
+ * glasses were in. A lost message goes through the CFW replay window like any
+ * other private message, which is safe because this one is idempotent. The
+ * settings query that sets customFirmwareDetected is ahead of this in the
+ * queue on every session.
+ */
+private fun GlassesSessionCore.enqueueEnterEvenHubLocked() {
+    val message = messageBuilder.enterEvenHub(connectionOptions.sendImagesToLeft)
+    message.onAck = MessageCallback {
+        fixedLayoutCreated = true
+        displayedFingerprint = ""
+    }
+    pendingMessages.addLast(message)
+    logLine("queue enter EvenHub")
 }
 
 internal fun GlassesSessionCore.enqueueStartupProbeLocked() {
@@ -683,7 +707,7 @@ internal fun GlassesSessionCore.enqueueStartupProbeLocked() {
         if (hasPendingOrInflightKindLocked("create-layout")) {
             return@MessageCallback
         }
-        handleTransportFailure("ack timeout")
+        handleTransportFailure("startup probe ack timeout")
     }
     pendingMessages.addLast(message)
     startupProbePending = true
@@ -795,9 +819,25 @@ internal fun GlassesSessionCore.enqueueDesiredImageLocked() {
     // Visibility belongs to this immutable composite, not the latest UI request.
     enqueueBrightnessLocked(!fingerprint.startsWith("blanked:"))
     if (customFirmwareDetected && packedFrame.size > 0) {
-        val rendered = scenePlanner.plan(packedFrame, width, height, draws, scene, nextImageFrameId,
-            connectionOptions.TEXTURE_CACHE_FRAMES, connectionOptions.INCREMENTAL_FRAMES,
-            connectionOptions.MULTI_RECT_FRAMES, ConnectionOptions.MULTI_RECT_MAX_RECTS)
+        val rendered = try {
+            scenePlanner.plan(packedFrame, width, height, draws, scene, nextImageFrameId,
+                connectionOptions.TEXTURE_CACHE_FRAMES, connectionOptions.INCREMENTAL_FRAMES,
+                connectionOptions.MULTI_RECT_FRAMES, ConnectionOptions.MULTI_RECT_MAX_RECTS)
+        } catch (e: Exception) {
+            // Planning depends only on this frame, so reconnecting would fail
+            // the same way (#42). Drop the frame (the planner and resource
+            // cache are as they were) and wait for the scene to change.
+            lastEnqueuedFingerprint = fingerprint
+            logLine("frame plan failed; frame dropped: " + safeMessage(e))
+            finishFrame(frameId, "discarded: frame plan failed")
+            return
+        }
+        if (rendered.bakedLayers > 0 || rendered.bakedSelections) {
+            val baked = "shell over resource budget: baked " + rendered.bakedLayers + "/" + scene.layers.size +
+                " layers" + (if (rendered.bakedSelections) " and retained drawings" else "") + " into the frame"
+            frameTimings.log(frameId, baked)
+            logLine("$baked fingerprint=$fingerprint")
+        }
         nextImageFrameId = rendered.nextFid
         val commands = rendered.commands
         for (i in 0 until commands.size - 1) enqueueResourceCommandLocked(commands[i])
@@ -1240,6 +1280,7 @@ internal fun GlassesSessionCore.hasPendingMagicLocked(sid: Int, magic: Int): Boo
 
 internal fun GlassesSessionCore.handleAckTimeoutLocked(message: OutboundMessage) {
     consecutiveAckTimeouts += 1
+    ConnectionCounters.increment("g2.ack-timeout")
 
     val onTimeout = message.onTimeout
     if (onTimeout != null) {

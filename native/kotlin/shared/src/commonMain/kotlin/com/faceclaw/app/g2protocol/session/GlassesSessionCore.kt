@@ -411,6 +411,8 @@ class GlassesSessionCore(
             releaseFaceclawFramebufferLease()
         }
         monitor.withLock {
+            ConnectionCounters.increment("g2.disconnect-requested")
+            if (sessionReady) countSessionEnded("requested")
             userDisconnectRequested = true
             running = false
             audioCaptureActive = false
@@ -1388,6 +1390,7 @@ class GlassesSessionCore(
                         val ingress = if (message.isLeftArmMessage) leftAddress else rightAddress
                         if (message.sid == CfwTransport.SID && address.equals(ingress, ignoreCase = true) && message.magic == ack.streamId) {
                             message.acceptCfwAck(ack)
+                            if (ack.nack) ConnectionCounters.increment("g2.cfw-nack")
                             logLine("CFW " + (if (ack.nack) "NACK" else "ACK") + " id=" + ack.streamId
                                     + " ordinal=" + ack.messageId + " lens=" + ack.lens + " txseq=" + (data[2].toInt() and 255)
                                     + " redundant=" + (ack !== acks[0])
@@ -1585,13 +1588,31 @@ class GlassesSessionCore(
                         updateSilentModeLocked(false)
                     }
                     if ("sys-event" == decoded.kind) {
-                        if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_EXIT || decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT || decoded.eventType == BleProtocol.EVENT_SYSTEM_EXIT) {
+                        if (decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT || decoded.eventType == BleProtocol.EVENT_SYSTEM_EXIT) {
                             if (shutdownRequested) {
                                 lastShutdownExitAtMs = now()
+                            } else {
+                                ConnectionCounters.increment(
+                                    if (decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT) "g2.firmware-abnormal-exit"
+                                    else "g2.firmware-system-exit"
+                                )
                             }
                             fixedLayoutCreated = false
                             displayedFingerprint = ""
                             clearAllMessagesLocked("firmware exit event")
+                        } else if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_ENTER) {
+                            logLine("firmware overlay opened over the EvenHub page")
+                        } else if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_EXIT) {
+                            // Despite its name this does not end the page: stock
+                            // evenhub_page_event_handler sends it when a firmware
+                            // overlay announced by FOREGROUND_ENTER closes, and
+                            // restores the page and its keepalive. Teardown is
+                            // always SYSTEM_EXIT/ABNORMAL_EXIT. Re-creating the
+                            // layout here sent a create the firmware ignores while
+                            // the page exists, so the session timed out (#42).
+                            // Re-present over whatever the overlay left instead.
+                            logLine("firmware overlay closed; re-presenting")
+                            lastEnqueuedFingerprint = ""
                         }
                     }
                 }
@@ -1683,6 +1704,7 @@ class GlassesSessionCore(
                     ringReconnectAfterMs = now() + ConnectionOptions.RING_RECONNECT_DELAY_MS
                 }
             }
+            ConnectionCounters.increment(if (connected) "ring.direct.connect" else "ring.direct.disconnect")
             logLine(if (connected) "direct ring BLE connected" else "direct ring BLE disconnected")
             interruptibleSleep.interrupt()
             return
@@ -1701,6 +1723,12 @@ class GlassesSessionCore(
                 // dropping mid-setup): the connect sequence notices on its own and
                 // schedules the retry, so leave the backoff alone.
                 lostSession = sessionReady
+                if (lostSession) {
+                    ConnectionCounters.increment(
+                        if (address.equals(rightAddress, ignoreCase = true)) "g2.arm-drop.right" else "g2.arm-drop.left"
+                    )
+                    countSessionEnded("arm-drop")
+                }
                 sessionReady = false
                 fixedLayoutCreated = false
                 startupProbePending = false
@@ -1733,6 +1761,7 @@ class GlassesSessionCore(
             wearStateReportRequested = false
         }
         setStateDisplay("connecting", "Connecting to the glasses...")
+        ConnectionCounters.increment("g2.connect-attempt")
         try {
             // Dial both arms at once, so the left arm's attempt is already pending (and
             // can land) while the right arm is being set up; they share one window.
@@ -1786,6 +1815,7 @@ class GlassesSessionCore(
                 }
             }
             setStateDisplay("connected", "Connected.")
+            ConnectionCounters.increment("g2.session-ready")
             logLine("session ready")
             monitor.withLock {
                 // Query settings at the start of every session so firmware
@@ -1992,6 +2022,7 @@ class GlassesSessionCore(
         monitor.withLock {
             if (!inFlightMessages.isEmpty()) {
                 clearInFlightMessagesLocked("security auth timeout")
+                ConnectionCounters.increment("g2.auth-unacknowledged")
                 logLine("security auth not acknowledged; continuing (2.2.9 stock requires it; older/custom firmware may not answer)")
                 return
             }
@@ -2018,7 +2049,7 @@ class GlassesSessionCore(
         prelude.onAck = MessageCallback {
         }
         prelude.onTimeout = MessageCallback {
-            handleTransportFailure("ack timeout")
+            handleTransportFailure("prelude ack timeout")
         }
         prelude.sentAtMs = now
         writeMessage(prelude)

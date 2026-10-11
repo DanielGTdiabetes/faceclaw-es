@@ -23,6 +23,7 @@ import {
   type AsrModelId,
 } from "../../native/asr-model";
 import { TextViewerLayer } from "../../apps/files/text-viewer";
+import { IOS_PRIVACY_NOTICE } from "../../analytics/privacy-disclosure";
 import type { LayerContext } from "../layers";
 import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
@@ -45,11 +46,12 @@ import {
   autoBrightnessMinSetting,
   autoBrightnessMaxSetting,
   autoBrightnessCurveSetting,
+  dataCollectionSetting,
   glassesBatteryVisibilitySetting,
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
-  displayModeSetting,
+  displayLayoutSetting,
   elevenLabsApiKeySetting,
   mapboxApiKeySetting,
   mirrorTouchSetting,
@@ -70,7 +72,6 @@ import {
   timeFormatSetting,
   toggleSettingMenuItem,
   useMicControlSetting,
-  verticalPositionSetting,
   voiceProviderSetting,
   screenTimeoutSetting,
   wakeWordActionSetting,
@@ -104,11 +105,9 @@ function settingsSections(): SettingsSection[] {
           },
         }),
         toggleSettingMenuItem(lockScreenEnabledSetting),
-        // Where min-height windows (and the sidebar) sit vertically on the
-        // screen; the dashboard controller repositions surfaces on change.
-        enumSettingMenuItem(verticalPositionSetting),
-        // Band / tall / full-panel; the dashboard controller reflows windows.
-        enumSettingMenuItem(displayModeSetting),
+        // A band (at one of five heights) / Tall / Full Screen; the
+        // dashboard controller moves or reflows windows on change.
+        enumSettingMenuItem(displayLayoutSetting),
       ],
     },
     {
@@ -194,6 +193,19 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
+      label: "Privacidad",
+      items: [
+        // First chosen in the on-glasses onboarding (app/apps/onboarding/).
+        enumSettingMenuItem(dataCollectionSetting),
+        ...(global.isIOS ? [{
+          label: "Privacidad iOS / TestFlight",
+          description: "Los informes de beta de Apple son independientes de las estadísticas de Faceclaw. Pulsa para leerlo.",
+          onSelect: (ctx: LayerContext) => ctx.stack.push(new TextViewerLayer(IOS_PRIVACY_NOTICE, "Privacidad iOS / TestFlight")),
+        }] : []),
+        bundledDocMenuItem("PRIVACY", "Política de privacidad"),
+      ],
+    },
+    {
       label: "Acerca de",
       // The version/license blurb (renderDetail) draws above the bundled
       // project docs, in both the preview and the focused states.
@@ -223,10 +235,9 @@ function settingsSections(): SettingsSection[] {
   const deferred = new Set(["Reloj"]);
   return sections.map(section => {
     if (section.label === "Desarrollador") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
-    if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting), {
-      label: "On-device dictation (Apple)", disabled: true, onSelect: () => {},
-      description: "Uses the glasses microphone and your iPhone's speech language. No transcription API key needed. Say Hey Even for hands-free input, or open Voice from the menu and click when finished.",
-    }] };
+    // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
+    if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting),
+      enumSettingMenuItem(voiceProviderSetting)] };
     if (deferred.has(section.label)) return { label: section.label, items: [{
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,

@@ -51,6 +51,9 @@ import {
 import { onAmbientCardsChanged } from "./ambient-cards";
 import { ShellChromeLayer, sidebarContentSpan, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
+import { NotificationModalQueue } from "./notification-modal-queue";
+import { ALL_NOTIFICATIONS, readActiveNotifications } from "../../native/notification-icons";
+import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
 import type { InProcessWindow } from "./in-process-window";
 import { BrightnessPickerLayer } from "./brightness-picker-layer";
@@ -276,7 +279,7 @@ class ShellOverlayMenuLayer extends MenuLayer {
     // Aligned to the min-height window band (like the sidebar), wherever the
     // vertical position setting currently puts it; centered over the
     // application area, i.e. the part of the screen beside a side strip
-    // (the whole width with a bottom row, or in the full-panel mode, where
+    // (the whole width with a bottom row, or over an immersive window, where
     // the strip overlays).
     const width = 272;
     const area = appViewportRect("min");
@@ -399,6 +402,7 @@ class Shell {
   private battery: ShellChromeState["battery"] = {
     headset: null, headsetCharging: null, ring: null, ringCharging: null, watch: null, watchCharging: null,
   };
+  private readonly batteryListeners = new Set<() => void>();
   private attention = new Map<string, boolean>();
   /** Set while the switcher's selection is on a notification (see NotificationSelection). */
   private selectedNotification: NotificationSelection | null = null;
@@ -414,6 +418,14 @@ class Shell {
   private independentOverlay: { layer: Layer; onYield: () => void } | null = null;
   /** Retired independent overlays still buried under another layer; dropped once they surface. */
   private readonly retiredOverlays = new WeakSet<Layer>();
+  private readonly notificationModals = new NotificationModalQueue<ShellModalLayer>({
+    open: (notificationKey) => this.pushNotificationModal(notificationKey),
+    isAvailable: (notificationKey) => {
+      const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
+      return !!notification && shouldShowNotificationOnGlasses(notification.packageName);
+    },
+    sleep: () => this.sleep(),
+  });
   private conversations: AssistantConversations | null = null;
   private get assistantSession(): AssistantSession | null {
     return this.conversations?.current().session ?? null;
@@ -589,7 +601,19 @@ class Shell {
   }
 
   setBatteryLevels(levels: Partial<ShellChromeState["battery"]>): void {
-    this.battery = { ...this.battery, ...levels };
+    const next = { ...this.battery, ...levels };
+    const keys = Object.keys(next) as (keyof ShellChromeState["battery"])[];
+    if (keys.every((key) => next[key] === this.battery[key])) return;
+    this.battery = next;
+    for (const listener of Array.from(this.batteryListeners)) listener();
+  }
+
+  /** Called after any battery level or charging state changes. Returns an unsubscribe function. */
+  onBatteryLevelsChanged(listener: () => void): () => void {
+    this.batteryListeners.add(listener);
+    return () => {
+      this.batteryListeners.delete(listener);
+    };
   }
 
   /**
@@ -779,28 +803,36 @@ class Shell {
   }
 
   /**
-   * Show a new notification in a shell modal over the app viewport. If the
-   * notification woke the screen, closing the modal goes back to sleep
+   * Show a new notification in a shell modal over the app viewport, or queue
+   * it behind the one already open (see NotificationModalQueue). If
+   * notifications woke the screen, closing the last modal goes back to sleep
    * (matching the old sleep-popup behavior).
    */
   openNotificationModal(notificationKey: string, wokeScreen: boolean): void {
     if (!this.screenOn) return;
-    const modal: ShellModalLayer = new ShellModalLayer(
-      new SingleNotificationLayer(notificationKey, {
-        origin: "new-notification-modal",
-        onClose: () => this.closeNotificationModal(modal, wokeScreen),
-      }),
-      this.config.actions,
-    );
-    this.stack.push(modal);
+    this.notificationModals.post(notificationKey, wokeScreen);
     this.config.requestShellRender();
   }
 
-  private closeNotificationModal(modal: ShellModalLayer, wokeScreen: boolean): void {
-    this.stack.popIfTop((layer) => layer === modal);
-    if (wokeScreen) {
-      this.sleep();
-    }
+  private pushNotificationModal(notificationKey: string): ShellModalLayer {
+    const modal: ShellModalLayer = new ShellModalLayer(
+      new SingleNotificationLayer(notificationKey, {
+        origin: "new-notification-modal",
+        onClose: () => this.closeNotificationModal(modal),
+      }),
+      this.config.actions,
+      () => this.notificationModals.removed(modal, this.screenOn),
+    );
+    this.stack.push(modal);
+    return modal;
+  }
+
+  private closeNotificationModal(modal: ShellModalLayer): void {
+    // The queue first: it opens the next notification or puts the screen back
+    // to sleep, and then ignores the removal below. remove() rather than a
+    // pop, so a menu opened over the modal doesn't leave it stuck.
+    this.notificationModals.closed(modal);
+    this.stack.remove(modal);
     this.config.requestShellRender();
   }
 
@@ -816,10 +848,13 @@ class Shell {
 
   /**
    * Paint the shell surface: transparent chrome, or all-transparent when
-   * asleep. The scene also carries the whole display's stereo depth.
+   * asleep. The scene also carries the whole display's stereo depth (none
+   * under a Full Screen or immersive window).
    */
   paintScene(): Uint8Array {
-    return this.screenOn ? encodeShellScene(this.stack.paintUndimmed(), uiDepth()) : encodeShellScene([]);
+    return this.screenOn
+      ? encodeShellScene(this.stack.paintUndimmed(), uiDepth(this.foregroundWindow()?.appId))
+      : encodeShellScene([]);
   }
 
   paintSurface(): Plane[] {
@@ -1402,16 +1437,20 @@ class Shell {
    * Open the voice dialog aimed at the foreground window. Called when the
    * user picks Voice input from the system menu (or an app asks via a
    * start-voice-input message). The menu click already ended the press, so
-   * the dialog finishes on click instead of long-press-release.
+   * the dialog finishes on click instead of long-press-release. Returns
+   * false when the dialog can't open now (voice input disabled, screen off,
+   * another dialog or overlay up); true means it is opening, though a
+   * microphone-permission prompt can still stop it.
    */
-  startVoiceInput(): void {
-    if (this.config.voiceInputEnabled === false) return;
-    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return;
+  startVoiceInput(): boolean {
+    if (this.config.voiceInputEnabled === false || this.voiceDialogPending) return false;
+    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return false;
     // The transcript is aimed at the window whose menu requested it; the menu
     // entry point defaults the highlight to Type Into App.
     this.focus = "window";
     this.openVoiceDialog({ finishOnClick: true, defaultTarget: "app" });
     this.config.requestShellRender();
+    return true;
   }
 
   /**

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.3 - 2026-10-10
+
+* Fix several issues that would cause disconnection and disconnect-looping
+* Add a client for T3 Code
+* Optional usage statistics
+* Add an on-glasses Onboarding app, which prompts you to configure some things
+* iOS Notifications have an icon based on ANCS category
+* iOS voice input can use cloud transcription providers
+* Weather app is more graphical, and can appear on the status bar and glanceboard Glanceboard system card
+* Set up an iOS TestFlight (but it may take awhile before Apple approves it)
+
 ## 0.8.2 - 2026-10-03
 
 ### User Interface Customization

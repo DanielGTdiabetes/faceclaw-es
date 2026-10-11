@@ -17,6 +17,7 @@ import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { iosVoiceInput } from '../native/ios-voice-input'
 import { nightscoutBridge } from '../native/nightscout-bridge'
+import { weatherBridge } from '../native/weather'
 import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorState, type RawInputEvent } from '../native/faceclaw-communicator.ios'
 import { PreviewDisplayTarget, type DisplayTarget } from '../native/preview-display.ios'
 import { AncsClient, ANCS_FIRMWARE_VERSION } from './ancs-client'
@@ -24,6 +25,7 @@ import { GlanceHost, type GlanceDisplay } from './glance-host'
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from './lock-screen'
 import { OsEventTypeList } from './events'
 import { loadDeviceAddresses } from './device-addresses'
+import { updateGlassesPresence } from './glasses-presence'
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from './firmware-compat'
 import { isHaltedSessionPhase, suppressAutoReconnect } from './reconnect-policy'
 import { deviceAddressError } from './ios-peripheral-identity'
@@ -42,12 +44,13 @@ import { noopLayerActions, type LayerActions } from '../ui/layers'
 import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible } from '../ui/shell/geometry'
-import { DISPLAY_MODE_VALUES, displayModeLabel, displayModeSetting, onAnySettingChanged,
+import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
-  nightscoutSiteUrlSetting, nightscoutApiTokenSetting } from '../ui/dashboard-settings'
+  nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
+  openAiApiKeySetting, sonioxApiKeySetting } from '../ui/dashboard-settings'
+import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
-import { isWelcomeSoundPending, setWelcomeSoundPending } from '../phone-ui/onboarding-state'
-import { findSoundEffect, playSoundEffect } from '../ui/sound-effects'
+import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
 
 const SHELL_SURFACE_ID = 'shell'
 const SHELL_SURFACE_Z_ORDER = 1
@@ -296,6 +299,7 @@ export class IosPreviewController {
     for (const window of shell.getWindows()) window.setScreenOn?.(running && shell.isScreenOn())
     if (!running) {
       void nightscoutBridge.stop().catch(error => this.fail(error))
+      weatherBridge.setSessionActive(false)
       this.glance.dismiss()
       void this.display?.setScreenBlanked(!shell.isScreenOn()).catch(error => this.fail(error))
       this.offSettings?.(); this.offSettings = null
@@ -319,6 +323,7 @@ export class IosPreviewController {
     this.handlePhoneLockState(!UIApplication.sharedApplication.protectedDataAvailable)
     this.syncLockSetting()
     void nightscoutBridge.start().catch(error => this.fail(error))
+    weatherBridge.setSessionActive(true)
     for (const name of [UIDeviceBatteryLevelDidChangeNotification, UIDeviceBatteryStateDidChangeNotification]) {
       this.batteryObservers.push(NSNotificationCenter.defaultCenter.addObserverForNameObjectQueueUsingBlock(name, null, NSOperationQueue.mainQueue, () => this.requestShellRender()))
     }
@@ -370,6 +375,7 @@ export class IosPreviewController {
     // a session's first snapshot) wakes the screen, to the lock notice if locked.
     const putOn = wearing && this.glassesWorn === false
     this.glassesWorn = wearing
+    this.syncPresence()
     this.logBluetooth(`Glasses wear state: ${wearing ? 'ON_HEAD' : 'OFF_HEAD'}`)
     if (!wearing && this.phoneLocked && this.lockEnabled) this.setGlassesLocked(true)
     if (putOn && this.runtimeRunning && !shell.isScreenOn()) shell.wake('sidebar')
@@ -654,11 +660,6 @@ export class IosPreviewController {
     this.appHosts.set(appId, host)
     return host
   }
-  cycleDisplayMode(): void {
-    const values = DISPLAY_MODE_VALUES
-    displayModeSetting.set(values[(values.indexOf(displayModeSetting.get()) + 1) % values.length])
-  }
-  get displayModeLabel(): string { return displayModeLabel(displayModeSetting.get()) }
   get connectionState(): SessionState | null { return this.sessionCreated ? this.state : null }
   get connectionDetails(): string {
     const state = this.connectionState
@@ -669,13 +670,18 @@ export class IosPreviewController {
     this.logBluetooth(status)
     this.emitState()
   }
+  /** Mirror the session into glasses-presence (read by EvenHub's device status and Timers). */
+  private syncPresence(): void {
+    updateGlassesPresence({ connected: this.state.phase === 'connected', worn: this.glassesWorn, charging: this.state.charging ?? false })
+  }
   private emitState(): void {
     if (this.state.phase !== 'connected') resetRingInputFilter()
     this.pushBrightness()
-    this.maybePlayWelcomeSound(this.state)
+    this.maybeLaunchOnboarding(this.state)
     if (this.state.phase !== 'connected' && this.state.phase !== 'connecting') this.glassesWorn = null
     if (this.state.phase !== 'connected') iosVoiceInput.handleSessionEnded()
     shell.setBatteryLevels({ headset: this.state.battery, headsetCharging: this.state.charging })
+    this.syncPresence()
     this.syncRuntime()
     if (this.active) this.onConnectionState({ ...this.state })
     this.requestShellRender()
@@ -760,7 +766,7 @@ export class IosPreviewController {
         if (this.communicator !== communicator) return
         this.state = { ...this.state, frames: this.state.frames + 1 }
         this.onActivity()
-        this.maybePlayWelcomeSound(this.state)
+        this.maybeLaunchOnboarding(this.state)
         if (this.active) this.onConnectionState({ ...this.state })
         this.schedulePreviewUpdate()
       }),
@@ -868,23 +874,20 @@ export class IosPreviewController {
     this.glance.reset()
     await communicator.close().catch(error => this.logBluetooth(`Close: ${String(error)}`))
   }
-  private maybePlayWelcomeSound(state: SessionState): void {
+  private maybeLaunchOnboarding(state: SessionState): void {
     const firstNewFrame = state.frames > this.acknowledgedFrames
     this.acknowledgedFrames = state.frames
-    // Match Android: wait for an acknowledged frame before consuming the jingle.
-    if (!firstNewFrame || state.phase !== 'connected' || !isWelcomeSoundPending()) return
-    setWelcomeSoundPending(false)
-    const effect = findSoundEffect('questcomplete')
-    if (effect) void playSoundEffect(effect, payload => this.actions.playBuzzerSequence(payload),
-      ms => new Promise(resolve => setTimeout(resolve, ms)))
-      .catch(error => this.logBluetooth(`Welcome sound failed: ${error}`))
+    // Match Android: wait for an acknowledged frame (a warm session, so the
+    // onboarding's welcome jingle isn't dropped) before opening it.
+    if (!firstNewFrame || state.phase !== 'connected' || !claimGlassesOnboardingAutoLaunch()) return
+    void this.launchApp(ONBOARDING_APP_ID)
   }
   startVoiceInput(): void { if (!this.glassesLocked) shell.startVoiceInput() }
   private async prepareVoiceCapture(): Promise<boolean> {
     if (this.glassesLocked) return false
     const usePhoneMic = this.state.phase !== 'connected'
     if (usePhoneMic && !this.active) return false
-    const ready = await iosVoiceInput.prepare(this.active, usePhoneMic)
+    const ready = await iosVoiceInput.prepare(this.active, usePhoneMic, this.voiceProvider())
     if (!ready && this.active) this.onError(iosVoiceInput.statusText)
     return ready && !this.glassesLocked && (this.state.phase === 'connected' || this.active)
   }
@@ -892,13 +895,19 @@ export class IosPreviewController {
     if (this.glassesLocked) return
     const log = (message: string) => this.logBluetooth(message)
     const communicator = this.communicator
+    const voice = this.voiceProvider()
     if (communicator && this.state.phase === 'connected') {
-      await iosVoiceInput.startGlassesCapture(communicator, log, endpointing)
+      await iosVoiceInput.startGlassesCapture(communicator, voice, log, endpointing)
     } else if (this.active) {
       // Recheck microphone permission if the glasses disconnected after prepare.
-      if (!await iosVoiceInput.prepare(this.active, true) || !this.active || this.glassesLocked) return
-      await iosVoiceInput.startPhoneCapture(log, endpointing)
+      if (!await iosVoiceInput.prepare(this.active, true, voice) || !this.active || this.glassesLocked) return
+      await iosVoiceInput.startPhoneCapture(voice, log, endpointing)
     }
+  }
+  /** The transcription provider setting and the keys the cloud ones need. */
+  private voiceProvider(): VoiceProviderSelection {
+    return { provider: voiceProviderSetting.get(), elevenLabsApiKey: elevenLabsApiKeySetting.get(),
+      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get() }
   }
   private logBluetooth(message: string): void {
     const line = `${new Date().toISOString()} [${this.active ? 'foreground' : 'background'}${UIApplication.sharedApplication.protectedDataAvailable ? '' : ',protected-data-unavailable'}] ${message}`

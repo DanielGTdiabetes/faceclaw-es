@@ -27,6 +27,7 @@ import { scrollToKeepSelectionVisible } from "../menu";
 import { lineStep } from "../metrics";
 import {
   appViewportRect,
+  isImmersive,
   MIN_WINDOW_HEIGHT,
   minWindowTop,
   SHELL_OPAQUE_BLACK,
@@ -250,7 +251,7 @@ export function sidebarContentSpan(windowCount: number): { left: number; right: 
 
 /**
  * Horizontal extent of the top bar: the foreground window's, short of a side
- * strip overlaid on it (full-panel mode, sidebar focused).
+ * strip overlaid on it (an immersive window, sidebar focused).
  */
 function topBarSpan(state: ShellChromeState): { left: number; right: number } {
   const viewport = appViewportRect(state.foregroundHeightMode, state.foregroundAppId);
@@ -275,14 +276,15 @@ type StatusBarPlacement = { left: number; right: number; top: number; contentTop
 
 /**
  * The status bar's placement for the foreground window, or null when it
- * isn't drawn as a bar: when it shares a bottom switcher row, or when it
- * overlays the window (geometry.ts statusBarOverlays) and the popup
- * switcher isn't up. An overlaying bar sits inside a window frame, whose
- * side runs along its outer row, so it keeps its divider.
+ * isn't drawn as a bar: when the window is immersive, when it shares a
+ * bottom switcher row, or when it overlays the window (geometry.ts
+ * statusBarOverlays) and the popup switcher isn't up. An overlaying bar
+ * sits inside a window frame, whose side runs along its outer row, so it
+ * keeps its divider.
  */
 function statusBarPlacement(state: ShellChromeState): StatusBarPlacement | null {
   const appId = state.foregroundAppId;
-  if (statusInSwitcherRow(appId)) return null;
+  if (isImmersive(appId) || statusInSwitcherRow(appId)) return null;
   const overlays = statusBarOverlays();
   if (overlays && !sidebarStripVisible(state.focus, appId)) return null;
   const { left, right } = topBarSpan(state);
@@ -431,9 +433,9 @@ export class ShellChromeLayer implements Layer {
     this.notificationEntries = [];
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
     const popup = switcherPosition() === "popup";
-    // Full-panel mode: the strip is an overlay, present only while the user
-    // is in it (the window underneath keeps its full width the rest of the
-    // time); a popup only ever shows then.
+    // Over an immersive window the strip is an overlay, present only while
+    // the user is in it (the window underneath keeps the whole panel the
+    // rest of the time); a popup only ever shows then.
     const switcherShown = sidebarStripVisible(state.focus, state.foregroundAppId);
     if (switcherShown && !popup) {
       this.drawSidebar(image, state, statusInRow ? image : undefined);
@@ -742,7 +744,7 @@ export class ShellChromeLayer implements Layer {
     // edge of the foreground window's band, wherever its height mode puts
     // that (screen top for max height). It moves when the foreground
     // switches to a window of a different height. It spans the app viewport;
-    // with a side strip overlaid (full-panel mode, sidebar focused) it still
+    // with a side strip overlaid (an immersive window, sidebar focused) it still
     // stops at the strip.
     const { left: barLeft, right: barRight } = bar;
     image.fillRect(barLeft, bar.top, barRight - barLeft, TOP_BAR_HEIGHT, SHELL_OPAQUE_BLACK);

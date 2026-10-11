@@ -11,9 +11,7 @@ const js = (source) => ts.transpileModule(source, {
 
 function geometry() {
   const settings = Object.fromEntries(Object.entries({
-    displayModeSetting: '576x288', verticalPositionSetting: 'middle',
-    navigateDisplayModeSetting: 'global', navigateVerticalPositionSetting: 'global',
-    terminalDisplayModeSetting: 'default', terminalVerticalPositionSetting: 'global',
+    displayLayoutSetting: 'band-middle', navigateDisplayLayoutSetting: 'global', terminalDisplayLayoutSetting: 'default',
     appSwitcherPositionSetting: 'left', uiDepthSetting: '0', statusBarPositionSetting: 'top',
     statusBarVisibilitySetting: 'always', windowBorderSetting: true,
   }).map(([name, value]) => [name, { value, get() { return this.value; } }]));
@@ -27,46 +25,79 @@ function geometry() {
   return { ...context.exports, settings, rect };
 }
 
+const LAYOUTS = ['band-top', 'band-high', 'band-middle', 'band-low', 'band-bottom', 'tall', 'fullscreen'];
+
 test('defaults preserve normal windows, EvenHub height and tall terminal sessions', () => {
   const g = geometry();
   assert.deepEqual(g.rect('min', 'navigate'), { x: 64, y: 124, width: 576, height: 260 });
   assert.deepEqual(g.rect('min', 'terminal'), g.rect('min'));
   assert.deepEqual(g.rect('max', 'terminal'), { x: 64, y: 28, width: 576, height: 452 });
   assert.equal(g.windowBandHeight('medium', 'evenhub'), 316);
-  g.settings.displayModeSetting.value = '640x480';
-  assert.deepEqual(g.rect('max', 'terminal'), { x: 0, y: 28, width: 640, height: 452 });
+  // Tall: every window the whole height, beside the strip.
+  g.settings.displayLayoutSetting.value = 'tall';
+  assert.deepEqual(g.rect('min'), { x: 64, y: 28, width: 576, height: 452 });
 });
 
-test('Navigate can use a small bottom band while other apps fill the panel', () => {
+test('Navigate can use a small bottom band while other apps are tall', () => {
   const g = geometry();
-  g.settings.displayModeSetting.value = '640x480';
-  g.settings.navigateDisplayModeSetting.value = '576x288';
-  g.settings.navigateVerticalPositionSetting.value = 'bottom';
+  g.settings.displayLayoutSetting.value = 'tall';
+  g.settings.navigateDisplayLayoutSetting.value = 'band-bottom';
   assert.deepEqual(g.rect('min', 'navigate'), { x: 64, y: 220, width: 576, height: 260 });
   assert.equal(g.minWindowTop('navigate'), 192);
-  assert.equal(g.sidebarStripVisible('window', 'navigate'), true);
-  assert.equal(g.sidebarStripVisible('window', 'other'), false);
-  assert.deepEqual(g.rect('min', 'other'), { x: 0, y: 28, width: 640, height: 452 });
+  assert.deepEqual(g.rect('min', 'other'), { x: 64, y: 28, width: 576, height: 452 });
 });
 
-test('Terminal can disable its tall default, inherit position or override both dimensions', () => {
+test('Terminal can disable its tall default, follow the global band or choose a mode of its own', () => {
   const g = geometry();
-  g.settings.terminalDisplayModeSetting.value = 'global';
+  g.settings.terminalDisplayLayoutSetting.value = 'global';
   assert.deepEqual(g.rect('max', 'terminal'), g.rect('min'));
-  g.settings.verticalPositionSetting.value = 'top';
+  g.settings.displayLayoutSetting.value = 'band-top';
   assert.equal(g.windowTop('max', 'terminal'), 0);
-  g.settings.terminalVerticalPositionSetting.value = 'lower';
+  g.settings.terminalDisplayLayoutSetting.value = 'band-low';
   assert.equal(g.windowTop('max', 'terminal'), 144);
-  g.settings.terminalDisplayModeSetting.value = '640x480';
-  assert.deepEqual(g.rect('max', 'terminal'), { x: 0, y: 28, width: 640, height: 452 });
-  assert.equal(g.sidebarStripVisible('window', 'terminal'), false);
-  assert.equal(g.sidebarStripVisible('sidebar', 'terminal'), true);
-  g.settings.terminalDisplayModeSetting.value = '576x480';
+  g.settings.terminalDisplayLayoutSetting.value = 'tall';
+  assert.deepEqual(g.rect('min', 'terminal'), { x: 64, y: 28, width: 576, height: 452 });
+  // The default keeps sessions tall and the sessions list in the global band.
+  g.settings.terminalDisplayLayoutSetting.value = 'default';
   assert.deepEqual(g.rect('max', 'terminal'), { x: 64, y: 28, width: 576, height: 452 });
+  assert.equal(g.windowTop('min', 'terminal'), 0);
 });
 
-test('all explicit size/position combinations stay within the display and align content below the bar', () => {
+test('Full Screen widens Tall windows to the panel and drops depth, beside a bottom row or popup only', () => {
   const g = geometry();
+  g.settings.displayLayoutSetting.value = 'fullscreen';
+  g.settings.uiDepthSetting.value = '48';
+  // A side strip leaves no width to spare: there it is Tall.
+  assert.equal(g.displayLayout(), 'tall');
+  assert.deepEqual(g.rect('min'), { x: 64, y: 28, width: 576, height: 452 });
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  assert.equal(g.displayLayout(), 'fullscreen');
+  // Tall's height and the panel's width, the row still reserved under it,
+  // always shown; no room for a frame, nor for depth.
+  assert.deepEqual(g.rect('min'), { x: 0, y: 28, width: 640, height: 416 });
+  assert.deepEqual({ ...g.switcherRect('min') }, { x: 0, y: 444, width: 640, height: 36 });
+  assert.equal(g.sidebarStripVisible('window'), true);
+  assert.equal(g.windowFramed(), false);
+  assert.equal(g.uiDepth(), 0);
+  // With the status bar in the row, there's no frame top for a header either.
+  g.settings.statusBarPositionSetting.value = 'bottom';
+  assert.equal(g.statusInSwitcherRow(), true);
+  assert.deepEqual(g.rect('min'), { x: 0, y: 0, width: 640, height: 444 });
+  // A popup's status bar keeps its edge.
+  g.settings.appSwitcherPositionSetting.value = 'popup';
+  assert.deepEqual(g.rect('max'), { x: 0, y: 0, width: 640, height: 452 });
+  assert.equal(g.statusBarTop('max'), 452);
+  assert.equal(g.windowFramed(), false);
+  // Per app: depth follows the foreground app's mode.
+  g.settings.displayLayoutSetting.value = 'band-middle';
+  g.settings.navigateDisplayLayoutSetting.value = 'fullscreen';
+  assert.deepEqual([g.uiDepth('navigate'), g.uiDepth('launcher'), g.uiDepth()], [0, 48, 48]);
+  assert.deepEqual([g.rect('min', 'navigate').width, g.rect('min', 'launcher').width], [640, 576]);
+});
+
+test('all display modes and layouts stay within the display and align content below the bar', () => {
+  const g = geometry();
+  g.settings.uiDepthSetting.value = '48';
   const combos = [['left', 'top'], ['right', 'top'], ['bottom', 'top'], ['bottom', 'bottom'], ['left', 'bottom']];
   for (const statusBar of ['top', 'bottom']) {
     for (const visibility of ['always', 'switcher']) {
@@ -78,42 +109,43 @@ test('all explicit size/position combinations stay within the display and align 
     g.settings.statusBarPositionSetting.value = statusBar;
     g.settings.statusBarVisibilitySetting.value = visibility;
     g.settings.windowBorderSetting.value = border;
-    for (const globalMode of ['576x288', '576x480', '640x480']) {
-      g.settings.displayModeSetting.value = globalMode;
+    const side = switcher === 'left' || switcher === 'right';
+    for (const globalMode of LAYOUTS) {
+      g.settings.displayLayoutSetting.value = globalMode;
       for (const appId of ['navigate', 'terminal']) {
-        for (const mode of ['global', '576x288', '576x480', '640x480']) {
-          g.settings[`${appId}DisplayModeSetting`].value = mode;
-          for (const position of ['global', 'top', 'upper', 'middle', 'lower', 'bottom']) {
-            g.settings[`${appId}VerticalPositionSetting`].value = position;
-            for (const heightMode of ['min', 'medium', 'max']) {
-              const rect = g.rect(heightMode, appId);
-              const fullPanel = g.displayMode(appId) === '640x480';
-              assert.equal(rect.x + rect.width, fullPanel ? 640 : { left: 640, right: 576, bottom: 608, popup: 608 }[switcher]);
-              const header = g.windowHeaderHeight(appId), footer = g.windowFooterHeight(appId);
-              assert.equal(g.statusInSwitcherRow(appId), statusBar === 'bottom' && g.switcherRowHeight(appId) > 0);
-              if (switcher === 'popup') {
-                // Each edge has the status bar's rows (unless it only
-                // overlays), else the frame's side, else nothing.
-                assert.equal(g.windowFramed(appId), border && !fullPanel);
-                const edge = (side) => visibility === 'always' && statusBar === side ? g.TOP_BAR_HEIGHT : g.windowFramed(appId) ? 1 : 0;
-                assert.deepEqual([header, footer], [edge('top'), edge('bottom')]);
-                // The status bar's rows lie within the band, at its edge.
-                const top = g.windowTop(heightMode, appId), band = g.windowBandHeight(heightMode, appId);
-                assert.equal(g.statusBarTop(heightMode, appId), statusBar === 'top' ? top : top + band - g.TOP_BAR_HEIGHT);
-              } else {
-                assert.deepEqual([header, footer], [g.statusInSwitcherRow(appId) ? 1 : g.TOP_BAR_HEIGHT, 0]);
-              }
-              assert.equal(rect.y, g.windowTop(heightMode, appId) + header);
-              assert.equal(rect.height + header + footer, g.windowBandHeight(heightMode, appId));
-              assert.ok(rect.y >= header && rect.y + rect.height + footer <= 480 - g.switcherRowHeight(appId));
-              const row = g.switcherRect(heightMode, appId);
-              assert.ok(row.y + row.height <= 480);
-              // A reserved bottom row hangs right under the window, as wide as it.
-              if (g.switcherRowHeight(appId)) assert.deepEqual([row.x, row.y, row.width], [rect.x, rect.y + rect.height, rect.width]);
-              // The frame's sides, just outside the window, survive the
-              // deepest shift (±62 moves each lens 31px).
-              if (g.windowFramed(appId)) assert.ok(rect.x - 1 - 31 >= 0 && rect.x + rect.width + 31 < 640);
+        for (const mode of ['default', 'global', ...LAYOUTS]) {
+          g.settings[`${appId}DisplayLayoutSetting`].value = mode;
+          const wide = g.displayLayout(appId) === 'fullscreen';
+          if (wide) assert.equal(side, false, 'Full Screen only beside a bottom row or popup');
+          assert.equal(g.uiDepth(appId), side || wide ? 0 : 48);
+          for (const heightMode of ['min', 'medium', 'max']) {
+            const rect = g.rect(heightMode, appId);
+            assert.equal(rect.x + rect.width, wide ? 640 : { left: 640, right: 576, bottom: 608, popup: 608 }[switcher]);
+            const header = g.windowHeaderHeight(appId), footer = g.windowFooterHeight(appId);
+            assert.equal(g.statusInSwitcherRow(appId), statusBar === 'bottom' && g.switcherRowHeight(appId) > 0);
+            if (switcher === 'popup') {
+              // Each edge has the status bar's rows (unless it only
+              // overlays), else the frame's side, else nothing.
+              assert.equal(g.windowFramed(appId), border && !wide);
+              const edge = (side) => visibility === 'always' && statusBar === side ? g.TOP_BAR_HEIGHT : g.windowFramed(appId) ? 1 : 0;
+              assert.deepEqual([header, footer], [edge('top'), edge('bottom')]);
+              // The status bar's rows lie within the band, at its edge.
+              const top = g.windowTop(heightMode, appId), band = g.windowBandHeight(heightMode, appId);
+              assert.equal(g.statusBarTop(heightMode, appId), statusBar === 'top' ? top : top + band - g.TOP_BAR_HEIGHT);
+            } else {
+              assert.equal(g.windowFramed(appId), switcher === 'bottom' && !wide);
+              assert.deepEqual([header, footer], [!g.statusInSwitcherRow(appId) ? g.TOP_BAR_HEIGHT : g.windowFramed(appId) ? 1 : 0, 0]);
             }
+            assert.equal(rect.y, g.windowTop(heightMode, appId) + header);
+            assert.equal(rect.height + header + footer, g.windowBandHeight(heightMode, appId));
+            assert.ok(rect.y >= header && rect.y + rect.height + footer <= 480 - g.switcherRowHeight(appId));
+            const row = g.switcherRect(heightMode, appId);
+            assert.ok(row.y + row.height <= 480);
+            // A reserved bottom row hangs right under the window, as wide as it.
+            if (g.switcherRowHeight(appId)) assert.deepEqual([row.x, row.y, row.width], [rect.x, rect.y + rect.height, rect.width]);
+            // The frame's sides, just outside the window, survive the
+            // deepest shift (±62 moves each lens 31px).
+            if (g.windowFramed(appId)) assert.ok(rect.x - 1 - 31 >= 0 && rect.x + rect.width + 31 < 640);
           }
         }
       }
@@ -133,8 +165,9 @@ test('the app switcher can sit on the right edge', () => {
   // Depth needs the bottom row's side margins.
   g.settings.uiDepthSetting.value = '32';
   assert.equal(g.uiDepth(), 0);
-  g.settings.displayModeSetting.value = '640x480';
-  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+  // Full Screen needs the width a strip takes: beside one it is Tall.
+  g.settings.displayLayoutSetting.value = 'fullscreen';
+  assert.deepEqual(g.rect('min'), { x: 0, y: 28, width: 576, height: 452 });
 });
 
 test('a popup app switcher centres 576-wide windows, whose edges the status bar and frame decide', () => {
@@ -167,10 +200,10 @@ test('a popup app switcher centres 576-wide windows, whose edges the status bar 
   assert.equal(g.windowFramed(), false);
   assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 0, width: 576, height: 480 });
   assert.deepEqual(g.rect('medium'), { x: 32, y: 96, width: 576, height: 288 });
-  // Full panel: the status bar keeps its edge, but there's no room for a frame.
+  // Full Screen: the status bar keeps its edge, but there's no room for a frame.
   g.settings.windowBorderSetting.value = true;
   g.settings.statusBarVisibilitySetting.value = 'always';
-  g.settings.displayModeSetting.value = '640x480';
+  g.settings.displayLayoutSetting.value = 'fullscreen';
   assert.equal(g.windowFramed(), false);
   assert.deepEqual(g.rect('max'), { x: 0, y: 0, width: 640, height: 452 });
   assert.equal(g.statusBarTop('max'), 452);
@@ -187,7 +220,7 @@ test('a bottom app switcher centres 576-wide windows and hangs one tall tab unde
   assert.deepEqual({ ...g.switcherRect('min') }, { x: 32, y: 366, width: 576, height: 36 });
   assert.equal(g.isOnSwitcherEdge(10, 370, 'min'), true);
   assert.equal(g.isOnSwitcherEdge(10, 360, 'min'), false);
-  g.settings.verticalPositionSetting.value = 'bottom';
+  g.settings.displayLayoutSetting.value = 'band-bottom';
   assert.equal(g.switcherRect('min').y, 444);
   // The true centre is the viewport's own with the window centred.
   assert.equal(g.screenCenterInViewportX(), 288);
@@ -195,13 +228,39 @@ test('a bottom app switcher centres 576-wide windows and hangs one tall tab unde
   g.settings.uiDepthSetting.value = '-48';
   assert.equal(g.uiDepth(), -48);
   assert.equal(g.windowFramed(), true);
-  // Full panel: windows fill the panel and the row overlays the bottom edge while focused.
-  g.settings.displayModeSetting.value = '640x480';
-  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+  // Full Screen: windows take the panel's width over the row, which stays.
+  g.settings.displayLayoutSetting.value = 'fullscreen';
+  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 416 });
   assert.deepEqual({ ...g.switcherRect('max') }, { x: 0, y: 444, width: 640, height: 36 });
-  assert.equal(g.sidebarStripVisible('window'), false);
-  assert.equal(g.sidebarStripVisible('sidebar'), true);
+  assert.equal(g.sidebarStripVisible('window'), true);
   assert.equal(g.windowFramed(), false);
+});
+
+test('an immersive app fills the panel without chrome rows, frame or depth, in any layout', () => {
+  const panel = { x: 0, y: 0, width: 640, height: 480 };
+  for (const position of ['left', 'right', 'bottom', 'popup']) {
+    const g = geometry();
+    g.settings.appSwitcherPositionSetting.value = position;
+    g.settings.statusBarPositionSetting.value = 'bottom';
+    g.settings.uiDepthSetting.value = '48';
+    assert.equal(g.setAppImmersive('onboarding', true), true);
+    assert.equal(g.setAppImmersive('onboarding', true), false);
+    for (const mode of ['min', 'medium', 'max']) assert.deepEqual(g.rect(mode, 'onboarding'), panel, position);
+    assert.equal(g.windowFramed('onboarding'), false);
+    assert.equal(g.statusInSwitcherRow('onboarding'), false);
+    // The switcher overlays it while focused.
+    assert.equal(g.sidebarStripVisible('window', 'onboarding'), false);
+    assert.equal(g.sidebarStripVisible('sidebar', 'onboarding'), true);
+    assert.equal(g.uiDepth('onboarding'), 0);
+    // Other apps keep the layout and its depth.
+    const depth = position === 'bottom' || position === 'popup' ? 48 : 0;
+    assert.equal(g.uiDepth('launcher'), depth);
+    assert.equal(g.uiDepth(), depth);
+    assert.notDeepEqual(g.rect('min', 'launcher'), panel);
+    assert.equal(g.setAppImmersive('onboarding', false), true);
+    assert.deepEqual(g.rect('min', 'onboarding'), g.rect('min', 'launcher'));
+    assert.equal(g.uiDepth('onboarding'), depth);
+  }
 });
 
 // The real chrome layer over the given geometry, with platform pieces stubbed:
@@ -291,9 +350,28 @@ test('a bottom app switcher frames the foreground window\'s content in a rounded
   // The flat paint carries the same frame.
   const image = chrome.paint();
   assert.deepEqual(frames(image).map((d) => [d.x, d.y]), [[31, 105]]);
-  // No frame in the full-panel mode.
-  g.settings.displayModeSetting.value = '640x480';
+  // No frame in the Full Screen mode.
+  g.settings.displayLayoutSetting.value = 'fullscreen';
   assert.equal(chrome.paintParts().flatMap((p) => frames(p.image)).length, 0);
+});
+
+test('over an immersive window the chrome draws only the switcher, and only while it has focus', () => {
+  for (const position of ['bottom', 'popup', 'left']) {
+    const g = geometry();
+    g.settings.appSwitcherPositionSetting.value = position;
+    g.settings.statusBarPositionSetting.value = position === 'left' ? 'top' : 'bottom';
+    g.setAppImmersive('onboarding', true);
+    const { chrome, state } = chromeLayer(g, { windows: 2, notifications: 1 });
+    state.foregroundAppId = 'onboarding';
+    assert.equal(chrome.paintParts().length, 0, position);
+    assert.equal(chrome.paint().pixels.some((value) => value !== 0), false, position);
+    state.focus = 'sidebar';
+    const parts = chrome.paintParts();
+    // No status bar (key 2), not even in a bottom row.
+    assert.equal(parts.length, 1, position);
+    assert.notEqual(parts[0].shellKey, 2, position);
+    if (position === 'bottom') assert.deepEqual([parts[0].x, parts[0].y, parts[0].image.width], [0, 444, 640]);
+  }
 });
 
 test('the launcher\'s tab lines up with the window frame, whose corner squares to meet it', () => {
@@ -350,10 +428,10 @@ test('the status bar can join a bottom app switcher, and windows grow into the t
   assert.deepEqual(g.rect('medium'), { x: 32, y: 79, width: 576, height: 288 });
   assert.deepEqual(g.rect('max', 'terminal'), { x: 32, y: 1, width: 576, height: 443 });
   assert.deepEqual({ ...g.switcherRect('min') }, { x: 32, y: 366, width: 576, height: 36 });
-  // The full-panel mode keeps the top bar: its row shows only while focused.
-  g.settings.displayModeSetting.value = '640x480';
-  assert.equal(g.statusInSwitcherRow(), false);
-  assert.deepEqual(g.rect('max'), { x: 0, y: 28, width: 640, height: 452 });
+  // Full Screen keeps the row, and the status bar in it, but has no frame.
+  g.settings.displayLayoutSetting.value = 'fullscreen';
+  assert.equal(g.statusInSwitcherRow(), true);
+  assert.deepEqual(g.rect('max'), { x: 0, y: 0, width: 640, height: 444 });
 });
 
 test('the switcher row lays out windows, free space, notifications, widgets, batteries and the clock', () => {
@@ -612,7 +690,7 @@ test('resizing a terminal reconnects with the new grid and ignores callbacks fro
       },
     } } },
   };
-  const socketContext = { exports: {}, com: context.com };
+  const socketContext = { exports: {}, com: context.com, require: () => ({ toJavaBytes: bytes => bytes }) };
   vm.runInNewContext(js(read('app/native/socket.ts')), socketContext);
   context.require = name => name === './socket' ? socketContext.exports : {};
   vm.runInNewContext(js(read('app/native/g2mirror-client.ts')), context);

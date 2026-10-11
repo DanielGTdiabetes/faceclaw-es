@@ -540,6 +540,8 @@ function bridgeHarness() {
     require(name) {
       if (name === '@nativescript/core') return { Utils: { android: { getApplicationContext: () => ({}) } } };
       if (name === './audio-capture-arbiter') return { AudioCaptureArbiter };
+      // 0.8.3 moved cloud-provider selection here; on-device captures get no cloud client.
+      if (name === './cloud-stt-provider') return { createCloudSttClient: () => null };
       if (name === '../util/array-util') return { toUint8Array: bytes => new Uint8Array(bytes) };
       if (name === './speech-pause') return { SpeechPauseDetector: class { reset() {} accept() { return false; } } };
       return {};

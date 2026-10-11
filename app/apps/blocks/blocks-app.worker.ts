@@ -49,7 +49,7 @@ const PANEL_X = 230;
 /**
  * Height the layout above is drawn for: a min-height window's viewport under
  * the standard top bar. A taller viewport (the status bar folded into the
- * switcher row, a full-panel display) centers it vertically.
+ * switcher row, a Tall or Full Screen display) centers it vertically.
  */
 const LAYOUT_HEIGHT = 260;
 

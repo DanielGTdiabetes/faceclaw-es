@@ -2,13 +2,10 @@ import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../../graphics/image";
 import {
   appSwitcherPositionSetting,
   type AppSwitcherPosition,
-  displayModeSetting,
-  type DisplayModeSetting,
-  verticalPositionSetting,
-  navigateDisplayModeSetting,
-  navigateVerticalPositionSetting,
-  terminalDisplayModeSetting,
-  terminalVerticalPositionSetting,
+  displayLayoutSetting,
+  type DisplayLayout,
+  navigateDisplayLayoutSetting,
+  terminalDisplayLayoutSetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
   uiDepthSetting,
@@ -21,9 +18,10 @@ export const TOP_BAR_HEIGHT = 28;
  * Width of the sidebar strip as painted (the app switcher on the left or
  * right edge). App windows get the other 576px — the surface width EvenHub
  * apps expect — and keep that width with the switcher at the bottom or a
- * popup too, except in the full-panel display mode, where the switcher
- * overlays the app (see sidebarWidth). Icon column layout within the strip
- * (one wide column vs. two narrow ones) is the chrome layer's business.
+ * popup too, except in the Full Screen display mode (640 wide; never beside
+ * a strip) and immersive windows, which the switcher overlays (see
+ * sidebarWidth). Icon column layout within the strip (one wide column vs.
+ * two narrow ones) is the chrome layer's business.
  */
 export const SIDEBAR_WIDTH = 64;
 
@@ -34,7 +32,8 @@ export const SIDEBAR_WIDTH = 64;
  * two-column icons. It comes out of the height available to windows; their
  * width stays 576, centred, leaving SIDEBAR_WIDTH / 2 at each side: one
  * pixel for the side of the window's frame (windowFramed), the rest for the
- * whole display's stereo shift (uiDepth).
+ * whole display's stereo shift (uiDepth). Full Screen windows take those
+ * margins too, giving up both.
  */
 export const SWITCHER_ROW_HEIGHT = 36;
 
@@ -49,48 +48,89 @@ function sideStrip(): boolean {
   return position === "left" || position === "right";
 }
 
-/** The Display > Display mode setting (see dashboard-settings.ts). */
-function appDisplayMode(appId?: string) {
-  return appId === "navigate" ? navigateDisplayModeSetting.get()
-    : appId === "terminal" ? terminalDisplayModeSetting.get() : "default";
+/** An app's own Display mode setting (Navigate, Terminal); "default" for the rest. */
+function appDisplayLayout(appId?: string) {
+  return appId === "navigate" ? navigateDisplayLayoutSetting.get()
+    : appId === "terminal" ? terminalDisplayLayoutSetting.get() : "default";
 }
 
-export function displayMode(appId?: string): DisplayModeSetting {
-  const mode = appDisplayMode(appId);
-  return mode === "global" || mode === "default" ? displayModeSetting.get() : mode;
+/**
+ * The display mode an app's windows use (see dashboard-settings.ts
+ * DisplayLayout): its own, or the global one. Full Screen needs the width a
+ * side strip takes, so beside one it is Tall.
+ */
+export function displayLayout(appId?: string): DisplayLayout {
+  const own = appDisplayLayout(appId);
+  const layout = own === "global" || own === "default" ? displayLayoutSetting.get() : own;
+  return layout === "fullscreen" && sideStrip() ? "tall" : layout;
 }
 
-/** The full-panel mode: windows fill the panel; the switcher overlays them only while it has focus. */
-function fullPanel(appId?: string): boolean {
-  return displayMode(appId) === "640x480";
+/** Fraction of the slack above a window band in each band display mode. */
+const BAND_FRACTIONS: Partial<Record<DisplayLayout, number>> = {
+  "band-top": 0,
+  "band-high": 0.25,
+  "band-middle": 0.5,
+  "band-low": 0.75,
+  "band-bottom": 1,
+};
+
+/** A band display mode's fraction of the slack above the band; undefined for Tall and Full Screen. */
+function bandFraction(layout: DisplayLayout): number | undefined {
+  return BAND_FRACTIONS[layout];
+}
+
+/**
+ * Apps whose windows are immersive right now: the whole panel, with no
+ * status bar, window frame or room kept for the switcher (which overlays
+ * them only while it has focus), at depth 0. An app switches it at runtime
+ * (InProcessWindow.setImmersive; the onboarding's first pages), so it is
+ * per app, like the per-app display modes.
+ */
+const immersiveApps = new Set<string>();
+
+/** Mark an app's windows immersive or not; true if that changed anything. */
+export function setAppImmersive(appId: string, immersive: boolean): boolean {
+  if (immersiveApps.has(appId) === immersive) return false;
+  if (immersive) immersiveApps.add(appId);
+  else immersiveApps.delete(appId);
+  return true;
+}
+
+export function isImmersive(appId?: string): boolean {
+  return appId !== undefined && immersiveApps.has(appId);
+}
+
+/** Whether an app's windows span the panel's whole width: Full Screen, or immersive. */
+function fullWidth(appId?: string): boolean {
+  return isImmersive(appId) || displayLayout(appId) === "fullscreen";
 }
 
 /**
  * How much of the screen's width the sidebar takes away from app windows:
- * the strip, or nothing when the switcher is a bottom row or a popup or in
- * the full-panel mode (where the chrome paints the strip over the window
+ * the strip, or nothing when the switcher is a bottom row or a popup or the
+ * window is immersive (where the chrome paints the strip over the window
  * while the sidebar has focus).
  */
 export function sidebarWidth(appId?: string): number {
-  return !fullPanel(appId) && sideStrip() ? SIDEBAR_WIDTH : 0;
+  return !isImmersive(appId) && sideStrip() ? SIDEBAR_WIDTH : 0;
 }
 
 /**
  * How much of the screen's height a bottom switcher row takes away from app
- * windows: the row, or nothing beside a side strip or in the full-panel mode
- * (where the row overlays the window's bottom edge while it has focus).
+ * windows: the row, or nothing beside a side strip or under an immersive
+ * window (where the row overlays the window's bottom edge while it has
+ * focus).
  */
 export function switcherRowHeight(appId?: string): number {
-  return !fullPanel(appId) && switcherPosition() === "bottom" ? SWITCHER_ROW_HEIGHT : 0;
+  return !isImmersive(appId) && switcherPosition() === "bottom" ? SWITCHER_ROW_HEIGHT : 0;
 }
 
 /**
  * Whether the switcher is on screen: always when it reserves room; as a
- * popup, or in the full-panel mode (where it overlays the window), only
- * while it has focus.
+ * popup, or over an immersive window, only while it has focus.
  */
 export function sidebarStripVisible(focus: "sidebar" | "window", appId?: string): boolean {
-  return (!fullPanel(appId) && switcherPosition() !== "popup") || focus === "sidebar";
+  return (!isImmersive(appId) && switcherPosition() !== "popup") || focus === "sidebar";
 }
 
 /**
@@ -98,8 +138,8 @@ export function sidebarStripVisible(focus: "sidebar" | "window", appId?: string)
  * band (like the shell overlays). A bottom row sits right under the given
  * (foreground) window and spans its width, so a band shorter than the
  * screen has no gap below it; it moves when the foreground switches to a
- * window of another height, as the top bar does. In the full-panel mode the
- * row overlays the bottom edge of the screen. A popup's is the area it
+ * window of another height, as the top bar does. Over an immersive window
+ * the row overlays the bottom edge of the screen. A popup's is the area it
  * centres in, the foreground window's content (the chrome layer sizes the
  * box itself).
  */
@@ -126,9 +166,9 @@ export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x:
 /**
  * Whether the foreground window's content gets a rounded frame (drawn by
  * the chrome layer). Its left and right sides take the pixel just outside
- * the 576-wide window; there's no room in the full-panel mode, nor need
- * beside a side strip. With a reserved bottom switcher row it always has
- * one: the row's top edge is the frame's bottom side, as the window
+ * the 576-wide window; there's no room around a Full Screen or immersive
+ * window, nor need beside a side strip. With a reserved bottom switcher row
+ * it otherwise always has one: the row's top edge is the frame's bottom side, as the window
  * header's last row is its top. With a popup switcher it's the Window
  * border setting's choice, and its top and bottom take a header or footer
  * row of their own, except where the status bar's row next to the window
@@ -137,9 +177,9 @@ export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x:
 export function windowFramed(appId?: string): boolean {
   switch (switcherPosition()) {
     case "bottom":
-      return switcherRowHeight(appId) > 0;
+      return switcherRowHeight(appId) > 0 && !fullWidth(appId);
     case "popup":
-      return !fullPanel(appId) && windowBorderSetting.get();
+      return !fullWidth(appId) && windowBorderSetting.get();
     default:
       return false;
   }
@@ -148,7 +188,8 @@ export function windowFramed(appId?: string): boolean {
 /**
  * Whether the status bar shares the bottom switcher row instead of topping
  * each window (Settings > Customization > Status bar position): only beside
- * a reserved row, as the full-panel mode's row shows just while it has focus.
+ * a reserved row, as the row over an immersive window shows just while it
+ * has focus.
  */
 export function statusInSwitcherRow(appId?: string): boolean {
   return switcherRowHeight(appId) > 0 && statusBarPositionSetting.get() === "bottom";
@@ -176,11 +217,13 @@ export function statusBarOverlays(): boolean {
  * Rows the shell draws along one edge of each window's content: the status
  * bar's (the top bar, as a header), the frame's side, or none. A bottom
  * switcher row's band has no footer: the frame's bottom side is the row's
- * top edge.
+ * top edge. An immersive window has neither.
  */
 function windowEdgeHeight(edge: "top" | "bottom", appId?: string): number {
+  if (isImmersive(appId)) return 0;
   if (switcherPosition() !== "popup") {
-    return edge === "bottom" ? 0 : statusInSwitcherRow(appId) ? 1 : TOP_BAR_HEIGHT;
+    if (edge === "bottom") return 0;
+    return !statusInSwitcherRow(appId) ? TOP_BAR_HEIGHT : windowFramed(appId) ? 1 : 0;
   }
   if (!statusBarOverlays() && statusBarEdge() === edge) return TOP_BAR_HEIGHT;
   return windowFramed(appId) ? 1 : 0;
@@ -233,9 +276,9 @@ export function isOnSwitcherEdge(x: number, y: number, heightMode: WindowHeightM
   }
 }
 
-/** Width of app windows: the panel's in the full-panel mode, else 576 (see SIDEBAR_WIDTH). */
+/** Width of app windows: the panel's when Full Screen or immersive, else 576 (see SIDEBAR_WIDTH). */
 function appViewportWidth(appId?: string): number {
-  return fullPanel(appId) ? G2_LENS_WIDTH : G2_LENS_WIDTH - SIDEBAR_WIDTH;
+  return fullWidth(appId) ? G2_LENS_WIDTH : G2_LENS_WIDTH - SIDEBAR_WIDTH;
 }
 
 /**
@@ -244,7 +287,7 @@ function appViewportWidth(appId?: string): number {
  * edge.
  */
 export function appViewportLeft(appId?: string): number {
-  if (fullPanel(appId)) return 0;
+  if (fullWidth(appId)) return 0;
   switch (switcherPosition()) {
     case "left":
       return SIDEBAR_WIDTH;
@@ -261,18 +304,23 @@ export function appViewportLeft(appId?: string): number {
  * the firmware's depth units; the shell scene carries it to the compositor,
  * which shifts the screen and everything drawn over it per lens. Only with
  * the switcher at the bottom or a popup, where the windows' side margins,
- * less the window frame's pixel, leave room for the shift.
+ * less the window frame's pixel, leave room for the shift; not while the
+ * given (foreground) app's windows are Full Screen or immersive, which have
+ * no margins.
  */
-export function uiDepth(): number {
-  return sideStrip() ? 0 : Number(uiDepthSetting.get());
+export function uiDepth(appId?: string): number {
+  return sideStrip() || fullWidth(appId) ? 0 : Number(uiDepthSetting.get());
 }
 
 /**
- * Explicit app sizes (including Use global) replace the requested height.
- * The default keeps legacy per-window heights, such as tall terminal sessions.
+ * In a band display mode, explicit app modes (including Use global) replace
+ * the requested height; the default keeps legacy per-window heights, such
+ * as tall terminal sessions. Tall, Full Screen and immersive windows are
+ * always the whole height.
  */
 export function effectiveHeightMode(mode: WindowHeightMode, appId?: string): WindowHeightMode {
-  return displayMode(appId) === "576x288" ? (appDisplayMode(appId) === "default" ? mode : "min") : "max";
+  if (isImmersive(appId) || bandFraction(displayLayout(appId)) === undefined) return "max";
+  return appDisplayLayout(appId) === "default" ? mode : "min";
 }
 
 /**
@@ -327,25 +375,13 @@ export function windowBandHeight(mode: WindowHeightMode, appId?: string): number
 }
 
 /**
- * Fraction of the slack above a window band, from the Display > Vertical
- * position setting: each band height distributes its own free space by the
- * same fraction, so all heights sit consistently within the screen.
+ * Fraction of the slack above a window band, from the band display mode's
+ * position: each band height distributes its own free space by the same
+ * fraction, so all heights sit consistently within the screen. Tall and
+ * Full Screen windows leave no slack.
  */
 function verticalPositionFraction(appId?: string): number {
-  const position = appId === "navigate" ? navigateVerticalPositionSetting.get()
-    : appId === "terminal" ? terminalVerticalPositionSetting.get() : "global";
-  switch (position === "global" ? verticalPositionSetting.get() : position) {
-    case "top":
-      return 0;
-    case "upper":
-      return 0.25;
-    case "lower":
-      return 0.75;
-    case "bottom":
-      return 1;
-    default:
-      return 0.5;
-  }
+  return bandFraction(displayLayout(appId)) ?? 0.5;
 }
 
 /**

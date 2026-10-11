@@ -175,6 +175,7 @@ test(`${provider}: native completion follows the final and is capture-specific`,
     '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
     './speech-pause': { SpeechPauseDetector: class { reset() {} } },
     './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
+    './cloud-stt-provider': { createCloudSttClient: () => null },
   }, { global: { isAndroid: true }, com: { faceclaw: { app: {
     FaceclawVoiceController: Controller,
     FaceclawVoiceControllerListener: function (listener) { return listener; },

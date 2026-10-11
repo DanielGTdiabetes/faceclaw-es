@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const path = require('node:path');
+// The provider settings ios-preview-controller hands the voice bridge.
+const voiceSettings = { voiceProviderSetting: { get: () => 'onboard' }, elevenLabsApiKeySetting: { get: () => '' },
+  openAiApiKeySetting: { get: () => '' }, sonioxApiKeySetting: { get: () => '' } };
 function load(file, context) {
   const sandbox = { exports: {}, ...context };
   const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -80,7 +83,8 @@ test('iOS settings prompts honor password input and report cancellation', async 
 test('iOS host forwards hands-free capture mode to the voice bridge', async () => {
   const captures = [];
   const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: id => id === '../native/ios-voice-input'
-    ? { iosVoiceInput: { startGlassesCapture: (_session, _log, endpointing) => captures.push(endpointing) } } : {} });
+    ? { iosVoiceInput: { startGlassesCapture: (_session, _voice, _log, endpointing) => captures.push(endpointing) } }
+    : id === '../ui/dashboard-settings' ? voiceSettings : {} });
   const host = Object.create(IosPreviewController.prototype);
   host.communicator = {}; host.state = { phase: 'connected' };
   await host.startVoiceCapture(true);
@@ -265,6 +269,9 @@ test('background glasses input still composites frames; phone resume preserves t
     '../native/preview-display.ios': { PreviewDisplayTarget },
     './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; start() {} stop() {} stopCommand() { return new Uint8Array(); } receive() { return false; } } },
     '../native/nightscout-bridge': { nightscoutBridge: { async start() { pollStarts++; }, async stop() { pollStops++; } } },
+    '../native/weather': { weatherBridge: { setSessionActive() {} } },
+    './glasses-presence': load('app/g2/glasses-presence.ts', {}),
+    '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     './glance-host': { GlanceHost: class { dismiss() {} reset() {} isVisible() { return false; } } },
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
     './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
@@ -355,7 +362,7 @@ test('iOS bandwidth footer toggles live, polls only in foreground and resets its
     './phone-gestures': { PhoneGestureRecognizer: class { cancel() {} } },
     './ble-bandwidth-meter': require('../.test-build/app/phone-ui/ble-bandwidth-meter.js'),
     '../native/ble-traffic': { sampleBleTraffic: () => totals },
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayModeSetting: { get: () => 'full' }, displayModeLabel: () => 'Full', showBleBandwidthSetting: { get: () => enabled },
+    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayLayoutSetting: { displayValue: () => 'Tall' }, showBleBandwidthSetting: { get: () => enabled },
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); } },
     '../g2/device-addresses': { loadDeviceAddresses: () => ({}) },
     '../g2/ios-peripheral-identity': { deviceAddressError: () => 'no test devices' },
@@ -442,50 +449,55 @@ test('iOS compositor rejects missing and removed surfaces before crossing into K
   assert.equal(nativeSubmissions, 1);
 });
 
-
-test('iOS welcome sound waits for a new acknowledged frame and is consumed once', async () => {
-  let pending = true;
-  const played = [], sounds = load('app/ui/sound-effects.ts', { require: name => { assert.equal(name, '../g2/cfw-message-type'); return load('app/g2/cfw-message-type.ts', {}); } });
-  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', {
+test('iOS opens the on-glasses onboarding on a new acknowledged frame, once per run while due', () => {
+  const settings = new Map();
+  const progress = load('app/apps/onboarding/onboarding-progress.ts', {
     require: id => ({
-      '../phone-ui/onboarding-state': { isWelcomeSoundPending: () => pending, setWelcomeSoundPending: value => { pending = value; } },
-      '../ui/sound-effects': sounds,
-    })[id] ?? {},
-    setTimeout: fn => { fn(); return 1; },
+      '../../native/settings-store': {
+        getStringSetting: (key, fallback) => settings.get(key) ?? fallback,
+        setStringSetting: (key, value) => settings.set(key, value),
+      },
+      '../../version': { FACECLAW_VERSION: '9.9.9' },
+    })[id],
+  });
+  const launched = [];
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', {
+    require: id => ({ '../apps/onboarding/onboarding-progress': progress })[id] ?? {},
   });
   const host = Object.create(IosPreviewController.prototype);
   host.acknowledgedFrames = 0;
-  host.actions = { playBuzzerSequence: bytes => played.push([...bytes]) };
-  host.logBluetooth = assert.fail;
-  host.maybePlayWelcomeSound({ phase: 'connecting', frames: 0 });
-  host.maybePlayWelcomeSound({ phase: 'connected', frames: 0 });
-  assert.equal(pending, true); assert.equal(played.length, 0);
-  host.maybePlayWelcomeSound({ phase: 'connected', frames: 1 });
-  assert.equal(pending, false);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.ok(played.length > 0);
-  const count = played.length;
-  host.maybePlayWelcomeSound({ phase: 'connected', frames: 1 });
-  host.maybePlayWelcomeSound({ phase: 'connected', frames: 2 });
-  assert.equal(played.length, count);
+  host.launchApp = id => { launched.push(id); return Promise.resolve(); };
+  host.maybeLaunchOnboarding({ phase: 'connecting', frames: 0 });
+  host.maybeLaunchOnboarding({ phase: 'connected', frames: 0 });
+  assert.deepEqual(launched, []);
+  host.maybeLaunchOnboarding({ phase: 'connected', frames: 1 });
+  assert.deepEqual(launched, ['onboarding']);
+  // Still unfinished, but a reconnect in the same run doesn't reopen it.
+  host.maybeLaunchOnboarding({ phase: 'connected', frames: 2 });
+  assert.deepEqual(launched, ['onboarding']);
+  assert.equal(progress.isGlassesOnboardingDue(), true);
+  progress.markGlassesOnboardingFinished();
+  assert.equal(progress.isGlassesOnboardingDue(), false);
+  settings.set('onboarding.glassesFinishedVersion', '9.9.8');
+  assert.equal(progress.isGlassesOnboardingDue(), true, 'an upgrade makes onboarding due again');
 });
 
 test('iOS preview voice uses the phone microphone, while connected capture stays on glasses', async () => {
   const calls = [];
-  const bridge = { prepare: async (foreground, phone) => { calls.push(['prepare', foreground, phone]); return true; },
-    startPhoneCapture: async (_log, endpointing) => calls.push(['phone', endpointing]),
-    startGlassesCapture: async (_session, _log, endpointing) => calls.push(['glasses', endpointing]) };
+  const bridge = { prepare: async (foreground, phone, voice) => { calls.push(['prepare', foreground, phone, voice.provider]); return true; },
+    startPhoneCapture: async (voice, _log, endpointing) => calls.push(['phone', voice.provider, endpointing]),
+    startGlassesCapture: async (_session, voice, _log, endpointing) => calls.push(['glasses', voice.provider, endpointing]) };
   const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', {
-    require: id => id === '../native/ios-voice-input' ? { iosVoiceInput: bridge } : {},
+    require: id => id === '../native/ios-voice-input' ? { iosVoiceInput: bridge } : id === '../ui/dashboard-settings' ? voiceSettings : {},
   });
   const host = Object.create(IosPreviewController.prototype);
   host.active = true; host.glassesLocked = false; host.communicator = null; host.state = { phase: 'disconnected' };
   assert.equal(await host.prepareVoiceCapture(), true);
   await host.startVoiceCapture(true);
-  assert.deepEqual(calls, [['prepare', true, true], ['prepare', true, true], ['phone', true]]);
+  assert.deepEqual(calls, [['prepare', true, true, 'onboard'], ['prepare', true, true, 'onboard'], ['phone', 'onboard', true]]);
   calls.length = 0; host.communicator = {}; host.state = { phase: 'connected' };
   assert.equal(await host.prepareVoiceCapture(), true); await host.startVoiceCapture(false);
-  assert.deepEqual(calls, [['prepare', true, false], ['glasses', false]]);
+  assert.deepEqual(calls, [['prepare', true, false, 'onboard'], ['glasses', 'onboard', false]]);
   calls.length = 0; host.active = false; host.communicator = null; host.state = { phase: 'disconnected' };
   assert.equal(await host.prepareVoiceCapture(), false); await host.startVoiceCapture();
   assert.deepEqual(calls, []);
