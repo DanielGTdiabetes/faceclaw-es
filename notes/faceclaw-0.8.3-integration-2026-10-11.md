@@ -145,10 +145,24 @@ retirada al terminar; el relevo histórico medium estaba `released` y sin reserv
 - Logcat tras arrancar: único error de la app, el esperado `incompatible firmware … ext="Faceclaw/36" (need
   Faceclaw/37); suspending reconnect`. Cierre: Desconectado, sin wakelock Faceclaw, Conversación apagada.
 
+## Tras actualizar el firmware — 11-10-2026, 15:15
+
+El usuario informa de que ha completado la actualización con el actualizador de la app. Comprobado por ADB (reserva
+propia creada y retirada): `0.8.3-es.6-conversation.s2.13` en el mismo proceso, app **Conectado** y sin el aviso de
+firmware. Como la app suspende la reconexión ante una revisión inferior a 37, esto implica `Faceclaw/37` o superior;
+el logcat ya no conservaba la línea `firmware: … ext=` (buffer desde 15:14), así que la revisión exacta no se ha leído.
+Conversación «Escucha apagada», ningún wakelock activo.
+
+Ajustes: **los 35 originales idénticos**; 3 claves nuevas, todas justificadas: `onboarding.glassesFinishedVersion`
+(onboarding completado), `display.uiDepth` (la página de profundidad guarda al deslizar, es decir, elección del
+usuario) y `weather.cache` (consulta del tiempo, sin coordenadas). Respaldo previo conservado como
+`.tools/u083-private/after-install-settings.xml`.
+
+No observado por el agente: el contenido de las lentes, la navegación ni los controles físicos.
+
 ## Pendiente
 
-1. **Usuario: actualizar el firmware** con «Instalar firmware modificado» (secuencia en «Firmware») y confirmar
-   el resultado. El agente no flashea.
+1. ~~Actualizar el firmware~~: hecho por el usuario (ver sección anterior).
 2. Tras /37: comprobación mínima desde OFF (conexión, navegación, controles, menú de dos inicios) y observar el
    onboarding «Primeros pasos» una vez; tocar seguido no debe cambiar ajustes. Volver a comparar ajustes.
 3. Opcional: el reloj lo estaba actualizando Codex por WiFi durante esta sesión; no se ha tocado ni comprobado.
