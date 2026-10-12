@@ -93,8 +93,13 @@ Avisos enviados al endpoint local de Jarvis; solo al bot personal, sin escucha a
 Script de prueba y perfil temporal sintético de Codex eliminados de `/tmp` en Jarvis. Móvil desconectado de USB
 por el usuario al final; estado final de escucha no releído por ADB (no se activó en ningún momento).
 
+## NAS
+
+`/volume1/home/Dani/Faceclaw/apk-builds/0.8.3-conversation-s2.14-notifications-20261012/` (700/600): APK
+firmada `b69cc010…c342`, unsigned `665fddd4…2a44e`, esta nota, continuidad y el prompt de Codex; hashes
+cotejados con los locales. La reversión S2.13 ya estaba en `apk-builds/0.8.3-conversation-s2.13-20261011/`.
+
 ## Pendiente
 
-- Copia de esta nota al NAS.
 - Memoria/Letta: fase siguiente independiente.
 - Opcional: valorar reloj monotónico para la caducidad de presencia en el móvil (ahora `Date.now`).
