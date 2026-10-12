@@ -20,6 +20,7 @@ import time
 import uuid
 
 from websockets.asyncio.server import serve
+from notification_delivery import NotificationDelivery, CAPABILITY as NOTIFICATION_CAPABILITY
 from conversation import (CAPABILITIES, ConversationService, create_conversation_agent,
                           create_conversation_fallback_agent, fallback_chain, valid_ref)
 
@@ -114,6 +115,7 @@ class Bridge:
         self.tasks = set()
         self.run_sequence = 0
         self.running_state = None
+        self.notifications = NotificationDelivery(self)
         self.conversation = ConversationService(conversation_factory,
             fallback_factory=conversation_fallback_factory,
             daily_context_factory=daily_context_factory) if conversation_factory else None
@@ -277,7 +279,7 @@ class Bridge:
             self.phone = phone
             await phone.send("ctl", type="hello-ack", serverName="faceclaw-hermes",
                              sessionKey="faceclaw:hermes",
-                             capabilities=["chat", "mcp"] + (list(self.conversation.capabilities()) if self.conversation else []))
+                             capabilities=["chat", "mcp", NOTIFICATION_CAPABILITY] + (list(self.conversation.capabilities()) if self.conversation else []))
             task = asyncio.create_task(self.initialize_phone(phone))
             self.tasks.add(task)
             task.add_done_callback(self.tasks.discard)
@@ -291,6 +293,8 @@ class Bridge:
                     continue
                 if frame.get("chan") == "mcp" and isinstance(frame.get("msg"), dict):
                     phone.receive(frame["msg"])
+                elif frame.get("chan") == "notify":
+                    self.notifications.receive(phone, frame)
                 elif frame.get("chan") == "ctl" and frame.get("type") == "ping":
                     await phone.send("ctl", type="pong", ts=frame.get("ts"))
                 elif frame.get("chan") == "chat":
@@ -323,6 +327,7 @@ class Bridge:
             LOG.info("connection ended type=%s", type(exc).__name__)
         finally:
             if phone:
+                self.notifications.disconnect(phone)
                 self.cancel(phone)
                 if self.conversation:
                     self.conversation.disconnect(phone)
@@ -491,6 +496,9 @@ async def main():
                     if os.environ.get("FACECLAW_CONVERSATION") == "1" else None,
                     daily_context_factory=daily_context_factory)
     await bridge.warmup()
+    # Loopback only: Hermes' notification plugin is the sole intended client.
+    notification_server = await asyncio.start_server(bridge.notifications.http, "127.0.0.1",
+                                                     int(os.environ.get("FACECLAW_NOTIFY_PORT", "8792")), limit=8192)
     try:
         async with serve(bridge.handle, os.environ.get("FACECLAW_BIND", "0.0.0.0"),
                          int(os.environ.get("FACECLAW_PORT", "8791")),
@@ -498,6 +506,8 @@ async def main():
             LOG.info("listening port=%s", os.environ.get("FACECLAW_PORT", "8791"))
             await asyncio.Event().wait()
     finally:
+        notification_server.close()
+        await notification_server.wait_closed()
         await bridge.close()
 
 

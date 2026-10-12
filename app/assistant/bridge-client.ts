@@ -2,6 +2,7 @@ import { AssistantMcpServer } from "./mcp-server";
 import { toolRegistry } from "./tool-registry";
 import type { AssistantContext, AssistantTurnCallbacks, AssistantTurnHandle } from "./types";
 import { ConversationChannel, CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY } from "./conversation-channel";
+import { NotificationChannel, NOTIFICATION_CAPABILITY, type NotificationHost } from "./notification-channel";
 
 declare const com: any;
 
@@ -40,6 +41,7 @@ export type AssistantBridgeOptions = {
   deviceName: string;
   /** Reads assistant.allowProactive; consulted per proactive tool call. */
   allowProactive: () => boolean;
+  notifications?: NotificationHost;
 };
 
 type ActiveTurn = {
@@ -50,6 +52,7 @@ type ActiveTurn = {
 };
 
 export class AssistantBridgeClient {
+  readonly notifications = new NotificationChannel((frame) => this.phase === "connected" && this.send(frame));
   readonly conversation = new ConversationChannel({
     send: (frame) => this.phase === "connected" && this.send(frame),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
@@ -112,6 +115,7 @@ export class AssistantBridgeClient {
     this.socketGeneration++;
     // A later configure() may name another server or token: armed conversation sessions never resume.
     this.conversation.revoke();
+    this.notifications.reset();
     this.clearReconnectTimer();
     this.failActiveTurn("Bridge connection closed");
     if (this.unsubscribeToolsChanged) {
@@ -184,7 +188,7 @@ export class AssistantBridgeClient {
           version: PROTOCOL_VERSION,
           token: this.options!.token,
           deviceName: this.options!.deviceName,
-          capabilities: ["chat", "mcp", CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY],
+          capabilities: ["chat", "mcp", CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY, NOTIFICATION_CAPABILITY],
         });
       },
       onTextMessage: (message: string) => {
@@ -233,6 +237,9 @@ export class AssistantBridgeClient {
       case "conv":
         this.conversation.handle(frame);
         return;
+      case "notify":
+        this.notifications.handle(frame);
+        return;
       default:
         return;
     }
@@ -243,6 +250,7 @@ export class AssistantBridgeClient {
       this.reconnectDelayMs = RECONNECT_MIN_MS;
       this.conversation.negotiate(frame.capabilities);
       this.setState("connected", `Connected to ${String(frame.serverName ?? "bridge")}`);
+      this.notifications.connect(frame.capabilities, this.options?.notifications);
       return;
     }
     if (frame.type === "ping") {
@@ -256,6 +264,7 @@ export class AssistantBridgeClient {
       this.status = `Bridge error: ${String(frame.message ?? "unknown")}`;
       // Rejected auth or protocol: an armed conversation must not resume on a later handshake.
       this.conversation.revoke();
+      this.notifications.reset();
       return;
     }
   }
@@ -293,6 +302,7 @@ export class AssistantBridgeClient {
     this.socketGeneration++;
     // Same destination: an armed conversation may resume after the next authenticated hello-ack.
     this.conversation.reset();
+    this.notifications.reset();
     this.ws = null;
     this.listenerProxy = null;
     // Keep a ctl-error status (e.g. "invalid token") in preference to the

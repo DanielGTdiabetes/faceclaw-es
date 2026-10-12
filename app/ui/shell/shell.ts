@@ -1740,6 +1740,11 @@ class Shell {
     return { woke };
   }
 
+  /** Whether any independent overlay (e.g. a conversation contribution) currently owns the slot. */
+  hasIndependentOverlay(): boolean {
+    return this.independentOverlay !== null;
+  }
+
   /** Repaint a showing independent overlay (its content changed); no wake, no new layer. */
   isIndependentOverlayVisible(layer: Layer): boolean {
     return this.screenOn && this.independentOverlay?.layer === layer && this.stack.topMatches((top) => top === layer);

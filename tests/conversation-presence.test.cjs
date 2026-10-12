@@ -6,7 +6,7 @@ const ts = require('typescript');
 const { ConversationCaptureCoordinator } = require('../.test-build/app/conversation-detection/coordinator.js');
 
 // Run the controller's actual presence gate and setup with the real coordinator.
-function harness(lockEnabled = false) {
+function harness(lockEnabled = false, notifications = { backend: 'local', connected: false, proactive: false }) {
   const file = ts.createSourceFile('controller.ts', fs.readFileSync('app/g2/dashboard-controller.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const controller = file.statements.find(node => ts.isClassDeclaration(node) && node.name.text === 'DashboardController');
   const methods = ['setConversationCaptureEnabled', 'setManualConversationEnabled', 'ensureWearStateTracking', 'detectorEnvironment']
@@ -17,7 +17,10 @@ function harness(lockEnabled = false) {
     lockScreenEnabledSetting: { get: () => lockEnabled }, getGlassesPresence: () => presence,
     hasMicrophonePermission: () => microphone, voiceActivity: { isActive: () => false },
     // Manual ON prerequisites outside presence: conv/2 bridge (optional identity) and a Soniox key.
-    assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => true,
+    // notify/1: presence is also tracked while an external bridge may route proactive notices.
+    assistantBackendSetting: { get: () => notifications.backend },
+    assistantAllowProactiveSetting: { get: () => notifications.proactive },
+    assistantBridge: { isConnected: () => notifications.connected, conversation: { isSupported: () => true, supportsOptionalIdentity: () => true,
       setDailyContextEnabled: () => true, supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {}, conversationTextEngine: () => 'soniox',
     conversationUsesHermes: () => true,
@@ -66,6 +69,20 @@ test('ON with lock screen disabled queries presence but never captures from an u
   assert.equal(h.counts().starts, 1);
   h.instance.setConversationCaptureEnabled(false);
   assert.deepEqual(h.counts(), { queries: 1, starts: 1, stops: 1 });
+});
+
+test('presence is tracked with capture OFF only for a connected external bridge allowing proactive notices', () => {
+  for (const [patch, expected] of [
+    [{ backend: 'external', connected: true, proactive: true }, 1],
+    [{ backend: 'external', connected: true, proactive: false }, 0],
+    [{ backend: 'external', connected: false, proactive: true }, 0],
+    [{ backend: 'local', connected: true, proactive: true }, 0],
+  ]) {
+    const h = harness(false, patch);
+    h.instance.ensureWearStateTracking();
+    assert.equal(h.counts().queries, expected, JSON.stringify(patch));
+    assert.equal(h.counts().starts, 0);
+  }
 });
 
 test('reconnect while ON queries the ready session and still requires a new positive report', async () => {

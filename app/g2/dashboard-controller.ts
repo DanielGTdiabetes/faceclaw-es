@@ -69,6 +69,7 @@ import { prepareFrameDraws } from "../graphics/glyph-wire";
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
 import { bindHermesConversationUi, captureHermesPresentation } from "../ui/shell/conversation-hermes-ui";
+import { captureNotificationPresentation, presentHermesNotification } from "../ui/shell/notification-delivery";
 import { type InputEvent } from "../ui/gestures";
 import { registerSystemTools } from "../assistant/system-tools";
 import { getGlassesPresence, onGlassesPresenceChanged, updateGlassesPresence } from "./glasses-presence";
@@ -576,6 +577,16 @@ class DashboardController {
       token,
       deviceName: "faceclaw",
       allowProactive: () => assistantAllowProactiveSetting.get(),
+      notifications: {
+        allowed: () => assistantAllowProactiveSetting.get(),
+        refresh: () => this.ensureWearStateTracking(),
+        subscribe: (listener) => onGlassesPresenceChanged(listener),
+        presence: () => ({ ...getGlassesPresence(),
+          worn: Date.now() - this.glassesWearObservedAtMs < 45_000 ? getGlassesPresence().worn : null,
+          available: this.customFirmwareConfirmed && !this.isPreviewDisplayActive() && !this.glassesLocked,
+        }),
+        present: presentHermesNotification,
+      },
     });
   }
 
@@ -725,11 +736,14 @@ class DashboardController {
     this.ensureWearStateTracking();
   }
 
+  private glassesWearObservedAtMs = 0;
+
   private handleWearState(wearing: boolean): void {
     // Only an observed OFF_HEAD -> ON_HEAD transition counts as putting the
     // glasses on; the first snapshot of a session (null) is just the status.
     const putOn = wearing && this.glassesWorn === false;
     this.glassesWorn = wearing;
+    this.glassesWearObservedAtMs = Date.now();
     updateGlassesPresence({ worn: wearing });
     this.appendLog(wearing ? "glasses wear state: ON_HEAD" : "glasses wear state: OFF_HEAD");
     this.wearRemote?.schedulePublish();
@@ -797,7 +811,8 @@ class DashboardController {
     // only after charging mode began) needs the OFF_HEAD snapshot so that
     // putting the glasses on registers as a put-on.
     if (
-      (!lockScreenEnabledSetting.get() && !this.conversationDetector.snapshot().enabled) ||
+      (!lockScreenEnabledSetting.get() && !this.conversationDetector.snapshot().enabled &&
+        !(assistantBackendSetting.get() === "external" && assistantBridge.isConnected() && assistantAllowProactiveSetting.get())) ||
       !this.customFirmwareConfirmed ||
       (this.phase !== "connected" && this.phase !== "charging") ||
       !communicator
@@ -2925,6 +2940,7 @@ class DashboardController {
     beginRenderPass(!wantFreshData);
     const paintStartedAtMs = Date.now();
     const confirmHermes = captureHermesPresentation();
+    const confirmNotification = captureNotificationPresentation();
     const planes = frameTimings.span(frameId, "paint", () =>
       frameTimings.runWithFrame(frameId, () => shell.paintScene()),
     );
@@ -2953,7 +2969,10 @@ class DashboardController {
     const outcome = await display.waitForFrameFinished(frameId, FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS);
     // `sent` follows the last native BLE acknowledgement; previews, failures and superseded frames
     // cannot mark an unseen contribution as said. The captured receipt also checks current output.
-    if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) confirmHermes?.();
+    if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) {
+      confirmHermes?.();
+      confirmNotification?.();
+    }
     if (outcome === null) {
       frameTimings.logFrame(
         frameId,

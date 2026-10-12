@@ -12,6 +12,7 @@ function harness() {
     './mcp-server': { AssistantMcpServer: class { sendToolsChanged() {} handleMessage() {} } },
     './tool-registry': { toolRegistry: { onToolsChanged: () => () => {} } },
     './conversation-channel': channelModule,
+    './notification-channel': require('../.test-build/app/assistant/notification-channel.js'),
   };
   const source = fs.readFileSync('app/assistant/bridge-client.ts', 'utf8');
   vm.runInNewContext(ts.transpileModule(source, {
