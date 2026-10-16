@@ -1,6 +1,6 @@
 import { Utils } from "@nativescript/core";
 
-import { type CloudSttTranscriptEvent, CloudSttClient } from "./cloud-stt";
+import { type CloudSttTranscriptEvent, CloudSttClient, toJavaBytes } from "./cloud-stt";
 import { createCloudSttClient } from "./cloud-stt-provider";
 import { SpeechPauseDetector } from "./speech-pause";
 import { toUint8Array } from "../util/array-util";
@@ -110,6 +110,7 @@ export class FaceclawVoiceControlBridge {
   private readonly speechPause = new SpeechPauseDetector();
   private readonly speechEndListeners = new Set<() => void>();
   private controller: any = null;
+  private readonly localTranscriptionListeners = new Set<any>();
   private listenerProxy: any = null;
   private status = "Voice control stopped.";
   private listening = false;
@@ -446,7 +447,31 @@ export class FaceclawVoiceControlBridge {
         this.emitTranscript(event.text, event.isFinal, event),
       onStatus: (status: string) => this.setStatus(status),
       onError: (message: string) => this.setStatus(message),
-    }, () => this.captureHolders.has("continuous"));
+    }, () => this.captureHolders.has("continuous"), (pcm) => this.transcribeLocally(pcm));
+  }
+
+  /**
+   * On-device Whisper over an already captured utterance, for when the EVO-X2
+   * service fails mid-capture. Prefers the most accurate downloaded model;
+   * rejects when none is downloaded (never falls back to another cloud).
+   */
+  private transcribeLocally(pcm: Uint8Array): Promise<string> {
+    this.ensureController();
+    const controller = this.controller;
+    if (!controller) return Promise.reject(new Error("on-device voice unavailable"));
+    return new Promise((resolve, reject) => {
+      // Held until the native thread answers, like listenerProxy, so the JS
+      // implementation cannot be collected while Java still calls it.
+      const listener = new com.faceclaw.app.FaceclawBufferTranscriptionListener({
+        onResult: (text: string | null, error: string | null) => {
+          this.localTranscriptionListeners.delete(listener);
+          if (error) reject(new Error(String(error)));
+          else resolve(String(text ?? ""));
+        },
+      });
+      this.localTranscriptionListeners.add(listener);
+      controller.transcribeBuffer(toJavaBytes(pcm), "whisper-small,whisper,whisper-medium", listener);
+    });
   }
 
   private releaseCapture(holder: CaptureHolder, commit: boolean): void {

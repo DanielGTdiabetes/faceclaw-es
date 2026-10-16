@@ -271,6 +271,42 @@ class FaceclawVoiceController(context: Context) {
         session.stop()
     }
 
+    /**
+     * Fallback for a remote recognizer (the EVO-X2 service) that failed after capture: decodes an
+     * already captured utterance with the first downloaded on-device Whisper model among
+     * [kinds] (comma-separated "whisper-small,whisper,whisper-medium"). Runs on its own thread,
+     * never touches the live capture session, and reports once on the main thread. Moonshine is
+     * never used here: it only recognizes English.
+     */
+    fun transcribeBuffer(pcm16le: ByteArray, kinds: String?, listener: FaceclawBufferTranscriptionListener) {
+        val candidates = (kinds ?: "").split(',').map { VoiceCaptureSession.parseModelKind(it.trim()) }
+            .filter { it.isWhisper }
+        Thread({
+            var text: String? = null
+            var error: String? = null
+            val kind = candidates.firstOrNull { findAsrModelDir(it) != null }
+            if (kind == null) {
+                error = "no on-device Whisper model downloaded"
+            } else {
+                var transcriber: OfflineTranscriber? = null
+                try {
+                    val leased = transcriberCache.acquire(kind)
+                    transcriber = leased
+                    val decoded = BufferedTranscription.transcribe(pcm16le, true) { samples, count -> leased.recognize(samples, count) }
+                    text = decoded
+                    Log.i(TAG, "fallback decode kind=" + kind + " sec=" +
+                        String.format(java.util.Locale.US, "%.2f", pcm16le.size / 2.0 / SAMPLE_RATE) + " textLen=" + decoded.length)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "fallback decode failed", t)
+                    error = "on-device decode failed: " + (t.message ?: t.javaClass.simpleName)
+                } finally {
+                    transcriber?.release()
+                }
+            }
+            mainHandler.post { listener.onResult(text, error) }
+        }, "FaceclawBufferTranscription").start()
+    }
+
     fun close() {
         transcriberCache.setRetain(false)
         stop()

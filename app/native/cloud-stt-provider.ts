@@ -1,6 +1,7 @@
 import type { CloudSttClient, CloudSttOptions } from "./cloud-stt";
 import { ElevenLabsSttClient } from "./elevenlabs-stt";
 import { EvenSttClient, evenSttUrl } from "./even-stt";
+import { FallbackSttClient, type LocalTranscribe } from "./fallback-stt";
 import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { ReconnectingSttClient } from "./reconnecting-stt";
 import { SonioxSttClient } from "./soniox-stt";
@@ -26,6 +27,8 @@ type CloudProvider = {
   /** Why the selection cannot be used even with a key, e.g. a malformed URL. */
   unusable?: (selection: VoiceProviderSelection) => string | null;
   create: (options: CloudSttOptions, selection: VoiceProviderSelection) => CloudSttClient;
+  /** Self-hosted: a failed push-to-talk utterance is re-transcribed on the phone instead of retried. */
+  localFallback?: boolean;
 };
 
 // Providers absent here ("onboard" and the "onboard-whisper*" models) transcribe on-device.
@@ -50,6 +53,7 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
     apiKey: (selection) => selection.evenAsrKey ?? "",
     unusable: (selection) => evenSttUrl(selection.evenAsrUrl ?? "") ? null : "EVO-X2 address is not a ws:// URL",
     create: (options, selection) => new EvenSttClient({ ...options, url: evenSttUrl(selection.evenAsrUrl ?? "")! }),
+    localFallback: true,
   },
 };
 
@@ -64,11 +68,14 @@ export function usesCloudStt(selection: VoiceProviderSelection): boolean {
  * provider whose API key is missing falls back to on-device (reported via
  * onStatus) rather than failing the capture outright. `continuous` says
  * whether the capture is open-ended (Transcribe), where pauses commit segments.
+ * With `local`, a self-hosted provider's push-to-talk capture falls back to
+ * on-device transcription of the captured audio when the server fails.
  */
 export function createCloudSttClient(
   selection: VoiceProviderSelection,
   options: Omit<CloudSttOptions, "apiKey">,
   continuous: () => boolean,
+  local?: LocalTranscribe,
 ): CloudSttClient | null {
   const provider = CLOUD_PROVIDERS[selection.provider];
   if (!provider) return null;
@@ -82,5 +89,9 @@ export function createCloudSttClient(
     options.onStatus(`${unusable}; using on-device voice.`);
     return null;
   }
-  return new ReconnectingSttClient((clientOptions) => provider.create(clientOptions, selection), { ...options, apiKey }, continuous);
+  const create = (clientOptions: CloudSttOptions) => provider.create(clientOptions, selection);
+  if (provider.localFallback && local && !continuous()) {
+    return new FallbackSttClient(create, { ...options, apiKey }, local);
+  }
+  return new ReconnectingSttClient(create, { ...options, apiKey }, continuous);
 }
