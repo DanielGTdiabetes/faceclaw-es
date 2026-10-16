@@ -80,11 +80,20 @@ export function createCloudSttClient(
   const provider = CLOUD_PROVIDERS[selection.provider];
   if (!provider) return null;
   const apiKey = provider.apiKey(selection).trim();
+  const unusable = provider.unusable?.(selection);
+  // An incomplete persisted EVO-X2 setting still needs the downloaded Whisper
+  // selection used by normal remote failures; never silently switch to Moonshine.
+  if (provider.localFallback && local && !continuous() && (!apiKey || unusable)) {
+    const reason = !apiKey ? "No EVO-X2 key set" : unusable!;
+    return new FallbackSttClient((clientOptions) => ({
+      start: () => clientOptions.onDisconnected?.(reason),
+      acceptPcm() {}, finish() {}, stop() {},
+    }), { ...options, apiKey }, local);
+  }
   if (!apiKey) {
     options.onStatus(`No ${provider.name} key set; using on-device voice.`);
     return null;
   }
-  const unusable = provider.unusable?.(selection);
   if (unusable) {
     options.onStatus(`${unusable}; using on-device voice.`);
     return null;

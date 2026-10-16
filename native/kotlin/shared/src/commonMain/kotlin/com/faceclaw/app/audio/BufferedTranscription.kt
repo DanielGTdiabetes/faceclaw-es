@@ -13,7 +13,9 @@ object BufferedTranscription {
 
     /** Decodes [pcm16le] (16 kHz mono S16LE); returns "" for silence or an empty buffer. */
     fun transcribe(pcm16le: ByteArray, isWhisper: Boolean, recognize: (FloatArray, Int) -> String): String {
-        val all = AudioSegmentation.pcm16leToFloat(pcm16le, 0, minOf(pcm16le.size, MAX_SAMPLES * 2))
+        require(pcm16le.size <= MAX_SAMPLES * 2) { "Capture exceeds the 30-second on-device fallback limit" }
+        require(pcm16le.size % 2 == 0) { "PCM16 audio must contain complete samples" }
+        val all = AudioSegmentation.pcm16leToFloat(pcm16le, 0, pcm16le.size)
         var text = ""
         var start = 0
         while (start < all.size) {

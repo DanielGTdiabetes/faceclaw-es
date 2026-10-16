@@ -13,6 +13,8 @@ export type CloudSttTranscriptEvent = {
   /** Optional presentation for Transcribe only; dictation uses plain text. */
   transcribeText?: string;
   paragraphBreakAfter?: boolean;
+  /** The final replaces preceding partials even when empty (e.g. locally verified silence). */
+  authoritative?: boolean;
 };
 
 export type CloudSttOptions = {
@@ -29,8 +31,8 @@ export interface CloudSttClient {
   start(): void;
   /** Feed PCM (16 kHz signed-16-bit LE). */
   acceptPcm(pcm: Uint8Array): void;
-  /** End of utterance: produce a final transcript. */
-  finish(): void;
+  /** End of utterance; when returned, await the final remote/local result before using text. */
+  finish(): void | Promise<void>;
   /** Commit a pause boundary while keeping the audio session open. */
   commitSegment?(): void;
   /** Abandon the session without finalizing. */

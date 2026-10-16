@@ -3,6 +3,7 @@ package com.faceclaw.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class BufferedTranscriptionTest {
     private val rate = VoiceCaptureSession.SAMPLE_RATE
@@ -42,13 +43,19 @@ class BufferedTranscriptionTest {
     }
 
     @Test
-    fun whisperSkipsNearSilenceAndOverlongInputIsCapped() {
+    fun whisperSkipsNearSilenceAndRejectsIncompleteOrOverlongInput() {
         var calls = 0
         assertEquals("", BufferedTranscription.transcribe(tone(3.0, 50), true) { _, _ -> calls++; "alucinación" })
         assertEquals(0, calls)
         assertEquals("", BufferedTranscription.transcribe(ByteArray(0), true) { _, _ -> "x" })
         var decoded = 0
-        BufferedTranscription.transcribe(tone(40.0, 3000), true) { _, count -> decoded += count; "" }
+        assertFailsWith<IllegalArgumentException> {
+            BufferedTranscription.transcribe(tone(40.0, 3000), true) { _, _ -> error("must not decode a prefix") }
+        }
+        assertFailsWith<IllegalArgumentException> {
+            BufferedTranscription.transcribe(ByteArray(3), true) { _, _ -> error("incomplete sample") }
+        }
+        BufferedTranscription.transcribe(tone(30.0, 3000), true) { _, count -> decoded += count; "" }
         assertEquals(BufferedTranscription.MAX_SAMPLES, decoded)
     }
 }

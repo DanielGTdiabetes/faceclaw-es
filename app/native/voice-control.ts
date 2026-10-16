@@ -208,12 +208,10 @@ export class FaceclawVoiceControlBridge {
 
   /** End push-to-talk: for cloud, commit for a final result if it was the last holder. */
   stopPushToTalk(): Promise<void> | void {
-    // Shared continuous capture keeps running; cloud providers finalize via
-    // their own callbacks. Only a stopped native recognizer must be awaited.
+    // Wait for PCM delivery to drain and for a remote/local fallback final too.
     const finished = !this.cloudClient && this.captureHolders.has("ptt") && this.captureHolders.size === 1
       ? this.nativeCaptureFinished : undefined;
-    this.releaseCapture("ptt", true);
-    return finished;
+    return this.releaseCapture("ptt", true) ?? finished;
   }
 
   /** Begin continuous capture (Transcribe): the mic stays on until released. */
@@ -222,7 +220,7 @@ export class FaceclawVoiceControlBridge {
   }
 
   stopContinuousCapture(): void {
-    this.releaseCapture("continuous", false);
+    void this.releaseCapture("continuous", false);
   }
 
   /** Subscribe to decoded raw mic PCM (16 kHz mono S16LE). */
@@ -414,11 +412,13 @@ export class FaceclawVoiceControlBridge {
     // A previous push-to-talk commit may still be awaiting its final result.
     this.cloudClient?.stop();
     const cloudClient = this.createCloudClient(options);
+    const captureId = this.nextNativeCaptureId++;
+    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     if (cloudClient) {
       this.cloudClient = cloudClient;
       cloudClient.start();
       this.started = true;
-      this.controller?.start("cloud");
+      this.controller?.start("cloud", captureId);
       return;
     }
 
@@ -428,11 +428,9 @@ export class FaceclawVoiceControlBridge {
     // the three explicit Whisper choices (FaceclawVoiceController defaults to Moonshine).
     this.controller?.setOnboardModelKind(
       options.provider === "onboard-whisper-medium" ? "whisper-medium" :
-      options.provider === "onboard-whisper-small" ? "whisper-small" :
+      options.provider === "onboard-whisper-small" || options.provider === "even" ? "whisper-small" :
       options.provider === "onboard-whisper" ? "whisper" : "moonshine",
     );
-    const captureId = this.nextNativeCaptureId++;
-    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     this.controller?.start("onboard", captureId);
   }
 
@@ -474,14 +472,14 @@ export class FaceclawVoiceControlBridge {
     });
   }
 
-  private releaseCapture(holder: CaptureHolder, commit: boolean): void {
+  private releaseCapture(holder: CaptureHolder, commit: boolean): Promise<void> | void {
     this.audioArbiter.setOwner(`stt:${holder}`, false);
     // A holder that gives up while its capture is parked must not be resumed
     // by the next session.
     this.suspendedHolders.delete(holder);
     if (!this.captureHolders.delete(holder)) {
       // Never held; still finish a dangling cloud commit if one is pending.
-      if (commit) this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
       return;
     }
     if (this.captureHolders.size > 0) {
@@ -489,7 +487,9 @@ export class FaceclawVoiceControlBridge {
       return;
     }
     if (!this.started) {
-      this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
+      this.cloudClient?.stop();
+      this.cloudClient = null;
       return;
     }
     // Order matters for cloud: stopping the Java controller flushes any final
@@ -497,7 +497,11 @@ export class FaceclawVoiceControlBridge {
     this.controller?.stop();
     this.started = false;
     if (commit) {
-      this.cloudClient?.finish();
+      const client = this.cloudClient;
+      if (client) return this.nativeCaptureFinished.then(() => {
+        if (this.cloudClient !== client) throw new Error("Voice capture cancelled.");
+        return client.finish();
+      });
     } else {
       this.cloudClient?.stop();
       this.cloudClient = null;

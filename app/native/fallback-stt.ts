@@ -11,9 +11,11 @@ export type FallbackTimings = {
   connectMs: number;
   /** Final transcript must arrive within this many ms of finish(). */
   finalMs: number;
+  /** Bounded wait for loading/decoding on the phone. */
+  localMs?: number;
 };
 
-export const DEFAULT_FALLBACK_TIMINGS: FallbackTimings = { connectMs: 2000, finalMs: 3000 };
+export const DEFAULT_FALLBACK_TIMINGS: FallbackTimings = { connectMs: 2000, finalMs: 3000, localMs: 30000 };
 
 /** Thirty seconds of utterance audio, the same cap the native fallback decoder applies. */
 export const MAX_FALLBACK_BYTES = 16000 * 2 * 30;
@@ -37,8 +39,14 @@ export class FallbackSttClient implements CloudSttClient {
   private localStarted = false;
   private chunks: Uint8Array[] = [];
   private bytes = 0;
+  private overflow = false;
+  private completion: Promise<void> | null = null;
+  private resolveCompletion: (() => void) | null = null;
+  private rejectCompletion: ((error: Error) => void) | null = null;
+  private terminalError: Error | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private finalTimer: ReturnType<typeof setTimeout> | null = null;
+  private localTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly create: (options: CloudSttOptions) => CloudSttClient,
@@ -77,6 +85,7 @@ export class FallbackSttClient implements CloudSttClient {
   acceptPcm(pcm: Uint8Array): void {
     if (this.state === "settled" || pcm.length === 0) return;
     const room = MAX_FALLBACK_BYTES - this.bytes;
+    if (pcm.length > room) this.overflow = true;
     if (room > 0) {
       const kept = pcm.length <= room ? pcm.slice() : pcm.slice(0, room);
       this.chunks.push(kept);
@@ -85,18 +94,37 @@ export class FallbackSttClient implements CloudSttClient {
     if (this.state === "remote") this.remote?.acceptPcm(pcm);
   }
 
-  finish(): void {
-    if (this.finishing || this.state === "settled") return;
+  finish(): Promise<void> {
+    if (!this.completion) {
+      this.completion = new Promise((resolve, reject) => {
+        this.resolveCompletion = resolve;
+        this.rejectCompletion = reject;
+      });
+      // Some non-UI consumers ignore finish(); callers that await still receive the rejection.
+      void this.completion.catch(() => {});
+    }
+    if (this.state === "settled") {
+      if (this.terminalError) this.rejectCompletion?.(this.terminalError);
+      else this.resolveCompletion?.();
+      return this.completion;
+    }
+    if (this.finishing) return this.completion;
     this.finishing = true;
     if (this.state === "failed") {
       this.transcribeLocally();
-      return;
+      return this.completion;
     }
     this.finalTimer = setTimeout(() => {
       this.finalTimer = null;
       this.fail("no final within " + this.timings.finalMs + " ms");
     }, this.timings.finalMs);
-    this.remote?.finish();
+    try {
+      const pending = this.remote?.finish();
+      if (pending) void pending.catch((error) => this.fail(String(error)));
+    } catch (error) {
+      this.fail(String(error));
+    }
+    return this.completion;
   }
 
   commitSegment(): void {
@@ -104,13 +132,7 @@ export class FallbackSttClient implements CloudSttClient {
   }
 
   stop(): void {
-    this.state = "settled";
-    this.clearConnectTimer();
-    this.clearFinalTimer();
-    const remote = this.remote;
-    this.remote = null;
-    remote?.stop();
-    this.releaseAudio();
+    if (this.state !== "settled") this.settle(new Error("Voice capture cancelled."));
   }
 
   private remoteTranscript(event: CloudSttTranscriptEvent): void {
@@ -124,6 +146,12 @@ export class FallbackSttClient implements CloudSttClient {
       // accounted for, so a later fallback must not transcribe it again.
       this.releaseAudio();
       this.options.onTranscript(event);
+      return;
+    }
+    // An empty result is also produced by this server when another session interferes.
+    // Let Whisper verify silence instead of accepting lost speech as successful recognition.
+    if (!event.text.trim() && this.bytes > 0) {
+      this.fail("empty final transcript");
       return;
     }
     this.settle();
@@ -147,10 +175,18 @@ export class FallbackSttClient implements CloudSttClient {
 
   private transcribeLocally(): void {
     if (this.localStarted || this.state === "settled") return;
+    if (this.overflow) {
+      this.reportError("On-device voice cannot recover a capture longer than 30 seconds. Please repeat in shorter phrases.");
+      return;
+    }
     this.localStarted = true;
     const pcm = concat(this.chunks, this.bytes);
     this.releaseAudio();
     this.options.onStatus("Transcribing on the phone...");
+    this.localTimer = setTimeout(() => {
+      this.localTimer = null;
+      if (this.state !== "settled") this.reportError("On-device voice timed out. Please repeat.");
+    }, this.timings.localMs ?? 30000);
     let pending: Promise<string>;
     try {
       pending = this.local(pcm);
@@ -160,28 +196,38 @@ export class FallbackSttClient implements CloudSttClient {
     pending.then((text) => {
       if (this.state === "settled") return;
       this.settle();
-      this.options.onTranscript({ text: String(text ?? "").trim(), isFinal: true });
+      this.options.onTranscript({ text: String(text ?? "").trim(), isFinal: true, authoritative: true });
     }, (error) => {
       if (this.state === "settled") return;
-      this.settle();
-      this.options.onError(`EVO-X2 unavailable and on-device voice failed: ${String((error as Error)?.message ?? error)}`);
+      this.reportError(`EVO-X2 unavailable and on-device voice failed: ${String((error as Error)?.message ?? error)}`);
     });
   }
 
-  private settle(): void {
+  private reportError(message: string): void {
+    this.settle(new Error(message));
+    this.options.onError(message);
+  }
+
+  private settle(error: Error | null = null): void {
     this.state = "settled";
+    this.terminalError = error;
     this.clearConnectTimer();
     this.clearFinalTimer();
+    if (this.localTimer !== null) clearTimeout(this.localTimer);
+    this.localTimer = null;
     const remote = this.remote;
     this.remote = null;
     // The remote client closes itself after its last final; stopping again is harmless.
     remote?.stop();
     this.releaseAudio();
+    if (error) this.rejectCompletion?.(error);
+    else this.resolveCompletion?.();
   }
 
   private releaseAudio(): void {
     this.chunks = [];
     this.bytes = 0;
+    this.overflow = false;
   }
 
   private clearConnectTimer(): void {

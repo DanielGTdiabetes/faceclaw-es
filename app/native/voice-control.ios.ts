@@ -169,7 +169,13 @@ export class IosVoiceControlBridge {
     this.setStatus('Recognizing…')
     // Armed first: finish() can deliver the final synchronously.
     this.cloudTimer = setTimeout(() => this.completeCloud(), CLOUD_FINAL_TIMEOUT_MS)
-    this.cloud?.finish()
+    const cloud = this.cloud
+    const pending = cloud?.finish()
+    if (pending) void pending.catch((error) => {
+      if (this.cloud !== cloud) return
+      this.cloudEndStatus = `Transcription failed: ${String(error)}`
+      this.completeCloud()
+    })
   }
   private completeCloud(): void {
     const status = this.cloudEndStatus ?? 'Ready to send'

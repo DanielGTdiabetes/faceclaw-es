@@ -152,3 +152,96 @@ test('fallback: only the self-hosted provider in push-to-talk gets it; continuou
   assert.equal(createCloudSttClient(even, options, () => false).constructor.name, 'ReconnectingSttClient');
   assert.equal(createCloudSttClient({ ...even, provider: 'soniox' }, options, () => false, local).constructor.name, 'ReconnectingSttClient');
 });
+
+test('fallback: finish waits for the actual local final, not just remote timeout', async () => {
+  const h = harness();
+  h.client.acceptPcm(pcm(1));
+  let complete = false;
+  const done = h.client.finish().then(() => { complete = true; });
+  assert.equal(h.client.finish(), h.client.completion);
+  h.env.fire(3000);
+  await flush();
+  assert.equal(complete, false);
+  h.localCalls[0].resolve('complete local final');
+  await done;
+  assert.deepEqual(finals(h.events), ['complete local final']);
+  assert.equal(complete, true);
+});
+
+test('fallback: an empty remote final verifies the whole capture locally', async () => {
+  const h = harness();
+  h.remote().options.onReady();
+  h.client.acceptPcm(pcm(9));
+  const done = h.client.finish();
+  h.remote().options.onTranscript({ text: '', isFinal: true });
+  assert.deepEqual(finals(h.events), []);
+  assert.equal(h.localCalls.length, 1);
+  h.localCalls[0].resolve('recovered speech');
+  await done;
+  assert.deepEqual(finals(h.events), ['recovered speech']);
+});
+
+test('fallback: overflow refuses to transcribe a prefix and rejects completion', async () => {
+  const h = harness();
+  h.client.acceptPcm(new Uint8Array(h.MAX_FALLBACK_BYTES));
+  h.client.acceptPcm(pcm(1));
+  h.remote().options.onDisconnected('offline');
+  await assert.rejects(h.client.finish(), /longer than 30 seconds/);
+  assert.equal(h.localCalls.length, 0);
+  assert.deepEqual(finals(h.events), []);
+  assert.equal(h.errors.length, 1);
+  assert.equal(h.client.bytes, 0);
+});
+
+test('fallback: a healthy remote can still finish a long capture without truncating it', async () => {
+  const h = harness();
+  h.client.acceptPcm(new Uint8Array(h.MAX_FALLBACK_BYTES + 320));
+  const done = h.client.finish();
+  h.remote().options.onTranscript({ text: 'full remote result', isFinal: true });
+  await done;
+  assert.deepEqual(finals(h.events), ['full remote result']);
+  assert.equal(h.localCalls.length, 0);
+});
+
+test('fallback: cancellation and local failure reject completion without a usable final', async () => {
+  for (const cancel of [false, true]) {
+    const h = harness();
+    h.client.acceptPcm(pcm(1));
+    h.remote().options.onDisconnected('offline');
+    const done = h.client.finish();
+    if (cancel) h.client.stop();
+    else h.localCalls[0].reject(new Error('no model'));
+    await assert.rejects(done, cancel ? /cancelled/ : /no model/);
+    h.localCalls[0].resolve('late');
+    await flush();
+    assert.deepEqual(finals(h.events), []);
+  }
+});
+
+test('fallback: incomplete EVO-X2 settings choose local transcription without opening any socket', async () => {
+  for (const invalid of [{ evenAsrKey: '' }, { evenAsrUrl: 'http://invalid' }]) {
+    const env = environment();
+    const { createCloudSttClient } = env.load('app/native/cloud-stt-provider.ts');
+    const events = [], calls = [];
+    const client = createCloudSttClient({ provider: 'even', evenAsrKey: 'k', evenAsrUrl: 'ws://even:18770/x', ...invalid },
+      { onTranscript: e => events.push(e), onStatus() {}, onError: assert.fail }, () => false,
+      async bytes => { calls.push([...bytes]); return 'Whisper local'; });
+    client.start(); client.acceptPcm(pcm(3)); await client.finish();
+    assert.equal(client.constructor.name, 'FallbackSttClient');
+    assert.deepEqual(calls, [[...pcm(3)]]);
+    assert.deepEqual(finals(events), ['Whisper local']);
+  }
+});
+
+test('fallback: local timeout is bounded and its late result cannot become a final', async () => {
+  const h = harness();
+  h.client.acceptPcm(pcm(1));
+  h.remote().options.onDisconnected('offline');
+  const done = h.client.finish();
+  h.env.fire(30000);
+  await assert.rejects(done, /timed out/);
+  h.localCalls[0].resolve('late');
+  await flush();
+  assert.deepEqual(finals(h.events), []);
+  assert.equal(h.env.timers.size, 0);
+});

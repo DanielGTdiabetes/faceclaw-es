@@ -30,7 +30,7 @@ function shellDeclarations() {
     ...load('app/g2/events.ts') };
   vm.createContext(context);
   vm.runInContext(js(declarations.map((s) => s.getText(source)).join('\n') +
-    '\nexport class Shell {\n' + methods.map((s) => s.getText(source)).join('\n') + '\n}'), context);
+    '\nexport class Shell {\nsweepRetiredOverlays() {}\n' + methods.map((s) => s.getText(source)).join('\n') + '\n}'), context);
   return context;
 }
 
