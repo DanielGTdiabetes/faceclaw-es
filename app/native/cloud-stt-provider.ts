@@ -1,5 +1,6 @@
 import type { CloudSttClient, CloudSttOptions } from "./cloud-stt";
 import { ElevenLabsSttClient } from "./elevenlabs-stt";
+import { EvenSttClient, evenSttUrl } from "./even-stt";
 import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { ReconnectingSttClient } from "./reconnecting-stt";
 import { SonioxSttClient } from "./soniox-stt";
@@ -14,12 +15,17 @@ export type VoiceProviderSelection = {
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
+  /** Self-hosted EVO-X2 endpoint and its Bearer key (Android only). */
+  evenAsrUrl?: string;
+  evenAsrKey?: string;
 };
 
 type CloudProvider = {
   name: string;
   apiKey: (selection: VoiceProviderSelection) => string;
-  create: (options: CloudSttOptions) => CloudSttClient;
+  /** Why the selection cannot be used even with a key, e.g. a malformed URL. */
+  unusable?: (selection: VoiceProviderSelection) => string | null;
+  create: (options: CloudSttOptions, selection: VoiceProviderSelection) => CloudSttClient;
 };
 
 // Providers absent here ("onboard" and the "onboard-whisper*" models) transcribe on-device.
@@ -39,11 +45,18 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
     apiKey: (selection) => selection.openAiApiKey,
     create: (options) => new OpenAiRealtimeSttClient(options),
   },
+  even: {
+    name: "EVO-X2",
+    apiKey: (selection) => selection.evenAsrKey ?? "",
+    unusable: (selection) => evenSttUrl(selection.evenAsrUrl ?? "") ? null : "EVO-X2 address is not a ws:// URL",
+    create: (options, selection) => new EvenSttClient({ ...options, url: evenSttUrl(selection.evenAsrUrl ?? "")! }),
+  },
 };
 
 /** Whether createCloudSttClient would return a cloud client for this selection. */
 export function usesCloudStt(selection: VoiceProviderSelection): boolean {
-  return Boolean(CLOUD_PROVIDERS[selection.provider]?.apiKey(selection).trim());
+  const provider = CLOUD_PROVIDERS[selection.provider];
+  return Boolean(provider?.apiKey(selection).trim() && !provider.unusable?.(selection));
 }
 
 /**
@@ -64,5 +77,10 @@ export function createCloudSttClient(
     options.onStatus(`No ${provider.name} key set; using on-device voice.`);
     return null;
   }
-  return new ReconnectingSttClient(provider.create, { ...options, apiKey }, continuous);
+  const unusable = provider.unusable?.(selection);
+  if (unusable) {
+    options.onStatus(`${unusable}; using on-device voice.`);
+    return null;
+  }
+  return new ReconnectingSttClient((clientOptions) => provider.create(clientOptions, selection), { ...options, apiKey }, continuous);
 }

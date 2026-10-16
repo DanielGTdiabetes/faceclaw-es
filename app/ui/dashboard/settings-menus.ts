@@ -60,6 +60,8 @@ import {
   phoneRotationSetting,
   ringConnectionModeSetting,
   sonioxApiKeySetting,
+  evenAsrUrlSetting,
+  evenAsrKeySetting,
   screenFadeSetting,
   enumSettingMenuItem,
   firmwareDebugFlagsSetting,
@@ -123,6 +125,8 @@ function settingsSections(): SettingsSection[] {
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
         enumSettingMenuItem(voiceProviderSetting),
+        textSettingMenuItem(evenAsrUrlSetting),
+        textSettingMenuItem(evenAsrKeySetting),
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-es"),
         asrModelMenuItem("whisper-small-es"),
