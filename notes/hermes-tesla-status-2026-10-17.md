@@ -39,3 +39,8 @@ actual y la batería del último viaje o carga con su fecha. Instalada con OK de
 puente reiniciados con `NRestarts=0`. Volver a v0.1.0: `install -m 600
 ~/migracion-hermes-20261016/teslamate-20261017/plugin-v2/__init__.py.instalado ~/.hermes/plugins/teslamate/__init__.py`
 y reiniciar ambos servicios.
+
+## Validada con las G2 — 17/10/2026, 14:57
+
+Turno de las G2 con una llamada a herramienta (23 s, sin respaldo). Según el usuario, las gafas dijeron que el
+Tesla está sin conexión y dieron el dato de junio (64 %, 251 km) con su antigüedad. Criterio de cierre cumplido.
