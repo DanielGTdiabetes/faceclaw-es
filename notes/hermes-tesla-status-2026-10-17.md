@@ -44,3 +44,11 @@ y reiniciar ambos servicios.
 
 Turno de las G2 con una llamada a herramienta (23 s, sin respaldo). Según el usuario, las gafas dijeron que el
 Tesla está sin conexión y dieron el dato de junio (64 %, 251 km) con su antigüedad. Criterio de cierre cumplido.
+
+## v0.1.2 instalada — 17/10/2026, 15:09
+
+Fallo de la v0.1.1: con el coche `suspended` (95 % actual) daba el dato de junio. La v0.1.2 usa la batería del
+estado si es `suspended` o si difiere del último viaje o carga, fechada como anterior a `state_since`. Instalada con
+OK del usuario y sin actividad; gateway y puente con `NRestarts=0`. Volver a v0.1.1: `install -m 600
+~/migracion-hermes-20261016/teslamate-20261017/plugin-v3/__init__.py.instalado ~/.hermes/plugins/teslamate/__init__.py`
+y reiniciar ambos servicios.
