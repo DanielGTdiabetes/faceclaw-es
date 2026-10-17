@@ -1,6 +1,6 @@
 # Latencia de ~20 s del agente de las G2 con Qwen3.6: precarga del prompt (17/10/2026)
 
-Estado: **preparado y medido, pendiente del OK del usuario para instalar** en even (EVO-X2).
+Estado: **instalado en even el 17/10 a las 19:49** (precarga ok: 20 203 tokens en 18,8 s). Pendiente: validar dos preguntas seguidas desde las G2.
 
 - **Causa:** Qwen3.6-35B-A3B es híbrido. llama.cpp b11687 solo reutiliza la caché hasta un checkpoint de contexto,
   y solo los crea al empezar un mensaje de usuario o en los últimos 512 tokens. Hermes fija el prompt de sistema
