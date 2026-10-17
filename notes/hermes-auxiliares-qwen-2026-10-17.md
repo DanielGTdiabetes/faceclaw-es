@@ -34,3 +34,13 @@ ssh evo-x2 '~/migracion-hermes-20261016/aux-qwen-20261017/revertir.sh'
 ```
 
 Restaura `config.yaml.preimagen` y reinicia `hermes-gateway`. Los auxiliares vuelven en caliente a LiteLLM.
+
+## Respaldo del puente en Qwen (10:37)
+
+Decisión del usuario: nunca saltar a OpenRouter. Nuevo drop-in `~/.config/systemd/user/faceclaw-hermes.service.d/
+zz-sin-openrouter.conf` con `FACECLAW_FALLBACK_PROVIDER=qwen-local` y `FACECLAW_FALLBACK_MODEL=qwen3.6-35b-a3b`, que
+sustituye el respaldo `openrouter/openai/gpt-6-luna` heredado de `50-openai.conf` (lo usaban el modo conversación y el
+agente de las G2). Puente reiniciado sin actividad a las 10:37:38, `NRestarts=0`.
+
+Reversión: `ssh evo-x2 '~/migracion-hermes-20261016/sin-openrouter-20261017/revertir.sh'` (borra el drop-in,
+daemon-reload y reinicia faceclaw-hermes).
