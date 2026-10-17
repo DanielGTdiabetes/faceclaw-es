@@ -30,3 +30,12 @@ lo extiende a Conversación) cambiaron después, así que `revertir.sh` se niega
 ```bash
 ssh evo-x2 'cp -p ~/.hermes/config.yaml ~/.hermes/config.yaml.bak-sin-teslamate-$(date +%Y%m%d-%H%M%S) && cp -p ~/faceclaw-hermes-bridge/bridge.py ~/faceclaw-hermes-bridge/bridge.py.bak-sin-teslamate-$(date +%Y%m%d-%H%M%S) && sed -i "/^ *- teslamate$/d" ~/.hermes/config.yaml && sed -i "s/, \"teslamate\"\]/]/; s/, \"tesla_status\"\]))/]))/" ~/faceclaw-hermes-bridge/bridge.py && rm -rf ~/.hermes/plugins/teslamate && systemctl --user restart hermes-gateway faceclaw-hermes'
 ```
+
+## v0.1.1 instalada — 17/10/2026, 14:56
+
+Con TeslaMate en 4.3.0, el coche aparece `offline` con el 64 % guardado en junio y la v0.1.0 lo daba como dato en
+vivo. La v0.1.1 solo da batería en vivo con el coche conectado (`online`/`driving`/`charging`); si no, da el estado
+actual y la batería del último viaje o carga con su fecha. Instalada con OK del usuario y sin actividad; gateway y
+puente reiniciados con `NRestarts=0`. Volver a v0.1.0: `install -m 600
+~/migracion-hermes-20261016/teslamate-20261017/plugin-v2/__init__.py.instalado ~/.hermes/plugins/teslamate/__init__.py`
+y reiniciar ambos servicios.
