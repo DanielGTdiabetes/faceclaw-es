@@ -20,11 +20,19 @@ let withText = true;
 /** Automatic Spanish/Catalan recognition by default. RAM only; assistant settings unchanged. */
 let textLanguage: TextLanguage = "auto";
 let diagnostics = false;
-/** Local Whisper by default for continuous listening without cloud transcription charges. RAM only. */
+/** Local engine by default for continuous listening without cloud transcription charges. RAM only. */
 let textEngine: "soniox" | "local" = "local";
-export const CONVERSATION_MODELS = ["soniox", "whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const;
+export const CONVERSATION_MODELS = ["soniox", "evo-parakeet", "whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const;
 export type ConversationModel = typeof CONVERSATION_MODELS[number];
-let localModel: Exclude<ConversationModel, "soniox"> = "whisper-small-es";
+/** Parakeet on the EVO-X2 by default; Whisper models stay selectable. RAM only, reset by each update. */
+let localModel: Exclude<ConversationModel, "soniox"> = "evo-parakeet";
+/** Parakeet on the user's EVO-X2: same windows and session voices as Whisper, decoded by the server. */
+export const EVO_CONVERSATION_MODEL = "evo-parakeet";
+export type ConversationEvoEndpoint = { url: string; key: string };
+/** Bound by the app to the Hey Even "even" provider settings; null while unset or invalid. */
+let evoEndpoint: () => ConversationEvoEndpoint | null = () => null;
+export function bindConversationEvoEndpoint(source: () => ConversationEvoEndpoint | null): void { evoEndpoint = source; }
+export function conversationEvoEndpoint(): ConversationEvoEndpoint | null { return evoEndpoint(); }
 let useHermes = true;
 /** Explicit RAM-only opt-in; restarting never silently opts into persistent summaries. */
 let dailyContext = false;

@@ -134,6 +134,8 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   private readonly turnLog: ConversationTurns;
   private profileMatcher: ProfileSpeakerMatcher | null = null;
   private maxMs = 120_000;
+  /** Manual conversation asks the local engine for session voices too (pause windows + speaker labels). */
+  private localSpeakers = false;
 
   constructor(private readonly local: DetectorTranscription, private readonly host: SonioxConversationHost) {
     this.identity = new WearerIdentity({ now: () => host.now(), every: (callback, ms) => host.every(callback, ms) });
@@ -145,6 +147,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     this.localDiagnosticsEpoch++;
     this.language = language;
     this.maxMs = maxMs;
+    this.localSpeakers = profileAssociation;
     // A newly accepted start is a new diagnostics session: never blend its
     // counters with the preceding local session retained after OFF.
     this.lastLocalSnapshot = null;
@@ -362,7 +365,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     if (fallback) {
       this.stats.fallbacks++;
       // Keep the transcript, but retire «Yo» together with the live association. Numbered labels
-      // belong to the completed Soniox stream; Whisper provides no speaker attribution.
+      // belong to the completed Soniox stream; the local engine labels its own session voices.
       const previous = this.render(false);
       this.fallbackText = previous ? `Texto anterior · Soniox:\n${previous}` : "";
       // Soniox identity and interventions end with their stream; the text keeps its continuity until OFF.
@@ -370,7 +373,7 @@ export class SonioxConversationTranscription implements DetectorTranscription {
       this.turnLog.clear();
     }
     this.mode = "local";
-    const started = this.local.start(this.language, false, this.maxMs);
+    const started = this.local.start(this.language, this.localSpeakers, this.maxMs);
     if (!started) { this.mode = "off"; this.status = "error"; }
     return started;
   }

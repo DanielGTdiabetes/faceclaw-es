@@ -19,11 +19,16 @@ import java.io.File
  *
  * [startWithSpeakers] closes windows at pauses and labels each one with a session voice: the wearer's
  * saved own-voice profile when present, plus other voices clustered in RAM for this session only.
+ *
+ * [startRemote] keeps that same capture, windowing and speaker attribution but transcribes each window on
+ * the EVO-X2 ASR gateway ([EvoRemoteTranscriptDecoder]) instead of a local Whisper model.
  */
 class FaceclawLocalTranscriber internal constructor(context: Context, private val root: File) {
     constructor(context: Context) : this(context, File(context.applicationContext.filesDir, "faceclaw-voice-asr"))
 
-    private class Config(val model: LocalWhisperModels.Model, val performance: LocalWhisperPerformance)
+    private class Remote(val url: String, val key: String)
+    private class Config(val model: LocalWhisperModels.Model, val performance: LocalWhisperPerformance,
+        val remote: Remote? = null)
 
     private val handler = Handler(Looper.getMainLooper())
     private val appContext = context.applicationContext
@@ -35,6 +40,7 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
         /** `language` comes from the accepted start that owns this worker; it is never re-read later. */
         override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? {
             val config = synchronized(selectionLock) { selected }
+            config.remote?.let { return EvoRemoteTranscriptDecoder(it.url, it.key, language) }
             // Never substitute a different model during a comparison.
             if (!LocalWhisperModels.verified(root, config.model)) return null
             return LocalWhisperModels.load(root, config.model, language, config.performance)
@@ -56,6 +62,19 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
         val performance = LocalWhisperPerformance.defaultFor(modelId) ?: return false
         return startWith(language, modelId, maxMs, performance, LocalTranscriptWindowPolicy.PAUSE, speakers = true)
     }
+    /**
+     * Conversation through the EVO-X2 gateway (`ws://` or `wss://` URL and its key). `speakers` asks for the
+     * same pause windows and session voices as [startWithSpeakers]; otherwise reference windows, unlabelled.
+     */
+    fun startRemote(language: String, url: String, key: String, maxMs: Long, speakers: Boolean): Boolean =
+        synchronized(selectionLock) {
+            if (session.isWorkerActive()) return false
+            val endpoint = EvoRemoteTranscriptDecoder.validUrl(url) ?: return false
+            if (key.isBlank()) return false
+            selected = Config(LocalWhisperModels.SMALL, LocalWhisperPerformance(4), Remote(endpoint, key.trim()))
+            val policy = if (speakers) LocalTranscriptWindowPolicy.PAUSE else LocalTranscriptWindowPolicy.REFERENCE
+            session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS, maxMs, policy, speakers)
+        }
     /**
      * Benchmark/diagnostic start, not wired to the phone UI. `tailPaddingFrames` 0 keeps the runtime
      * default. Returns false for an unknown model or any unmeasured thread count, provider, padding or policy.

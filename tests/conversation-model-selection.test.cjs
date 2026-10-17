@@ -49,7 +49,7 @@ test('base, small and medium pass the exact model and deadline to native decodin
     FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
   const engine = new LocalTranscription(), turns = [];
   engine.subscribeTurns(t => turns.push(t));
-  for (const model of controls.CONVERSATION_MODELS.filter(id => id !== 'soniox' && id !== 'android-system')) {
+  for (const model of controls.CONVERSATION_MODELS.filter(id => id !== 'soniox' && id !== 'android-system' && id !== 'evo-parakeet')) {
     controls.setConversationModel(model);
     assert.equal(engine.start('auto', false, 1200000), true);
     assert.deepEqual(starts.at(-1), ['auto', model, 1200000]);
@@ -60,6 +60,41 @@ test('base, small and medium pass the exact model and deadline to native decodin
   }
   present = false; controls.setConversationModel('whisper-base-es');
   assert.equal(engine.start(), false); assert.equal(starts.length, 3);
+});
+
+test('Parakeet on the EVO-X2 reuses the Hey Even endpoint, keeps phone voices and never loads Whisper', () => {
+  const remote = [], local = []; let callback;
+  const native = { setListener(value) { callback = value; }, start(...args) { local.push(args); return true; },
+    startWithSpeakers(...args) { local.push(args); return true; },
+    startRemote(...args) { remote.push(args); return true; }, stop() {}, resetStream() {} };
+  const { LocalTranscription } = moduleUnderTest('app/native/local-transcription.ts', {
+    '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
+    './asr-model': { isAsrModelReady: () => { throw new Error('Whisper weights must not be checked'); } },
+    '../conversation-detection/session-controls': controls,
+    '../conversation-detection/local-conversation-turns': { LocalConversationTurns },
+    '../apps/microphones/mic-models': { isMicModelReady: () => speakerModel },
+  }, { com: { faceclaw: { app: { FaceclawLocalTranscriber: function () { return native; },
+    FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
+  const engine = new LocalTranscription(), turns = [];
+  engine.subscribeTurns(t => turns.push(t));
+  controls.setConversationModel('evo-parakeet');
+  assert.equal(controls.conversationModel(), 'evo-parakeet'); assert.equal(controls.conversationTextEngine(), 'local');
+  controls.bindConversationEvoEndpoint(() => null);
+  assert.equal(engine.start('auto', true, 1200000), false);
+  assert.equal(remote.length, 0);
+  controls.bindConversationEvoEndpoint(() => ({ url: 'ws://evo:18770/v1/audio/transcriptions/realtime', key: 'k' }));
+  speakerModel = true;
+  assert.equal(engine.start('es', true, 1200000), true);
+  assert.deepEqual(remote.at(-1), ['es', 'ws://evo:18770/v1/audio/transcriptions/realtime', 'k', 1200000, true]);
+  callback.onSpeakerSegment('Hola, ¿qué tal?', 'es', 0, 3000, 'voz-1', 'otro');
+  assert.equal(turns.at(-1).engine, 'evo-parakeet'); assert.equal(turns.at(-1).speaker, 'voz-1');
+  assert.equal(turns.at(-1).relation, 'otro');
+  engine.stop(); speakerModel = false;
+  assert.equal(engine.start('auto', true, 1200000), true);
+  assert.equal(remote.at(-1)[4], false);
+  engine.stop();
+  assert.equal(local.length, 0);
+  controls.bindConversationEvoEndpoint(() => null); controls.setConversationModel('soniox');
 });
 
 test('medium download is pinned, verifies all files and pause invalidates late download callbacks', () => {
@@ -147,7 +182,7 @@ test('phone makes selecting and downloading separate actions, keeps auto languag
     '../g2/dashboard-controller': { dashboardController: { conversationDetector: detector, toggleManualConversation: () => { captures++; return ''; } } },
     '../conversation-detection/session-controls': controls,
     '../native/asr-model': { asrModelState: () => ({ status: 'absent', totalBytes: 946072270 }), startAsrModelDownload: () => downloads++ },
-    '../native/conversation-model-options': { conversationModelOption: model => model },
+    '../native/conversation-model-options': { conversationModelOption: model => model, conversationModelState: () => ({ status: 'absent', totalBytes: 946072270 }) },
   }, { has: () => true, get: (target, name) => target[name] ?? {} });
   const { MainViewModel } = moduleUnderTest('app/phone-ui/main-view-model.ts', mocks);
   const view = Object.create(MainViewModel.prototype);

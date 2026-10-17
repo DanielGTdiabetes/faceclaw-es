@@ -626,7 +626,7 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
     conversationFiltersEnabled: () => gate,
     conversationSingleVoiceFilter: () => false,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
-    conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationTextModelStatus: () => ready,
+    conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationModelState: () => ({ status: ready }),
     conversationModel: () => 'whisper-medium-es',
     conversationSessionOptions: () => ({ language: 'auto', diagnostics: false }) };
   vm.runInNewContext(ts.transpileModule(`export class Owner { ${methods.map(m => m.getText(file)).join('\n')} }`,

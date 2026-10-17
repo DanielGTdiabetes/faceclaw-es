@@ -100,7 +100,8 @@ export class AssistantBridgeClient {
     this.stopped = false;
     this.mcpServer = new AssistantMcpServer({
       send: (msg) => this.send({ chan: "mcp", msg }),
-      isTurnActive: () => this.activeTurn !== null,
+      // Continuous listening switched on by the user is a live session too: the same agent acts within it.
+      isTurnActive: () => this.activeTurn !== null || this.conversation.isEnabled(),
       allowProactive: options.allowProactive,
     });
     this.unsubscribeToolsChanged = toolRegistry.onToolsChanged(() => {

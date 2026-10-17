@@ -6,7 +6,7 @@ export type ConversationTurn = {
   sessionId: string;
   streamId: number;
   seq: number;
-  engine: "soniox" | "whisper-base-es" | "whisper-small-es" | "whisper-medium-es";
+  engine: "soniox" | "whisper-base-es" | "whisper-small-es" | "whisper-medium-es" | "evo-parakeet";
   speaker: string | null;
   relation: Relation;
   associationVersion: number;

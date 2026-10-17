@@ -7,7 +7,7 @@ import {
   onConversationTextSelected, setConversationTextSelected, toggleLensConversation, wearerActions, wearerChoices,
   type ConversationSessionPort,
   CONVERSATION_MODELS, conversationModel, setConversationModel, conversationUsesHermes,
-  setConversationTextLanguage, selectConversationListeningMode,
+  setConversationTextLanguage, selectConversationListeningMode, EVO_CONVERSATION_MODEL,
 } from "../../conversation-detection/session-controls";
 import { openModalMenu, type MenuItem } from "../../ui/menu";
 import { type InputEvent } from "../../ui/gestures";
@@ -195,7 +195,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
           })));
         } }, { label: `Idioma: ${conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {
           ctx.stack.pop(); setConversationTextLanguage(conversationTextLanguage() === "auto" ? "es" : "auto");
-        } }, ...(model === "soniox" || asrModelState(model).status === "ready" ? [] : [{
+        } }, ...(model === "soniox" || model === EVO_CONVERSATION_MODEL || asrModelState(model).status === "ready" ? [] : [{
           label: `${asrModelState(model).status === "downloading" ? "Pausar descarga" : "Descargar"}: ${conversationModelOption(model)}`,
           onSelect: (ctx: LayerContext) => {
             ctx.stack.pop(); if (session.detector.snapshot().enabled) return;
@@ -251,7 +251,7 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
   };
   unsubscribe = session.detector.subscribe(() => refresh());
   unsubscribeChoice = onConversationTextSelected(() => refresh());
-  const modelSubscriptions = CONVERSATION_MODELS.flatMap((id) => id === "soniox" ? [] : [onAsrModelStateChanged(id, () => refresh())]);
+  const modelSubscriptions = CONVERSATION_MODELS.flatMap((id) => id === "soniox" || id === EVO_CONVERSATION_MODEL ? [] : [onAsrModelStateChanged(id, () => refresh())]);
   const oldUnsubscribeChoice = unsubscribeChoice;
   unsubscribeChoice = () => { oldUnsubscribeChoice(); for (const off of modelSubscriptions) off(); };
   try {
