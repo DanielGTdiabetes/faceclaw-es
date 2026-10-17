@@ -18,3 +18,9 @@ Estado: **instalado en even el 17/10 a las 19:49** (precarga ok: 20 203 tokens e
   `preparacion-evo-x2/puente/prewarm-g2-20261017/README.md`.
 - No incluido en `integrations/hermes/bridge.py` de este repo: la copia del repo ya difiere de producción.
   Integrarlo al sincronizar.
+
+## Validación 17/10/2026, 19:52
+
+- Turno 1 tras el reinicio: primer texto en 0,64 s (antes ~20 s). Prefill de 69 tokens.
+- Turno 2: primer texto en 7,0 s. La caché funcionó (75 tokens de prefill). El tiempo se fue en las herramientas:
+  `glasses_call` → `search_nearby` no existe en el catálogo del Pixel («Unknown tool»). Seguimiento aparte.
