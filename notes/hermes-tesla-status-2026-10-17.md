@@ -23,10 +23,10 @@ las G2 es «no hay dato en vivo; último registro de hace N días».
 
 ## Vuelta atrás
 
-`config.yaml` cambió después (12:11, otra sesión), así que `revertir.sh` se niega. Manual, con copia y sin actividad:
+`config.yaml` (12:11) y `bridge.py` (14:34, agente único: `6d184810…`, que conserva `teslamate`/`tesla_status` y
+lo extiende a Conversación) cambiaron después, así que `revertir.sh` se niega. Manual, con copia y sin actividad
+(el `sed` de `bridge.py` está probado sobre una copia):
 
 ```bash
-ssh evo-x2 'cp -p ~/.hermes/config.yaml ~/.hermes/config.yaml.bak-sin-teslamate-$(date +%Y%m%d-%H%M%S) && sed -i "/^ *- teslamate$/d" ~/.hermes/config.yaml && install -m 600 ~/migracion-hermes-20261016/teslamate-20261017/bridge.py.preimagen ~/faceclaw-hermes-bridge/bridge.py && rm -rf ~/.hermes/plugins/teslamate && systemctl --user restart hermes-gateway faceclaw-hermes'
+ssh evo-x2 'cp -p ~/.hermes/config.yaml ~/.hermes/config.yaml.bak-sin-teslamate-$(date +%Y%m%d-%H%M%S) && cp -p ~/faceclaw-hermes-bridge/bridge.py ~/faceclaw-hermes-bridge/bridge.py.bak-sin-teslamate-$(date +%Y%m%d-%H%M%S) && sed -i "/^ *- teslamate$/d" ~/.hermes/config.yaml && sed -i "s/, \"teslamate\"\]/]/; s/, \"tesla_status\"\]))/]))/" ~/faceclaw-hermes-bridge/bridge.py && rm -rf ~/.hermes/plugins/teslamate && systemctl --user restart hermes-gateway faceclaw-hermes'
 ```
-
-Si `bridge.py` también ha cambiado, quitar a mano `"teslamate"` y `"tesla_status"` de sus dos líneas.
