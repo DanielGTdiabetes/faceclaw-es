@@ -33,7 +33,9 @@ Gateway activo, `NRestarts=0`; Telegram conectado a las 10:16:06; ticker del cro
 ssh evo-x2 '~/migracion-hermes-20261016/aux-qwen-20261017/revertir.sh'
 ```
 
-Restaura `config.yaml.preimagen` y reinicia `hermes-gateway`. Los auxiliares vuelven en caliente a LiteLLM.
+Selectiva (desde las 14:55): devuelve a la preimagen solo las 38 claves de este cambio, respeta lo que otras
+sesiones cambiaron después (`teslamate`, `web.extract_backend: keenable`), guarda copia y reinicia `hermes-gateway`.
+`python3 revertir.py` sin argumentos muestra lo que haría.
 
 ## Respaldo del puente en Qwen (10:37)
 
