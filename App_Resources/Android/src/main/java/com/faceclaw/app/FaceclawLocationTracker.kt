@@ -15,12 +15,18 @@ import androidx.core.content.ContextCompat
 
 /**
  * Continuous location updates for turn-by-turn navigation. Unlike
- * FaceclawLocationProvider (one-shot, coarse, for Weather), this streams GPS
+ * FaceclawLocationProvider (one-shot, for Weather and the assistant), this streams GPS
  * fixes with bearing and speed until stopped.
  *
  * Callbacks are delivered on the Looper of the thread that constructed the
  * tracker, so a worker isolate receives them on its own thread (the same
  * convention as FaceclawSseRequest).
+ *
+ * While GPS is cold (indoors, or just switched on) it can take well over the
+ * Navigate app's first-fix budget. Until the first live GPS fix arrives, the
+ * network provider (Wi-Fi/cell) also streams fixes so a route can start from
+ * where the user actually is; it is dropped as soon as GPS takes over. Those
+ * are live fixes, not the platform cache, so the stale-seed guard still holds.
  */
 class FaceclawLocationTracker(context: Context) : LocationListener {
     companion object {
@@ -46,6 +52,29 @@ class FaceclawLocationTracker(context: Context) : LocationListener {
 
     private var listener: FaceclawLocationTrackerListener? = null
     private var running = false
+    /** True once the primary provider has delivered a live fix (seeds don't count). */
+    private var primaryFixSeen = false
+    private var warmupActive = false
+
+    /** Network-provider fixes while the primary (GPS) provider warms up. */
+    private val warmupListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            if (running && warmupActive && !primaryFixSeen) {
+                deliverLocation(location)
+            }
+        }
+
+        // Losing the warm-up provider is not an error: GPS is still running.
+        override fun onProviderDisabled(provider: String) {
+        }
+
+        override fun onProviderEnabled(provider: String) {
+        }
+
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+        }
+    }
 
     init {
         val looper = Looper.myLooper()
@@ -67,10 +96,40 @@ class FaceclawLocationTracker(context: Context) : LocationListener {
                 return@post
             }
             running = false
+            stopWarmup()
             try {
                 locationManager!!.removeUpdates(this)
             } catch (ignored: Throwable) {
             }
+        }
+    }
+
+    private fun startWarmup(primaryProvider: String, intervalMs: Long) {
+        val manager = locationManager ?: return
+        if (primaryProvider != LocationManager.GPS_PROVIDER) {
+            return
+        }
+        try {
+            if (!manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                return
+            }
+            warmupActive = true
+            manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, Math.max(1000L, intervalMs), 0f,
+                warmupListener, callbackHandler.looper)
+        } catch (ignored: Throwable) {
+            // Best effort: GPS alone still works, just slower to a first fix.
+            warmupActive = false
+        }
+    }
+
+    private fun stopWarmup() {
+        if (!warmupActive) {
+            return
+        }
+        warmupActive = false
+        try {
+            locationManager!!.removeUpdates(warmupListener)
+        } catch (ignored: Throwable) {
         }
     }
 
@@ -97,8 +156,10 @@ class FaceclawLocationTracker(context: Context) : LocationListener {
 
         try {
             running = true
+            primaryFixSeen = false
             manager.requestLocationUpdates(provider, Math.max(500L, intervalMs), 0f, this,
                 callbackHandler.looper)
+            startWarmup(provider, intervalMs)
             // Seed with the freshest cached fix so the UI has a position
             // before the first live fix (GPS cold starts can take a while),
             // but only if it's recent enough to still be where the user is.
@@ -108,9 +169,11 @@ class FaceclawLocationTracker(context: Context) : LocationListener {
             }
         } catch (error: SecurityException) {
             running = false
+            stopWarmup()
             deliverError("Precise location permission is required for navigation.")
         } catch (error: Throwable) {
             running = false
+            stopWarmup()
             deliverError("Unable to start location updates.")
         }
     }
@@ -149,6 +212,10 @@ class FaceclawLocationTracker(context: Context) : LocationListener {
     }
 
     override fun onLocationChanged(location: Location) {
+        if (!primaryFixSeen) {
+            primaryFixSeen = true
+            stopWarmup()
+        }
         deliverLocation(location)
     }
 

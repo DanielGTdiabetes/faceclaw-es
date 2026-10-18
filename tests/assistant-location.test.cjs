@@ -38,7 +38,7 @@ test('OpenClaw discovers and calls phone location without opening a glasses app'
   h.server.handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
   const tool = h.messages[0].result.tools.find(tool => tool.name === 'location.get_current');
   assert.ok(tool);
-  assert.ok(h.registry.listTools().find(tool => tool.name === 'location.get_current').timeoutMs > 15000);
+  assert.ok(h.registry.listTools().find(tool => tool.name === 'location.get_current').timeoutMs > 7000);
   const result = await h.call();
   assert.equal(result.isError, false);
   assert.deepEqual(JSON.parse(result.content[0].text), {

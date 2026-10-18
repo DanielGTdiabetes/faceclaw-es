@@ -63,9 +63,9 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       description:
         "Get the phone's current or last-known location for questions about where the user is, nearby places, or local weather. Returns latitude, longitude, accuracy_meters, timestamp_ms, age_seconds and is_stale. Check age_seconds and is_stale before treating the position as current; a cached fix may be old. Uses the phone's granted location permission. Only available during a conversation; does not continuously track location.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      // The native one-shot lookup can wait 15 s, longer than the registry's
-      // default 10 s. Leave room for the main-thread callback to arrive.
-      timeoutMs: 20_000,
+      // The native one-shot lookup answers within its 7 s deadline
+      // (LocationLookupCore.DEADLINE_MS); leave room for the main-thread callback.
+      timeoutMs: 12_000,
     },
     async () => {
       if (!hasLocationPermission()) {
