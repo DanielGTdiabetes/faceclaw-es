@@ -5,7 +5,9 @@ Base oficial [Faceclaw 0.8.4](https://github.com/jimrandomh/faceclaw/releases/ta
 descargado como `upstream/release-0.8.4`). Rama **`claude/faceclaw-0.8.4-integration`**, creada desde
 `claude/faceclaw-0.8.3-conversation` (`180ebf2`, igual a `origin`).
 
-**Estado: compilada; sin instalar.** La instalación en el Pixel queda pendiente de la autorización del usuario.
+**Estado: instalada en el Pixel el 18-10-2026 a las 07:31**, con autorización del usuario en el chat. Ajustes
+conservados, conexión con las G2 comprobada. Falta la comprobación funcional por parte del usuario (voz, Hermes,
+navegación).
 
 ## Firmware y reloj
 
@@ -86,7 +88,28 @@ Hermes (API directa)» de upstream es otra opción de modelo, que solo se usa si
 
 ## Instalación y reversión
 
-Pendiente de la autorización del usuario. Procedimiento previsto: exportar ajustes antes, instalar con
-`scripts/install-conversation-g0.ps1 -Install -Serial 61161FDCG0013L` (copia previa de la APK instalada, solo
-`install -r`, sin desinstalar ni borrar datos), comparar ajustes después y comprobar la conexión con las G2.
-El Pixel Watch también está en adb: usar siempre `-s 61161FDCG0013L`.
+Autorización del usuario: «Sí, instálala en el Pixel con install -r, exportando y comparando los ajustes antes
+y después». El Pixel Watch también estaba en adb: todo se hizo con `-s 61161FDCG0013L`, sin tocar el reloj.
+
+1. Antes: Faceclaw en primer plano y sin actividad en curso (sin captura, conversación ni navegación en el
+   log). Ajustes exportados con `.tools/u084-export-settings.ps1 -Stage before` (copia privada en
+   `.tools/u084-private/`, que solo imprime recuentos): **47 entradas**.
+2. `scripts/install-conversation-g0.ps1 -Install -Serial 61161FDCG0013L`: se respaldó la APK instalada
+   (`0.8.3-es.6-conversation.s2.15.5-nav-gps-warmup`) en
+   `dist/conversation-g0/before-install-20261018-053052.apk`, SHA-256
+   `4a58c49eb6886222cc58b43a245bb06746424112be9ab9eacf430318e33c83cc`, con firma original comprobada.
+   Después, `install -r`: **Success**. La actividad abrió y el proceso se mantuvo estable.
+   `dumpsys`: `0.8.4-es.7-conversation.s2.16-u084` / 805, `firstInstallTime` igual (2026-10-02): datos
+   conservados.
+3. Después: 47 entradas. **46 idénticas**; solo cambió `weather.cache` (la caché del tiempo, refrescada al
+   arrancar con la misma estructura). Ninguna clave nueva ni eliminada.
+4. Arranque: las G2 conectaron (las dos lentes) en unos 4 s, con `wear state ON_HEAD` y fotogramas enviados.
+   Sin `FATAL`, errores JS ni entradas en el buffer de fallos. Dos fotogramas iniciales (ai-chat y launcher)
+   agotaron los 30 s mientras conectaba, sin efecto posterior.
+5. **Se abrió el asistente de bienvenida de las gafas** (`fg=onboarding`). Es lo previsto en upstream: se
+   muestra una vez por versión (`onboarding.glassesFinishedVersion` ≠ `0.8.4`). Desde la 0.8.3, sus páginas
+   parten del valor actual y solo guardan lo que cambie el usuario. Se puede recorrer o cerrar; si se cierra
+   sin terminar, vuelve en el siguiente arranque de la app.
+
+Reversión (conserva datos, mismo `versionCode` 805):
+`adb -s 61161FDCG0013L install -r dist/conversation-g0/before-install-20261018-053052.apk`.
