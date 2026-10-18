@@ -58,53 +58,53 @@ type Span = { left: number; right: number };
 
 export const systemCardShowTimeSetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-show-time",
-  label: "Time",
+  label: "Hora",
   storageKey: "glanceboard.systemCard.showTime",
   defaultValue: true,
-  description: "Show the clock on the system card.",
+  description: "Muestra el reloj en la tarjeta del sistema.",
 });
 
 export const systemCardShowDateSetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-show-date",
-  label: "Date",
+  label: "Fecha",
   storageKey: "glanceboard.systemCard.showDate",
   defaultValue: true,
-  description: "Show the date on the system card, under the time.",
+  description: "Muestra la fecha en la tarjeta del sistema, bajo la hora.",
 });
 
 export const systemCardShowBatterySetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-show-battery",
-  label: "Battery",
+  label: "Batería",
   storageKey: "glanceboard.systemCard.showBattery",
   defaultValue: true,
   description:
-    "Show battery indicators on the system card. Their style and which devices appear follow Settings > Customization > Battery indicators.",
+    "Muestra los indicadores de batería en la tarjeta del sistema. Su estilo y los dispositivos que aparecen siguen Ajustes > Personalización > Indicadores de batería.",
 });
 
 export const systemCardShowNotificationsSetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-show-notifications",
-  label: "Notifications",
+  label: "Notificaciones",
   storageKey: "glanceboard.systemCard.showNotifications",
   defaultValue: true,
-  description: "Show the icons of the phone's notifications along the edge of the system card.",
+  description: "Muestra los iconos de las notificaciones del móvil en el borde de la tarjeta del sistema.",
 });
 
 export const systemCardFlipHorizontalSetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-flip-horizontal",
-  label: "Flip layout horizontally",
+  label: "Invertir en horizontal",
   storageKey: "glanceboard.systemCard.flipHorizontal",
   defaultValue: false,
   description:
-    "Mirror the system card left to right: time, date, timers and notifications on the right, batteries and weather on the left.",
+    "Refleja la tarjeta del sistema de izquierda a derecha: hora, fecha, temporizadores y notificaciones a la derecha; baterías y tiempo a la izquierda.",
 });
 
 export const systemCardFlipVerticalSetting = new ConfigSettingBoolean({
   id: "glanceboard-system-card-flip-vertical",
-  label: "Flip layout vertically",
+  label: "Invertir en vertical",
   storageKey: "glanceboard.systemCard.flipVertical",
   defaultValue: false,
   description:
-    "Mirror the system card top to bottom: notifications along the top; time, date, batteries and weather along the bottom.",
+    "Refleja la tarjeta del sistema de arriba abajo: notificaciones arriba; hora, fecha, baterías y tiempo abajo.",
 });
 
 /**
@@ -117,7 +117,7 @@ export function systemCardSettingsMenuItems(): MenuItem[] {
     toggleSettingMenuItem(systemCardShowDateSetting),
     toggleSettingMenuItem(systemCardShowBatterySetting),
     toggleSettingMenuItem(weatherShowOnSystemCardSetting, {
-      label: "Weather",
+      label: "Tiempo",
       onChange: (_ctx, enabled) => {
         if (enabled) requestWeatherLocationAccess();
       },

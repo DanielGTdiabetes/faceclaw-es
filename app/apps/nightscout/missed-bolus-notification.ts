@@ -45,8 +45,8 @@ export class MissedBolusNotificationLayer implements Layer {
     openNightscout: () => void,
   ) {
     this.menu.setItems([
-      { label: "Dismiss", run: close },
-      { label: "Open Nightscout", run: () => {
+      { label: "Descartar", run: close },
+      { label: "Abrir Nightscout", run: () => {
         close();
         openNightscout();
       } },
@@ -63,10 +63,10 @@ export class MissedBolusNotificationLayer implements Layer {
     const nowMs = Date.now();
 
     let y = drawNotificationHeader(image, font, renderIcon("nightscout", ICON_SIZE), `Nightscout  ${formatRelativeTime(this.postedAtMs)}`);
-    image.drawText(font, contentX, y, "Missed bolus?", 230);
+    image.drawText(font, contentX, y, "¿Bolo olvidado?", 230);
     y += step;
     const minutes = Math.round((this.rise.latestMs - this.rise.onsetMs) / 60_000);
-    const body = `Glucose rose ${this.rise.riseMgdl} mg/dL in ${minutes} min with no bolus or carbs entered.`;
+    const body = `La glucosa subió ${this.rise.riseMgdl} mg/dL en ${minutes} min sin bolo ni hidratos registrados.`;
     for (const line of wrapText(font, body, contentWidth)) {
       image.drawText(font, contentX, y, line, 190);
       y += step;

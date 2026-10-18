@@ -43,11 +43,11 @@ const PROGRESS_BAR_HEIGHT = 5;
 
 export const musicShowAlbumArtSetting = new ConfigSettingBoolean({
   id: "glanceboard-music-show-album-art",
-  label: "Show album art",
+  label: "Mostrar carátula",
   storageKey: "glanceboard.music.showAlbumArt",
   defaultValue: true,
   description:
-    "Show the album art beside the track details. When off, the title, artist, album and progress bar use the full width of the card.",
+    "Muestra la carátula junto a los datos de la pista. Desactivado: título, artista, álbum y barra de progreso usan todo el ancho de la tarjeta.",
 });
 
 /** The music card's submenu in Glanceboard > Settings. */

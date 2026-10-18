@@ -62,7 +62,7 @@ const MODEL_DEFINITIONS: Record<Exclude<AssistantModel, "auto">, ModelDefinition
   // not an API key. The default for users who haven't set any key.
   qwen: { label: `${LOCAL_MODEL.label} (on-phone)`, provider: "local", model: LOCAL_MODEL.id },
   // Your own Hermes Agent (its API server), with its own tools and memory.
-  hermes: { label: "Hermes agent", provider: "hermes", model: "hermes-agent" },
+  hermes: { label: "Agente Hermes (API directa)", provider: "hermes", model: "hermes-agent" },
 };
 
 export function assistantModelLabel(value: AssistantModel): string {

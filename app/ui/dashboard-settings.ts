@@ -573,10 +573,10 @@ export function getBrightnessPreferences() {
 
 export const wakeToLastAppSetting = new ConfigSettingBoolean({
   id: "wake-to-last-app",
-  label: "Wake into last app",
+  label: "Despertar en la última app",
   storageKey: "display.wakeToLastApp",
   defaultValue: false,
-  description: "Waking the display with a double tap returns to the app you were using. Off: wake into the app switcher.",
+  description: "Al despertar la pantalla con doble toque vuelves a la app que estabas usando. Desactivado: se abre el selector de apps.",
 });
 
 export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>({
@@ -629,13 +629,13 @@ export type PreviewScaling = "scaled" | "raw";
 
 export const previewScalingSetting = new ConfigSettingEnum<PreviewScaling>({
   id: "preview-scaling",
-  label: "Preview scaling",
+  label: "Escala de la vista previa",
   storageKey: "phone.previewScaling",
   defaultValue: "scaled",
   values: ["scaled", "raw"],
-  formatValue: (value) => (value === "raw" ? "Raw" : "Scaled"),
+  formatValue: (value) => (value === "raw" ? "Sin escalar" : "Escalada"),
   description:
-    "How much of the glasses display the phone's mirror shows: Scaled centers and enlarges the part the current display mode uses; Raw shows the whole 640x480 panel.",
+    "Qué parte de la pantalla de las gafas muestra el espejo del móvil: Escalada centra y amplía la zona que usa el modo de pantalla actual; Sin escalar muestra el panel completo de 640x480.",
 });
 
 export const mirrorTouchSetting = new ConfigSettingBoolean({
@@ -837,7 +837,7 @@ const voiceProviderLabels: Record<VoiceProvider, string> = {
   elevenlabs: "ElevenLabs",
   whisper: "OpenAI (Whisper)",
   soniox: "Soniox",
-  "whisper-server": "Whisper server (self-hosted)",
+  "whisper-server": "Servidor Whisper (propio)",
   even: "EVO-X2 (local por Tailscale, gratis)",
 };
 
@@ -881,10 +881,10 @@ export const wakeWordActionSetting = new ConfigSettingEnum<WakeWordAction>({
 
 export const saveTranscribeAudioSetting = new ConfigSettingBoolean({
   id: "save-transcribe-audio",
-  label: "Save Transcribe audio",
+  label: "Guardar audio de Transcribir",
   storageKey: "voice.saveTranscribeAudio",
   defaultValue: true,
-  description: "Record each Transcribe session's audio as a WAV file in Downloads (about 2 MB per minute), named like its transcript. Recordings are kept until you delete them.",
+  description: "Graba el audio de cada sesión de Transcribir como WAV en Descargas (unos 2 MB por minuto), con el mismo nombre que su transcripción. Las grabaciones se conservan hasta que las borres.",
 });
 
 export const saveVoiceRecordingsSetting = new ConfigSettingBoolean({
@@ -923,24 +923,24 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
 
 export const assistantHermesUrlSetting = new ConfigSettingString({
   id: "assistant-hermes-url",
-  label: "Hermes URL",
+  label: "URL de Hermes",
   storageKey: "assistant.hermesUrl",
   defaultValue: "",
-  editorTitle: "Hermes API server (e.g. http://host:8642/v1)",
-  glassesEditTitle: "Edit Hermes URL",
-  formatValue: (value) => value || "(not set)",
-  description: "Address of a Hermes Agent gateway's API server, used when Hermes agent is the assistant model.",
+  editorTitle: "Servidor API de Hermes (p. ej. http://host:8642/v1)",
+  glassesEditTitle: "Editar URL de Hermes",
+  formatValue: (value) => value || "(sin configurar)",
+  description: "Dirección del servidor API del gateway de Hermes Agent; se usa cuando el modelo del asistente es Agente Hermes. Independiente del puente Faceclaw-Hermes.",
 });
 
 export const assistantHermesKeySetting = new ConfigSettingString({
   id: "assistant-hermes-key",
-  label: "Hermes key",
+  label: "Clave de Hermes",
   storageKey: "assistant.hermesKey",
   defaultValue: "",
-  editorTitle: "Hermes API server key",
-  glassesEditTitle: "Edit Hermes key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
-  description: "The API server's key (API_SERVER_KEY in Hermes's .env).",
+  editorTitle: "Clave del servidor API de Hermes",
+  glassesEditTitle: "Editar clave de Hermes",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
+  description: "Clave del servidor API (API_SERVER_KEY en el .env de Hermes).",
 });
 
 export const assistantBridgeHostSetting = new ConfigSettingString({
@@ -1019,50 +1019,50 @@ export const sonioxApiKeySetting = new ConfigSettingString({
 
 export const whisperServerUrlSetting = new ConfigSettingString({
   id: "whisper-server-url",
-  label: "Whisper server URL",
+  label: "URL del servidor Whisper",
   storageKey: "voice.whisperServerUrl",
   defaultValue: "",
-  editorTitle: "Whisper server URL (e.g. http://100.x.y.z:8004/v1)",
-  glassesEditTitle: "Edit Whisper server URL",
-  formatValue: (value) => value || "(not set)",
-  validate: (value) => (!value.trim() || normalizeWhisperServerUrl(value) ? null : "Enter an http:// or https:// address."),
+  editorTitle: "URL del servidor Whisper (p. ej. http://100.x.y.z:8004/v1)",
+  glassesEditTitle: "Editar URL del servidor Whisper",
+  formatValue: (value) => value || "(sin configurar)",
+  validate: (value) => (!value.trim() || normalizeWhisperServerUrl(value) ? null : "Introduce una dirección http:// o https://."),
   description:
-    "API root of an OpenAI-compatible Whisper server (vLLM, speaches, LocalAI...), used when Whisper server is the transcription provider. On iOS a plain-http address must also be allowed by the app's App Transport Security exceptions.",
+    "Raíz de la API de un servidor Whisper compatible con OpenAI (vLLM, speaches, LocalAI...); se usa cuando el proveedor de voz es Servidor Whisper. En iOS una dirección http sin cifrar también debe permitirse en las excepciones App Transport Security de la app.",
 });
 
 export const whisperServerModelSetting = new ConfigSettingString({
   id: "whisper-server-model",
-  label: "Whisper server model",
+  label: "Modelo del servidor Whisper",
   storageKey: "voice.whisperServerModel",
   defaultValue: "",
-  editorTitle: "Whisper model id (empty: server's first)",
-  glassesEditTitle: "Edit Whisper model",
-  formatValue: (value) => value || "(server default)",
-  description: "Model id sent to the Whisper server. Leave empty to use the first model the server lists.",
+  editorTitle: "Id del modelo Whisper (vacío: el primero del servidor)",
+  glassesEditTitle: "Editar modelo Whisper",
+  formatValue: (value) => value || "(el del servidor)",
+  description: "Id del modelo que se envía al servidor Whisper. Déjalo vacío para usar el primero que liste el servidor.",
 });
 
 export const whisperServerLanguageSetting = new ConfigSettingString({
   id: "whisper-server-language",
-  label: "Whisper language",
+  label: "Idioma de Whisper",
   storageKey: "voice.whisperServerLanguage",
   defaultValue: "",
-  editorTitle: "Language code, e.g. en or sk (empty: auto)",
-  glassesEditTitle: "Edit Whisper language",
-  formatValue: (value) => value || "Auto-detect",
-  validate: (value) => (!value.trim() || /^[a-z]{2,3}$/i.test(value.trim()) ? null : "Use a language code like en, sk or cs."),
+  editorTitle: "Código de idioma, p. ej. es o en (vacío: automático)",
+  glassesEditTitle: "Editar idioma de Whisper",
+  formatValue: (value) => value || "Automático",
+  validate: (value) => (!value.trim() || /^[a-z]{2,3}$/i.test(value.trim()) ? null : "Usa un código de idioma como es, en o ca."),
   description:
-    "Spoken language for the Whisper server. Leave empty to auto-detect; a wrong fixed language makes Whisper translate into it instead of transcribing.",
+    "Idioma hablado para el servidor Whisper. Déjalo vacío para detectarlo; un idioma fijo equivocado hace que Whisper traduzca a ese idioma en lugar de transcribir.",
 });
 
 export const whisperServerApiKeySetting = new ConfigSettingString({
   id: "whisper-server-api-key",
-  label: "Whisper server key",
+  label: "Clave del servidor Whisper",
   storageKey: "voice.whisperServerApiKey",
   defaultValue: "",
-  editorTitle: "Whisper server API key (optional)",
-  glassesEditTitle: "Edit Whisper server key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(none)"),
-  description: "Bearer token for the Whisper server, if it requires one.",
+  editorTitle: "Clave API del servidor Whisper (opcional)",
+  glassesEditTitle: "Editar clave del servidor Whisper",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(ninguna)"),
+  description: "Token Bearer del servidor Whisper, si lo pide.",
 });
 
 export const evenAsrUrlSetting = new ConfigSettingString({
@@ -1297,20 +1297,20 @@ export const nightscoutAlwaysShowInTopBarSetting = new ConfigSettingBoolean({
 });
 export const nightscoutMissedBolusAlertsSetting = new ConfigSettingBoolean({
   id: "nightscout-missed-bolus-alerts",
-  label: "Missed-bolus alerts",
+  label: "Avisos de bolo olvidado",
   storageKey: "integrations.nightscout.missedBolusAlerts",
   defaultValue: false,
-  description: "Show a notification on the glasses when glucose rises like an unannounced meal with no bolus or carbs entered. Experimental.",
+  description: "Muestra un aviso en las gafas cuando la glucosa sube como tras una comida sin bolo ni hidratos registrados. Experimental.",
 });
 export const nightscoutMissedBolusCooldownSetting = new ConfigSettingString({
   id: "nightscout-missed-bolus-cooldown-minutes",
-  label: "Missed-bolus alert cooldown",
+  label: "Pausa entre avisos de bolo olvidado",
   storageKey: "integrations.nightscout.missedBolusCooldownMinutes",
   defaultValue: "120",
-  editorTitle: "Missed-bolus alert cooldown (min)",
+  editorTitle: "Pausa entre avisos de bolo olvidado (min)",
   normalize: normalizeNightscoutThreshold,
   formatValue: (value) => `${value} min`,
-  description: "After a missed-bolus alert, wait at least this many minutes before showing another.",
+  description: "Tras un aviso de bolo olvidado, espera al menos estos minutos antes de mostrar otro.",
 });
 
 export function loadNightscoutThresholds(): NightscoutThresholds {
