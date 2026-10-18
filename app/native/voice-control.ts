@@ -1,6 +1,6 @@
 import { Utils } from "@nativescript/core";
 
-import { type CloudSttTranscriptEvent, CloudSttClient } from "./cloud-stt";
+import { type CloudSttTranscriptEvent, CloudSttClient, toJavaBytes } from "./cloud-stt";
 import { createCloudSttClient } from "./cloud-stt-provider";
 import { SpeechPauseDetector } from "./speech-pause";
 import { toUint8Array } from "../util/array-util";
@@ -31,8 +31,8 @@ export type VoiceControlState = {
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
 // "whisper-server" is a self-hosted OpenAI-compatible Whisper over HTTP
-// (whisper-server-stt.ts).
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server";
+// (whisper-server-stt.ts); "even" is the EVO-X2 NeMo-Speech service (even-stt.ts).
+export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server" | "even";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
@@ -60,6 +60,8 @@ export type PushToTalkOptions = {
   whisperServerModel?: string;
   whisperServerLanguage?: string;
   whisperServerApiKey?: string;
+  evenAsrUrl?: string;
+  evenAsrKey?: string;
   saveRecording: boolean;
   /**
    * Watch the mic and fire onSpeechEnd when the speaker stops. For hands-free
@@ -114,6 +116,7 @@ export class FaceclawVoiceControlBridge {
   private readonly speechPause = new SpeechPauseDetector();
   private readonly speechEndListeners = new Set<() => void>();
   private controller: any = null;
+  private readonly localTranscriptionListeners = new Set<any>();
   private listenerProxy: any = null;
   private status = "Voice control stopped.";
   private listening = false;
@@ -212,12 +215,10 @@ export class FaceclawVoiceControlBridge {
 
   /** End push-to-talk: for cloud, commit for a final result if it was the last holder. */
   stopPushToTalk(): Promise<void> | void {
-    // Shared continuous capture keeps running; cloud providers finalize via
-    // their own callbacks. Only a stopped native recognizer must be awaited.
+    // Wait for PCM delivery to drain and for a remote/local fallback final too.
     const finished = !this.cloudClient && this.captureHolders.has("ptt") && this.captureHolders.size === 1
       ? this.nativeCaptureFinished : undefined;
-    this.releaseCapture("ptt", true);
-    return finished;
+    return this.releaseCapture("ptt", true) ?? finished;
   }
 
   /** Begin continuous capture (Transcribe): the mic stays on until released. */
@@ -226,7 +227,7 @@ export class FaceclawVoiceControlBridge {
   }
 
   stopContinuousCapture(): void {
-    this.releaseCapture("continuous", false);
+    void this.releaseCapture("continuous", false);
   }
 
   /** Subscribe to decoded raw mic PCM (16 kHz mono S16LE). */
@@ -428,11 +429,13 @@ export class FaceclawVoiceControlBridge {
     // A previous push-to-talk commit may still be awaiting its final result.
     this.cloudClient?.stop();
     const cloudClient = this.createCloudClient(options);
+    const captureId = this.nextNativeCaptureId++;
+    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     if (cloudClient) {
       this.cloudClient = cloudClient;
       cloudClient.start();
       this.started = true;
-      this.controller?.start("cloud");
+      this.controller?.start("cloud", captureId);
       return;
     }
 
@@ -442,11 +445,9 @@ export class FaceclawVoiceControlBridge {
     // the three explicit Whisper choices (FaceclawVoiceController defaults to Moonshine).
     this.controller?.setOnboardModelKind(
       options.provider === "onboard-whisper-medium" ? "whisper-medium" :
-      options.provider === "onboard-whisper-small" ? "whisper-small" :
+      options.provider === "onboard-whisper-small" || options.provider === "even" ? "whisper-small" :
       options.provider === "onboard-whisper" ? "whisper" : "moonshine",
     );
-    const captureId = this.nextNativeCaptureId++;
-    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     this.controller?.start("onboard", captureId);
   }
 
@@ -461,17 +462,41 @@ export class FaceclawVoiceControlBridge {
         this.emitTranscript(event.text, event.isFinal, event),
       onStatus: (status: string) => this.setStatus(status),
       onError: (message: string) => this.setStatus(message),
-    }, () => this.captureHolders.has("continuous"));
+    }, () => this.captureHolders.has("continuous"), (pcm) => this.transcribeLocally(pcm));
   }
 
-  private releaseCapture(holder: CaptureHolder, commit: boolean): void {
+  /**
+   * On-device Whisper over an already captured utterance, for when the EVO-X2
+   * service fails mid-capture. Prefers the most accurate downloaded model;
+   * rejects when none is downloaded (never falls back to another cloud).
+   */
+  private transcribeLocally(pcm: Uint8Array): Promise<string> {
+    this.ensureController();
+    const controller = this.controller;
+    if (!controller) return Promise.reject(new Error("on-device voice unavailable"));
+    return new Promise((resolve, reject) => {
+      // Held until the native thread answers, like listenerProxy, so the JS
+      // implementation cannot be collected while Java still calls it.
+      const listener = new com.faceclaw.app.FaceclawBufferTranscriptionListener({
+        onResult: (text: string | null, error: string | null) => {
+          this.localTranscriptionListeners.delete(listener);
+          if (error) reject(new Error(String(error)));
+          else resolve(String(text ?? ""));
+        },
+      });
+      this.localTranscriptionListeners.add(listener);
+      controller.transcribeBuffer(toJavaBytes(pcm), "whisper-small,whisper,whisper-medium", listener);
+    });
+  }
+
+  private releaseCapture(holder: CaptureHolder, commit: boolean): Promise<void> | void {
     this.audioArbiter.setOwner(`stt:${holder}`, false);
     // A holder that gives up while its capture is parked must not be resumed
     // by the next session.
     this.suspendedHolders.delete(holder);
     if (!this.captureHolders.delete(holder)) {
       // Never held; still finish a dangling cloud commit if one is pending.
-      if (commit) this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
       return;
     }
     if (this.captureHolders.size > 0) {
@@ -479,7 +504,9 @@ export class FaceclawVoiceControlBridge {
       return;
     }
     if (!this.started) {
-      this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
+      this.cloudClient?.stop();
+      this.cloudClient = null;
       return;
     }
     // Order matters for cloud: stopping the Java controller flushes any final
@@ -487,7 +514,11 @@ export class FaceclawVoiceControlBridge {
     this.controller?.stop();
     this.started = false;
     if (commit) {
-      this.cloudClient?.finish();
+      const client = this.cloudClient;
+      if (client) return this.nativeCaptureFinished.then(() => {
+        if (this.cloudClient !== client) throw new Error("Voice capture cancelled.");
+        return client.finish();
+      });
     } else {
       this.cloudClient?.stop();
       this.cloudClient = null;

@@ -26,8 +26,8 @@ import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
-import { asrModelState, conversationTextModelStatus, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
-import { conversationModelOption } from "../native/conversation-model-options";
+import { asrModelState, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
+import { conversationModelOption, conversationModelState } from "../native/conversation-model-options";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, hermesHistoryText, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
@@ -40,6 +40,7 @@ import {
   conversationDailyContextSelected, setConversationDailyContextSelected,
   selectConversationListeningMode,
   conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
+  EVO_CONVERSATION_MODEL,
 } from "../conversation-detection/session-controls";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
@@ -495,14 +496,15 @@ export class MainViewModel extends RemoteControlsViewModel {
   /** Soniox needs only its key; the local engine needs downloaded Whisper weights. */
   private get conversationTextReady(): string {
     return conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
-      : conversationTextModelStatus(conversationLocalModel());
+      : conversationModelState(conversationLocalModel()).status;
   }
 
   get conversationEngineButton(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
     const active = snapshot.enabled && snapshot.state === "escuchando" && snapshot.transcription?.model ? " · en uso" : "";
     const model = conversationModel();
-    const name = model === "soniox" ? "Soniox (nube)" : `Whisper ${model.split("-")[1]} (local)`;
+    const name = model === "soniox" ? "Soniox (nube)" : model === EVO_CONVERSATION_MODEL ? "Parakeet (EVO-X2)"
+      : `Whisper ${model.split("-")[1]} (local)`;
     return `Motor: ${name}${active}`;
   }
   get conversationModeButton(): string { return `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`; }
@@ -517,13 +519,13 @@ export class MainViewModel extends RemoteControlsViewModel {
       : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
   }
   get conversationSpeakersButton(): string {
-    return "Voces: " + (conversationLocalSpeakers() ? "distinguir con Whisper" : "sin distinguir")
+    return "Voces: " + (conversationLocalSpeakers() ? "distinguir en el móvil" : "sin distinguir")
       + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "");
   }
   get conversationSpeakersStatus(): string {
     const speakers = conversationLocalSpeakers()
-      ? "Con Whisper local, cada frase se corta en las pausas y se asocia a tu voz (si tienes perfil) o a otra voz de la sesión. Necesita el modelo de voz descargado."
-      : "Whisper local entrega el texto sin saber quién habla.";
+      ? "Con Whisper o Parakeet, cada frase se corta en las pausas y se asocia a tu voz (si tienes perfil) o a otra voz de la sesión. Necesita el modelo de voz descargado."
+      : "Whisper o Parakeet entregan el texto sin saber quién habla.";
     return conversationSingleVoiceFilter()
       ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
       : speakers;
@@ -531,7 +533,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   async onConversationSpeakersTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
     const actions = [
-      conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces con Whisper",
+      conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces",
       conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
     ];
     const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
@@ -575,6 +577,10 @@ export class MainViewModel extends RemoteControlsViewModel {
   get conversationModelStatus(): string {
     const model = conversationModel();
     if (model === "soniox") return sonioxApiKeySetting.get().trim() ? "Reconoce y separa voces en la nube." : "Falta la clave de Soniox en Ajustes.";
+    if (model === EVO_CONVERSATION_MODEL) {
+      return conversationModelState(model).error
+        ?? "Transcribe en tu EVO-X2 con Parakeet (misma dirección y clave que Hey Even). Las voces se distinguen en el móvil.";
+    }
     const state = asrModelState(model);
     if (state.error) return state.error;
     const ready = state.status === "ready" ? "Descargado. Puedes iniciar." : "Pulsa Descargar; al terminar, pulsa Iniciar.";
@@ -582,11 +588,11 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
   get conversationDownloadVisibility(): string {
     const model = conversationModel();
-    return model !== "soniox" && asrModelState(model).status !== "ready" ? "visible" : "collapse";
+    return model !== "soniox" && model !== EVO_CONVERSATION_MODEL && asrModelState(model).status !== "ready" ? "visible" : "collapse";
   }
   get conversationDownloadButton(): string {
     const model = conversationModel();
-    if (model === "soniox") return "";
+    if (model === "soniox" || model === EVO_CONVERSATION_MODEL) return "";
     const state = asrModelState(model);
     return state.status === "downloading" ? `Descargando ${Math.floor(state.bytesDownloaded * 100 / state.totalBytes)} % · pausar`
       : `Descargar ${Math.ceil(state.totalBytes / 1_000_000)} MB`;
@@ -594,7 +600,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   onConversationDownloadTap(): void {
     if (!this.localTranscriptionCanStart) return;
     const model = conversationModel();
-    if (model === "soniox") return;
+    if (model === "soniox" || model === EVO_CONVERSATION_MODEL) return;
     if (asrModelState(model).status === "downloading") cancelAsrModelDownload(model); else startAsrModelDownload(model);
     this.refreshConversationUi();
   }
@@ -614,7 +620,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     if (!this.localTranscriptionCanStart) return;
     const labels = CONVERSATION_MODELS.map(conversationModelOption);
     const choice = await Dialogs.action({ title: "Motor de conversación", cancelButtonText: "Cerrar",
-      message: "Whisper funciona en el móvil. Hermes sigue usando el puente y su proveedor. Medium puede tardar más y consumir más memoria.", actions: labels });
+      message: "Parakeet transcribe en tu EVO-X2; Whisper funciona en el móvil. Hermes sigue usando el puente y su proveedor. Medium puede tardar más y consumir más memoria.", actions: labels });
     if (!this.localTranscriptionCanStart) return;
     const index = labels.indexOf(choice);
     if (index < 0) return;
@@ -640,14 +646,19 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
   get localTranscriptionButton(): string {
     if (conversationTextEngine() === "soniox") return "Solo transcripción con Soniox";
-    const model = asrModelState(conversationLocalModel());
+    const model = conversationModelState(conversationLocalModel());
     if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
     return model.status === "ready" ? "Solo transcripción con el modelo seleccionado" : "Descargar el modelo seleccionado";
   }
   onLocalTranscriptionTap(): void {
     if (!this.localTranscriptionCanStart) return;
     const selected = conversationModel();
-    if (selected !== "soniox" && asrModelState(selected).status !== "ready") {
+    if (selected === EVO_CONVERSATION_MODEL && conversationModelState(selected).status !== "ready") {
+      this.hermesNotice = conversationModelState(selected).error ?? "";
+      this.refreshHermesUi();
+      return;
+    }
+    if (selected !== "soniox" && selected !== EVO_CONVERSATION_MODEL && asrModelState(selected).status !== "ready") {
       startAsrModelDownload(selected);
       return; // Weights only; download completion never starts capture.
     }

@@ -1,6 +1,6 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
-import { conversationModel, conversationLocalModel, conversationLocalSpeakers } from "../conversation-detection/session-controls";
+import { conversationEvoEndpoint, conversationModel, conversationLocalModel, conversationLocalSpeakers, EVO_CONVERSATION_MODEL } from "../conversation-detection/session-controls";
 import { isMicModelReady } from "../apps/microphones/mic-models";
 import { LocalConversationTurns } from "../conversation-detection/local-conversation-turns";
 import { type ConversationTurn } from "../conversation-detection/conversation-turns";
@@ -30,7 +30,8 @@ export class LocalTranscription implements DetectorTranscription {
     this.lines = [];
     const selected = conversationModel();
     const model = selected === "soniox" ? conversationLocalModel() : selected;
-    if (!global.isAndroid || !isAsrModelReady(model)) {
+    const evo = model === EVO_CONVERSATION_MODEL ? conversationEvoEndpoint() : null;
+    if (!global.isAndroid || (model === EVO_CONVERSATION_MODEL ? !evo : !isAsrModelReady(model))) {
       this.status = "modelo no disponible";
       return false;
     }
@@ -61,7 +62,8 @@ export class LocalTranscription implements DetectorTranscription {
       this.turnLog.start(model);
       const wire = language === "es" ? "es" : "auto";
       const speakers = profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
-      this.enabled = Boolean(speakers ? this.engine.startWithSpeakers(wire, model, maxMs) : this.engine.start(wire, model, maxMs));
+      this.enabled = Boolean(evo ? this.engine.startRemote(wire, evo.url, evo.key, maxMs, speakers)
+        : speakers ? this.engine.startWithSpeakers(wire, model, maxMs) : this.engine.start(wire, model, maxMs));
       if (!this.enabled) this.turnLog.stop();
       this.status = this.enabled ? "cargando" : "ocupado";
       return this.enabled;

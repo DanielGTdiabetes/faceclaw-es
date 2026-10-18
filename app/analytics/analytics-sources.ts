@@ -26,6 +26,7 @@ const API_KEY_SETTINGS: Record<string, string> = {
   elevenlabs: "voice.elevenLabsApiKey",
   soniox: "voice.sonioxApiKey",
   "whisper-server": "voice.whisperServerApiKey",
+  "even-asr": "voice.evenAsrKey",
   mapbox: "maps.mapboxApiKey",
   roam: "integrations.roam.apiToken",
   nightscout: "integrations.nightscout.apiToken",

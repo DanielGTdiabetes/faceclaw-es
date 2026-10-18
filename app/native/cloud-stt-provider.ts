@@ -1,5 +1,7 @@
 import type { CloudSttClient, CloudSttOptions } from "./cloud-stt";
 import { ElevenLabsSttClient } from "./elevenlabs-stt";
+import { EvenSttClient, evenSttUrl } from "./even-stt";
+import { FallbackSttClient, type LocalTranscribe } from "./fallback-stt";
 import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { ReconnectingSttClient } from "./reconnecting-stt";
 import { SonioxSttClient } from "./soniox-stt";
@@ -20,6 +22,9 @@ export type VoiceProviderSelection = {
   whisperServerModel?: string;
   whisperServerLanguage?: string;
   whisperServerApiKey?: string;
+  /** Self-hosted EVO-X2 endpoint and its Bearer key (Android only). */
+  evenAsrUrl?: string;
+  evenAsrKey?: string;
 };
 
 type CloudProvider = {
@@ -29,8 +34,12 @@ type CloudProvider = {
   configured?: (selection: VoiceProviderSelection) => boolean;
   /** What to tell the user when it can't. */
   missing?: string;
+  /** Why the selection cannot be used even with a key, e.g. a malformed URL. */
+  unusable?: (selection: VoiceProviderSelection) => string | null;
   create: (options: CloudSttOptions, selection: VoiceProviderSelection) => CloudSttClient;
   finalTimeoutMs?: number;
+  /** Self-hosted: a failed push-to-talk utterance is re-transcribed on the phone instead of retried. */
+  localFallback?: boolean;
 };
 
 // Providers absent here ("onboard" and the "onboard-whisper*" models) transcribe on-device.
@@ -62,6 +71,13 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
     }),
     finalTimeoutMs: WHISPER_SERVER_FINAL_TIMEOUT_MS,
   },
+  even: {
+    name: "EVO-X2",
+    apiKey: (selection) => selection.evenAsrKey ?? "",
+    unusable: (selection) => evenSttUrl(selection.evenAsrUrl ?? "") ? null : "EVO-X2 address is not a ws:// URL",
+    create: (options, selection) => new EvenSttClient({ ...options, url: evenSttUrl(selection.evenAsrUrl ?? "")! }),
+    localFallback: true,
+  },
 };
 
 function isConfigured(provider: CloudProvider, selection: VoiceProviderSelection): boolean {
@@ -71,7 +87,7 @@ function isConfigured(provider: CloudProvider, selection: VoiceProviderSelection
 /** Whether createCloudSttClient would return a cloud client for this selection. */
 export function usesCloudStt(selection: VoiceProviderSelection): boolean {
   const provider = CLOUD_PROVIDERS[selection.provider];
-  return Boolean(provider && isConfigured(provider, selection));
+  return Boolean(provider && isConfigured(provider, selection) && !provider.unusable?.(selection));
 }
 
 /**
@@ -79,23 +95,40 @@ export function usesCloudStt(selection: VoiceProviderSelection): boolean {
  * provider whose API key is missing falls back to on-device (reported via
  * onStatus) rather than failing the capture outright. `continuous` says
  * whether the capture is open-ended (Transcribe), where pauses commit segments.
+ * With `local`, a self-hosted provider's push-to-talk capture falls back to
+ * on-device transcription of the captured audio when the server fails.
  */
 export function createCloudSttClient(
   selection: VoiceProviderSelection,
   options: Omit<CloudSttOptions, "apiKey">,
   continuous: () => boolean,
-): ReconnectingSttClient | null {
+  local?: LocalTranscribe,
+): CloudSttClient | null {
   const provider = CLOUD_PROVIDERS[selection.provider];
   if (!provider) return null;
-  if (!isConfigured(provider, selection)) {
+  const apiKey = provider.apiKey(selection).trim();
+  const configured = isConfigured(provider, selection);
+  const unusable = provider.unusable?.(selection);
+  // An incomplete persisted EVO-X2 setting still needs the downloaded Whisper
+  // selection used by normal remote failures; never silently switch to Moonshine.
+  if (provider.localFallback && local && !continuous() && (!configured || unusable)) {
+    const reason = !configured ? `No ${provider.name} key set` : unusable!;
+    return new FallbackSttClient((clientOptions) => ({
+      start: () => clientOptions.onDisconnected?.(reason),
+      acceptPcm() {}, finish() {}, stop() {},
+    }), { ...options, apiKey }, local);
+  }
+  if (!configured) {
     options.onStatus(provider.missing ?? `No ${provider.name} key set; using on-device voice.`);
     return null;
   }
-  const apiKey = provider.apiKey(selection).trim();
-  return new ReconnectingSttClient(
-    (clientOptions) => provider.create(clientOptions, selection),
-    { ...options, apiKey },
-    continuous,
-    provider.finalTimeoutMs,
-  );
+  if (unusable) {
+    options.onStatus(`${unusable}; using on-device voice.`);
+    return null;
+  }
+  const create = (clientOptions: CloudSttOptions) => provider.create(clientOptions, selection);
+  if (provider.localFallback && local && !continuous()) {
+    return new FallbackSttClient(create, { ...options, apiKey }, local);
+  }
+  return new ReconnectingSttClient(create, { ...options, apiKey }, continuous, provider.finalTimeoutMs);
 }

@@ -11,7 +11,8 @@ function localPort() {
     events,
     setText(value) { text = value; },
     setDiagnostics(value) { diagnostics = { ...diagnostics, ...value }; },
-    start(language) { diagnostics = emptyDiagnostics(); events.push(`start:${language}`); return true; },
+    starts: [],
+    start(language, speakers, maxMs) { diagnostics = emptyDiagnostics(); events.push(`start:${language}`); this.starts.push([language, speakers, maxMs]); return true; },
     stop() { events.push('stop'); text = ''; },
     resetStream() { events.push('reset'); },
     setPhase() {},
@@ -77,6 +78,21 @@ test('saved-profile matches automatically associate finalized labels without a p
   assert.equal(h.engine.snapshot().identity.speaker, undefined);
   h.engine.stop(); h.sockets[0].listener.onTextMessage(msg([]));
   assert.equal(h.engine.snapshot().identity.speaker, undefined);
+});
+
+test('a manual conversation asks the local engine for session voices; other starts do not', () => {
+  // Regression: S2.9 added local speakers but this wrapper always passed false, so they never ran.
+  const h = harness({ engine: 'local' });
+  assert.equal(h.engine.start('auto', true, 1200000), true);
+  assert.deepEqual(h.local.starts.at(-1), ['auto', true, 1200000]);
+  h.engine.stop();
+  assert.equal(h.engine.start('es', false, 120000), true);
+  assert.deepEqual(h.local.starts.at(-1), ['es', false, 120000]);
+  h.engine.stop();
+  const fallback = harness();
+  assert.equal(fallback.engine.start('auto', true, 1200000), true);
+  fallback.sockets[0].listener.onFailure('boom');
+  assert.deepEqual(fallback.local.starts.at(-1), ['auto', true, 1200000]);
 });
 
 test('without a key or with the local engine it starts on-device Whisper and opens no socket', () => {

@@ -471,7 +471,7 @@ export class VoiceInputLayer implements Layer {
     // that trails in after that point is stale.
     if (!this.acceptingTranscript || this.phase === "refining") return;
     if (event.isFinal) {
-      const finalText = event.text.trim() || this.liveText.trim();
+      const finalText = event.text.trim() || (event.authoritative ? "" : this.liveText.trim());
       if (finalText) {
         this.finalizedText = this.finalizedText ? `${this.finalizedText} ${finalText}` : finalText;
       }

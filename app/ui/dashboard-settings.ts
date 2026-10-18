@@ -825,7 +825,7 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
 // "whisper-server" is a self-hosted OpenAI-compatible Whisper (e.g. vLLM).
-export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server";
+export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server" | "even";
 
 // On iOS "onboard" is Apple's on-device recognizer, and there is no
 // "onboard-whisper" (the sherpa-onnx models are Android-only).
@@ -838,6 +838,7 @@ const voiceProviderLabels: Record<VoiceProvider, string> = {
   whisper: "OpenAI (Whisper)",
   soniox: "Soniox",
   "whisper-server": "Whisper server (self-hosted)",
+  even: "EVO-X2 (local por Tailscale, gratis)",
 };
 
 export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
@@ -847,13 +848,14 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   defaultValue: global.isIOS ? "onboard" : "onboard-whisper",
   values: global.isIOS
     ? ["onboard", "elevenlabs", "whisper", "soniox", "whisper-server"]
-    : ["onboard", "onboard-whisper", "onboard-whisper-small", "onboard-whisper-medium", "elevenlabs", "whisper", "soniox", "whisper-server"],
+    : ["onboard", "onboard-whisper", "onboard-whisper-small", "onboard-whisper-medium", "elevenlabs", "whisper", "soniox", "whisper-server", "even"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
     if (value === "elevenlabs") return elevenLabsApiKeySetting.get().trim().length === 0;
     if (value === "whisper") return openAiApiKeySetting.get().trim().length === 0;
     if (value === "soniox") return sonioxApiKeySetting.get().trim().length === 0;
     if (value === "whisper-server") return !normalizeWhisperServerUrl(whisperServerUrlSetting.get());
+    if (value === "even") return evenAsrKeySetting.get().trim().length === 0 || evenAsrUrlSetting.get().trim().length === 0;
     return false;
   },
   description: global.isIOS
@@ -1061,6 +1063,27 @@ export const whisperServerApiKeySetting = new ConfigSettingString({
   glassesEditTitle: "Edit Whisper server key",
   formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(none)"),
   description: "Bearer token for the Whisper server, if it requires one.",
+});
+
+export const evenAsrUrlSetting = new ConfigSettingString({
+  id: "even-asr-url",
+  label: "Dirección EVO-X2",
+  storageKey: "voice.evenAsrUrl",
+  defaultValue: "ws://100.93.23.103:18770/v1/audio/transcriptions/realtime",
+  editorTitle: "Dirección del servicio de voz del EVO-X2",
+  glassesEditTitle: "Editar dirección EVO-X2",
+  description: "WebSocket del servicio de reconocimiento del EVO-X2 (NeMo-Speech), accesible por Tailscale. Se usa cuando EVO-X2 es el proveedor de voz.",
+});
+
+export const evenAsrKeySetting = new ConfigSettingString({
+  id: "even-asr-key",
+  label: "Clave EVO-X2",
+  storageKey: "voice.evenAsrKey",
+  defaultValue: "",
+  editorTitle: "Clave del servicio de voz del EVO-X2",
+  glassesEditTitle: "Editar clave EVO-X2",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
+  description: "Clave Bearer del servicio de voz del EVO-X2 (~/.config/even-asr/nemotron.env en even).",
 });
 
 export const anthropicApiKeySetting = new ConfigSettingString({

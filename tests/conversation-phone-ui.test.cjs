@@ -41,7 +41,7 @@ function harness() {
         conversationHermes: { snapshot: () => ({ enabled: snapshot.enabled, listening: snapshot.enabled, requests: 0, modality: 'identidad-opcional' }), history: () => [], diagnostics: () => ({}) } } };
       if (name === '../ui/shell/conversation-hermes-ui') return { hermesPresentationDiagnostics: () => ({ presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 }) };
       if (name === '../native/asr-model') return { asrModelState: () => ({ status: textModel }), conversationTextModelStatus: () => textModel, preciseTextModelLabel: () => 'Modelo preciso (small): descargar 375 MB', startAsrModelDownload: () => downloads++ };
-      if (name === '../native/conversation-model-options') return { conversationModelLabel: () => 'Whisper small', conversationModelOption: id => id };
+      if (name === '../native/conversation-model-options') return { conversationModelLabel: () => 'Whisper small', conversationModelOption: id => id, conversationModelState: () => ({ status: textModel }) };
       if (name === '../apps/microphones/mic-models') return { micModelState: () => ({ status: 'ready' }), startMicModelDownload: () => downloads++ };
       if (name === '../conversation-detection/conversation-ui') return ui;
       if (name === '../assistant/bridge-client') return { assistantBridge: { conversation: { supportsDailyContext: () => false, isSupported: () => true, supportsOptionalIdentity: () => true } } };

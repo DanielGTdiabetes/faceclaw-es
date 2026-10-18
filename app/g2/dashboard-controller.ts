@@ -58,8 +58,9 @@ import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
-import { conversationTextModelStatus } from "../native/asr-model";
+import { bindConversationEvoEndpoint, bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { conversationModelState } from "../native/conversation-model-options";
+import { evenSttUrl } from "../native/even-stt";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
@@ -88,7 +89,7 @@ import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-a
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -403,7 +404,13 @@ class DashboardController {
       setManualEnabled: (enabled) => this.setManualConversationEnabled(enabled),
       voiceModel: () => micModelState("speaker-embedding").status,
       textModel: () => conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
-        : conversationTextModelStatus(conversationLocalModel()),
+        : conversationModelState(conversationLocalModel()).status,
+    });
+    // Conversation through the EVO-X2 reuses the Hey Even "even" address and key; nothing is stored twice.
+    bindConversationEvoEndpoint(() => {
+      const url = evenSttUrl(evenAsrUrlSetting.get());
+      const key = evenAsrKeySetting.get().trim();
+      return url && key ? { url, key } : null;
     });
     if (global.isAndroid) {
       voiceActivity.subscribe((active) => {
@@ -2235,7 +2242,9 @@ class DashboardController {
     const local = conversationTextEngine() === "local";
     if (withHermes && !assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
     if (!local && !sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
-    if (local && conversationTextModelStatus(conversationLocalModel()) !== "ready") return "Descarga el modelo seleccionado antes de iniciar.";
+    if (local && conversationModelState(conversationLocalModel()).status !== "ready") {
+      return conversationModelState(conversationLocalModel()).error ?? "Descarga el modelo seleccionado antes de iniciar.";
+    }
     // conv/2 bridge: recognising the wearer is optional. An old conv/1 bridge only accepts
     // wearer+other contexts, so it keeps the previous requirement of a saved profile.
     const optionalIdentity = !withHermes || assistantBridge.conversation.supportsOptionalIdentity();
@@ -2363,6 +2372,8 @@ class DashboardController {
       whisperServerModel: whisperServerModelSetting.get(),
       whisperServerLanguage: whisperServerLanguageSetting.get(),
       whisperServerApiKey: whisperServerApiKeySetting.get(),
+      evenAsrUrl: evenAsrUrlSetting.get(),
+      evenAsrKey: evenAsrKeySetting.get(),
       saveRecording: saveVoiceRecordingsSetting.get(),
       // "My voice only" (Microphones app): verify command utterances
       // against the enrolled wearer voice-print; non-matching speakers'

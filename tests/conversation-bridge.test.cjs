@@ -7,9 +7,9 @@ const channelModule = require('../.test-build/app/assistant/conversation-channel
 
 function harness() {
   let now = 1000;
-  const timers = new Set(), sockets = [], exports = {};
+  const timers = new Set(), sockets = [], exports = {}, mcpOptions = [];
   const deps = {
-    './mcp-server': { AssistantMcpServer: class { sendToolsChanged() {} handleMessage() {} } },
+    './mcp-server': { AssistantMcpServer: class { constructor(options) { mcpOptions.push(options); } sendToolsChanged() {} handleMessage() {} } },
     './tool-registry': { toolRegistry: { onToolsChanged: () => () => {} } },
     './conversation-channel': channelModule,
     './notification-channel': require('../.test-build/app/assistant/notification-channel.js'),
@@ -42,7 +42,7 @@ function harness() {
     text: 'Texto sintético', timing: 'valido', startMs: i * 1000, endMs: i * 1000 + 500, closedBy: 'endpoint' })) };
   const results = [], chat = [];
   const callbacks = { onTextDelta: (delta, text) => chat.push(text), onToolActivity() {}, onTurnDone() {}, onError() {} };
-  return { bridge, socket, message, ack, timers, results, chat, callbacks,
+  return { bridge, socket, message, ack, timers, results, chat, callbacks, mcp: () => mcpOptions.at(-1),
     ready() { ack(['chat', 'mcp', 'conv/1']); bridge.conversation.setEnabled(true); },
     request() { return bridge.conversation.request(context, 'assess', 5000, r => results.push(r)); },
     reply() { const request = socket.frames.findLast(f => f.type === 'assess');
@@ -117,4 +117,14 @@ test('callbacks from a replaced socket are ignored after reconnecting', () => {
   old.listener.onClosed(1000, 'late');
   assert.notEqual(h.bridge.state().status, 'Connection closed (1000: late)');
   h.bridge.stop();
+});
+
+test('phone tools act inside continuous listening: an enabled conversation is a live session', () => {
+  const h = harness();
+  assert.equal(h.mcp().isTurnActive(), false);
+  h.ready();
+  assert.equal(h.mcp().isTurnActive(), true);
+  h.bridge.conversation.setEnabled(false);
+  assert.equal(h.mcp().isTurnActive(), false);
+  h.bridge.stop(); assert.equal(h.timers.size, 0);
 });

@@ -1,6 +1,5 @@
 import type { VoiceControlState, VoiceTranscriptEvent } from './voice-control'
-import type { CloudSttTranscriptEvent } from './cloud-stt'
-import type { ReconnectingSttClient } from './reconnecting-stt'
+import type { CloudSttClient, CloudSttTranscriptEvent } from './cloud-stt'
 import { createCloudSttClient, usesCloudStt, type VoiceProviderSelection } from './cloud-stt-provider'
 import { WavRecorder } from './wav-recorder.ios'
 
@@ -38,7 +37,8 @@ export class IosVoiceControlBridge {
   // Non-null while a cloud provider owns the transcript; FaceclawSpeech then
   // only supplies PCM. cloudEndStatus is set once the audio has ended and the
   // provider was asked to finalize; it is the status shown when it does.
-  private cloud: ReconnectingSttClient | null = null
+  // A self-hosted provider may wait longer than the default for its final transcript.
+  private cloud: (CloudSttClient & { finalTimeoutMs?: number }) | null = null
   private cloudEndStatus: string | null = null
   private cloudTimer: ReturnType<typeof setTimeout> | null = null
   // Open-ended capture: runs until stopContinuousCapture, and push-to-talk
@@ -241,7 +241,13 @@ export class IosVoiceControlBridge {
     this.setStatus('Recognizing…')
     // Armed first: finish() can deliver the final synchronously.
     this.cloudTimer = setTimeout(() => this.completeCloud(), this.cloud?.finalTimeoutMs ?? CLOUD_FINAL_TIMEOUT_MS)
-    this.cloud?.finish()
+    const cloud = this.cloud
+    const pending = cloud?.finish()
+    if (pending) void pending.catch((error) => {
+      if (this.cloud !== cloud) return
+      this.cloudEndStatus = `Transcription failed: ${String(error)}`
+      this.completeCloud()
+    })
   }
   private completeCloud(): void {
     const status = this.cloudEndStatus ?? 'Ready to send'

@@ -94,15 +94,18 @@ def run(args, tolerate=False):
 
 def atomic_write(path, data):
     path = Path(path).absolute()
-    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
-        temporary = Path(output.name)
-        try:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
+            temporary = Path(output.name)
             os.chmod(temporary, 0o600)
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
-            os.replace(temporary, path)
-        finally:
+        # Windows refuses to rename an open NamedTemporaryFile.
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
             temporary.unlink(missing_ok=True)
 
 
