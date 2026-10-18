@@ -44,12 +44,12 @@ export const HERMES_REQUEST_TIMEOUT_MS = 15_000;
 /**
  * Adaptive spacing for unlimited manual listening (no request budget). Every call
  * resends the whole prompt and context, so evaluations that keep ending in silence (TV, radio, other
- * people's private talk) back off: 5, 10, 20, 40, then at most 60 s between requests. A delivered
+ * people's private talk) back off: 5, then at most 10 s between requests. A delivered
  * message, a question, the wearer speaking, naming Hermes or a long silence resets to 5 s at once.
  * Nothing heard is dropped: the next request carries the whole bounded episode context.
  */
 export const HERMES_BASE_GAP_MS = 5_000;
-export const HERMES_MAX_GAP_MS = 60_000;
+export const HERMES_MAX_GAP_MS = 10_000;
 /** Fresh speech below this many words (and no question) only grows the context: "vale", "sí, sí". */
 export const HERMES_MIN_FRESH_WORDS = 3;
 /** A pause this long starts a new exchange: the back-off no longer reflects it. */
@@ -59,7 +59,7 @@ export const HERMES_QUIET_RESET_MS = 30_000;
  * people pause this long, the held context is evaluated: a pause is when a reply fits best, and it
  * must happen well before the episode closes for silence and its context is gone.
  */
-export const HERMES_PAUSE_RELEASE_MS = 8_000;
+export const HERMES_PAUSE_RELEASE_MS = 5_000;
 export type HermesSavings = { short: number; backoff: number; directAssist: number };
 /** Why the back-off went back to 5 s; counted only when the gap was above 5 s. */
 export type HermesResetReason = "question" | "hermes" | "wearer" | "message" | "silence";
@@ -589,5 +589,5 @@ export function isQuestion(text: string): boolean {
 }
 /** Naming Hermes is a reason to answer promptly, whatever the back-off. */
 export function mentionsHermes(text: string): boolean {
-  return /(?:^|[^a-záéíóúñ])hermes(?:$|[^a-záéíóúñ])/i.test(text);
+  return /(?:^|[^a-záéíóúñ])(?:hermes|jarvis|jarvi|yarvis|yarvi|harvis|harvi)(?:$|[^a-záéíóúñ])/i.test(text);
 }

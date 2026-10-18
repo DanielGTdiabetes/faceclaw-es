@@ -332,7 +332,7 @@ function untilSent(h, limit = 120000, talk = null) {
   return null;
 }
 
-test('unlimited listening backs off after abstentions (5, 10, 20, 40, 60 s) without dropping speech', () => {
+test('unlimited listening never waits over ten seconds after abstentions and keeps speech', () => {
   const h = runtimeHarness(); h.on(OPTIONAL, null);
   h.say('1'); h.advance(2000); assert.equal(h.sent().length, 1);
   const gaps = [];
@@ -342,26 +342,27 @@ test('unlimited listening backs off after abstentions (5, 10, 20, 40, 60 s) with
     // Speech continues without a 2 s gap: the request goes out at the first pause after the gap.
     gaps.push(untilSent(h, 120000, (at) => at % 6000 === 0 && h.say('2', { text: `Y además otra cosa más, ${at}` })));
   }
-  assert.ok(gaps[0] <= 8000 && gaps[1] >= 10000 && gaps[2] >= 20000 && gaps[3] >= 40000 && gaps[4] >= 60000, String(gaps));
-  assert.ok(gaps[4] <= 64000 && gaps[5] <= 64000, 'capped at 60 s: at least one evaluation a minute');
+  assert.ok(gaps.every(gap => gap >= 5000 && gap <= 12000), String(gaps));
   // Everything heard while waiting is in the next context (bounded by maxTurns).
-  assert.equal(h.sent().at(-1).turns.length, 12);
+  assert.ok(h.sent().at(-1).turns.length <= 12);
+  assert.ok(h.sent().at(-1).turns.some(turn => turn.text.includes('detalle 5')));
   // A pause releases the held context long before the episode closes for silence.
   h.reply('assist', { kind: 'nada' });
   h.say('1', { text: 'Bueno, ya veremos qué pasa con todo esto' });
-  assert.equal(untilSent(h), 8000);
+  assert.equal(untilSent(h), 5000);
   const d = h.runtime.diagnostics().savings;
-  assert.equal(d.adaptive, true); assert.equal(d.gapMs, 60000); assert.ok(d.backoff >= 5);
+  assert.equal(d.adaptive, true); assert.equal(d.gapMs, 10000); assert.ok(d.pauseReleases >= 1);
   h.runtime.dispose();
 });
 
 test('a question, naming Hermes, the wearer or a delivered message resets the back-off at once', () => {
   for (const [wake, patch] of [['question', { text: 'y cuándo llega el horno nuevo' }], ['hermes', { text: 'Hermes, tú qué harías con esto' }],
+    ['jarvi', { text: 'Ey Jarvi, tú qué harías con esto' }],
     ['wearer', { relation: 'portador' }], ['message', null]]) {
     const h = runtimeHarness(); h.on(OPTIONAL, null);
     h.say('1'); h.advance(2000);
     for (let i = 0; i < 4; i++) { h.reply('assist', { kind: 'nada' }); h.say('2', { text: `Otro comentario sin pregunta número ${i}` }); untilSent(h); }
-    assert.equal(h.runtime.diagnostics().savings.gapMs, 40000, wake);
+    assert.equal(h.runtime.diagnostics().savings.gapMs, 10000, wake);
     if (wake === 'message') h.reply('assist');
     else if (wake === 'wearer') { h.association(1, '1'); h.reply('assist', { kind: 'nada' }); }
     else h.reply('assist', { kind: 'nada' });
@@ -389,7 +390,7 @@ test('backchannel speech only grows the context and a long silence restarts at 5
   h.runtime.dispose();
 });
 
-test('ten minutes of TV that Hermes never joins cost about a minute-paced trickle, not one call per turn', () => {
+test('continuous background speech keeps bounded requests while preserving a ten-second cadence', () => {
   const h = runtimeHarness(); h.on(OPTIONAL, null);
   for (let t = 0; t < 600000; t += 3000) {
     const busy = h.runtime.snapshot().busy;
@@ -398,8 +399,8 @@ test('ten minutes of TV that Hermes never joins cost about a minute-paced trickl
     h.advance(1500); h.advance(1500);
   }
   // Fixed 5 s spacing alone would send ~100 requests here.
-  assert.ok(h.sent().length <= 16, `sent ${h.sent().length}`);
-  assert.ok(h.sent().length >= 10);
+  assert.ok(h.sent().length <= 65, `sent ${h.sent().length}`);
+  assert.ok(h.sent().length >= 45);
   h.runtime.dispose();
 });
 
@@ -410,7 +411,7 @@ test('measurement: reset reasons, spacing at send, pause releases and real inter
   streak(3);
   let d = h.runtime.diagnostics().savings;
   // 1 first send + 3 after nada. Without more speech the 10 s and 20 s gaps are cut by the 8 s pause release.
-  assert.deepEqual(d.gapAtSend, { 5000: 2, 10000: 1, 20000: 1, 40000: 0, 60000: 0 });
+  assert.deepEqual(d.gapAtSend, { 5000: 2, 10000: 2, 20000: 0, 40000: 0, 60000: 0 });
   assert.equal(d.pauseReleases, 2);
   assert.equal(d.interval.count, 3);
   assert.deepEqual(d.resets, { question: 0, hermes: 0, wearer: 0, message: 0, silence: 0 });
