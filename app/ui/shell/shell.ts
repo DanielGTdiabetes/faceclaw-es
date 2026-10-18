@@ -24,6 +24,7 @@ import { KeyboardInputLayer, type KeyboardInputSession } from "./keyboard-input"
 import { voiceActivity } from "./voice-activity";
 import { assistantAudioPriority } from "../../assistant/audio-priority";
 import { AssistantLayer } from "./assistant";
+import { ShellImageLayer } from "./image-layer";
 import { AssistantSession, type AssistantBackendConfig } from "../../assistant/session";
 import { resolveAssistantModel, type AssistantModel } from "../../assistant/models";
 import { AssistantConversations, type ReasoningLevel } from "../../assistant/conversations";
@@ -507,6 +508,8 @@ class Shell {
   private assistantLayer: AssistantLayer | null = null;
   private readonly assistantActivityListeners = new Set<(event: AssistantActivityEvent) => void>();
   private readonly alertListeners = new Set<(text: string) => void>();
+  /** The assistant picture on screen (glasses.show_image), if any; a new one replaces it. */
+  private imageLayer: ShellImageLayer | null = null;
   private escapeMenuTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly actions: LayerActions = { ...noopActions };
   private config: ShellConfig = {
@@ -1960,6 +1963,29 @@ class Shell {
     });
     this.stack.push(layer);
     this.config.requestShellRender();
+  }
+
+  /**
+   * Show a picture from the assistant (glasses.show_image) over whatever is on
+   * screen. During an assistant conversation the reply's menu gains an
+   * "Imagen" row that brings it back after it times out or is dismissed.
+   */
+  showImage(image: GrayImage, caption: string, seconds: number): void {
+    if (!this.screenOn) this.wake("sidebar");
+    const open = () => {
+      const previous = this.imageLayer;
+      if (previous) this.stack.popIfTop((top) => top === previous);
+      const layer = new ShellImageLayer(image, caption, seconds, () => {
+        if (this.imageLayer === layer) this.imageLayer = null;
+        this.stack.popIfTop((top) => top === layer);
+        this.config.requestShellRender();
+      });
+      this.imageLayer = layer;
+      this.stack.push(layer);
+      this.config.requestShellRender();
+    };
+    this.assistantLayer?.setImage(open);
+    open();
   }
 
   private startEscapeMenuTimer(): void {

@@ -6,6 +6,7 @@ import { mediaControllerBridge } from "../native/media-controller";
 import { dismissNotification, readActiveNotifications } from "../native/notification-icons";
 import { shell } from "../ui/shell/shell";
 import { toolRegistry, type ToolRegistry, type ToolResult } from "./tool-registry";
+import type { PngDecoder } from "./glasses-image";
 
 /**
  * Registers the always-available system tools into the registry. Called once at
@@ -54,6 +55,37 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       if (!text) return err("show_alert requires non-empty text");
       shell.showAlert(text);
       return ok("Displayed.");
+    },
+  );
+
+  // The Hermes bridge's glasses_show_image tool converts URLs, files and SVG
+  // into a fitted grayscale PNG and calls this; models use that tool, not this one.
+  // Android only for now (the bridge runs with the Pixel); the decoder loads on first use.
+  if (!global.isIOS) registry.registerSystemTool(
+    {
+      name: "glasses.show_image",
+      description:
+        "Show a grayscale picture (chart, map, diagram, icon, photo) on the glasses for a few seconds, with an optional caption. "
+        + "Takes a PNG as base64, at most 528x216 (196 high with a caption); light ink on black shows best, black is see-through.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          png_base64: { type: "string", description: "PNG bytes, base64." },
+          caption: { type: "string", description: "Optional one-line caption under the picture." },
+          seconds: { type: "number", description: "Display time, 3-60 s (default 15)." },
+        },
+        required: ["png_base64"],
+        additionalProperties: false,
+      },
+      proactive: true,
+    },
+    (args) => {
+      const { imageCaption, imageSeconds, prepareGlassesImage } = require("./glasses-image") as typeof import("./glasses-image");
+      const caption = imageCaption(args?.caption);
+      const prepared = prepareGlassesImage(args?.png_base64, !!caption, require("upng-js") as PngDecoder);
+      if (!prepared.ok) return err(prepared.error);
+      shell.showImage(prepared.image, caption, imageSeconds(args?.seconds));
+      return ok(`Displayed ${prepared.image.width}x${prepared.image.height}.`);
     },
   );
 

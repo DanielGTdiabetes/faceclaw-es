@@ -24,6 +24,7 @@
     "../app/assistant/audio-priority.ts",
     "../app/assistant/conversation-channel.ts",
     "../app/assistant/notification-channel.ts",
+    "../app/assistant/glasses-image.ts",
     "../app/remote/protocol.ts",
     "../app/remote/listeners.ts",
     "../app/g2/ancs-client.ts",

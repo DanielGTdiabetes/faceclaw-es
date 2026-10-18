@@ -4,10 +4,13 @@ import { Layer, type LayerActions, type LayerContext } from "../layers";
 import { createInputDialogMenu, paintInputDialog, type InputDialogRow } from "./input-dialog";
 
 const FOLLOW_UP_ROW = 1;
+const IMAGE_ROW = 2;
 const MENU_ROWS: readonly InputDialogRow[] = [
   { label: "Done", dim: false },
   { label: "Follow-up", dim: false },
 ];
+/** With a picture from this turn (glasses.show_image), a third row reopens it. */
+const MENU_ROWS_WITH_IMAGE: readonly InputDialogRow[] = [...MENU_ROWS, { label: "Imagen", dim: false }];
 
 /** thinking: turn running; done/error: finished, showing the Done/Follow-up menu. */
 type AssistantPhase = "thinking" | "done" | "error";
@@ -34,6 +37,8 @@ export class AssistantLayer implements Layer {
   private replyText = "";
   private status = "Thinking...";
   private readonly menu = createInputDialogMenu(MENU_ROWS);
+  /** Reopens the picture shown during the current turn, or null when there is none. */
+  private showImage: (() => void) | null = null;
 
   constructor(
     private readonly actions: LayerActions,
@@ -45,7 +50,15 @@ export class AssistantLayer implements Layer {
     this.phase = "thinking";
     this.replyText = "";
     this.status = "Thinking...";
+    this.setImage(null);
     this.menu.select(0);
+    this.actions.requestRender();
+  }
+
+  /** Shell: the agent showed a picture during this turn; null forgets it. */
+  setImage(show: (() => void) | null): void {
+    this.showImage = show;
+    this.menu.setItems(show ? MENU_ROWS_WITH_IMAGE : MENU_ROWS);
     this.actions.requestRender();
   }
 
@@ -109,6 +122,8 @@ export class AssistantLayer implements Layer {
       case "click":
         if (this.menu.selectedIndex === FOLLOW_UP_ROW) {
           this.callbacks.onFollowUp();
+        } else if (this.menu.selectedIndex === IMAGE_ROW && this.showImage) {
+          this.showImage();
         } else {
           this.callbacks.onClose();
         }

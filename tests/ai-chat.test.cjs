@@ -317,7 +317,7 @@ function shellEnv({ wakeAction = 'voice-input', skipConfirmation = false } = {})
       constructor(options) { this.options = options; voiceDialogs.push(options); }
       startCapture() {}
       onRemoved() { this.options.onClosed(); }
-    } }, './keyboard-input': {}, './voice-activity': { voiceActivity: { setActive() {} } }, './assistant': {},
+    } }, './keyboard-input': {}, './voice-activity': { voiceActivity: { setActive() {} } }, './assistant': {}, './image-layer': { ShellImageLayer: class {} },
     '../../assistant/audio-priority': load('app/assistant/audio-priority.ts', {}),
     '../../assistant/conversations': {}, '../../assistant/models': {}, '../../native/settings-store': {},
     '../notifications': {}, '../dashboard-settings': settings, './ambient-cards': {},
