@@ -83,7 +83,8 @@ class MusicAppLayer implements Layer {
    */
   private libraryAppsFresh = false;
   private art: GrayImage | null = null;
-  private artKey = "";
+  /** The artVersion `art` was fetched for; -1 = not fetched yet. */
+  private artVersion = -1;
 
   isPlaylistFocused(): boolean {
     return this.focusColumn === "playlist";
@@ -371,12 +372,12 @@ class MusicAppLayer implements Layer {
   }
 
   private drawArt(image: GrayImage, media: MediaControllerState): void {
-    const key = `${media.packageName}|${media.title}|${media.album}`;
-    // Retry while null: players (e.g. Spotify) often publish metadata before
-    // the art bitmap is downloaded, then re-emit the same strings with the
-    // bitmap attached. The no-art fetch path is a cheap near-no-op.
-    if (key !== this.artKey || this.art === null) {
-      this.artKey = key;
+    // Keyed on artVersion, not the strings: players (e.g. Spotify) publish
+    // metadata before the art bitmap is downloaded, or with the previous
+    // track's bitmap after a quick double skip, then re-emit the same
+    // strings with the right bitmap attached.
+    if (media.artVersion !== this.artVersion) {
+      this.artVersion = media.artVersion;
       this.art = mediaControllerBridge.getAlbumArt(ART_SIZE);
     }
     if (this.art) {

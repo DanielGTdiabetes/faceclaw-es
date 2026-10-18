@@ -889,16 +889,17 @@ class GlassesSessionCore(
      * Queue a CFW mic_control record (['M','C',ver,op,...]) as a settings
      * field-103 write to both temples, or to a single one. Fire-and-forget:
      * the firmware answers with a field-104 status notify per temple, which
-     * arrives through addMicStatusListener.
+     * arrives through addMicStatusListener. Returns false when nothing was
+     * queued (no session, or a malformed record).
      */
-    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean) {
+    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean): Boolean {
         if (record == null || record.size < 4) {
-            return
+            return false
         }
         monitor.withLock {
             if (!running || !sessionReady) {
                 logLine("skip mic control ($label); session not ready")
-                return
+                return false
             }
             if (rightTemple) {
                 pendingMessages.addLast(messageBuilder.faceclawMicControl(record, label, false))
@@ -909,6 +910,7 @@ class GlassesSessionCore(
             logLine("queue mic control $label")
         }
         interruptibleSleep.interrupt()
+        return true
     }
 
     /**

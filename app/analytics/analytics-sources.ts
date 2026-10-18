@@ -25,6 +25,7 @@ const API_KEY_SETTINGS: Record<string, string> = {
   openai: "voice.openAiApiKey",
   elevenlabs: "voice.elevenLabsApiKey",
   soniox: "voice.sonioxApiKey",
+  "whisper-server": "voice.whisperServerApiKey",
   mapbox: "maps.mapboxApiKey",
   roam: "integrations.roam.apiToken",
   nightscout: "integrations.nightscout.apiToken",

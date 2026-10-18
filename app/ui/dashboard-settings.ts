@@ -17,6 +17,7 @@ import {
   type AssistantModel,
 } from "~/assistant/models";
 import { isLocalModelReady } from "../native/llama";
+import { normalizeWhisperServerUrl } from "../native/whisper-server-stt";
 import { drawRightValueMenuItem, drawToggleMenuItem, MenuItem, openModalMenu } from "./menu";
 import { ANIMATION_SPEEDS, animationSpeedLabel, scaleAnimationDuration, type AnimationSpeed } from "./animation-speed";
 import { MENU_ANIMATION_KEY } from "./menu-animation-pref";
@@ -570,6 +571,14 @@ export function getBrightnessPreferences() {
     curve: autoBrightnessCurveSetting.getValidValue(), fadeMs: scaleAnimationDuration(SCREEN_FADE_MS, screenFadeSetting.get()) };
 }
 
+export const wakeToLastAppSetting = new ConfigSettingBoolean({
+  id: "wake-to-last-app",
+  label: "Wake into last app",
+  storageKey: "display.wakeToLastApp",
+  defaultValue: false,
+  description: "Waking the display with a double tap returns to the app you were using. Off: wake into the app switcher.",
+});
+
 export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>({
   id: "screen-timeout",
   label: "Apagar pantalla tras",
@@ -614,6 +623,19 @@ export const previewColorSetting = new ConfigSettingEnum<PreviewColor>({
   formatValue: (value) => (value === "green" ? "Verde" : "Blanco"),
   description:
     "How the phone's mirror of the glasses display renders: white/grayscale (clearest), or green to match the physical glasses.",
+});
+
+export type PreviewScaling = "scaled" | "raw";
+
+export const previewScalingSetting = new ConfigSettingEnum<PreviewScaling>({
+  id: "preview-scaling",
+  label: "Preview scaling",
+  storageKey: "phone.previewScaling",
+  defaultValue: "scaled",
+  values: ["scaled", "raw"],
+  formatValue: (value) => (value === "raw" ? "Raw" : "Scaled"),
+  description:
+    "How much of the glasses display the phone's mirror shows: Scaled centers and enlarges the part the current display mode uses; Raw shows the whole 640x480 panel.",
 });
 
 export const mirrorTouchSetting = new ConfigSettingBoolean({
@@ -802,7 +824,8 @@ export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMod
 // runs -- see the same note in native/voice-control.ts. The "whisper" value
 // keeps its name (it's a persisted setting on real installs) but its label
 // below now says "OpenAI" to tell the two apart in the picker.
-export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox";
+// "whisper-server" is a self-hosted OpenAI-compatible Whisper (e.g. vLLM).
+export type VoiceProvider = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server";
 
 // On iOS "onboard" is Apple's on-device recognizer, and there is no
 // "onboard-whisper" (the sherpa-onnx models are Android-only).
@@ -814,6 +837,7 @@ const voiceProviderLabels: Record<VoiceProvider, string> = {
   elevenlabs: "ElevenLabs",
   whisper: "OpenAI (Whisper)",
   soniox: "Soniox",
+  "whisper-server": "Whisper server (self-hosted)",
 };
 
 export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
@@ -822,18 +846,19 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   storageKey: "voice.provider",
   defaultValue: global.isIOS ? "onboard" : "onboard-whisper",
   values: global.isIOS
-    ? ["onboard", "elevenlabs", "whisper", "soniox"]
-    : ["onboard", "onboard-whisper", "onboard-whisper-small", "onboard-whisper-medium", "elevenlabs", "whisper", "soniox"],
+    ? ["onboard", "elevenlabs", "whisper", "soniox", "whisper-server"]
+    : ["onboard", "onboard-whisper", "onboard-whisper-small", "onboard-whisper-medium", "elevenlabs", "whisper", "soniox", "whisper-server"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
     if (value === "elevenlabs") return elevenLabsApiKeySetting.get().trim().length === 0;
     if (value === "whisper") return openAiApiKeySetting.get().trim().length === 0;
     if (value === "soniox") return sonioxApiKeySetting.get().trim().length === 0;
+    if (value === "whisper-server") return !normalizeWhisperServerUrl(whisperServerUrlSetting.get());
     return false;
   },
   description: global.isIOS
-    ? "Motor de voz a texto. ElevenLabs, OpenAI y Soniox son servicios en la nube que necesitan una clave API (Ajustes > Claves API) y reconocen bastante mejor que la opción local. En el dispositivo usa el idioma de dictado del iPhone y el audio no sale del teléfono."
-    : "Para español, descarga Whisper base (rápido), small (mayor precisión) o medium (más espera) y selecciona el proveedor correspondiente. El audio se transcribe en el móvil; Hey Even sigue detectándose en el firmware antes de esta frase. Moonshine solo reconoce inglés. Los proveedores en la nube necesitan una clave API.",
+    ? "Motor de voz a texto. ElevenLabs, OpenAI y Soniox son servicios en la nube que necesitan una clave API (Ajustes > Claves API) y reconocen bastante mejor que la opción local. Servidor Whisper es tu propio Whisper compatible con OpenAI (indica su URL abajo). En el dispositivo usa el idioma de dictado del iPhone y el audio no sale del teléfono."
+    : "Para español, descarga Whisper base (rápido), small (mayor precisión) o medium (más espera) y selecciona el proveedor correspondiente. El audio se transcribe en el móvil; Hey Even sigue detectándose en el firmware antes de esta frase. Moonshine solo reconoce inglés. Los proveedores en la nube necesitan una clave API. Servidor Whisper es tu propio Whisper compatible con OpenAI (indica su URL abajo).",
 });
 
 const wakeWordActionLabels: Record<WakeWordAction, string> = {
@@ -850,6 +875,14 @@ export const wakeWordActionSetting = new ConfigSettingEnum<WakeWordAction>({
   values: ["voice-input", "off", "turn-screen-on"],
   formatValue: (value) => wakeWordActionLabels[value] ?? value,
   description: "Elige qué sucede al decir \"Hey Even\": iniciar la entrada de voz, encender la pantalla o no hacer nada.",
+});
+
+export const saveTranscribeAudioSetting = new ConfigSettingBoolean({
+  id: "save-transcribe-audio",
+  label: "Save Transcribe audio",
+  storageKey: "voice.saveTranscribeAudio",
+  defaultValue: true,
+  description: "Record each Transcribe session's audio as a WAV file in Downloads (about 2 MB per minute), named like its transcript. Recordings are kept until you delete them.",
 });
 
 export const saveVoiceRecordingsSetting = new ConfigSettingBoolean({
@@ -884,6 +917,28 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
   formatValue: (value) => assistantBackendLabels[value] ?? value,
   description:
     global.isIOS ? "Cloud models called with your OpenAI or Anthropic API key. Add your key in Settings > API Keys." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
+});
+
+export const assistantHermesUrlSetting = new ConfigSettingString({
+  id: "assistant-hermes-url",
+  label: "Hermes URL",
+  storageKey: "assistant.hermesUrl",
+  defaultValue: "",
+  editorTitle: "Hermes API server (e.g. http://host:8642/v1)",
+  glassesEditTitle: "Edit Hermes URL",
+  formatValue: (value) => value || "(not set)",
+  description: "Address of a Hermes Agent gateway's API server, used when Hermes agent is the assistant model.",
+});
+
+export const assistantHermesKeySetting = new ConfigSettingString({
+  id: "assistant-hermes-key",
+  label: "Hermes key",
+  storageKey: "assistant.hermesKey",
+  defaultValue: "",
+  editorTitle: "Hermes API server key",
+  glassesEditTitle: "Edit Hermes key",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  description: "The API server's key (API_SERVER_KEY in Hermes's .env).",
 });
 
 export const assistantBridgeHostSetting = new ConfigSettingString({
@@ -960,6 +1015,54 @@ export const sonioxApiKeySetting = new ConfigSettingString({
   description: "Soniox API key, used when Soniox is the transcription provider.",
 });
 
+export const whisperServerUrlSetting = new ConfigSettingString({
+  id: "whisper-server-url",
+  label: "Whisper server URL",
+  storageKey: "voice.whisperServerUrl",
+  defaultValue: "",
+  editorTitle: "Whisper server URL (e.g. http://100.x.y.z:8004/v1)",
+  glassesEditTitle: "Edit Whisper server URL",
+  formatValue: (value) => value || "(not set)",
+  validate: (value) => (!value.trim() || normalizeWhisperServerUrl(value) ? null : "Enter an http:// or https:// address."),
+  description:
+    "API root of an OpenAI-compatible Whisper server (vLLM, speaches, LocalAI...), used when Whisper server is the transcription provider. On iOS a plain-http address must also be allowed by the app's App Transport Security exceptions.",
+});
+
+export const whisperServerModelSetting = new ConfigSettingString({
+  id: "whisper-server-model",
+  label: "Whisper server model",
+  storageKey: "voice.whisperServerModel",
+  defaultValue: "",
+  editorTitle: "Whisper model id (empty: server's first)",
+  glassesEditTitle: "Edit Whisper model",
+  formatValue: (value) => value || "(server default)",
+  description: "Model id sent to the Whisper server. Leave empty to use the first model the server lists.",
+});
+
+export const whisperServerLanguageSetting = new ConfigSettingString({
+  id: "whisper-server-language",
+  label: "Whisper language",
+  storageKey: "voice.whisperServerLanguage",
+  defaultValue: "",
+  editorTitle: "Language code, e.g. en or sk (empty: auto)",
+  glassesEditTitle: "Edit Whisper language",
+  formatValue: (value) => value || "Auto-detect",
+  validate: (value) => (!value.trim() || /^[a-z]{2,3}$/i.test(value.trim()) ? null : "Use a language code like en, sk or cs."),
+  description:
+    "Spoken language for the Whisper server. Leave empty to auto-detect; a wrong fixed language makes Whisper translate into it instead of transcribing.",
+});
+
+export const whisperServerApiKeySetting = new ConfigSettingString({
+  id: "whisper-server-api-key",
+  label: "Whisper server key",
+  storageKey: "voice.whisperServerApiKey",
+  defaultValue: "",
+  editorTitle: "Whisper server API key (optional)",
+  glassesEditTitle: "Edit Whisper server key",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(none)"),
+  description: "Bearer token for the Whisper server, if it requires one.",
+});
+
 export const anthropicApiKeySetting = new ConfigSettingString({
   id: "anthropic-api-key",
   label: "Anthropic key",
@@ -983,6 +1086,7 @@ export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
     if (provider === "anthropic") return anthropicApiKeySetting.get().trim().length === 0;
     if (provider === "openai") return openAiApiKeySetting.get().trim().length === 0;
     if (provider === "local") return !isLocalModelReady();
+    if (provider === "hermes") return assistantHermesUrlSetting.get().trim().length === 0;
     return false;
   },
   description:
@@ -1168,6 +1272,23 @@ export const nightscoutAlwaysShowInTopBarSetting = new ConfigSettingBoolean({
   defaultValue: false,
   description: "Keep the Nightscout glucose graph and warnings in the top bar even when all Nightscout windows are closed.",
 });
+export const nightscoutMissedBolusAlertsSetting = new ConfigSettingBoolean({
+  id: "nightscout-missed-bolus-alerts",
+  label: "Missed-bolus alerts",
+  storageKey: "integrations.nightscout.missedBolusAlerts",
+  defaultValue: false,
+  description: "Show a notification on the glasses when glucose rises like an unannounced meal with no bolus or carbs entered. Experimental.",
+});
+export const nightscoutMissedBolusCooldownSetting = new ConfigSettingString({
+  id: "nightscout-missed-bolus-cooldown-minutes",
+  label: "Missed-bolus alert cooldown",
+  storageKey: "integrations.nightscout.missedBolusCooldownMinutes",
+  defaultValue: "120",
+  editorTitle: "Missed-bolus alert cooldown (min)",
+  normalize: normalizeNightscoutThreshold,
+  formatValue: (value) => `${value} min`,
+  description: "After a missed-bolus alert, wait at least this many minutes before showing another.",
+});
 
 export function loadNightscoutThresholds(): NightscoutThresholds {
   return {
@@ -1347,14 +1468,17 @@ function maskToken(token: string): string {
 
 type SettingsMenuOptions<T> = {
   onChange?: (ctx: LayerContext, newValue: T, oldValue: T) => void
+  /** Row label in place of the setting's own (for a setting shown in more than one menu). */
+  label?: string
 }
 
 export function enumSettingMenuItem<TValue extends string, TId extends string = string>(
   setting: ConfigSettingEnum<TValue, TId>,
   opts?: SettingsMenuOptions<TValue>
 ): MenuItem {
+  const label = opts?.label ?? setting.label;
   return {
-    label: setting.label,
+    label,
     description: setting.description,
     onSelect: (ctx) => {
       const current = setting.get();
@@ -1378,10 +1502,10 @@ export function enumSettingMenuItem<TValue extends string, TId extends string = 
           );
         },
       }));
-      openModalMenu(ctx, setting.label, items, Math.max(0, setting.values.indexOf(current)));
+      openModalMenu(ctx, label, items, Math.max(0, setting.values.indexOf(current)));
     },
     render: ({ image, x, y, width }) => {
-      drawRightValueMenuItem(image, getDefaultSmallFont(), x, y, width, setting.label, setting.displayValue(setting.get()));
+      drawRightValueMenuItem(image, getDefaultSmallFont(), x, y, width, label, setting.displayValue(setting.get()));
     },
   };
 }
@@ -1390,15 +1514,16 @@ export function toggleSettingMenuItem<TId extends string = string>(
   setting: ConfigSettingBoolean<TId>,
    opts?: SettingsMenuOptions<boolean>
 ): MenuItem {
+  const label = opts?.label ?? setting.label;
   return {
-    label: setting.label,
+    label,
     description: setting.description,
     onSelect: (ctx) => {
       setting.set(!setting.get());
       opts?.onChange?.(ctx, setting.get(), !setting.get());
     },
     render: ({ image, x, y, width, selected }) => {
-      drawToggleMenuItem(image, getDefaultSmallFont(), x, y, width, setting.label, setting.get(), selected);
+      drawToggleMenuItem(image, getDefaultSmallFont(), x, y, width, label, setting.get(), selected);
     },
   };
 }

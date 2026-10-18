@@ -37,6 +37,12 @@ export type MediaControllerState = {
   canPlayPause: boolean;
   canSkipNext: boolean;
   canSkipPrevious: boolean;
+  /**
+   * Changes whenever getAlbumArt's result may have changed (any metadata
+   * update or session switch). Key cached art on this, not the title:
+   * players re-publish the same strings with a different bitmap.
+   */
+  artVersion: number;
 };
 
 const DEFAULT_MEDIA_STATE: MediaControllerState = {
@@ -55,6 +61,7 @@ const DEFAULT_MEDIA_STATE: MediaControllerState = {
   canPlayPause: false,
   canSkipNext: false,
   canSkipPrevious: false,
+  artVersion: 0,
 };
 
 export class FaceclawMediaControllerBridge {
@@ -206,6 +213,7 @@ export class FaceclawMediaControllerBridge {
         canSkipPrevious: boolean,
         accessEnabled: boolean,
         status: string,
+        artVersion: number,
       ) => {
         this.state = {
           available: Boolean(title || artist || album || packageName) || String(playbackState) !== "idle",
@@ -223,6 +231,7 @@ export class FaceclawMediaControllerBridge {
           canPlayPause: Boolean(canPlayPause),
           canSkipNext: Boolean(canSkipNext),
           canSkipPrevious: Boolean(canSkipPrevious),
+          artVersion: Number(artVersion),
         };
         this.stateUpdatedAtMs = Date.now();
         for (const listener of this.stateListeners) {

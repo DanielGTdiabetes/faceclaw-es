@@ -228,6 +228,7 @@ function indicatorHarness() {
   const settings = new Map(), settingListeners = new Set(), stateListeners = new Set(), trays = [];
   const background = [];
   let state = { phase: 'ready', current: null, forecast: [], lastUpdatedMs: null };
+  let systemCardInUse = false;
   class GrayImage {
     constructor(width, height) { this.width = width; this.height = height; this.draws = []; }
     drawImage(_source, x, y) { this.draws.push(['image', x, y]); }
@@ -253,10 +254,12 @@ function indicatorHarness() {
       onAnySettingChanged: listener => { settingListeners.add(listener); return () => settingListeners.delete(listener); },
     },
     '../../ui/shell/shell': { shell: { setTrayIcon: (id, icon) => trays.push([id, icon]) } },
+    '../glanceboard/configuration': { isSystemCardWidgetInUse: () => systemCardInUse },
   })('app/apps/weather/weather-indicators.ts');
   return {
     api, trays, background,
     setSetting(key, value) { settings.set(key, value); for (const listener of settingListeners) listener(); },
+    setSystemCardInUse(value) { systemCardInUse = value; for (const listener of settingListeners) listener(); },
     setState(next) { state = next; for (const listener of stateListeners) listener(state); },
   };
 }
@@ -264,12 +267,16 @@ function indicatorHarness() {
 test('Weather tray icon follows the status-bar setting, shows Celsius and hides a stale reading', () => {
   const h = indicatorHarness();
   h.api.startWeatherIndicators();
-  assert.deepEqual(h.background, [false], 'indicators are off by default');
+  assert.deepEqual(h.background, [false], 'system-card weather is on by default, but no system card is showing');
   assert.equal(h.trays.length, 0, 'nothing shown, nothing to clear');
 
-  h.setSetting('weather.showOnSystemCard', true);
+  h.setSystemCardInUse(true);
   assert.equal(h.background.at(-1), true, 'the system card alone keeps refreshes running');
   assert.equal(h.trays.length, 0);
+  h.setSetting('weather.showOnSystemCard', false);
+  assert.equal(h.background.at(-1), false, 'not with its weather turned off');
+  h.setSetting('weather.showOnSystemCard', true);
+  assert.equal(h.background.at(-1), true);
 
   h.setSetting('weather.showInStatusBar', true);
   const current = { temperatureC: 21.6, condition: 'rain', isDaytime: true };

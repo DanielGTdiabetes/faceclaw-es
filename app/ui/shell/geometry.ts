@@ -26,16 +26,37 @@ export const TOP_BAR_HEIGHT = 28;
 export const SIDEBAR_WIDTH = 64;
 
 /**
- * Height of the app switcher as a row under the window: one tall tab, the
+ * Height of one row of the app switcher under the window: one tall tab, the
  * same 36px (a 32px icon plus 2px either side) as a one-column sidebar slot.
  * The row is wide enough that it never needs the sidebar's smaller
  * two-column icons. It comes out of the height available to windows; their
  * width stays 576, centred, leaving SIDEBAR_WIDTH / 2 at each side: one
  * pixel for the side of the window's frame (windowFramed), the rest for the
  * whole display's stereo shift (uiDepth). Full Screen windows take those
- * margins too, giving up both.
+ * margins too, giving up both. When the row's contents don't fit, the
+ * switcher grows a second row (see setSwitcherBarHeight).
  */
 export const SWITCHER_ROW_HEIGHT = 36;
+
+/**
+ * Height of the bottom switcher as its contents last laid out (chrome-layer.ts
+ * planBottomBar): SWITCHER_ROW_HEIGHT, or more once the status bar's items
+ * or the window icons take a second row. One for the switcher reserved
+ * under windows, one for the switcher overlaying an immersive window.
+ */
+const switcherBarHeights = { reserved: SWITCHER_ROW_HEIGHT, overlay: SWITCHER_ROW_HEIGHT };
+
+/**
+ * Set the bottom switcher's height for its current layout under the given
+ * (foreground) app's window: the overlay's over an immersive window, else
+ * the row reserved under windows. True if that moves or resizes windows.
+ */
+export function setSwitcherBarHeight(height: number, appId?: string): boolean {
+  const which = isImmersive(appId) ? "overlay" : "reserved";
+  if (switcherBarHeights[which] === height) return false;
+  switcherBarHeights[which] = height;
+  return which === "reserved";
+}
 
 /** Which edge the app switcher is on, or a popup (Settings > Customization). */
 export function switcherPosition(): AppSwitcherPosition {
@@ -116,13 +137,13 @@ export function sidebarWidth(appId?: string): number {
 }
 
 /**
- * How much of the screen's height a bottom switcher row takes away from app
- * windows: the row, or nothing beside a side strip or under an immersive
- * window (where the row overlays the window's bottom edge while it has
- * focus).
+ * How much of the screen's height a bottom switcher takes away from app
+ * windows: its rows (one, or two when the layout needs them), or nothing
+ * beside a side strip or under an immersive window (where the switcher
+ * overlays the window's bottom edge while it has focus).
  */
 export function switcherRowHeight(appId?: string): number {
-  return !isImmersive(appId) && switcherPosition() === "bottom" ? SWITCHER_ROW_HEIGHT : 0;
+  return !isImmersive(appId) && switcherPosition() === "bottom" ? switcherBarHeights.reserved : 0;
 }
 
 /**
@@ -139,23 +160,25 @@ export function sidebarStripVisible(focus: "sidebar" | "window", appId?: string)
  * (foreground) window and spans its width, so a band shorter than the
  * screen has no gap below it; it moves when the foreground switches to a
  * window of another height, as the top bar does. Over an immersive window
- * the row overlays the bottom edge of the screen. A popup's is the area it
- * centres in, the foreground window's content (the chrome layer sizes the
- * box itself).
+ * the row overlays the bottom edge of the screen. Either way it is as tall
+ * as its layout (setSwitcherBarHeight). A popup's is the area it centres
+ * in, the foreground window's content (the chrome layer sizes the box
+ * itself).
  */
 export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x: number; y: number; width: number; height: number } {
   switch (switcherPosition()) {
     case "popup":
       return appViewportRect(heightMode, appId);
-    case "bottom":
+    case "bottom": {
+      const reserved = switcherRowHeight(appId);
+      const height = reserved || switcherBarHeights.overlay;
       return {
         x: appViewportLeft(appId),
-        y: switcherRowHeight(appId) > 0
-          ? windowTop(heightMode, appId) + windowBandHeight(heightMode, appId)
-          : G2_LENS_HEIGHT - SWITCHER_ROW_HEIGHT,
+        y: reserved > 0 ? windowTop(heightMode, appId) + windowBandHeight(heightMode, appId) : G2_LENS_HEIGHT - height,
         width: appViewportWidth(appId),
-        height: SWITCHER_ROW_HEIGHT,
+        height,
       };
+    }
     case "right":
       return { x: G2_LENS_WIDTH - SIDEBAR_WIDTH, y: minWindowTop(appId), width: SIDEBAR_WIDTH, height: MIN_WINDOW_HEIGHT };
     default:
@@ -345,7 +368,7 @@ export const SHELL_OPAQUE_BLACK = 1;
  * firmware uses, leaving most of the field of view clear; "medium" is one
  * header (and footer) taller, so the content area between them is a full
  * 288px (the EvenHub app surface height); "max" uses the whole 480px screen
- * (terminal views), less a bottom switcher row. All include the header the
+ * (terminal views), less a bottom switcher's rows. All include the header the
  * shell draws at the window's top edge (windowHeaderHeight) and any footer
  * at its bottom (windowFooterHeight).
  */
@@ -356,7 +379,7 @@ export const MIN_WINDOW_HEIGHT = 288;
 
 /**
  * Height of the screen area windows are placed in: the whole screen, less
- * a bottom switcher row's height.
+ * a bottom switcher's height.
  */
 function windowAreaHeight(appId?: string): number {
   return G2_LENS_HEIGHT - switcherRowHeight(appId);
@@ -394,11 +417,17 @@ export function minWindowTop(appId?: string): number {
 
 /**
  * Top edge (y) of a window's header; max-height windows pin to the screen
- * top. A bottom switcher row hangs under the band, so the band and row
- * together distribute the screen's slack.
+ * top. A bottom switcher row hangs under the band, so the band and a
+ * one-row switcher together distribute the screen's slack. A switcher of
+ * more rows takes its extra height out of the slack under it, pushing the
+ * band up only as far as there is too little, so the band doesn't move as
+ * the switcher's layout changes unless it has to.
  */
 export function windowTop(mode: WindowHeightMode, appId?: string): number {
-  return Math.round((windowAreaHeight(appId) - windowBandHeight(mode, appId)) * verticalPositionFraction(appId));
+  const band = windowBandHeight(mode, appId);
+  const oneRowArea = G2_LENS_HEIGHT - (switcherRowHeight(appId) > 0 ? SWITCHER_ROW_HEIGHT : 0);
+  const top = Math.round((oneRowArea - band) * verticalPositionFraction(appId));
+  return Math.min(top, windowAreaHeight(appId) - band);
 }
 
 /** App-content viewport size for a height mode (independent of vertical position). */
@@ -420,5 +449,57 @@ export function appViewportRect(mode: WindowHeightMode, appId?: string): {
     x: appViewportLeft(appId),
     y: windowTop(mode, appId) + windowHeaderHeight(appId),
     ...appViewportSize(mode, appId),
+  };
+}
+
+export type ScreenRect = { x: number; y: number; width: number; height: number };
+
+function unionRect(a: ScreenRect, b: ScreenRect): ScreenRect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    width: Math.max(a.x + a.width, b.x + b.width) - x,
+    height: Math.max(a.y + a.height, b.y + b.height) - y,
+  };
+}
+
+/**
+ * The part of the screen the shell draws in while the given (foreground)
+ * window is up: the window's band, plus the frame's side pixels; the
+ * min-height band the shell overlays align to; and a side strip or bottom
+ * row (a popup shows within the window's content). An immersive window has
+ * the whole panel. The phone mirror's Scaled preview zooms to this.
+ */
+export function usedScreenRect(heightMode: WindowHeightMode, appId?: string): ScreenRect {
+  if (isImmersive(appId)) return { x: 0, y: 0, width: G2_LENS_WIDTH, height: G2_LENS_HEIGHT };
+  const frame = windowFramed(appId) ? 1 : 0;
+  const x = appViewportLeft(appId) - frame;
+  const width = appViewportWidth(appId) + 2 * frame;
+  let used = unionRect(
+    { x, y: windowTop(heightMode, appId), width, height: windowBandHeight(heightMode, appId) },
+    { x, y: minWindowTop(appId), width, height: MIN_WINDOW_HEIGHT },
+  );
+  if (switcherPosition() !== "popup") used = unionRect(used, switcherRect(heightMode, appId));
+  return used;
+}
+
+/**
+ * The screen area the phone mirror shows to present `used` as large as it
+ * fits, centred, at the panel's own 4:3 aspect (so the mirror keeps its
+ * shape whatever the display mode): `used` grown along one axis, past the
+ * panel's edges if need be (the mirror shows black there).
+ */
+export function phonePreviewRect(used: ScreenRect): ScreenRect {
+  // Whole 4:3 units, so the aspect is exact.
+  const units = Math.ceil(Math.max(used.width / 4, used.height / 3));
+  const width = units * 4;
+  const height = units * 3;
+  return {
+    x: Math.round(used.x + (used.width - width) / 2),
+    y: Math.round(used.y + (used.height - height) / 2),
+    width,
+    height,
   };
 }

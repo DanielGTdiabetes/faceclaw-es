@@ -30,7 +30,9 @@ export type VoiceControlState = {
 // family, not with "onboard-whisper" below, which is the on-device sherpa-onnx
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox";
+// "whisper-server" is a self-hosted OpenAI-compatible Whisper over HTTP
+// (whisper-server-stt.ts).
+export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
@@ -54,6 +56,10 @@ export type PushToTalkOptions = {
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
+  whisperServerUrl?: string;
+  whisperServerModel?: string;
+  whisperServerLanguage?: string;
+  whisperServerApiKey?: string;
   saveRecording: boolean;
   /**
    * Watch the mic and fire onSpeechEnd when the speaker stops. For hands-free
@@ -130,10 +136,11 @@ export class FaceclawVoiceControlBridge {
   private captureEndpointing = false;
   // Non-null while a cloud provider owns the transcript; Java only decodes PCM.
   private cloudClient: CloudSttClient | null = null;
-  // Raw-PCM tap (EvenHub mic apps): when active, the controller runs in the
-  // decode-only "cloud" mode and every decoded PCM frame is broadcast to these
-  // listeners. STT capture preempts it — a live assistant/transcribe session
-  // owns the single G2 mic and the raw tap is stopped for its duration.
+  // Raw-PCM tap (EvenHub mic apps, the Microphones app): when active, the
+  // controller runs in the decode-only "cloud" mode and every decoded PCM
+  // frame is broadcast to these listeners. STT capture preempts it — a live
+  // assistant/transcribe session owns the single G2 mic and the raw tap is
+  // stopped for its duration.
   private readonly rawPcmListeners = new Set<RawPcmListener>();
   private readonly frameMetaListeners = new Set<FrameMetaListener>();
   private rawActive = false;
@@ -235,15 +242,25 @@ export class FaceclawVoiceControlBridge {
   }
 
   /**
-   * Start the decode-only raw-PCM tap for an EvenHub mic app. Fails (returns
-   * false) if an STT capture already owns the mic; the caller re-tries when its
-   * eligibility is re-evaluated. Idempotent while already running.
+   * Start the decode-only raw-PCM tap on behalf of `owner`. Fails (returns
+   * false) if an STT capture already owns the mic; the owner stays registered
+   * and re-tries later (the EvenHub router when eligibility is re-evaluated,
+   * the Microphones app from its capture check). Idempotent while already
+   * running.
    */
   startRawCapture(options: { communicator: any; owner?: string }): boolean {
     const owner = options.owner ?? "legacy-raw";
     this.normalRawOwners.add(owner);
     this.audioArbiter.setOwner(`raw:${owner}`, true);
     return this.beginRawCapture(options.communicator, false);
+  }
+
+  /**
+   * Whether the raw tap is running and its glasses mic enable still holds
+   * (or is still coming up). False after an STT preemption or a session drop.
+   */
+  isRawCaptureLive(): boolean {
+    return this.rawActive && this.micIsLive();
   }
 
   /** Reserve audio for a normal function before it can replace the BLE listener. */
@@ -511,6 +528,11 @@ export class FaceclawVoiceControlBridge {
   /** Whether a capture is parked waiting for a session to come back. */
   hasSuspendedCapture(): boolean {
     return this.suspendedHolders.size > 0 || this.suspendedRaw;
+  }
+
+  /** Whether `holder` holds the mic, including across a session outage. */
+  holdsCapture(holder: CaptureHolder): boolean {
+    return this.captureHolders.has(holder) || this.suspendedHolders.has(holder);
   }
 
   /** Whether anyone holds the mic, including across a session outage. */

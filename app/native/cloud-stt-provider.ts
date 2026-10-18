@@ -4,6 +4,7 @@ import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { ReconnectingSttClient } from "./reconnecting-stt";
 import { SonioxSttClient } from "./soniox-stt";
 import type { VoiceProviderKind } from "./voice-control";
+import { normalizeWhisperServerUrl, WHISPER_SERVER_FINAL_TIMEOUT_MS, WhisperServerSttClient } from "./whisper-server-stt";
 
 /**
  * The transcription-provider setting plus the keys the cloud providers need.
@@ -14,12 +15,22 @@ export type VoiceProviderSelection = {
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
+  /** Self-hosted Whisper ("whisper-server"); the key is optional there. */
+  whisperServerUrl?: string;
+  whisperServerModel?: string;
+  whisperServerLanguage?: string;
+  whisperServerApiKey?: string;
 };
 
 type CloudProvider = {
   name: string;
   apiKey: (selection: VoiceProviderSelection) => string;
-  create: (options: CloudSttOptions) => CloudSttClient;
+  /** Whether the provider can run; defaults to having a key. */
+  configured?: (selection: VoiceProviderSelection) => boolean;
+  /** What to tell the user when it can't. */
+  missing?: string;
+  create: (options: CloudSttOptions, selection: VoiceProviderSelection) => CloudSttClient;
+  finalTimeoutMs?: number;
 };
 
 // Providers absent here ("onboard" and the "onboard-whisper*" models) transcribe on-device.
@@ -39,11 +50,28 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
     apiKey: (selection) => selection.openAiApiKey,
     create: (options) => new OpenAiRealtimeSttClient(options),
   },
+  "whisper-server": {
+    name: "Whisper server",
+    apiKey: (selection) => selection.whisperServerApiKey ?? "",
+    configured: (selection) => Boolean(normalizeWhisperServerUrl(selection.whisperServerUrl ?? "")),
+    missing: "No Whisper server URL set; using on-device voice.",
+    create: (options, selection) => new WhisperServerSttClient(options, {
+      baseUrl: selection.whisperServerUrl ?? "",
+      model: selection.whisperServerModel ?? "",
+      language: selection.whisperServerLanguage ?? "",
+    }),
+    finalTimeoutMs: WHISPER_SERVER_FINAL_TIMEOUT_MS,
+  },
 };
+
+function isConfigured(provider: CloudProvider, selection: VoiceProviderSelection): boolean {
+  return provider.configured ? provider.configured(selection) : Boolean(provider.apiKey(selection).trim());
+}
 
 /** Whether createCloudSttClient would return a cloud client for this selection. */
 export function usesCloudStt(selection: VoiceProviderSelection): boolean {
-  return Boolean(CLOUD_PROVIDERS[selection.provider]?.apiKey(selection).trim());
+  const provider = CLOUD_PROVIDERS[selection.provider];
+  return Boolean(provider && isConfigured(provider, selection));
 }
 
 /**
@@ -56,13 +84,18 @@ export function createCloudSttClient(
   selection: VoiceProviderSelection,
   options: Omit<CloudSttOptions, "apiKey">,
   continuous: () => boolean,
-): CloudSttClient | null {
+): ReconnectingSttClient | null {
   const provider = CLOUD_PROVIDERS[selection.provider];
   if (!provider) return null;
-  const apiKey = provider.apiKey(selection).trim();
-  if (!apiKey) {
-    options.onStatus(`No ${provider.name} key set; using on-device voice.`);
+  if (!isConfigured(provider, selection)) {
+    options.onStatus(provider.missing ?? `No ${provider.name} key set; using on-device voice.`);
     return null;
   }
-  return new ReconnectingSttClient(provider.create, { ...options, apiKey }, continuous);
+  const apiKey = provider.apiKey(selection).trim();
+  return new ReconnectingSttClient(
+    (clientOptions) => provider.create(clientOptions, selection),
+    { ...options, apiKey },
+    continuous,
+    provider.finalTimeoutMs,
+  );
 }

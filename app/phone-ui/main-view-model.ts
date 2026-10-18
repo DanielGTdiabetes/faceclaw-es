@@ -1671,8 +1671,14 @@ export class MainViewModel extends RemoteControlsViewModel {
     return focus === "Display off" ? "" : focus;
   }
 
+  protected override get padDisplayAsleep(): boolean {
+    return dashboardController.glassesDisplayAsleep();
+  }
+
   private refreshPadFocusLine(): void {
     this.notifyPropertyChange("padFocusLine", this.padFocusLine);
+    this.notifyPropertyChange("padFocusClass", this.padFocusClass);
+    this.notifyPropertyChange("padWakeHintVisibility", this.padWakeHintVisibility);
   }
 
   async onPadTap(): Promise<void> {

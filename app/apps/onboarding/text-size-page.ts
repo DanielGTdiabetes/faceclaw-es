@@ -104,8 +104,9 @@ export class TextSizePage implements OnboardingPage {
     ) + CONTENT_GAP;
     const height = image.height - top - BOTTOM_MARGIN;
     const body = onboardingFont("body");
-    const columnWidth = 20 + Math.max(...this.face.sizes.map((size) => body.measureText(sizeLabel(size)))) +
-      NOTE_GAP + onboardingFont("detail").measureText(RECOMMENDED_NOTE);
+    // TTF widths are fractional; the menu's row images need whole pixels.
+    const columnWidth = Math.ceil(20 + Math.max(...this.face.sizes.map((size) => body.measureText(sizeLabel(size)))) +
+      NOTE_GAP + onboardingFont("detail").measureText(RECOMMENDED_NOTE));
     const menuBox = { x: PAGE_X - 10, y: top, width: columnWidth, height };
     this.sizeMenu.paint(image, menuBox, focused);
     const previewX = menuBox.x + menuBox.width + COLUMN_GAP;

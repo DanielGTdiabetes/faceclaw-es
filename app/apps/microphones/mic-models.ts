@@ -75,6 +75,9 @@ export type MicModelState = {
 };
 
 const downloaders = new Map<MicModelId, any>();
+// Each download's listener is referenced only from Java while it runs; hold
+// it here so it isn't GC'd before its callbacks.
+const downloadListeners = new Map<MicModelId, any>();
 const progress = new Map<MicModelId, number>();
 const downloadErrors = new Set<MicModelId>();
 const stateListeners = new Set<(id: MicModelId, state: MicModelState) => void>();
@@ -156,6 +159,7 @@ function downloadNextFile(id: MicModelId): void {
     downloaders.delete(id);
     progress.delete(id);
     downloadErrors.delete(id);
+    downloadListeners.delete(id);
     notifyStateChanged(id);
     return;
   }
@@ -174,18 +178,29 @@ function downloadNextFile(id: MicModelId): void {
       console.error(`Mic model download failed (${id}/${nextFile.name}): ${message}`);
       downloaders.delete(id);
       downloadErrors.add(id);
+      downloadListeners.delete(id);
       notifyStateChanged(id);
     },
   });
-  const downloader = new com.faceclaw.app.FaceclawModelDownloader(
-    `${definition.baseUrl}${nextFile.remoteName}`,
-    filePath(id, nextFile),
-    nextFile.sha256,
-    nextFile.sizeBytes,
-    listener,
-  );
-  downloaders.set(id, downloader);
-  downloader.start();
+  downloadListeners.set(id, listener);
+  try {
+    const downloader = new com.faceclaw.app.FaceclawModelDownloader(
+      `${definition.baseUrl}${nextFile.remoteName}`,
+      filePath(id, nextFile),
+      nextFile.sha256,
+      nextFile.sizeBytes,
+      listener,
+    );
+    downloaders.set(id, downloader);
+    downloader.start();
+  } catch (error) {
+    // Without this, a dead entry would pin the model at "downloading".
+    console.error(`Mic model download failed to start (${id}/${nextFile.name}): ${String(error)}`);
+    downloaders.delete(id);
+    downloadListeners.delete(id);
+    downloadErrors.add(id);
+    notifyStateChanged(id);
+  }
 }
 
 export function cancelMicModelDownload(id: MicModelId): void {
@@ -193,6 +208,7 @@ export function cancelMicModelDownload(id: MicModelId): void {
   if (!downloader) return;
   downloader.cancel();
   downloaders.delete(id);
+  downloadListeners.delete(id);
   notifyStateChanged(id);
 }
 

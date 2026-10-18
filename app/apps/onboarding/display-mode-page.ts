@@ -50,7 +50,8 @@ export class DisplayModePage implements OnboardingPage {
       "Desliza para elegir cuánta pantalla usan las ventanas; cambia al momento. Toca para continuar.",
     ) + CONTENT_GAP;
     const body = onboardingFont("body");
-    const columnWidth = 20 + Math.max(...this.menu.items.map((value) => body.measureText(displayLayoutSetting.displayValue(value))));
+    // TTF widths are fractional; the menu's row images need whole pixels.
+    const columnWidth = Math.ceil(20 + Math.max(...this.menu.items.map((value) => body.measureText(displayLayoutSetting.displayValue(value)))));
     const menuBox = { x: PAGE_X - 10, y: top, width: columnWidth, height: image.height - top - BOTTOM_MARGIN };
     this.menu.paint(image, menuBox, focused);
     const layout = this.menu.selectedItem;

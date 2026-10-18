@@ -7,7 +7,7 @@ import { launcherEntries } from '../apps/launcher'
 import { getInstalledEvenHubAppById, installedEvenHubPackageId, uninstallEvenHubPackage } from '../apps/evenhub/installed-apps'
 import { isInstalledPackagePresent } from '../apps/evenhub/updates'
 import { openEvenHubStoreForPackage } from '../apps/evenhub'
-import { launchInstalledPackage, closeRunningPackage } from '../apps/evenhub/manager'
+import { launchInstalledPackage, closeRunningPackage, onPhoneShownChanged, phoneUiButton, showOnPhone, type PhoneUiButton } from '../apps/evenhub/manager'
 import { registerSystemTools } from '../assistant/system-tools'
 import { registerWindowTools } from '../assistant/window-tools'
 import { registerNavigateTools } from '../assistant/navigate-tools'
@@ -16,6 +16,7 @@ import { IosNavigationSensors } from '../native/ios-navigation-sensors'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { iosVoiceInput } from '../native/ios-voice-input'
+import { voiceActivity } from '../ui/shell/voice-activity'
 import { nightscoutBridge } from '../native/nightscout-bridge'
 import { weatherBridge } from '../native/weather'
 import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorState, type RawInputEvent } from '../native/faceclaw-communicator.ios'
@@ -43,16 +44,20 @@ import { makeInputEvent, type InputEvent, type InputEventPayload } from '../ui/g
 import { noopLayerActions, type LayerActions } from '../ui/layers'
 import { TextViewerLayer } from '../apps/files/text-viewer'
 import { shell, rawInputEventToInputEvent, type ShellWindow } from '../ui/shell/shell'
-import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible } from '../ui/shell/geometry'
+import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect } from '../ui/shell/geometry'
+import { mirrorToPanelFraction, phonePreviewCrop } from './phone-preview-crop'
 import { onAnySettingChanged,
   previewColorSetting, lockScreenEnabledSetting, getBrightnessPreferences, getStringSettingById,
   nightscoutSiteUrlSetting, nightscoutApiTokenSetting, voiceProviderSetting, elevenLabsApiKeySetting,
-  openAiApiKeySetting, sonioxApiKeySetting } from '../ui/dashboard-settings'
+  openAiApiKeySetting, sonioxApiKeySetting, whisperServerApiKeySetting, whisperServerLanguageSetting,
+  whisperServerModelSetting, whisperServerUrlSetting, ringConnectionModeSetting, saveTranscribeAudioSetting } from '../ui/dashboard-settings'
 import type { VoiceProviderSelection } from '../native/cloud-stt-provider'
 import type { PhoneGesture } from '../phone-ui/phone-gestures'
 import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from '../apps/onboarding/onboarding-progress'
 
 const SHELL_SURFACE_ID = 'shell'
+// voiceActivity holder for continuous capture (Transcribe), as on Android.
+const CONTINUOUS_CAPTURE_HOLDER = 'continuous-capture'
 const SHELL_SURFACE_Z_ORDER = 1
 const LOCK_SURFACE_Z_ORDER = 1000
 /** The shell render loop waits this long for the glasses to take a frame before moving on. */
@@ -116,6 +121,8 @@ export class IosPreviewController {
     appendLog: message => this.logBluetooth(message),
   })
   private previewTimer: ReturnType<typeof setTimeout> | null = null
+  /** The screen area the mirror's image shows (Preview scaling), or null for the whole panel. */
+  private previewCrop: ScreenRect | null = null
   private clockTimer: ReturnType<typeof setInterval> | null = null
   private offSettings: (() => void) | null = null
   private lastBrightness: string | null = null
@@ -128,6 +135,8 @@ export class IosPreviewController {
   private nextWorkerFrame = 0
   private inputQueue: Promise<void> = Promise.resolve()
   private lastLayout = ''
+  /** The phone-UI button last pushed to the page (onEvenHubPhoneUiChanged). */
+  private evenHubPhoneUi: PhoneUiButton | null = null
   private readonly appHosts = new Map<string, WorkerAppHost>()
   private readonly inProcessApps = new Map<string, InProcessWindow>()
   private readonly batteryObservers: any[] = []
@@ -139,6 +148,16 @@ export class IosPreviewController {
   private acknowledgedFrames = 0
   private logLines: string[] = []
   private logTimer: ReturnType<typeof setTimeout> | null = null
+  // Windows that want continuous capture, each with the recording it asked for
+  // ('' for none). They share one capture, which runs while any of them wants it.
+  private readonly continuousClients = new Map<string, string>()
+  // Continuous capture should (re)start once audio is available: a window
+  // asked, the glasses connected or disconnected, or the glasses lock or the
+  // app lifecycle cut it short. A capture that fails doesn't set it, so a
+  // broken start is retried on the next such change rather than in a loop.
+  private continuousPending = false
+  private continuousCaptureToken = 0
+  private sessionConnected = false
   private readonly actions: LayerActions = {
     ...noopLayerActions,
     playBuzzerSequence: payload => this.communicator?.playBuzzerSequence(payload),
@@ -146,7 +165,8 @@ export class IosPreviewController {
     disconnect: () => this.disconnect(),
     startVoiceCapture: endpointing => this.startVoiceCapture(endpointing),
     stopVoiceCapture: () => iosVoiceInput.stopPushToTalk(),
-    startContinuousVoiceCapture: () => this.onError("Voice capture is not available on iOS yet."),
+    startContinuousVoiceCapture: (client, options) => this.startContinuousVoiceCapture(client, options?.recordAs),
+    stopContinuousVoiceCapture: client => this.stopContinuousVoiceCapture(client),
     startTextSettingEdit: async setting => { await this.editSetting(setting) },
     startTextSettingsEdit: async (settings, title, finished, toggle, cancelled) => {
       for (const setting of settings) if (!await this.editSetting(setting)) { cancelled?.(); return }
@@ -162,7 +182,8 @@ export class IosPreviewController {
   constructor(private readonly onFrame: (image: ImageSource, focus: string) => void,
     private readonly onError: (message: string) => void,
     private readonly onConnectionState: (state: SessionState) => void = () => {},
-    private readonly onKeyboardInputChanged: (session: KeyboardInputSession | null) => void = () => {}) {
+    private readonly onKeyboardInputChanged: (session: KeyboardInputSession | null) => void = () => {},
+    private readonly onEvenHubPhoneUiChanged: (button: PhoneUiButton | null) => void = () => {}) {
     this.ensurePreviewDisplay()
     shell.configure({
       actions: this.actions,
@@ -177,7 +198,12 @@ export class IosPreviewController {
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
       getScreenTimeoutMs: () => null,
       requestShellRender: () => this.requestShellRender(),
-      onWindowsChanged: () => this.requestShellRender(),
+      onWindowsChanged: () => { this.requestShellRender(); this.syncEvenHubPhoneUi() },
+      onSwitcherBarHeightChanged: () => {
+        this.relayout()
+        shell.foregroundWindow()?.requestRender()
+        this.requestShellRender()
+      },
       onScreenStateChanged: on => {
         if (on) this.glance.dismiss()
         void this.display?.setScreenBlanked(!on).catch(error => this.fail(error))
@@ -220,11 +246,15 @@ export class IosPreviewController {
       assistantAvailable: () => shell.isAssistantAvailable(),
       assistant: text => shell.sendToAssistant(text),
     })
+    // The header's EvenHub phone-UI button hides while that UI is showing.
+    onPhoneShownChanged(() => this.syncEvenHubPhoneUi())
     registerSystemTools()
     registerWindowTools({ apps: ALL_APPS.filter(app => !iosAppUnavailableReason(app.appId)),
       launchApp: id => this.launchApp(id), requestShellRender: () => this.requestShellRender() })
     registerNavigateTools(id => this.launchApp(id))
     registerRoamTools(id => this.launchApp(id))
+    // Every capture end (drained, failed, replaced) may leave continuous capture to restart.
+    iosVoiceInput.onSpeechEnd(() => this.syncContinuousCapture())
     for (const app of ALL_APPS) if (app.appId !== 'launcher' && !iosAppUnavailableReason(app.appId)) app.boot?.(this.buildAppContext(app))
   }
 
@@ -279,15 +309,34 @@ export class IosPreviewController {
     this.relayout()
     shell.foregroundWindow()?.requestRender()
     this.requestShellRender()
+    this.syncEvenHubPhoneUi()
+    this.syncContinuousCapture()
   }
   pause(): void {
     if (!this.active) return
     this.active = false
+    if (iosVoiceInput.continuousSource === 'phone') this.continuousPending = true
     iosVoiceInput.stopPhoneCapture()
     // The phone preview is hidden; the glasses still own their screen and input.
     this.syncRuntime()
     this.logBluetooth(`Phone background; glasses ${this.state.phase}`)
     this.flushBluetoothLog()
+  }
+  /** Overlay an EvenHub app's phone UI (the header's app-icon button). */
+  showEvenHubPhoneUi(windowId: string): void {
+    showOnPhone(windowId)
+  }
+  /**
+   * Tell the page when the foreground window's EvenHub phone-UI button
+   * changes. A paused controller skips this and catches up on resume.
+   */
+  private syncEvenHubPhoneUi(): void {
+    if (!this.active) return
+    const button = phoneUiButton()
+    const current = this.evenHubPhoneUi
+    if (current?.windowId === button?.windowId && current?.icon === button?.icon) return
+    this.evenHubPhoneUi = button
+    this.onEvenHubPhoneUiChanged(button)
   }
   private get runtimeNeeded(): boolean {
     return this.active || ['connected', 'connecting', 'retrying', 'disconnecting'].includes(this.state.phase)
@@ -385,8 +434,10 @@ export class IosPreviewController {
     this.glassesLocked = locked
     if (locked) {
       this.glance.dismiss()
-      iosVoiceInput.handleSessionEnded('Glasses locked. Unlock your phone to start voice input again.')
-    }
+      if (iosVoiceInput.continuousSource === 'glasses') this.continuousPending = true
+      iosVoiceInput.handleSessionEnded('Glasses locked. Unlock your phone to start voice input again.',
+        'Glasses locked. Transcription resumes when you unlock your phone.')
+    } else this.syncContinuousCapture()
     void (async () => {
       await this.displayReady
       const display = this.display
@@ -421,10 +472,11 @@ export class IosPreviewController {
     }
   }
   /** Submit a painted frame for an in-process window (e.g. the launcher). */
-  private async submit(id: string, planes: Plane[]): Promise<void> {
+  private async submit(id: string, planes: Plane[], live: () => boolean = () => true): Promise<void> {
     await this.displayReady
     const display = this.display
-    if (!display) return
+    // The window can close (removing its surface) while this frame waits.
+    if (!display || !live()) return
     const fingerprint = planesFingerprint(planes)
     const { image, draws } = flattenPlanesWithDraws(planes)
     await display.submitSurfaceFrame(id, image.pixels, { x: 0, y: 0, width: image.width, height: image.height },
@@ -484,8 +536,10 @@ export class IosPreviewController {
       this.previewTimer = null
       if (!this.active) return
       try {
-        const image = this.display?.getCompositePreview(previewColorSetting.get() === 'green')
+        const crop = phonePreviewCrop(this.glassesLocked, this.glance.screenRect())
+        const image = this.display?.getCompositePreview(previewColorSetting.get() === 'green', crop)
         if (!image) return
+        this.previewCrop = crop
         this.onFrame(image, this.glassesLocked ? 'Glasses locked' : this.glance.isVisible() ? 'Glanceboard'
           : `${shell.foregroundWindow()?.title ?? 'Apps'} · ${shell.getFocus() === 'sidebar' ? 'App switcher' : 'App'}`)
       } catch (error) { this.fail(error) }
@@ -539,7 +593,8 @@ export class IosPreviewController {
     await shell.receiveInput(event)
     this.requestShellRender()
   }
-  private async mirrorTap(nx: number, ny: number): Promise<void> {
+  private async mirrorTap(mirrorNx: number, mirrorNy: number): Promise<void> {
+    const { nx, ny } = mirrorToPanelFraction(this.previewCrop, mirrorNx, mirrorNy)
     const x = Math.max(0, Math.min(639, Math.floor(nx * 640)))
     const y = Math.max(0, Math.min(479, Math.floor(ny * 480)))
     const window = shell.foregroundWindow()
@@ -613,7 +668,7 @@ export class IosPreviewController {
     // The explicit render below supplies a fresh frame after configuration.
     let surfaceReady = false
     const app = create({
-      actions: this.actions, submitFrame: planes => surfaceReady ? this.submit(surfaceId, planes) : Promise.resolve(),
+      actions: this.actions, submitFrame: planes => surfaceReady ? this.submit(surfaceId, planes, () => surfaceReady) : Promise.resolve(),
       setSurfaceVisible: visible => this.setWindowSurfaceVisible(surfaceId, visible),
       removeSurface: () => { surfaceReady = false; this.removeWindowSurface(surfaceId) },
       reconfigureSurface: () => {
@@ -680,6 +735,7 @@ export class IosPreviewController {
     this.maybeLaunchOnboarding(this.state)
     if (this.state.phase !== 'connected' && this.state.phase !== 'connecting') this.glassesWorn = null
     if (this.state.phase !== 'connected') iosVoiceInput.handleSessionEnded()
+    this.syncContinuousSession()
     shell.setBatteryLevels({ headset: this.state.battery, headsetCharging: this.state.charging })
     this.syncPresence()
     this.syncRuntime()
@@ -698,7 +754,10 @@ export class IosPreviewController {
       this.firmwareCompatible = false
       this.update('connecting', 'Finding configured devices…')
       let identifiers
-      try { identifiers = await resolveIosPeripherals(addresses) }
+      // As on Android, connect to the ring only in "Direct" mode; otherwise a phone-side connect
+      // fails and retries every few seconds, starving the glasses link.
+      const ring = ringConnectionModeSetting.get() === 'direct' ? addresses.ring : ''
+      try { identifiers = await resolveIosPeripherals({ ...addresses, ring }) }
       catch (failure) {
         this.update('error', failure instanceof Error ? failure.message : String(failure))
         return
@@ -904,10 +963,95 @@ export class IosPreviewController {
       await iosVoiceInput.startPhoneCapture(voice, log, endpointing)
     }
   }
+  /**
+   * Continuous capture on behalf of `client` (one id per window: Transcribe,
+   * Teleprompter, Calculator); it runs while any client wants it, as on Android.
+   * `recordAs` names a WAV of the audio in Downloads when Save Transcribe audio is on.
+   */
+  private startContinuousVoiceCapture(client: string, recordAs = ''): void {
+    if (!iosVoiceInput.supportsContinuous(this.voiceProvider())) {
+      this.onError('Transcribe on iOS needs a cloud or Whisper server transcription provider (Settings > Voice > Transcription Provider).')
+      return
+    }
+    this.continuousClients.set(client, recordAs)
+    this.syncContinuousRecording()
+    // A listening capture is shared as it is; otherwise start one (after any drain).
+    if (!iosVoiceInput.continuousSource) this.continuousPending = true
+    this.syncContinuousCapture()
+  }
+  private stopContinuousVoiceCapture(client: string): void {
+    if (!this.continuousClients.delete(client)) return
+    this.syncContinuousRecording()
+    if (this.continuousClients.size > 0) return
+    // A start still awaiting permission or the mic backs off.
+    ++this.continuousCaptureToken
+    this.continuousPending = false
+    this.syncContinuousClaim()
+    void iosVoiceInput.stopContinuousCapture().catch(error => this.logBluetooth(`Stop continuous capture: ${String(error)}`))
+  }
+  /** Connecting or losing the glasses moves continuous capture to the new audio source. */
+  private syncContinuousSession(): void {
+    const connected = this.state.phase === 'connected'
+    if (connected !== this.sessionConnected && this.continuousClients.size > 0) this.continuousPending = true
+    this.sessionConnected = connected
+    this.syncContinuousCapture()
+  }
+  /**
+   * Keep continuous capture running while a window wants it: start a pending
+   * one once audio is available, and move a phone capture to the glasses once
+   * they connect. A glasses session supplies the audio, even while it
+   * reconnects (as on Android); the phone mic stands in only without one, while
+   * Faceclaw is in the foreground. Cheap enough to call on every state change.
+   */
+  private syncContinuousCapture(): void {
+    this.syncContinuousClaim()
+    if (this.continuousClients.size === 0 || this.glassesLocked) return
+    const glassesReady = !!this.communicator && this.state.phase === 'connected'
+    if (iosVoiceInput.continuousActive) {
+      // Draining or listening already. A phone capture from before the glasses
+      // connected is drained here, and its end restarts it on the glasses.
+      if (glassesReady && iosVoiceInput.continuousSource === 'phone') {
+        this.continuousPending = true
+        void iosVoiceInput.stopContinuousCapture()
+      }
+      return
+    }
+    if (!this.continuousPending || (this.communicator ? !glassesReady : !this.active)) return
+    this.continuousPending = false
+    void this.beginContinuousCapture()
+  }
+  private async beginContinuousCapture(): Promise<void> {
+    const voice = this.voiceProvider()
+    if (!iosVoiceInput.supportsContinuous(voice)) return
+    // A stop during an await below bumps the token; this start then backs off.
+    const token = ++this.continuousCaptureToken
+    const current = () => token === this.continuousCaptureToken
+    const log = (message: string) => this.logBluetooth(message)
+    // Claimed before the capture starts so other mic users stand down first, as on Android.
+    voiceActivity.setActive(true, CONTINUOUS_CAPTURE_HOLDER)
+    const communicator = this.communicator
+    if (communicator) {
+      await iosVoiceInput.startGlassesCapture(communicator, voice, log, false, true)
+    } else if (await iosVoiceInput.prepare(this.active, true, voice) && current() && this.active && !this.glassesLocked && !this.communicator) {
+      await iosVoiceInput.startPhoneCapture(voice, log, false, true)
+    }
+    if (current()) this.syncContinuousClaim()
+  }
+  /** Other mic users stand down while continuous capture really holds the mic, not merely while a window wants it. */
+  private syncContinuousClaim(): void {
+    voiceActivity.setActive(this.continuousClients.size > 0 && iosVoiceInput.continuousActive, CONTINUOUS_CAPTURE_HOLDER)
+  }
+  /** Record to the first client's requested name while Save Transcribe audio is on. */
+  private syncContinuousRecording(): void {
+    const name = saveTranscribeAudioSetting.get() ? [...this.continuousClients.values()].find(Boolean) ?? '' : ''
+    iosVoiceInput.recordTo(name)
+  }
   /** The transcription provider setting and the keys the cloud ones need. */
   private voiceProvider(): VoiceProviderSelection {
     return { provider: voiceProviderSetting.get(), elevenLabsApiKey: elevenLabsApiKeySetting.get(),
-      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get() }
+      openAiApiKey: openAiApiKeySetting.get(), sonioxApiKey: sonioxApiKeySetting.get(),
+      whisperServerUrl: whisperServerUrlSetting.get(), whisperServerModel: whisperServerModelSetting.get(),
+      whisperServerLanguage: whisperServerLanguageSetting.get(), whisperServerApiKey: whisperServerApiKeySetting.get() }
   }
   private logBluetooth(message: string): void {
     const line = `${new Date().toISOString()} [${this.active ? 'foreground' : 'background'}${UIApplication.sharedApplication.protectedDataAvailable ? '' : ',protected-data-unavailable'}] ${message}`

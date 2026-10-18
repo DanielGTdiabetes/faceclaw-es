@@ -487,13 +487,21 @@ export class EvenHubSession implements EvenHubMicClient, EvenHubImuClient, EvenH
     this.webViewHandle = handle;
   }
 
-  webViewFailed(message: string): void {
+  /**
+   * A WebView load failed. Once the app has loaded, a failed or blocked
+   * navigation leaves its page running, so only a failure before then (or one
+   * the host marks `fatal`) replaces the glasses window with the error.
+   */
+  webViewFailed(message: string, fatal = false): void {
     if (this.closed) return;
-    this.loadError = message; this.log(`evenhub: ${message}`); this.windowHooks?.requestRender();
+    this.log(`evenhub: ${message}`);
+    if (this.launchContextPushed && !fatal) return;
+    this.loadError = message; this.windowHooks?.requestRender();
   }
 
   /** The WebView finished loading the app: push the one-shot launch context. */
   webViewLoaded(): void {
+    if (this.loadError) { this.loadError = ''; this.windowHooks?.requestRender(); }
     if (this.launchContextPushed) return;
     this.launchContextPushed = true;
     // Launched to drive the glasses (from the on-glasses file browser), so
@@ -1018,7 +1026,12 @@ export class EvenHubSession implements EvenHubMicClient, EvenHubImuClient, EvenH
   }
 
   private storageKey(key: string): string {
-    return `evenhub:${this.manifest.packageId}:ls:${key}`;
+    // The package ID must end at the first ':' so that no other package can
+    // reach this one's keys (manifest IDs are unvalidated: package "a" asking
+    // for key "b:ls:c" must not read package "a:ls:b"'s "c"). IDs containing
+    // ':' or '%' are encoded, so they can't collide with the plain IDs either.
+    const id = this.manifest.packageId;
+    return `evenhub:${/[:%]/.test(id) ? encodeURIComponent(id) : id}:ls:${key}`;
   }
 
   // ----- pushes (host -> web) -----

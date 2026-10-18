@@ -28,6 +28,10 @@ export function dismissNotification(key: string): boolean { return active?.dismi
 export function onAndroidNotificationPosted(listener: (key: string) => void): () => void {
   listeners.add(listener); return () => { listeners.delete(listener) }
 }
+// ANCS removals carry no key and already reach the posted listeners above
+// (they hear every change), and an open popup closes on the repaint that follows.
+export function onAndroidNotificationRemoved(_listener: (key: string) => void): () => void { return () => {} }
+export function onAndroidNotificationsChanged(listener: () => void): () => void { return onAndroidNotificationPosted(listener) }
 // ANCS does not provide app icons, so show one for the notification's ANCS
 // category; never fetch notification sources or content from a third-party
 // icon service. Indexed by CategoryID: Other, IncomingCall, MissedCall,

@@ -33,6 +33,23 @@ export class RemoteControlsViewModel extends Observable {
     return this._controlsTab === "ring" ? "tab-button tab-button-selected" : "tab-button";
   }
 
+  /**
+   * The watch face's status line reads "Display off": dim it and show the wake
+   * gesture under it. The host overrides this and notifies padFocusClass and
+   * padWakeHintVisibility when it changes.
+   */
+  protected get padDisplayAsleep(): boolean {
+    return false;
+  }
+
+  get padFocusClass(): string {
+    return this.padDisplayAsleep ? "pad-focus pad-focus-asleep" : "pad-focus";
+  }
+
+  get padWakeHintVisibility(): "visible" | "collapse" {
+    return this.padDisplayAsleep ? "visible" : "collapse";
+  }
+
   onSettingsTabTap(): void {
     this.setControlsTab("settings");
   }

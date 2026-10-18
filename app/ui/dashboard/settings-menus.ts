@@ -36,6 +36,8 @@ import {
   uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
+  assistantHermesKeySetting,
+  assistantHermesUrlSetting,
   assistantBridgeHostSetting,
   assistantBridgePortSetting,
   assistantBridgeTokenSetting,
@@ -57,9 +59,15 @@ import {
   mirrorTouchSetting,
   openAiApiKeySetting,
   previewColorSetting,
+  previewScalingSetting,
   phoneRotationSetting,
   ringConnectionModeSetting,
   sonioxApiKeySetting,
+  saveTranscribeAudioSetting,
+  whisperServerApiKeySetting,
+  whisperServerLanguageSetting,
+  whisperServerModelSetting,
+  whisperServerUrlSetting,
   screenFadeSetting,
   enumSettingMenuItem,
   firmwareDebugFlagsSetting,
@@ -74,6 +82,7 @@ import {
   useMicControlSetting,
   voiceProviderSetting,
   screenTimeoutSetting,
+  wakeToLastAppSetting,
   wakeWordActionSetting,
   watchCanUnlockSetting,
   watchCrownClockwiseNextSetting,
@@ -105,6 +114,7 @@ function settingsSections(): SettingsSection[] {
           },
         }),
         toggleSettingMenuItem(lockScreenEnabledSetting),
+        toggleSettingMenuItem(wakeToLastAppSetting),
         // A band (at one of five heights) / Tall / Full Screen; the
         // dashboard controller moves or reflows windows on change.
         enumSettingMenuItem(displayLayoutSetting),
@@ -123,6 +133,7 @@ function settingsSections(): SettingsSection[] {
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
         enumSettingMenuItem(voiceProviderSetting),
+        ...whisperServerMenuItems(),
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-es"),
         asrModelMenuItem("whisper-small-es"),
@@ -135,6 +146,8 @@ function settingsSections(): SettingsSection[] {
         // iOS offers cloud APIs; Android also supports local models and the bridge.
         enumSettingMenuItem(assistantBackendSetting),
         enumSettingMenuItem(assistantModelSetting),
+        textSettingMenuItem(assistantHermesUrlSetting),
+        textSettingMenuItem(assistantHermesKeySetting),
         ...(!global.isIOS ? [localModelMenuItem()] : []),
         toggleSettingMenuItem(assistantSkipConfirmationSetting),
         // iOS has no local LLM or agent bridge yet.
@@ -164,6 +177,7 @@ function settingsSections(): SettingsSection[] {
       items: [
         enumSettingMenuItem(phoneRotationSetting),
         enumSettingMenuItem(previewColorSetting),
+        enumSettingMenuItem(previewScalingSetting),
         toggleSettingMenuItem(mirrorTouchSetting),
       ],
     },
@@ -234,10 +248,11 @@ function settingsSections(): SettingsSection[] {
   if (!global.isIOS) return sections;
   const deferred = new Set(["Reloj"]);
   return sections.map(section => {
-    if (section.label === "Desarrollador") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
+    if (section.label === "Desarrollador") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
+      toggleSettingMenuItem(showBleBandwidthSetting)] };
     // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
     if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting),
-      enumSettingMenuItem(voiceProviderSetting)] };
+      enumSettingMenuItem(voiceProviderSetting), toggleSettingMenuItem(saveTranscribeAudioSetting), ...whisperServerMenuItems()] };
     if (deferred.has(section.label)) return { label: section.label, items: [{
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,
@@ -449,6 +464,19 @@ function asrModelStatusText(id: AsrModelId): string {
     return `${pct}% de ${asrModelMb(id)}`;
   }
   return "sin descargar";
+}
+
+/**
+ * The self-hosted Whisper server's settings. Always listed: the provider
+ * option stays disabled until the URL is set.
+ */
+function whisperServerMenuItems(): MenuItem[] {
+  return [
+    textSettingMenuItem(whisperServerUrlSetting),
+    textSettingMenuItem(whisperServerModelSetting),
+    textSettingMenuItem(whisperServerLanguageSetting),
+    textSettingMenuItem(whisperServerApiKeySetting),
+  ];
 }
 
 /** Download/cancel/delete management for one on-device transcription model. */
