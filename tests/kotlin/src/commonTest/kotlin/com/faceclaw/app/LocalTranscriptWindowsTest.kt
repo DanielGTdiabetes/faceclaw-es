@@ -223,4 +223,24 @@ class LocalTranscriptWindowsTest {
         assertEquals(listOf("La carrera empieza", "el domingo", "el domingo por la tarde", "volvemos", "tarde volvemos a casa"), texts)
         assertFalse(session.diagnostics().contains("domingo"))
     }
+
+    @Test fun remoteIdentityReceivesUnconditionedPcmEvenWhenWhisperConditioningIsEnabled() {
+        val platform = testPlatform(); val decoded = Latch(1,platform); var sample = 0f
+        val session = LocalTranscriptSession(object : LocalTranscriptHost {
+            override val dispatcher = CallbackDispatcher { it() }
+            override fun loadDecoder(language: LocalTranscriptLanguage) = object : LocalTranscriptDecoder {
+                override val conditionAudio = false
+                override fun decode(samples: FloatArray): LocalDecodedText {
+                    sample = samples[0]; decoded.countDown(); return LocalDecodedText("Texto de prueba","es")
+                }
+                override fun release() {}
+            }
+        },platform,conditionAudio=true)
+        assertTrue(session.start(LocalTranscriptLanguage.ES,LocalTranscriptSegmentation.WINDOWS))
+        waitFor(session,"status","\"listo\"")
+        repeat(120) { session.acceptPcm(pcm(2000),"sin actividad") }
+        assertTrue(decoded.await(2000));assertEquals(2000/32768f,sample)
+        assertTrue(session.diagnostics().contains("\"conditioned\":false"))
+        session.stop();waitFor(session,"worker","false")
+    }
 }

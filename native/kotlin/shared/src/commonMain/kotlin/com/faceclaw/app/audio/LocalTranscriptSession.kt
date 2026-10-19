@@ -16,6 +16,7 @@ data class LocalDecodedText(val text: String, val language: String, val forced: 
     val diarization: LocalDiarization? = null)
 interface LocalTranscriptDecoder {
     /** Called on raw audio before conditioning/decoding. Unknown detectors preserve the window. */
+    val conditionAudio: Boolean get() = true
     fun hasSpeech(samples: FloatArray): Boolean = true
     fun decode(samples: FloatArray): LocalDecodedText
     fun release()
@@ -598,7 +599,7 @@ class LocalTranscriptSession(
             "\"languageCa\":${sum { it.languageCa }},\"languageOther\":${sum { it.languageOther }},\"delivered\":${sum { it.delivered }}," +
             "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
             "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
-            "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":$conditionAudio," +
+            "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":${conditionAudio && decoderConditionAudio}," +
             "\"vadStatus\":\"$speechDetector\",\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"attemptedAudioMs\":${attemptedChunks * 50}," +
             "\"coveredAudioMs\":${coveredChunks * 50}," +
             "\"deliveryLatencyCount\":$latencyCount,\"deliveryLatencyTotalMs\":$latencyTotalMs,\"deliveryLatencyMaxMs\":$latencyMaxMs," +
@@ -620,6 +621,8 @@ class LocalTranscriptSession(
         next
     }
 
+    private var decoderConditionAudio = true
+
     private fun runWorker(language: LocalTranscriptLanguage) {
         var decoder: LocalTranscriptDecoder? = null
         var attributor: LocalSpeakerAttributor? = null
@@ -632,6 +635,7 @@ class LocalTranscriptSession(
             condition.withLock {
                 if (running) {
                     ready = decoder != null
+                    decoderConditionAudio = decoder?.conditionAudio ?: true
                     engine = decoder?.engine ?: ""
                     runtime = decoder?.runtime ?: ""
                     speechDetector = decoder?.speechDetector ?: "unavailable"
@@ -658,7 +662,7 @@ class LocalTranscriptSession(
                         }
                         continue // finally erases PCM and releases busy state; no Whisper inference
                     }
-                    if (conditionAudio) {
+                    if (conditionAudio && decoderConditionAudio) {
                         val level = LocalAsrConditioner.condition(floats)
                         condition.withLock { levels.add(level) }
                     }

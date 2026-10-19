@@ -4,9 +4,9 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 data class LocalTimedWord(val text: String, val startMs: Long, val endMs: Long)
-data class LocalVoiceInterval(val speaker: String, val startMs: Long, val endMs: Long)
+data class LocalVoiceInterval(val speaker: String, val startMs: Long, val endMs: Long, val relation: String? = null)
 data class LocalDiarization(val available: Boolean, val sampleCount: Int,
-    val words: List<LocalTimedWord> = emptyList(), val intervals: List<LocalVoiceInterval> = emptyList())
+    val words: List<LocalTimedWord> = emptyList(), val intervals: List<LocalVoiceInterval> = emptyList(), val identity: Boolean = false)
 data class LocalSpeakerTurn(val text: String, val startMs: Long, val endMs: Long, val label: LocalSpeakerLabel,
     val startChar: Int = 0, val endChar: Int = text.length)
 

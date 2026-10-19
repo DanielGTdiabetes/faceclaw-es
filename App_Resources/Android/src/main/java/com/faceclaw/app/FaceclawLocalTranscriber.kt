@@ -43,13 +43,17 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
         /** `language` comes from the accepted start that owns this worker; it is never re-read later. */
         override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? {
             val config = synchronized(selectionLock) { selected }
-            config.remote?.let { return EvoRemoteTranscriptDecoder(it.url, it.key, language) }
+            config.remote?.let {
+                val profile = try { OwnLocalVoiceStore(appContext).load(512) } catch (_: Throwable) { null }
+                return EvoRemoteTranscriptDecoder(it.url, it.key, language, profile)
+            }
             // Never substitute a different model during a comparison.
             if (!LocalWhisperModels.verified(root, config.model)) return null
             return LocalWhisperModels.load(root, config.model, language, config.performance)
         }
         override fun loadSpeakerAttributor(): LocalSpeakerAttributor? {
             speakerProbe = null
+            if (synchronized(selectionLock) { selected.remote != null }) return LocalEvoSpeakerAttributor()
             val decoder = loadOwnVoiceDecoder(appContext) ?: return null
             val profile = try { OwnLocalVoiceStore(appContext).load(decoder.dimension) } catch (_: Throwable) { null }
             val remote = synchronized(selectionLock) { selected.remote != null }
@@ -82,7 +86,7 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
             val endpoint = EvoRemoteTranscriptDecoder.validUrl(url) ?: return false
             if (key.isBlank()) return false
             selected = Config(LocalWhisperModels.SMALL, LocalWhisperPerformance(4), Remote(endpoint, key.trim()))
-            val policy = if (speakers) LocalTranscriptWindowPolicy.PAUSE else LocalTranscriptWindowPolicy.REFERENCE
+            val policy = if (speakers) LocalTranscriptWindowPolicy.EVO_IDENTITY else LocalTranscriptWindowPolicy.REFERENCE
             session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS, maxMs, policy, speakers)
         }
     /**

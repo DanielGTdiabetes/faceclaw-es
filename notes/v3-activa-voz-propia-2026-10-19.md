@@ -1,3 +1,48 @@
+## Estado vigente: identificación de Conversación en EVO — S2.20.5 instalada, 19/10/2026
+
+**Decisión expresa del usuario:** «ya lo hacemos todo en el EVO porque comprobamos que da más problemas
+en el móvil». Prioridad yo/otro/incierto, no identificar personalmente a todos. Sol 6.1 alto.
+**Instalado y comprobado técnicamente, precisión propia pendiente:**
+
+- Pixel `61161FDCG0013L`, `0.8.4-es.12-conversation.s2.20.5-identidad-evo`/805/firma original,
+  SHA256 `c3ef4f982ee0a9e7fe400b88f6045c46d2781e36d4571de024e7dc6aec9a2138`.
+  Extraída idéntica; 8 nativas/48 ajustes/primera instalación conservados, arranque estable.
+- EVO identificado even/dani/MAC/SSD. `g2-diar-activa 82234c71dd3d41a5bbdebd03c651ff1d`,
+  `even-asr-parakeet 058809348bf6426a91be42372bfa9c47`, activos/NRestarts0.
+  Puente/Qwen/Sala/sombra con InvocationID conservados; sin cambios del LLM ni firmware.
+- EVO ejecuta Parakeet, V3 y WeSpeaker fijado al mismo hash de 512 dimensiones. Móvil consume etiquetas
+  v2 y no carga ni ejecuta modelo de voz en la ruta remota. El audio sale sin acondicionamiento ASR.
+  Se comparan intervalos exclusivos completos de 1,5–6 s sin ganancia/recorte nuevo; no dos fragmentos de
+  1 s. Umbrales 0,80/0,60 conservados. Ventana de identidad EVO acumula al menos4 s y hasta12 s, con
+  cierre por pausa; aumenta la espera de una frase corta y debe medirse en uso. No modifica Whisper.
+- Se reutiliza el perfil nuevo, que el usuario **confirmó guardado/OFF** tras las cuatro frases de
+  S2.20.4. La referencia compatible se migra por la conexión autenticada existente y se conserva solo
+  en `~/g2-identidad-evo/perfil/profile.json` (0700/0600), con anterior al reemplazar. No se exporta al
+  PC, Git o NAS. El perfil cifrado del móvil y el original anterior siguen en el teléfono. El registro
+  antiguo de Mi perfil sigue disponible por compatibilidad; no es todavía un registro nativo de EVO.
+- Kotlin **356/356**, Node específicos **58/58**, TS app/tests, release y lintVital correctos.
+  Servidor15/15 Linux; Windows14 correctas/1omitida Unix. Verificador real aislado con JFK público:
+  carga482ms, comparación12–30ms (no tasa de reconocimiento G2; segmentos solapados con la referencia).
+  Contrato instalado público: legado92ms, v1=254ms, v2=272ms;22palabras/3intervalos. No se instaló un
+  perfil público en producción: v2 indicó profile=false antes de la primera conexión del usuario.
+
+**Prueba propia castellana confirmada y OFF:** tres ventanas recibidas del EVO, perfiltrue,
+una comparación válida por ventana y ceroerrores. Similitudes0,656/0,462/0,812: primera incierta,
+segundaotro+incierto (un fragmento corto rechazado), tercera portador. Hay una primera aceptación propia,
+pero también atribución ajena en el ensayo propio; no es fiable ni está validado. La referencia ya existe
+en EVO, fichero0600/directorio0700, comprobados sin leer el vector. Servicios conservan sus IDs.
+**Pendiente de intervención:** usuario invitado a probar valenciano8–10s y volver a OFF. Esperar su
+confirmación; después comprobar los nuevos escalares respecto de las tres ventanas castellanas.
+Falta otra voz/TV/solape para rechazo; no bajar umbrales con estos datos.
+
+
+Retorno del incremento: OFF, APK S2.20.4 privada `.tools/install-s2.20.5-v3/before.apk` del checkout
+Faceclaw (`cb0debcf…278e4a`) y servidor
+`python3 ~/g2-identidad-evo-candidato-20261019/asr/diarizacion/activa-v1/instalar_identidad.py --revert`.
+Conserva el perfil de EVO; retorno técnico con guardas, todavía sin ensayo físico completo.
+Para volver además a S2.19, ejecutar después el retorno original de V3, no el de sombra.
+Las entradas inferiores describen iteraciones históricas, incluida la identificación en móvil ya sustituida.
+
 ## Estado vigente: S2.20.4 instalada; nuevo perfil autorizado — 19/10/2026, 16:14 Madrid
 
 Pixel verificado `61161FDCG0013L`: **S2.20.4/805/firma original**, SHA256

@@ -62,7 +62,7 @@ test('base, small and medium pass the exact model and deadline to native decodin
   assert.equal(engine.start(), false); assert.equal(starts.length, 3);
 });
 
-test('Parakeet on the EVO-X2 reuses the Hey Even endpoint, keeps phone voices and never loads Whisper', () => {
+test('Parakeet on the EVO-X2 reuses the Hey Even endpoint and requests server voices without a phone model', () => {
   const remote = [], local = []; let callback;
   const native = { setListener(value) { callback = value; }, start(...args) { local.push(args); return true; },
     startWithSpeakers(...args) { local.push(args); return true; },
@@ -91,7 +91,7 @@ test('Parakeet on the EVO-X2 reuses the Hey Even endpoint, keeps phone voices an
   assert.equal(turns.at(-1).relation, 'otro');
   engine.stop(); speakerModel = false;
   assert.equal(engine.start('auto', true, 1200000), true);
-  assert.equal(remote.at(-1)[4], false);
+  assert.equal(remote.at(-1)[4], true);
   engine.stop();
   assert.equal(local.length, 0);
   controls.bindConversationEvoEndpoint(() => null); controls.setConversationModel('soniox');

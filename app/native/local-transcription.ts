@@ -61,7 +61,7 @@ export class LocalTranscription implements DetectorTranscription {
       // Kotlin captures the language only if this start is accepted; a rejected start changes nothing.
       this.turnLog.start(model);
       const wire = language === "es" ? "es" : "auto";
-      const speakers = profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
+      const speakers = profileAssociation && conversationLocalSpeakers() && (evo !== null || isMicModelReady("speaker-embedding"));
       // Set on every start so an earlier opt-in never carries over; an older native engine lacks it.
       if (typeof this.engine.setSpeakerProbe === "function") this.engine.setSpeakerProbe(speakers && conversationSpeakerProbe());
       this.enabled = Boolean(evo ? this.engine.startRemote(wire, evo.url, evo.key, maxMs, speakers)

@@ -1,3 +1,14 @@
+**Estado vigente: S2.20.5 instalada, identificación en EVO — 19/10/2026 (Codex).**
+[Detalle y retorno](v3-activa-voz-propia-2026-10-19.md). Usuario decide todo el procesamiento de
+Conversación en EVO. Móvil envía audio crudo y referencia compatible por WS autenticado; consume v2,
+sin cargar modelo de voz local en esa ruta. Perfil nuevo de cuatro frases confirmado guardado/OFF;
+castellano confirmado:0,656/0,462/0,812, una aceptación propia pero todavía irregular; valenciano
+pendiente. Precisión aún no validada.356Kotlin/58Node,
+TS/release/lint correctos, firma/8nativas/48ajustes conservados. APK `c3ef4f98…9a2138`.
+Registro antiguo de Mi perfil aún usa su ruta local; no confundirlo con el procesamiento EVO de
+Conversación. No iniciar captura por sincronizar ni repetir registro. Sol6.1alto; Ey Even/Conversación
+sin activador, Jarvi/Jarvis solo Sala. Prevalece sobre estados inferiores.
+
 **Estado vigente 19/10/2026, 16:14 (Codex): S2.20.4 instalada**, [detalle y retorno](v3-activa-voz-propia-2026-10-19.md).
 APK `cb0debcf…278e4a`, firma/805/8 nativas/48 ajustes conservados. Kotlin 352/352, Node específicos 50/50,
 TS/release/lintVital correctos. Corrige copia propia de perfil RAM (S2.20.2) e incluye diagnóstico pareado
