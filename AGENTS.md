@@ -1,3 +1,17 @@
+## Cierre para continuar en casa — 19/10/2026 (Codex)
+
+**S2.20.5 instalada; ASR/V3/verificaciónCAM++ en EVO, reconocimiento aún irregular.**
+[Relevo completo y siguiente en Hermes](https://github.com/DanielGTdiabetes/hermes-agent-proactive/blob/main/preparacion-evo-x2/asr/diarizacion/CONTINUAR-EN-CASA-20261019.md).
+TitaNet descargado y probado en aislamiento (192dim,~50ms); **no activo en Conversación** y sin
+perfil compatible. No inferir capacidad por dimensión ni copiar umbrales entre modelos.
+Las dos tomas de registro directo EVO no se guardaron (primera3muestras/13,95s con regla inicial
+demasiado rígida; segunda1muestra/5,75s e inconsistencias). Ambas canceladas; sin registro pendiente.
+Sigue activo el perfil nuevo calculado en móvil y migrado. Usuario confirmóOFF. No más repeticiones
+con el mismo verificador sin revisar la causa. No iniciar captura/reinstalar por sincronizar Git.
+Última vozactiva5ae956ec…; Parakeet05880934…; otrosserviciosconservados,activos/NRestarts0.
+NAS APK/retornos verificados: `/mnt/evo-backup/faceclaw-s2.20.5-identidad-evo-20261019/`.
+Las entradas inferiores son históricas; prevalece este cierre. Mantener Sol6.1alto.
+
 **Estado vigente: S2.20.5 instalada, identificación en EVO — 19/10/2026 (Codex).**
 [Detalle y retorno](notes/v3-activa-voz-propia-2026-10-19.md). Usuario decide todo el procesamiento de
 Conversación en EVO. Móvil envía audio crudo y referencia compatible por WS autenticado; consume v2,
