@@ -40,8 +40,10 @@ import {
   conversationDailyContextSelected, setConversationDailyContextSelected,
   selectConversationListeningMode,
   conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
+  conversationSpeakerProbe, setConversationSpeakerProbe,
   EVO_CONVERSATION_MODEL,
 } from "../conversation-detection/session-controls";
+import { speakerProbeSummary } from "../conversation-detection/speaker-probe-summary";
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
 
@@ -520,26 +522,33 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
   get conversationSpeakersButton(): string {
     return "Voces: " + (conversationLocalSpeakers() ? "distinguir en el móvil" : "sin distinguir")
-      + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "");
+      + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "")
+      + (conversationSpeakerProbe() ? " · diagnóstico D0" : "");
   }
   get conversationSpeakersStatus(): string {
     const speakers = conversationLocalSpeakers()
       ? "Con Whisper o Parakeet, cada frase se corta en las pausas y se asocia a tu voz (si tienes perfil) o a otra voz de la sesión. Necesita el modelo de voz descargado."
       : "Whisper o Parakeet entregan el texto sin saber quién habla.";
-    return conversationSingleVoiceFilter()
+    const filtered = conversationSingleVoiceFilter()
       ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
       : speakers;
+    const probe = speakerProbeSummary(dashboardController.conversationDetector.snapshot().transcription?.speakerProbe);
+    const probeHint = conversationSpeakerProbe() && !probe
+      ? " Diagnóstico D0 activo para la próxima sesión con voces: compara copias de cada ventana sin cambiar quién habla." : "";
+    return `${filtered}${probeHint}${probe ? `\n${probe}` : ""}`;
   }
   async onConversationSpeakersTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
     const actions = [
       conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces",
       conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
+      conversationSpeakerProbe() ? "Desactivar diagnóstico de voces (D0)" : "Activar diagnóstico de voces (D0)",
     ];
     const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
     if (!this.localTranscriptionCanStart) return;
     if (choice === actions[0]) setConversationLocalSpeakers(!conversationLocalSpeakers());
     else if (choice === actions[1]) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
+    else if (choice === actions[2]) setConversationSpeakerProbe(!conversationSpeakerProbe());
     this.refreshConversationUi();
   }
   async onConversationMemoryTap(): Promise<void> {

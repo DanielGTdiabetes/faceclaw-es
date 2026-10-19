@@ -46,6 +46,14 @@ export function setConversationLocalSpeakers(value: boolean): void {
   localSpeakers = value;
   for (const listener of listeners) listener();
 }
+/** D0 speaker diagnostic (paired trimmed/leveled prints, scalars only). Off by default; RAM only. */
+let speakerProbe = false;
+export function conversationSpeakerProbe(): boolean { return speakerProbe; }
+export function setConversationSpeakerProbe(value: boolean): void {
+  if (port?.detector.snapshot().enabled || speakerProbe === value) return;
+  speakerProbe = value;
+  for (const listener of listeners) listener();
+}
 export function conversationSingleVoiceFilter(): boolean { return singleVoiceFilter; }
 export function setConversationSingleVoiceFilter(value: boolean): void {
   if (port?.detector.snapshot().enabled || singleVoiceFilter === value) return;

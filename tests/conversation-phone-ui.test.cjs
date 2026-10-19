@@ -54,6 +54,7 @@ function harness() {
         conversationDailyContextSelected: () => false,
         conversationLocalSpeakers: () => true, setConversationLocalSpeakers: () => {},
         conversationSingleVoiceFilter: () => false, setConversationSingleVoiceFilter: () => {},
+        conversationSpeakerProbe: () => false, setConversationSpeakerProbe: () => {},
         conversationTextSelected: () => selectedText,
         setConversationTextSelected: value => { if (!snapshot.enabled) selectedText = value; },
         // C1 RAM selectors (defaults): automatic language, diagnostics off.
@@ -66,6 +67,7 @@ function harness() {
         wearerActions: realControls.wearerActions, wearerChoices: realControls.wearerChoices,
       };
       if (name === '../conversation-detection/profile-guide') return guide;
+      if (name === '../conversation-detection/speaker-probe-summary') return require('../.test-build/app/conversation-detection/speaker-probe-summary.js');
       return {};
     },
   });

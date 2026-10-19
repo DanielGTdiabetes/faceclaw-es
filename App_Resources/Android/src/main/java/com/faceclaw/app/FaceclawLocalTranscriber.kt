@@ -107,10 +107,11 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
     fun decodeTimings(): String = session.decodeTimings()
     /**
      * D0 diagnostic, not wired to the phone UI: probe the speaker windows of the next accepted start
-     * ([LocalSpeakerProbe]). Labels, profile and thresholds are unchanged. Rejected while a worker is alive.
+     * ([LocalSpeakerProbe]). Labels, profile and thresholds are unchanged. Rejected while a worker is alive;
+     * an accepted call also drops the previous session's aggregates.
      */
     fun setSpeakerProbe(enabled: Boolean): Boolean = synchronized(selectionLock) {
-        if (session.isWorkerActive()) false else { probeRequested = enabled; true }
+        if (session.isWorkerActive()) false else { probeRequested = enabled; speakerProbe = null; true }
     }
     /** Scalar aggregates of the last probed session, or status "off". */
     fun speakerProbe(): String = speakerProbe?.json() ?: "{\"status\":\"off\"}"

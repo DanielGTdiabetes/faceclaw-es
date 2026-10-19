@@ -1,6 +1,6 @@
 import { Utils } from "@nativescript/core";
 import { isAsrModelReady } from "./asr-model";
-import { conversationEvoEndpoint, conversationModel, conversationLocalModel, conversationLocalSpeakers, EVO_CONVERSATION_MODEL } from "../conversation-detection/session-controls";
+import { conversationEvoEndpoint, conversationModel, conversationLocalModel, conversationLocalSpeakers, conversationSpeakerProbe, EVO_CONVERSATION_MODEL } from "../conversation-detection/session-controls";
 import { isMicModelReady } from "../apps/microphones/mic-models";
 import { LocalConversationTurns } from "../conversation-detection/local-conversation-turns";
 import { type ConversationTurn } from "../conversation-detection/conversation-turns";
@@ -8,7 +8,7 @@ import { type Relation } from "../conversation-detection/wearer-identity";
 
 /** A4: rolling RAM-only text, by characters instead of the last three deliveries. */
 const MAX_TEXT_CHARS = 1200;
-import { type DetectorTranscription, type LocalTranscriptionSnapshot, type TextLanguage } from "../conversation-detection/transcription";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot, type SpeakerProbeSnapshot, type TextLanguage } from "../conversation-detection/transcription";
 
 declare const com: any;
 
@@ -62,6 +62,8 @@ export class LocalTranscription implements DetectorTranscription {
       this.turnLog.start(model);
       const wire = language === "es" ? "es" : "auto";
       const speakers = profileAssociation && conversationLocalSpeakers() && isMicModelReady("speaker-embedding");
+      // Set on every start so an earlier opt-in never carries over; an older native engine lacks it.
+      if (typeof this.engine.setSpeakerProbe === "function") this.engine.setSpeakerProbe(speakers && conversationSpeakerProbe());
       this.enabled = Boolean(evo ? this.engine.startRemote(wire, evo.url, evo.key, maxMs, speakers)
         : speakers ? this.engine.startWithSpeakers(wire, model, maxMs) : this.engine.start(wire, model, maxMs));
       if (!this.enabled) this.turnLog.stop();
@@ -93,7 +95,17 @@ export class LocalTranscription implements DetectorTranscription {
     const empty = { enabled: this.enabled, status: this.status, worker: false, busy: false,
       inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 };
     if (!this.engine) return empty;
-    try { return { ...empty, ...JSON.parse(String(this.engine.diagnostics())), enabled: this.enabled }; }
-    catch { return { ...empty, status: "error" }; }
+    try {
+      const probe = this.speakerProbe();
+      return { ...empty, ...JSON.parse(String(this.engine.diagnostics())), enabled: this.enabled, ...(probe ? { speakerProbe: probe } : {}) };
+    } catch { return { ...empty, status: "error" }; }
+  }
+  /** D0 aggregates of the current or last probed session; null when off or unsupported. Never breaks the snapshot. */
+  private speakerProbe(): SpeakerProbeSnapshot | null {
+    if (typeof this.engine?.speakerProbe !== "function") return null;
+    try {
+      const probe = JSON.parse(String(this.engine.speakerProbe()));
+      return probe && typeof probe === "object" && probe.status !== "off" ? probe as SpeakerProbeSnapshot : null;
+    } catch { return null; }
   }
 }

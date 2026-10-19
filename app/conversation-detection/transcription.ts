@@ -18,6 +18,20 @@ export type TranscriptPhaseAnalysis = {
   accepted: number; abstentions: number; delivered: number; deliveredChars: number; deliveryDiscarded: number;
 };
 
+/** D0 aggregate (LocalSpeakerProbe.kt): mean/min/max per measure, counts per copy. No audio, text or prints. */
+export type SpeakerProbeStat = { n: number; mean?: number; min?: number; max?: number };
+export type SpeakerProbeVariant = {
+  name: "recortado" | "nivelado"; embedded: number; unchanged: number; short: number; failed: number;
+  profile: SpeakerProbeStat; profileDelta: SpeakerProbeStat; nearest: SpeakerProbeStat; nearestDelta: SpeakerProbeStat;
+  zoneChanged: number; toWearer: number; fromWearer: number; groupChanged: number;
+};
+export type SpeakerProbeSnapshot = {
+  status: "activo" | "cerrado"; windows: number; omitted: number; errors: number; maxWindows: number;
+  window: Record<string, SpeakerProbeStat>;
+  current: { profile: SpeakerProbeStat; nearest: SpeakerProbeStat };
+  variants: SpeakerProbeVariant[]; note: string;
+};
+
 /** Optional native ASR port. Diagnostics exclude the temporary transcript. */
 export type LocalTranscriptionSnapshot = {
   enabled: boolean; status: string; worker: boolean; busy: boolean; inputBufferedBytes: number;
@@ -30,6 +44,8 @@ export type LocalTranscriptionSnapshot = {
   soniox?: { sentMs: number; finalTokens: number; messages: number; speakers: number; fallbacks: number; errors: number; lastError: string };
   /** S2: wearer association state; scalars and Soniox labels only, never text. */
   identity?: IdentitySnapshot;
+  /** D0: present only for a session started with the speaker diagnostic; kept after OFF until the next start. */
+  speakerProbe?: SpeakerProbeSnapshot;
   /** S2: true only while Soniox interventions are produced (never for the local fallback). */
   turnsAvailable?: boolean;
   /** Aggregate RAM-only diagnostics; no transcript, per-segment timeline or confidence. */
