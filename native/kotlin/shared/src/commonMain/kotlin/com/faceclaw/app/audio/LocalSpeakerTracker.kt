@@ -32,8 +32,11 @@ interface LocalSpeakerAttributor {
  * Without a profile every voice is clustered and labelled "desconocido": a cluster may be the wearer.
  * Windows with less than [MIN_VOICED] of voice or without an embedding stay unattributed.
  * Thresholds are the participation ones; they still need calibration on recorded G2 audio.
+ * An optional [probe] (D0 diagnostic, off when null) observes each embedded window read-only before the
+ * decision; it never changes the label and its failures are ignored.
  */
-class LocalSpeakerTracker(private val decoder: LocalVoiceDecoder, profile: FloatArray?) : LocalSpeakerAttributor {
+class LocalSpeakerTracker(private val decoder: LocalVoiceDecoder, profile: FloatArray?,
+    private val probe: LocalSpeakerProbe? = null) : LocalSpeakerAttributor {
     companion object {
         const val MIN_VOICED = 16000
         const val WEARER_MIN = 0.80
@@ -56,6 +59,11 @@ class LocalSpeakerTracker(private val decoder: LocalVoiceDecoder, profile: Float
         val vector = normalizeLocalVoice(decoder.embed(samples), decoder.dimension) ?: return LocalSpeakerLabel.UNKNOWN
         try {
             val profile = own
+            if (probe != null) try {
+                probe.observe(samples, vector, profile, others.map { it.centroid }) {
+                    normalizeLocalVoice(decoder.embed(it), decoder.dimension)
+                }
+            } catch (_: Throwable) { /* diagnostic only */ }
             if (profile != null) {
                 val similarity = VoicePrint.dot(profile, vector)
                 if (similarity >= WEARER_MIN) return LocalSpeakerLabel(LocalSpeakerLabel.WEARER, "portador")
@@ -79,6 +87,7 @@ class LocalSpeakerTracker(private val decoder: LocalVoiceDecoder, profile: Float
     }
 
     override fun release() {
+        try { probe?.close() } catch (_: Throwable) { /* diagnostic only */ }
         own?.fill(0f); own = null
         for (voice in others) voice.centroid.fill(0f)
         others.clear()

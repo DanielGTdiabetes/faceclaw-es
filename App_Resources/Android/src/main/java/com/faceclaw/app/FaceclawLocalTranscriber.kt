@@ -34,6 +34,9 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
     private val appContext = context.applicationContext
     private val selectionLock = Any()
     private var selected = Config(LocalWhisperModels.SMALL, LocalWhisperPerformance(4))
+    /** D0 speaker diagnostic, off by default; read by the worker when it loads the attributor. */
+    private var probeRequested = false
+    @Volatile private var speakerProbe: LocalSpeakerProbe? = null
 
     private val session = LocalTranscriptSession(object : LocalTranscriptHost {
         override val dispatcher = CallbackDispatcher { action -> handler.post { action() } }
@@ -46,9 +49,12 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
             return LocalWhisperModels.load(root, config.model, language, config.performance)
         }
         override fun loadSpeakerAttributor(): LocalSpeakerAttributor? {
+            speakerProbe = null
             val decoder = loadOwnVoiceDecoder(appContext) ?: return null
             val profile = try { OwnLocalVoiceStore(appContext).load(decoder.dimension) } catch (_: Throwable) { null }
-            return LocalSpeakerTracker(decoder, profile)
+            val probe = if (synchronized(selectionLock) { probeRequested }) LocalSpeakerProbe() else null
+            speakerProbe = probe
+            return LocalSpeakerTracker(decoder, profile, probe)
         }
     }, conditionAudio = true)
     fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)
@@ -99,4 +105,13 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
     fun diagnostics(): String = session.diagnostics()
     /** Benchmark detail: recent window capture bounds and decode times (scalars only). */
     fun decodeTimings(): String = session.decodeTimings()
+    /**
+     * D0 diagnostic, not wired to the phone UI: probe the speaker windows of the next accepted start
+     * ([LocalSpeakerProbe]). Labels, profile and thresholds are unchanged. Rejected while a worker is alive.
+     */
+    fun setSpeakerProbe(enabled: Boolean): Boolean = synchronized(selectionLock) {
+        if (session.isWorkerActive()) false else { probeRequested = enabled; true }
+    }
+    /** Scalar aggregates of the last probed session, or status "off". */
+    fun speakerProbe(): String = speakerProbe?.json() ?: "{\"status\":\"off\"}"
 }
