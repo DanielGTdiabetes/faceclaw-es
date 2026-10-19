@@ -521,13 +521,14 @@ export class MainViewModel extends RemoteControlsViewModel {
       : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
   }
   get conversationSpeakersButton(): string {
-    return "Voces: " + (conversationLocalSpeakers() ? "distinguir en el móvil" : "sin distinguir")
+    // Where voices are told apart depends on the transcription source (EVO or this phone), not on this switch.
+    return "Voces: " + (conversationLocalSpeakers() ? "distinguir" : "sin distinguir")
       + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "")
       + (conversationSpeakerProbe() ? " · diagnóstico D0" : "");
   }
   get conversationSpeakersStatus(): string {
     const speakers = conversationLocalSpeakers()
-      ? "Con Whisper o Parakeet, cada frase se corta en las pausas y se asocia a tu voz (si tienes perfil) o a otra voz de la sesión. Necesita el modelo de voz descargado."
+      ? "Cada frase se corta en las pausas y se asocia a tu voz o a otra voz de la conversación. Con el EVO-X2, la identificación se hace allí y conserva las voces durante toda la sesión; con Whisper en el móvil necesita el modelo de voz descargado."
       : "Whisper o Parakeet entregan el texto sin saber quién habla.";
     const filtered = conversationSingleVoiceFilter()
       ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`

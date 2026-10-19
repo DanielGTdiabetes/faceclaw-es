@@ -20,6 +20,8 @@ interface LocalSpeakerAttributor {
         listOf(LocalSpeakerTurn(decoded.text.trim(), 0, samples.size / 16L, LocalSpeakerLabel.UNKNOWN))
     /** Scalars only, for diagnostics: number of session voices other than the wearer. */
     val voices: Int
+    /** Counters about the last attributed window (EVO correlation); null when not applicable. */
+    fun report(): LocalAttributionReport? = null
     fun release()
 }
 

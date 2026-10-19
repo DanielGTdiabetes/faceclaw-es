@@ -1,3 +1,21 @@
+## S2.21 voces por sesión instalada — 19/10/2026, 18:52 (Claude, PC de casa)
+
+**`0.8.4-es.13-conversation.s2.21-sesion-voces`/805, `a4896dc5…`, firma original y las 8 nativas de S2.20.5.**
+Contrato v3 con el EVO:
+- Contexto efímero por sesión (id aleatorio por inicio o reinicio, secuencia y tiempos de muestras).
+- Una etiqueta `voz-N` por voz de sesión; `desconocido` sin nombre de voz.
+- Cobertura combinada solo dentro de la misma voz.
+- Informe de pérdidas de la ventana anterior enviado con la siguiente.
+- Rótulo «Voces: distinguir».
+
+Instalada con `install -r`. Comprobado: la extraída es idéntica, los 48 ajustes son idénticos, se conserva la
+fecha de primera instalación, el arranque es estable y no hay captura. Kotlin 363/363, Node 1325/0 fallos/1
+omitida, TypeScript correcto. El EVO está en modo `shadow`: las etiquetas que llegan siguen siendo las de la línea
+base hasta la promoción. Diseño, criterio y retorno en el repositorio Hermes,
+`preparacion-evo-x2/asr/diarizacion/sesion-voces-20261019.md`. Retorno: S2.20.5,
+`dist/conversation-g0/before-install-20261019-165246.apk` (`c3ef4f98…`), antes de revertir el servidor.
+Copia en el NAS: `/mnt/evo-backup/faceclaw-s2.21-sesion-voces-20261019/`. Cambios sin commit.
+
 ## Cierre para continuar en casa — 19/10/2026 (Codex)
 
 **S2.20.5 instalada; ASR/V3/verificaciónCAM++ en EVO, reconocimiento aún irregular.**

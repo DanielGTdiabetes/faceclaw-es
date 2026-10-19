@@ -14,11 +14,25 @@ enum class LocalTranscriptSegmentation(val wire: String) { VAD("vad"), WINDOWS("
 /** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
 data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false,
     val diarization: LocalDiarization? = null)
+
+/**
+ * Ephemeral context of one capture window for the EVO session contract (v3): a random id per Conversation
+ * start/reset, a sequence per window and the window's capture times (PCM clock since start, overlap kept).
+ * `report` is the phone's counters about the previous window. Never text, audio, profile or credentials.
+ */
+data class LocalWindowContext(val sessionId: String, val seq: Long, val startMs: Long, val endMs: Long,
+    val voices: Boolean, val report: String?)
+
+/** 128 random bits as hex: identifies one stream, never a person, a device or a credential. */
+internal fun ephemeralStreamId(): String =
+    kotlin.random.Random.Default.nextBytes(16).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
 interface LocalTranscriptDecoder {
     /** Called on raw audio before conditioning/decoding. Unknown detectors preserve the window. */
     val conditionAudio: Boolean get() = true
     fun hasSpeech(samples: FloatArray): Boolean = true
     fun decode(samples: FloatArray): LocalDecodedText
+    /** Remote decoders may use the window context; local ones ignore it. */
+    fun decode(samples: FloatArray, window: LocalWindowContext?): LocalDecodedText = decode(samples)
     fun release()
     /** Model label for diagnostics only (e.g. "whisper-small"); never a path. */
     val engine: String get() = "whisper"
@@ -433,6 +447,10 @@ class LocalTranscriptSession(
     private var speechDetector = "not-configured"
     /** Speaker attribution requested by the accepted start (needs a pause window policy). */
     private var speakersRequested = false
+    /** Ephemeral stream identity for the EVO session contract; renewed on every start/reset. */
+    private var streamId = ""
+    private var streamSeq = 0L
+    private var pendingReport: String? = null
     private var speakerStatus = "off"
     private var speakerVoices = 0
     private var speakerWearer = 0L
@@ -521,6 +539,7 @@ class LocalTranscriptSession(
             stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
             levels.reset(); engine = ""; runtime = ""; speechDetector = "not-configured"
             speakersRequested = speakers; speakerStatus = if (speakers) "cargando" else "off"; speakerVoices = 0
+            streamId = ephemeralStreamId(); streamSeq = 0; pendingReport = null
             speakerWearer = 0; speakerOther = 0; speakerUnknown = 0; speakerClustered = 0; speakerErrors = 0; pendingVoiced = 0
         }
         val config = language
@@ -536,6 +555,8 @@ class LocalTranscriptSession(
     fun resetStream() {
         condition.withLock {
             generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
+            // A new stream never inherits EVO session voices, sequence or a pending report.
+            streamId = ephemeralStreamId(); streamSeq = 0; pendingReport = null
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             condition.signalAll()
@@ -546,6 +567,7 @@ class LocalTranscriptSession(
     fun stop() {
         condition.withLock {
             running = false; ready = false; generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
+            streamId = ""; streamSeq = 0; pendingReport = null
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             status = "inactivo"; condition.signalAll()
@@ -676,8 +698,14 @@ class LocalTranscriptSession(
                             }
                         }
                     }
+                    val window = if (canDecode) condition.withLock {
+                        if (running && generation == next.generation && streamId.isNotEmpty())
+                            LocalWindowContext(streamId, ++streamSeq, next.startChunk * 50, next.endChunk * 50,
+                                speakersRequested, pendingReport.also { pendingReport = null })
+                        else null
+                    } else null
                     val decoded = if (canDecode) try {
-                        decoder?.decode(floats)
+                        decoder?.decode(floats, window)
                     } catch (failure: Throwable) {
                         decodeFailed = true
                         throw failure
@@ -717,6 +745,15 @@ class LocalTranscriptSession(
                         catch (_: Throwable) { condition.withLock { speakerErrors++ }; LocalSpeakerLabel.UNKNOWN }
                     } else null
                     raw?.fill(0f)
+                    // Phone side of the window for EVO correlation, sent with the next window of this stream.
+                    if (window != null && decoded?.diarization != null) {
+                        val report = when {
+                            attributor == null -> LocalAttributionReport("off")
+                            text.isEmpty() || turns == null -> LocalAttributionReport("none")
+                            else -> attributor.report() ?: LocalAttributionReport("none")
+                        }.toJson(window.seq)
+                        condition.withLock { if (running && generation == next.generation) pendingReport = report }
+                    }
                     val post = condition.withLock {
                         val s = stats[next.phase]
                         if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) {

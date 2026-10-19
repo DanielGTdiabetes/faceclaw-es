@@ -312,7 +312,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.12-conversation.s2.20.5-identidad-evo"
+    versionName "${faceclawVersionName}-es.13-conversation.s2.21-sesion-voces"
     
     generatedDensities = []
   }

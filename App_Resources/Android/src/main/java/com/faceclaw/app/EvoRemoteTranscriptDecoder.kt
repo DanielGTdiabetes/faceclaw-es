@@ -33,14 +33,16 @@ class EvoRemoteTranscriptDecoder(
     override val engine: String get() = ENGINE
     override val runtime: String get() = "remote=evo-x2"
 
-    override fun decode(samples: FloatArray): LocalDecodedText {
+    override fun decode(samples: FloatArray): LocalDecodedText = decode(samples, null)
+
+    override fun decode(samples: FloatArray, window: LocalWindowContext?): LocalDecodedText {
         val pcm = pcm16(samples)
         try {
             val decoded = try {
-                transcribe(pcm)
+                transcribe(pcm, window)
             } catch (busy: GatewayBusy) {
                 Thread.sleep(BUSY_RETRY_MS)
-                transcribe(pcm)
+                transcribe(pcm, window)
             }
             // Parakeet detects the language itself and reports none: label it Spanish for the session filters.
             return decoded
@@ -53,7 +55,7 @@ class EvoRemoteTranscriptDecoder(
 
     private class GatewayBusy : RuntimeException("EVO-X2 ASR busy")
 
-    private fun transcribe(pcm: ByteArray): LocalDecodedText {
+    private fun transcribe(pcm: ByteArray, window: LocalWindowContext?): LocalDecodedText {
         val done = CountDownLatch(1)
         var transcript: String? = null
         var diarization = LocalDiarization(false, pcm.size / 2)
@@ -61,7 +63,14 @@ class EvoRemoteTranscriptDecoder(
         val request = Request.Builder().url(url).header("Authorization", "Bearer $key").build()
         val socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val session = JSONObject().put("sample_rate", 16000).put("language", language.wire).put("g2_diarization", 2)
+                // v3 adds the ephemeral window context so EVO can follow voices across the session.
+                val session = JSONObject().put("sample_rate", 16000).put("language", language.wire)
+                    .put("g2_diarization", if (window != null) 3 else 2)
+                window?.let { w ->
+                    session.put("g2_session", JSONObject().put("id", w.sessionId).put("seq", w.seq)
+                        .put("start_ms", w.startMs).put("end_ms", w.endMs).put("voices", if (w.voices) "on" else "off"))
+                    w.report?.let { report -> try { session.put("g2_feedback", JSONObject(report)) } catch (_: Throwable) {} }
+                }
                 profile?.let { vector ->
                     val values = JSONArray(); for (value in vector) values.put(value.toDouble())
                     session.put("g2_voice_profile", JSONObject().put("model_sha256",
@@ -81,7 +90,7 @@ class EvoRemoteTranscriptDecoder(
                 val message = try { JSONObject(text) } catch (_: Throwable) { return }
                 when (message.optString("type")) {
                     "conversation.item.input_audio_transcription.completed" -> {
-                        diarization = parseDiarization(message.optJSONObject("g2_diarization"), pcm.size / 2)
+                        diarization = parseDiarization(message.optJSONObject("g2_diarization"), pcm.size / 2, window != null)
                         val remote = message.optJSONObject("g2_diarization")
                         val stats = remote?.optJSONObject("diagnostic")
                         if (stats != null) {
@@ -137,10 +146,12 @@ class EvoRemoteTranscriptDecoder(
         }
 
         /** Invalid or unsupported metadata keeps all text unknown. Reference migration is authorized by the owner; never echoed or logged. */
-        private fun parseDiarization(value: JSONObject?, samples: Int): LocalDiarization {
+        internal fun parseDiarization(value: JSONObject?, samples: Int, sessionRequested: Boolean = false): LocalDiarization {
             val unknown = LocalDiarization(false, samples)
             try {
-                if (value == null || value.optInt("v") != 2 || value.optString("status") != "ok" ||
+                // v3 only when this window asked for it; an older gateway may still answer v2.
+                val version = value?.optInt("v") ?: 0
+                if (value == null || !(version == 2 || (version == 3 && sessionRequested)) || value.optString("status") != "ok" ||
                     value.optInt("samples", -1) != samples) return unknown
                 val words = value.optJSONArray("words") ?: return unknown
                 val intervals = value.optJSONArray("segments") ?: return unknown
@@ -157,7 +168,9 @@ class EvoRemoteTranscriptDecoder(
                 }
                 val spans = (0 until intervals.length()).map { i ->
                     val row = intervals.getJSONObject(i)
-                    LocalVoiceInterval(row.getString("speaker"), ms(row, "start"), ms(row, "end"), row.optString("relation"))
+                    LocalVoiceInterval(row.getString("speaker"), ms(row, "start"), ms(row, "end"), row.optString("relation"),
+                        if (version == 3 && !row.isNull("speaker_id")) row.optString("speaker_id") else null,
+                        if (version == 3 && !row.isNull("state")) row.optString("state") else null)
                 }
                 return LocalDiarization(true, samples, timed, spans, identity = value.optBoolean("identity"))
             } catch (_: Throwable) { return unknown }
