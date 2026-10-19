@@ -1,5 +1,10 @@
 # Puente Faceclaw–Hermes
 
+**Estado vigente 19/10/2026:** [participación contextual G2 instalada](../../notes/participacion-contextual-g2-2026-10-19.md).
+Estas fuentes son históricas: el puente actual y sus dependencias se mantienen en el
+[repositorio Hermes](https://github.com/DanielGTdiabetes/hermes-agent-proactive/tree/main/preparacion-evo-x2/puente/participacion-contextual-20261019). G2 usa Ey Even o Conversación continua sin nombre; Jarvi/Jarvis solo Sala.
+No desplegar esta carpeta sobre el servidor actual ni sustituir solo dos o tres módulos sin sus dependencias.
+
 **Memoria diaria desplegada, 09-10-2026:** [instalación S2.6.11, fuentes, prueba y reversión](../../notes/despliegue-memoria-diaria-2026-10-09.md). se añade una adaptación pequeña de recuperación de contexto: hasta 32 resúmenes por tema, de 600 caracteres, con caducidad de 24 h desde su última actualización y hasta tres resultados relevantes por evaluación. No se crea archivo de reuniones, audio ni tabla de transcripciones. SQLite FTS5/BM25 y recencia; sin embeddings, cuentas externas, llamadas adicionales al LLM ni herramientas del agente. Sí aumenta el prompt y puede aumentar tokens/latencia; la utilidad real queda pendiente. Véanse los apartados N y O de la [auditoría](../../notes/auditoria-conversaciones-continuas-2026-10-09.md).
 
 Está desactivada por defecto. Requiere tanto configuración explícita del servidor como la opción «Memoria del día» del móvil, elegida con Conversación OFF. La selección móvil solo vive en RAM. Sin capacidad conv/daily-context/1 no se envía la opción ni se inicia un flujo alternativo. Desactivarla impide nuevas consultas/escrituras; «Borrar memoria del día» elimina los resúmenes anteriores y exige confirmación del servidor. No afecta al perfil de voz ni al historial del chat normal.
