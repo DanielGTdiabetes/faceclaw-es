@@ -25,7 +25,22 @@ internal class OwnLocalVoiceStore(context: Context) {
     private val directory = File(context.noBackupFilesDir, "faceclaw-own-voice")
     private val target = File(directory, "profile.aes")
     private val alias = "faceclaw.conversation.own-voice.v1"
+    private val archive = LocalProfileArchive(object : LocalProfileFiles {
+        override fun exists(name: String): Boolean = File(directory, name).isFile
+        override fun read(name: String): ByteArray {
+            val file = File(directory, name)
+            check(file.length() in 32..17000)
+            return file.readBytes()
+        }
+        override fun writeSynced(name: String, bytes: ByteArray) {
+            java.io.FileOutputStream(File(directory, name)).use { output -> output.write(bytes); output.fd.sync() }
+        }
+        override fun replace(from: String, to: String) { Os.rename(File(directory, from).absolutePath, File(directory, to).absolutePath) }
+        override fun remove(name: String) { val file = File(directory, name); check(!file.exists() || file.delete()) }
+    })
     fun exists(): Boolean = target.isFile
+    fun hasPrevious(): Boolean = archive.hasPrevious()
+    fun restorePrevious(): Boolean = archive.restore()
     private fun aad(dimension: Int): ByteArray = "faceclaw-own-voice:1:$OWN_VOICE_MODEL_HASH:$dimension:16000".toByteArray(Charsets.UTF_8)
     private fun key(create: Boolean): SecretKey? {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -73,6 +88,9 @@ internal class OwnLocalVoiceStore(context: Context) {
                 data.writeInt(1); data.writeInt(vector.size); data.write(cipher.iv); data.write(encrypted); data.flush()
                 output.fd.sync()
             }
+            // Preserve the encrypted original without deleting or replacing its Keystore key.
+            // A failure aborts preparation, leaving the active profile untouched.
+            archive.preserveCurrent()
             return object : PreparedLocalVoiceProfile {
                 override fun commit(): Boolean { Os.rename(temporary.absolutePath, target.absolutePath); return true }
                 override fun cancel() { temporary.delete() }
@@ -81,7 +99,8 @@ internal class OwnLocalVoiceStore(context: Context) {
         finally { plain.fill(0) }
     }
     fun delete(): Boolean {
-        val removed = !target.exists() || target.delete()
+        val previous = File(directory, LocalProfileArchive.PREVIOUS)
+        val removed = (!target.exists() || target.delete()) && (!previous.exists() || previous.delete())
         // A canceled worker may still drain JNI, but cannot commit after session.stop().
         directory.listFiles()?.filter { it.name.endsWith(".pending") }?.forEach { it.delete() }
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -130,6 +149,11 @@ class FaceclawLocalParticipation(context: Context) {
         override fun prepareProfile(vector: FloatArray): PreparedLocalVoiceProfile = store.prepare(vector)
     })
     fun hasProfile(): Boolean = store.exists()
+    fun hasPreviousProfile(): Boolean = store.hasPrevious()
+    fun restorePreviousProfile(): Boolean {
+        if (session.isWorkerActive()) return false
+        return try { store.restorePrevious() } catch (_: Throwable) { false }
+    }
     /** Presence only; never exposes a vector, filename, audio or key. Compatibility checked on activation. */
     fun profileState(): String = if (store.exists()) "guardado" else "sin perfil"
     fun deleteProfile(): Boolean { session.stop(); return try { store.delete() } catch (_: Throwable) { false } }

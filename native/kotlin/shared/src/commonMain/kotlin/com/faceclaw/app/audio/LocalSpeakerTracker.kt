@@ -15,6 +15,9 @@ data class LocalSpeakerLabel(val speaker: String?, val relation: String) {
 /** Attributes one window of raw (unconditioned) 16 kHz audio. Lives for one transcription session. */
 interface LocalSpeakerAttributor {
     fun attribute(samples: FloatArray, voicedSamples: Int): LocalSpeakerLabel
+    /** Remote intervals are opt-in. Missing support never labels a mixed window from a whole-window print. */
+    fun attributeDiarized(samples: FloatArray, decoded: LocalDecodedText): List<LocalSpeakerTurn> =
+        listOf(LocalSpeakerTurn(decoded.text.trim(), 0, samples.size / 16L, LocalSpeakerLabel.UNKNOWN))
     /** Scalars only, for diagnostics: number of session voices other than the wearer. */
     val voices: Int
     fun release()
@@ -48,7 +51,7 @@ class LocalSpeakerTracker(private val decoder: LocalVoiceDecoder, profile: Float
 
     private class Voice(val label: String, var centroid: FloatArray, var count: Int)
 
-    private var own: FloatArray? = normalizeLocalVoice(profile, decoder.dimension)
+    private var own: FloatArray? = normalizeLocalVoice(profile?.copyOf(), decoder.dimension)
     private val others = mutableListOf<Voice>()
     private var nextVoice = 1
 

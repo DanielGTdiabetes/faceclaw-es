@@ -19,7 +19,7 @@ export function profileGuide(snapshot: DetectorSnapshot, profileState: string, m
   let hint = "Pulsa Crear mi perfil. Te guiaré con dos frases en castellano y dos en valenciano.";
   if (profileState === "error" || profileState === "no disponible") {
     state = "Mi perfil: no se pudo consultar"; hint = "No se puede confirmar si está guardado. Revisa el estado antes de intentar crearlo de nuevo.";
-  } else if (profileState === "guardado") {
+  } else if (profileState === "guardado" && !active) {
     state = "Mi perfil: guardado en este móvil"; hint = "Ya puedes iniciar conversación local. No necesitas crear un perfil distinto por idioma.";
   } else if (active) {
     if (snapshot.state === "error") { state = "Mi perfil: error, no guardado"; hint = `${snapshot.reason} Pulsa OFF.`; }

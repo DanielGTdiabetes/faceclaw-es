@@ -1,3 +1,13 @@
+**Estado vigente 19/10/2026, 16:14 (Codex): S2.20.4 instalada**, [detalle y retorno](notes/v3-activa-voz-propia-2026-10-19.md).
+APK `cb0debcf…278e4a`, firma/805/8 nativas/48 ajustes conservados. Kotlin 352/352, Node específicos 50/50,
+TS/release/lintVital correctos. Corrige copia propia de perfil RAM (S2.20.2) e incluye diagnóstico pareado
+completo/fragmentos. Usuario autoriza crear otro perfil con G2: botón Mi perfil → Crear otro perfil
+(conservar el actual), original conservado en móvil/restaurable con OFF. Esperando guardado/OFF; no consultar
+UI durante registro ni iniciar captura por sincronizar. La precisión propia aún no está validada.
+Prevalece sobre entradas inferiores. Sol 6.1 alto; Ey Even o Conversación continua, Jarvi/Jarvis solo Sala.
+
+**V3 activa S2.20.1 instalada — 19/10/2026 (Codex):** [fuentes, ensayos, límites y retorno](notes/v3-activa-voz-propia-2026-10-19.md). Pixel verificado, firma original/805, 8 nativas y 48 ajustes conservados; Kotlin 345/345. V3 por ventanas en EVO y perfil solo en móvil, portador/otro/desconocido. S2.20.1 corrige etiqueta rechazada por TS y añade métricas escalares sin texto/audio/huellas. Precisión propia todavía sin validar; prueba corta/larga en curso. No regrabar perfil ni rebajar umbrales por rutina. Usuario confirma continuar con Sol 6.1 alto. G2: Ey Even o Conversación continua; Jarvi/Jarvis solo Sala.
+
 **Participación contextual G2 instalada — 19/10/2026 (Codex):** [estado, fuentes y límites](notes/participacion-contextual-g2-2026-10-19.md). G2 normal usa **Ey Even**; **Conversación es continua y no exige nombre**. **Jarvi/Jarvis solo Sala**. La política está desplegada en el puente del EVO, sin nueva APK. 75 pruebas técnicas y simulación con agente real correctas; pendiente valoración hablada. No reinstalar ni iniciar captura por sincronizar Git. Las fuentes finales del servidor viven en el repositorio Hermes; integrations/hermes conserva una versión histórica.
 
 **Continuidad publicada por petición del usuario — 18/10/2026 (Codex):** S2.17 instalada conserva firma, ajustes y nativas. Las mejoras de Sala, recordatorios y pulsos de caché de Sala/G2 viven en `DanielGTdiabetes/hermes-agent-proactive`, rama `main`; ver `CONTINUAR-DESDE-TRABAJO-2026-10-18.md`. G2 normal y Conversación tienen ahora pulso propio cada cinco minutos en reposo, sin nueva APK. No repetir instalación ni iniciar captura; pendiente valoración hablada. APK/retorno y fuente saneado copiados al NAS del EVO, ruta en `notes/cadencia-participacion-2026-10-18.md`. El token Calendar se trata en otro hilo.

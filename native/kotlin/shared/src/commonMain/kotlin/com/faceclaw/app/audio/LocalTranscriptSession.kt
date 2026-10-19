@@ -12,7 +12,8 @@ enum class LocalTranscriptLanguage(val wire: String) {
 enum class LocalTranscriptSegmentation(val wire: String) { VAD("vad"), WINDOWS("windows") }
 
 /** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
-data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false)
+data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false,
+    val diarization: LocalDiarization? = null)
 interface LocalTranscriptDecoder {
     /** Called on raw audio before conditioning/decoding. Unknown detectors preserve the window. */
     fun hasSpeech(samples: FloatArray): Boolean = true
@@ -402,7 +403,8 @@ class LocalTranscriptSession(
         val startChunk: Long get() = endChunk - audio.size / LocalTranscriptBuffer.CHUNK_SAMPLES
     }
     private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long,
-        val sampleCount: Int, val closedAtMs: Long, val speaker: LocalSpeakerLabel? = null) {
+        val sampleCount: Int, val closedAtMs: Long, val speaker: LocalSpeakerLabel? = null,
+        val turns: List<LocalSpeakerTurn>? = null) {
         val startChunk: Long get() = endChunk - sampleCount / LocalTranscriptBuffer.CHUNK_SAMPLES
     }
     private val condition = platform.createCondition()
@@ -697,7 +699,15 @@ class LocalTranscriptSession(
                         }
                     } else null
                     val text = if (decoded != null) acceptedLocalText(decoded) else ""
-                    val label = if (raw != null && text.isNotEmpty() &&
+                    val turns = if (raw != null && text.isNotEmpty() && decoded?.diarization != null &&
+                        condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }) {
+                        try { attributor!!.attributeDiarized(raw, decoded) }
+                        catch (_: Throwable) {
+                            condition.withLock { speakerErrors++ }
+                            listOf(LocalSpeakerTurn(text, 0, raw.size / 16L, LocalSpeakerLabel.UNKNOWN))
+                        }
+                    } else null
+                    val label = if (raw != null && text.isNotEmpty() && decoded?.diarization == null &&
                         condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }) {
                         try { attributor!!.attribute(raw, next.voicedSamples) }
                         catch (_: Throwable) { condition.withLock { speakerErrors++ }; LocalSpeakerLabel.UNKNOWN }
@@ -731,12 +741,12 @@ class LocalTranscriptSession(
                                 // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
                                 discardPendingResult()
                                 result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk, next.audio.size,
-                                    next.closedAtMs, label)
-                                if (label != null) {
-                                    when (label.relation) {
+                                    next.closedAtMs, label, turns)
+                                for (voice in (turns?.map { it.label } ?: listOfNotNull(label))) {
+                                    when (voice.relation) {
                                         "portador" -> speakerWearer++
                                         "otro" -> speakerOther++
-                                        else -> if (label.speaker == null) speakerUnknown++ else speakerClustered++
+                                        else -> if (voice.speaker == null) speakerUnknown++ else speakerClustered++
                                     }
                                     speakerVoices = attributor?.voices ?: 0
                                 }
@@ -804,7 +814,20 @@ class LocalTranscriptSession(
                 val endMs = segment.endChunk * 50
                 val startMs = maxOf(0L, endMs - segment.sampleCount / 16)
                 val label = segment.speaker
-                if (label != null) target.onSpeakerSegment(segment.text, segment.language, startMs, endMs, label.speaker ?: "", label.relation)
+                val turns = segment.turns
+                if (turns != null) {
+                    // Novel text is an exact suffix. Trim the matching prefix from the aligned turns too.
+                    val original = turns.joinToString(" ") { it.text }
+                    val removed = maxOf(0, original.length - segment.text.length)
+                    for (turn in turns) {
+                        if (!condition.withLock { running && generation == token && platform.elapsedRealtimeMs() < deadline }) break
+                        if (turn.endChar <= removed) continue
+                        val value = turn.text.drop(maxOf(0, removed - turn.startChar)).trimStart()
+                        if (value.isNotEmpty()) target.onSpeakerSegment(value, segment.language,
+                            minOf(endMs, startMs + turn.startMs), minOf(endMs, startMs + turn.endMs),
+                            turn.label.speaker ?: "", turn.label.relation)
+                    }
+                } else if (label != null) target.onSpeakerSegment(segment.text, segment.language, startMs, endMs, label.speaker ?: "", label.relation)
                 else target.onSegment(segment.text, segment.language, startMs, endMs)
             }
         }

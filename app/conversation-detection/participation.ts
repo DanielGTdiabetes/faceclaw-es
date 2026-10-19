@@ -16,5 +16,7 @@ export interface DetectorParticipation {
   hasProfile(): boolean;
   profileState?(): string;
   deleteProfile(): boolean;
+  hasPreviousProfile?(): boolean;
+  restorePreviousProfile?(): boolean;
 }
 import { type ProfileVoiceMatch } from "./profile-speaker-matcher";

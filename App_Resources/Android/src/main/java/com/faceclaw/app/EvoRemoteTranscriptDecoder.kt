@@ -33,14 +33,14 @@ class EvoRemoteTranscriptDecoder(
     override fun decode(samples: FloatArray): LocalDecodedText {
         val pcm = pcm16(samples)
         try {
-            val text = try {
+            val decoded = try {
                 transcribe(pcm)
             } catch (busy: GatewayBusy) {
                 Thread.sleep(BUSY_RETRY_MS)
                 transcribe(pcm)
             }
             // Parakeet detects the language itself and reports none: label it Spanish for the session filters.
-            return localDecodedText(text, "es", language)
+            return decoded
         } finally {
             pcm.fill(0)
         }
@@ -50,15 +50,16 @@ class EvoRemoteTranscriptDecoder(
 
     private class GatewayBusy : RuntimeException("EVO-X2 ASR busy")
 
-    private fun transcribe(pcm: ByteArray): String {
+    private fun transcribe(pcm: ByteArray): LocalDecodedText {
         val done = CountDownLatch(1)
         var transcript: String? = null
+        var diarization = LocalDiarization(false, pcm.size / 2)
         var failure: RuntimeException? = null
         val request = Request.Builder().url(url).header("Authorization", "Bearer $key").build()
         val socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 webSocket.send(JSONObject().put("type", "session.update")
-                    .put("session", JSONObject().put("sample_rate", 16000).put("language", language.wire)).toString())
+                    .put("session", JSONObject().put("sample_rate", 16000).put("language", language.wire).put("g2_diarization", 1)).toString())
                 var offset = 0
                 while (offset < pcm.size) {
                     val end = minOf(pcm.size, offset + CHUNK_BYTES)
@@ -72,6 +73,7 @@ class EvoRemoteTranscriptDecoder(
                 val message = try { JSONObject(text) } catch (_: Throwable) { return }
                 when (message.optString("type")) {
                     "conversation.item.input_audio_transcription.completed" -> {
+                        diarization = parseDiarization(message.optJSONObject("g2_diarization"), pcm.size / 2)
                         transcript = message.optString("transcript", "")
                         done.countDown()
                     }
@@ -95,7 +97,8 @@ class EvoRemoteTranscriptDecoder(
         val finished = done.await(DECODE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         if (finished && transcript != null) socket.close(1000, "done") else socket.cancel()
         if (!finished) throw IllegalStateException("EVO-X2 ASR timeout")
-        transcript?.let { return it.trim() }
+        transcript?.let { return localDecodedText(it.trim().replace(Regex("\\s+"), " "), "es", language)
+            .copy(diarization = diarization) }
         throw failure ?: IllegalStateException("EVO-X2 ASR without result")
     }
 
@@ -112,6 +115,33 @@ class EvoRemoteTranscriptDecoder(
                 .writeTimeout(5, TimeUnit.SECONDS)
                 .addInterceptor(FaceclawHttp.userAgentInterceptor())
                 .build()
+        }
+
+        /** Invalid or unsupported metadata keeps all text unknown. No biometric data is transmitted. */
+        private fun parseDiarization(value: JSONObject?, samples: Int): LocalDiarization {
+            val unknown = LocalDiarization(false, samples)
+            try {
+                if (value == null || value.optInt("v") != 1 || value.optString("status") != "ok" ||
+                    value.optInt("samples", -1) != samples) return unknown
+                val words = value.optJSONArray("words") ?: return unknown
+                val intervals = value.optJSONArray("segments") ?: return unknown
+                if (words.length() !in 1..256 || intervals.length() > 128) return unknown
+                fun ms(row: JSONObject, key: String): Long {
+                    val seconds = row.getDouble(key)
+                    if (!seconds.isFinite() || seconds < 0 || seconds > samples / 16000.0 + .001)
+                        throw IllegalArgumentException("Invalid interval")
+                    return (seconds * 1000).toLong().coerceAtMost(samples / 16L)
+                }
+                val timed = (0 until words.length()).map { i ->
+                    val row = words.getJSONObject(i)
+                    LocalTimedWord(row.getString("word").trim(), ms(row, "start"), ms(row, "end"))
+                }
+                val spans = (0 until intervals.length()).map { i ->
+                    val row = intervals.getJSONObject(i)
+                    LocalVoiceInterval(row.getString("speaker"), ms(row, "start"), ms(row, "end"))
+                }
+                return LocalDiarization(true, samples, timed, spans)
+            } catch (_: Throwable) { return unknown }
         }
 
         /** Same endpoint check as the TypeScript provider: a ws:// or wss:// URL. */

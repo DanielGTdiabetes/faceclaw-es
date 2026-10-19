@@ -157,6 +157,8 @@ class LocalParticipationSession(
         }
         matches.clear(); json
     }
+    fun isWorkerActive(): Boolean = condition.withLock { worker }
+
     fun diagnostics(): String = condition.withLock {
         val now = platform.elapsedRealtimeMs()
         "{\"status\":\"$status\",\"worker\":$worker,\"busy\":$busy,\"enrolling\":$enrolling," +

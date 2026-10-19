@@ -52,9 +52,13 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
             speakerProbe = null
             val decoder = loadOwnVoiceDecoder(appContext) ?: return null
             val profile = try { OwnLocalVoiceStore(appContext).load(decoder.dimension) } catch (_: Throwable) { null }
-            val probe = if (synchronized(selectionLock) { probeRequested }) LocalSpeakerProbe() else null
+            val remote = synchronized(selectionLock) { selected.remote != null }
+            val probe = if (!remote && synchronized(selectionLock) { probeRequested }) LocalSpeakerProbe() else null
             speakerProbe = probe
-            return LocalSpeakerTracker(decoder, profile, probe)
+            return try {
+                if (remote) LocalTargetSpeakerVerifier(decoder, profile, probeWholeWindow = true) { android.util.Log.i("FaceclawVoz", it) }
+                else LocalSpeakerTracker(decoder, profile, probe)
+            } finally { profile?.fill(0f) }
         }
     }, conditionAudio = true)
     fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)

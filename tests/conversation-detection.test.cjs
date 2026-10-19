@@ -611,3 +611,26 @@ test('coordinator keeps diagnostics from after STOP, with original counters', as
   h.detector.setEnabled(false);
   assert.deepEqual(JSON.parse(h.detector.diagnostics()), { capturing: false, packets: 1018 });
 });
+
+test('profile restoration requires OFF and fully drained workers without stopping capture', async () => {
+  const participation = participationPort(), transcription = transcriptPort();
+  let restores = 0, transcribing = false;
+  participation.hasPreviousProfile = () => true;
+  participation.restorePreviousProfile = () => { restores++; return true; };
+  const originalSnapshot = transcription.snapshot;
+  transcription.snapshot = () => ({ ...originalSnapshot(), busy: transcribing });
+  const h = harness({ participation, transcription });
+  assert.equal(h.detector.hasPreviousOwnProfile(), true);
+  assert.equal(h.detector.restorePreviousOwnProfile(), true);
+  await h.on();
+  assert.equal(h.detector.restorePreviousOwnProfile(), false);
+  assert.equal(h.counts().stops, 0);
+  h.detector.setEnabled(false);
+  participation.state.worker = true;
+  assert.equal(h.detector.restorePreviousOwnProfile(), false);
+  participation.state.worker = false; transcribing = true;
+  assert.equal(h.detector.restorePreviousOwnProfile(), false);
+  transcribing = false;
+  assert.equal(h.detector.restorePreviousOwnProfile(), true);
+  assert.equal(restores, 2);
+});

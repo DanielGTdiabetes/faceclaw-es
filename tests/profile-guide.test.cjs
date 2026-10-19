@@ -41,3 +41,11 @@ test('OFF with an incomplete enrollment explains its terminal outcome instead of
     assert.match(guide.state, /no guardado/); assert.equal(guide.phrase, '');
   }
 });
+
+test('creating another profile shows the live prompts while the old profile remains saved', () => {
+  const guide = profileGuide(snapshot({}, { enrollmentSegments: 1, enrollmentMs: 4000 }), 'guardado', 'ready');
+  assert.match(guide.state, /habla ahora/); assert.ok(guide.phrase.includes(PROFILE_PHRASES[1].text));
+  assert.equal(guide.progress, 25);
+  const canceled = profileGuide(snapshot({ enabled: false, participationMode: 'off', enrollmentOutcome: 'canceled' }), 'guardado', 'ready');
+  assert.match(canceled.state, /guardado/); assert.equal(canceled.phrase, '');
+});

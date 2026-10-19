@@ -135,6 +135,13 @@ export class ConversationCaptureCoordinator {
   ownProfileState(): string {
     return this.host.participation?.profileState?.() ?? (this.hasOwnProfile() ? "guardado" : "sin perfil");
   }
+  hasPreviousOwnProfile(): boolean { return this.host.participation?.hasPreviousProfile?.() ?? false; }
+  restorePreviousOwnProfile(): boolean {
+    const snapshot = this.snapshot();
+    if (snapshot.enabled || this.holdsSession() || snapshot.participation?.worker || snapshot.participation?.busy
+      || snapshot.transcription?.worker || snapshot.transcription?.busy) return false;
+    return this.host.participation?.restorePreviousProfile?.() ?? false;
+  }
   deleteOwnProfile(): boolean { this.setEnabled(false); return this.host.participation?.deleteProfile() ?? false; }
 
   /**

@@ -14,6 +14,8 @@ export class LocalParticipation implements DetectorParticipation {
     return this.engine;
   }
   hasProfile(): boolean { try { return Boolean(this.native()?.hasProfile()); } catch { return false; } }
+  hasPreviousProfile(): boolean { try { return Boolean(this.native()?.hasPreviousProfile()); } catch { return false; } }
+  restorePreviousProfile(): boolean { try { return Boolean(this.native()?.restorePreviousProfile()); } catch { return false; } }
   profileState(): string {
     try { return this.native() ? String(this.native().profileState()) : "no disponible"; }
     catch { return "error"; }

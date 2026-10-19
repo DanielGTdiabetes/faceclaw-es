@@ -4,6 +4,7 @@ import { micModelState, onMicModelStateChanged, startMicModelDownload } from "..
 import { profileGuide } from "../conversation-detection/profile-guide";
 
 class VoiceProfileViewModel extends Observable {
+  private feedback = "";
   private readonly subscriptions: (() => void)[] = [];
   constructor() {
     super();
@@ -15,9 +16,31 @@ class VoiceProfileViewModel extends Observable {
     return profileGuide(detector.snapshot(), detector.ownProfileState(), micModelState("speaker-embedding").status);
   }
   private refresh(): void {
-    for (const key of ["state", "hint", "phrase", "progress", "progressText", "button", "buttonEnabled", "privacyVisibility"]) {
+    for (const key of ["state", "hint", "phrase", "progress", "progressText", "button", "buttonEnabled", "privacyVisibility", "newProfileVisibility", "previousProfileVisibility", "profileActionEnabled", "feedback"]) {
       this.notifyPropertyChange(key, this.get(key));
     }
+  }
+  get newProfileVisibility(): string {
+    return !this.guide().active && dashboardController.conversationDetector.ownProfileState() === "guardado" ? "visible" : "collapsed";
+  }
+  get previousProfileVisibility(): string {
+    return !this.guide().active && dashboardController.conversationDetector.hasPreviousOwnProfile() ? "visible" : "collapsed";
+  }
+  get profileActionEnabled(): boolean {
+    const detector = dashboardController.conversationDetector, snapshot = detector.snapshot();
+    return !snapshot.enabled && !detector.holdsSession() && !snapshot.participation?.worker && !snapshot.participation?.busy
+      && !snapshot.transcription?.worker && !snapshot.transcription?.busy && micModelState("speaker-embedding").status === "ready";
+  }
+  onNewProfileTap(): void {
+    if (!this.profileActionEnabled) return;
+    this.feedback = "";
+    dashboardController.setConversationCaptureEnabled(true, false, "enrollment");
+  }
+  onRestorePreviousTap(): void {
+    if (!this.profileActionEnabled) return;
+    this.feedback = dashboardController.conversationDetector.restorePreviousOwnProfile()
+      ? "Perfil anterior restaurado. Captura OFF." : "No se pudo restaurar el perfil anterior.";
+    this.refresh();
   }
   get state(): string { return this.guide().state; }
   get hint(): string { return this.guide().hint; }
