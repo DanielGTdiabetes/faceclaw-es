@@ -532,7 +532,8 @@ export class MainViewModel extends RemoteControlsViewModel {
     const filtered = conversationSingleVoiceFilter()
       ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
       : speakers;
-    const probe = speakerProbeSummary(dashboardController.conversationDetector.snapshot().transcription?.speakerProbe);
+    const transcription = dashboardController.conversationDetector.snapshot().transcription;
+    const probe = speakerProbeSummary(transcription?.speakerProbe, transcription?.speakers);
     const probeHint = conversationSpeakerProbe() && !probe
       ? " Diagnóstico D0 activo para la próxima sesión con voces: compara copias de cada ventana sin cambiar quién habla." : "";
     return `${filtered}${probeHint}${probe ? `\n${probe}` : ""}`;

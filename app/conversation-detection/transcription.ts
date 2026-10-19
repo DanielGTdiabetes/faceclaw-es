@@ -32,6 +32,11 @@ export type SpeakerProbeSnapshot = {
   variants: SpeakerProbeVariant[]; note: string;
 };
 
+/** Speaker counters of the local session (LocalTranscriptSession.kt `speakers`): windows with delivered text. */
+export type SpeakerCounts = {
+  status: string; voices: number; wearer: number; other: number; clustered: number; unknown: number; errors: number;
+};
+
 /** Optional native ASR port. Diagnostics exclude the temporary transcript. */
 export type LocalTranscriptionSnapshot = {
   enabled: boolean; status: string; worker: boolean; busy: boolean; inputBufferedBytes: number;
@@ -46,6 +51,8 @@ export type LocalTranscriptionSnapshot = {
   identity?: IdentitySnapshot;
   /** D0: present only for a session started with the speaker diagnostic; kept after OFF until the next start. */
   speakerProbe?: SpeakerProbeSnapshot;
+  /** Native speaker counters, reset by each start and kept after OFF. */
+  speakers?: SpeakerCounts;
   /** S2: true only while Soniox interventions are produced (never for the local fallback). */
   turnsAvailable?: boolean;
   /** Aggregate RAM-only diagnostics; no transcript, per-segment timeline or confidence. */

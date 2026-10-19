@@ -116,3 +116,30 @@ test('the phone summary shows aggregates, skipped copies and the energy-only lim
   const busy = speakerProbeSummary({ ...PROBE, status: 'activo', omitted: 5, errors: 1 });
   assert.match(busy, /^Diagnóstico D0 \(en curso\): 4 ventanas, 5 sin analizar \(límite 64\), 1 errores\./);
 });
+
+test('session voice counts follow the D0 header and never invent missing numbers', () => {
+  const speakers = { status: 'activo', voices: 3, wearer: 12, other: 30, clustered: 0, unknown: 6, errors: 0 };
+  const text = speakerProbeSummary(PROBE, speakers);
+  assert.match(text, /^Diagnóstico D0 \(última sesión\): 4 ventanas\.\nVoces de la sesión además de la tuya: 3 \(máximo 6\)\. Ventanas con texto: tuyas 12, de otras voces 30, sin atribuir 6\.\nSin extremos/);
+  const noProfile = speakerProbeSummary(PROBE, { ...speakers, wearer: 0, other: 0, clustered: 40, errors: 2 });
+  assert.match(noProfile, /tuyas 0, de otras voces 0, agrupadas sin perfil 40, sin atribuir 6, errores 2\./);
+  // Missing or malformed counters: the summary stays as before, without a counts line.
+  for (const bad of [undefined, null, { ...speakers, voices: undefined }, { ...speakers, unknown: -1 }, { ...speakers, other: 'x' }]) {
+    const plain = speakerProbeSummary(PROBE, bad);
+    assert.equal(plain.includes('Voces de la sesión'), false);
+    assert.equal(plain, speakerProbeSummary(PROBE));
+  }
+  // Counts alone never create a D0 summary.
+  assert.equal(speakerProbeSummary(null, speakers), null);
+});
+
+test('the native speaker counters reach the snapshot unchanged', () => {
+  controls.setConversationModel('whisper-small-es');
+  const h = harness();
+  h.engine.start('auto', true, 1200000);
+  const native = JSON.parse('{"status":"listo","worker":true,"busy":false,"inputBufferedBytes":0,"accepted":0,"abstentions":0,"dropped":0,'
+    + '"speakers":{"status":"activo","voices":2,"wearer":5,"other":7,"clustered":0,"unknown":1,"errors":0}}');
+  h.engine.engine.diagnostics = () => JSON.stringify(native);
+  assert.equal(JSON.stringify(h.engine.snapshot().speakers), JSON.stringify(native.speakers));
+  h.engine.stop(); controls.setConversationModel('soniox');
+});
