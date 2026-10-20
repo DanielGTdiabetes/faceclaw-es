@@ -284,6 +284,11 @@ export class AssistantBridgeClient {
         turn.callbacks.onToolActivity(String(frame.label ?? "tool"));
         return;
       case "turn-done": {
+        // New bridges carry the complete final here; old bridges use accumulated deltas.
+        if (typeof frame.text === "string") {
+          turn.textSoFar = frame.text;
+          turn.callbacks.onTextDelta(frame.text, frame.text);
+        }
         this.clearActiveTurn();
         turn.callbacks.onTurnDone({
           stopReason: typeof frame.stopReason === "string" ? frame.stopReason : null,

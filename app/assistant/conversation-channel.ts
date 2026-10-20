@@ -34,6 +34,7 @@ export type ConversationChannelHost = {
 type Pending = {
   requestId: string; ref: EpisodeRef; mode: "assess" | "assist"; modality: EpisodeModality; expiresAt: number;
   result: (result: ConversationResult | null) => void; cancelTimer: () => void;
+  working: boolean; progress?: (working: boolean) => void;
 };
 
 /**
@@ -150,7 +151,7 @@ export class ConversationChannel {
   }
 
   request(context: EpisodeContext, mode: "assess" | "assist", timeoutMs: number,
-    result: (result: ConversationResult | null) => void): boolean {
+    result: (result: ConversationResult | null) => void, progress?: (working: boolean) => void): boolean {
     if (!this.isReady() || (mode !== "assess" && mode !== "assist")
       || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000
       || !validContext(context, this.optionalIdentity)) { this.stats.rechazados++; return false; }
@@ -160,7 +161,7 @@ export class ConversationChannel {
     // The cancellation callback may have turned OFF or started normal chat.
     if (!this.isReady()) return false;
     const pending: Pending = { requestId: `c${this.connection}-${++this.sequence}`, ref: { ...context.ref }, mode,
-      modality, expiresAt: this.host.now() + timeoutMs, result, cancelTimer: () => {} };
+      modality, expiresAt: this.host.now() + timeoutMs, result, working: false, progress, cancelTimer: () => {} };
     this.pending = pending;
     let sent = false;
     try {
@@ -179,13 +180,25 @@ export class ConversationChannel {
     this.stats.sent++;
     if (this.pending === pending) {
       pending.cancelTimer = this.host.after(() => {
-        if (this.pending === pending) { this.stats.caducados++; this.cancel(); }
+        if (this.pending === pending) {
+          this.expire();
+        }
       }, timeoutMs);
     }
     return true;
   }
 
   /** A cancel belongs to this request only; stale responses can never complete another one. */
+  private expire(): void {
+    const pending = this.pending;
+    if (!pending) return;
+    this.stats.caducados++;
+    if (pending.working && pending.mode === "assist") {
+      try { this.host.send({ chan: "conv", type: "cancel", requestId: pending.requestId, ref: { ...pending.ref } }); } catch { /* best effort */ }
+      this.finish({ mode: "assist", ref: { ...pending.ref }, text: "La consulta ha superado el tiempo de espera. Si había una acción en marcha, comprueba su resultado antes de repetirla." });
+    } else this.cancel();
+  }
+
   cancel(notifyServer = true): void {
     const pending = this.pending;
     if (!pending) return;
@@ -208,8 +221,21 @@ export class ConversationChannel {
     if (!pending || !isRecord(frame) || frame.chan !== "conv" || frame.requestId !== pending.requestId
       || !sameRef(frame.ref, pending.ref)) return;
     // Check the monotonic deadline here too: a delayed timer must not admit late text.
-    if (!this.isReady() || this.host.now() >= pending.expiresAt) { this.stats.caducados++; this.cancel(); return; }
-    if (frame.type === "error") { this.stats.errores++; this.finish(null); return; }
+    if (!this.isReady()) { this.cancel(); return; }
+    if (this.host.now() >= pending.expiresAt) { this.expire(); return; }
+    if (frame.type === "status" && pending.mode === "assist" && frame.status === "working") {
+      if (!pending.working) {
+        pending.working = true;
+        try { pending.progress?.(true); } catch { /* Presentation cannot break the request. */ }
+      }
+      return;
+    }
+    if (frame.type === "error") {
+      this.stats.errores++;
+      this.finish(pending.mode === "assist" && pending.working ? { mode: "assist", ref: { ...pending.ref },
+        text: "No he podido completar la petición. Si había una acción en marcha, comprueba su resultado antes de repetirla." } : null);
+      return;
+    }
     if (frame.type !== "result" || frame.mode !== pending.mode) return;
     const memory = typeof frame.memoryUpdated === "boolean" ? { memoryUpdated: frame.memoryUpdated } : {};
     if (pending.mode === "assess") {
@@ -254,6 +280,10 @@ export class ConversationChannel {
 
   private deliver(pending: Pending, result: ConversationResult | null): void {
     try { pending.result(result); } catch { /* Owner failures must not break chat or socket callbacks. */ }
+    if (pending.working) {
+      pending.working = false;
+      try { pending.progress?.(false); } catch { /* Presentation cannot break cleanup. */ }
+    }
   }
 }
 

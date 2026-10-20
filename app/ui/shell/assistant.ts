@@ -35,7 +35,23 @@ export type AssistantLayerCallbacks = {
 export class AssistantLayer implements Layer {
   private phase: AssistantPhase = "thinking";
   private replyText = "";
-  private status = "Thinking...";
+  private status = "…";
+  private dotsTimer: ReturnType<typeof setTimeout> | null = null;
+  private dot = 0;
+  private animate(): void {
+    if (this.dotsTimer !== null || this.phase !== "thinking") return;
+    this.dotsTimer = setTimeout(() => {
+      this.dotsTimer = null;
+      if (this.phase !== "thinking") return;
+      this.dot = (this.dot + 1) % 3;
+      this.actions.requestRender();
+      this.animate();
+    }, 900);
+  }
+  private stopAnimation(): void {
+    if (this.dotsTimer !== null) clearTimeout(this.dotsTimer);
+    this.dotsTimer = null;
+  }
   private readonly menu = createInputDialogMenu(MENU_ROWS);
   /** Reopens the picture shown during the current turn, or null when there is none. */
   private showImage: (() => void) | null = null;
@@ -49,7 +65,7 @@ export class AssistantLayer implements Layer {
   startTurn(): void {
     this.phase = "thinking";
     this.replyText = "";
-    this.status = "Thinking...";
+    this.status = "…";
     this.setImage(null);
     this.menu.select(0);
     this.actions.requestRender();
@@ -64,24 +80,27 @@ export class AssistantLayer implements Layer {
 
   onTextDelta(_delta: string, textSoFar: string): void {
     this.replyText = textSoFar;
-    if (this.phase === "thinking") this.status = "Thinking...";
+    if (this.phase === "thinking") this.status = "…";
     this.actions.requestRender();
   }
 
-  onToolActivity(label: string): void {
-    if (this.phase === "thinking") this.status = `→ ${label}`;
+  onToolActivity(_label: string): void {
+    if (this.phase === "thinking") this.status = "…";
     this.actions.requestRender();
   }
 
   onTurnDone(): void {
     this.phase = "done";
-    this.status = this.replyText.trim() ? "" : "(no reply)";
+    this.stopAnimation();
+    this.status = this.replyText.trim() ? "" : "(sin respuesta)";
     this.menu.select(0);
     this.actions.requestRender();
   }
 
   onError(message: string): void {
     this.phase = "error";
+    this.stopAnimation();
+    this.replyText = "";
     this.status = message;
     this.menu.select(0);
     this.actions.requestRender();
@@ -89,10 +108,11 @@ export class AssistantLayer implements Layer {
 
   paint(_ctx: LayerContext, paintBelow: () => GrayImage): GrayImage {
     const image = paintBelow();
+    this.animate();
     const inMenu = this.phase !== "thinking";
     paintInputDialog(image, {
-      title: this.phase === "thinking" ? "Assistant ●" : "Assistant",
-      status: this.status,
+      title: "Asistente",
+      status: this.phase === "thinking" ? ".".repeat(this.dot + 1) : this.status,
       statusValue: this.phase === "error" ? 200 : 130,
       text: this.replyText,
       menu: inMenu ? this.menu : null,
@@ -106,7 +126,9 @@ export class AssistantLayer implements Layer {
       if (event.type === "double-click") {
         this.callbacks.onCancel();
         this.phase = "done";
-        this.status = "Cancelled";
+        this.stopAnimation();
+        this.replyText = "";
+        this.status = "Cancelado";
         this.menu.select(0);
         this.actions.requestRender();
       }
@@ -137,6 +159,7 @@ export class AssistantLayer implements Layer {
   }
 
   onRemoved(): void {
+    this.stopAnimation();
     this.callbacks.onRemoved?.();
   }
 }

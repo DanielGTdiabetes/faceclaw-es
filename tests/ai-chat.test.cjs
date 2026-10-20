@@ -128,7 +128,7 @@ test('cancelled tools and late callbacks cannot mutate the next turn or its hist
   old.callbacks.onTextDelta('late', 'late');
   old.callbacks.onTurnDone({ stopReason: 'end_turn' });
   assert.equal(session.isTurnActive(), true);
-  assert.equal(session.transcript[1].text, 'partial');
+  assert.equal(session.transcript[1].text, ''); // Provisional text stays hidden after cancellation.
   assert.equal(JSON.stringify(env.turns[1].messages).includes('tool_result'), false);
   env.done('new answer');
   assert.equal(session.isTurnActive(), false);

@@ -20,7 +20,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -140,6 +140,7 @@ export class HermesConversationPresenter {
   hasOverlay(): boolean { return this.layer !== null; }
 
   capturePresentation(): (() => void) | null {
+    if (this.source.conversationHermes.snapshot().working) return null;
     const layer = this.layer, message = this.source.conversationHermesMessage;
     if (!layer || !message || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
     const confirm = this.source.conversationHermes.capturePresentation?.();
@@ -167,6 +168,7 @@ export class HermesConversationPresenter {
   }
 
   private message(): string {
+    if (this.source.conversationHermes.snapshot().working) return "…";
     return this.source.conversationHermesMessage || this.source.conversationHermes.snapshot().notice || "";
   }
 

@@ -116,6 +116,7 @@ export class ConversationHermesRuntime {
   private outputTurnAt = 0;
   private outputPresented = false;
   private notice = "";
+  private working = false;
   private noticeUntil = 0;
   private singleVoice = { enabled: false, skipped: 0 };
   private link: HermesLink = "listo";
@@ -225,7 +226,7 @@ export class ConversationHermesRuntime {
   }
 
   snapshot() {
-    return { enabled: this.enabled, busy: this.flight !== null, requests: this.requests, modality: this.modality,
+    return { enabled: this.enabled, working: this.enabled && this.working && this.source.snapshot().state === "escuchando", busy: this.flight !== null, requests: this.requests, modality: this.modality,
       delivered: this.counters.delivered, link: this.link, stopCause: this.stopCause,
       notice: this.enabled && this.host.now() < this.noticeUntil ? this.notice : "",
       filterStatus: this.filterStatus(),
@@ -264,6 +265,7 @@ export class ConversationHermesRuntime {
 
   /** Finish even canceled flights; source counters are cumulative only within the live capture. */
   private finishFlight(): void {
+    this.working = false;
     const flight = this.flight;
     if (!flight) return;
     this.metrics.busyMs += Math.max(0, this.host.now() - flight.at);
@@ -519,7 +521,8 @@ export class ConversationHermesRuntime {
       baseline: { chunks: snapshot.metrics?.chunks, sentMs: snapshot.transcription?.soniox?.sentMs,
         finalTokens: snapshot.transcription?.soniox?.finalTokens } };
     this.flight = flight;
-    const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result));
+    const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result),
+      (working) => { if (this.flight === flight) { this.working = working; this.host.changed(); } });
     if (!accepted && this.flight === flight) this.finishFlight();
     this.host.changed();
   }

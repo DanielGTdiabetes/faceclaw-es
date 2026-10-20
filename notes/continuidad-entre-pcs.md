@@ -1,3 +1,12 @@
+## S2.22 presentación discreta PREPARADA, no instalada — 20/10/2026 (Codex)
+
+[Estado, APK y retorno](presentacion-discreta-g2-2026-10-20.md). Candidata firmada original/805;
+solo bundle+versionName, 8 nativas/2 DEX conservados. Suite 1336: 1334/0 fallos/2 omitidas.
+Pixel desconectado de USB durante build: falta reconectar y confirmar OFF actual antes de instalar.
+S2.21 sigue instalada según última lectura. Puente todavía original; Telegram ya configurado.
+Copia NAS candidata/retorno/fuentes cotejada en `faceclaw-s2.22-presentacion-20261020`.
+No iniciar captura, repetir registro ni sobrescribir otras mejoras. Sin commit/push.
+
 ## S2.21 voces por sesión instalada — 19/10/2026, 18:52 (Claude, PC de casa)
 
 **`0.8.4-es.13-conversation.s2.21-sesion-voces`/805, `a4896dc5…`, firma original y las 8 nativas de S2.20.5.**

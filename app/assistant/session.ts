@@ -123,7 +123,7 @@ export class AssistantSession {
     const generation = ++this.turnGeneration;
     const reply: AssistantTranscriptEntry = { role: "assistant", text: "" };
     this.transcript.push({ role: "user", text }, reply);
-    this.status = "Thinking...";
+    this.status = "…";
     // Install a sentinel before calling providers: some failures are synchronous.
     this.turnHandle = { cancel: () => {} };
     this.changed();
@@ -133,23 +133,22 @@ export class AssistantSession {
       this.turnHandle = null;
       this.changed();
     };
+    let finalText = "";
     const wrappedCallbacks: AssistantTurnCallbacks = {
-      onTextDelta: (delta, full) => {
+      onTextDelta: (_delta, full) => {
         if (generation !== this.turnGeneration) return;
-        reply.text = full;
-        this.status = "Thinking...";
-        this.changed();
-        callbacks.onTextDelta(delta, full);
+        finalText = full; // Provisional text stays outside every visible transcript.
       },
-      onToolActivity: (label) => {
+      onToolActivity: (_label) => {
         if (generation !== this.turnGeneration) return;
-        this.status = `→ ${label}`;
+        this.status = "…";
         this.changed();
-        callbacks.onToolActivity(label);
       },
       onTurnDone: (result) => {
         if (generation !== this.turnGeneration) return;
         this.status = "";
+        reply.text = finalText;
+        callbacks.onTextDelta(reply.text, reply.text);
         finish();
         callbacks.onTurnDone(result);
       },

@@ -78,12 +78,18 @@ export function hermesCoverList(strips: readonly { image: ListImage; x: number; 
  */
 export class HermesContributionLayer implements Layer {
   private retired = false;
+  private dotsTimer: ReturnType<typeof setTimeout> | null = null;
+  private dot = 0;
+  private stopDots(): void {
+    if (this.dotsTimer !== null) clearTimeout(this.dotsTimer);
+    this.dotsTimer = null;
+  }
   private scroll = 0;
 
   constructor(private readonly text: () => string, private readonly hooks: { dismiss(): void; removed(): void }) {}
 
   /** After retirement the layer is a transparent pass-through until the shell drops it. */
-  retire(): void { this.retired = true; }
+  retire(): void { this.retired = true; this.stopDots(); }
   isRetired(): boolean { return this.retired; }
 
   paint(ctx: LayerContext, paintBelow: PaintBelow): GrayImage {
@@ -92,6 +98,15 @@ export class HermesContributionLayer implements Layer {
     const image = new GrayImage(width, height, 0);
     image.fillRect(0, 0, 1, 1, ANCHOR_VALUE);
     const text = this.text();
+    if (text === "…" && !this.retired && this.dotsTimer === null) {
+      this.dotsTimer = setTimeout(() => {
+        this.dotsTimer = null;
+        if (!this.retired && this.text() === "…") {
+          this.dot = (this.dot + 1) % 3;
+          ctx.actions.requestRender();
+        }
+      }, 900);
+    } else if (text !== "…") this.stopDots();
     const top = Math.max(0, Math.min(height - BAND_HEIGHT, minWindowTop()));
     const strips = text ? hermesTextStrips(this.paintBand(text, width - 2 * INSET_X).withDrawsBaked()) : [];
     image.drawDisplayList(hermesCoverList(strips, INSET_X, top), 0, 0, width, height);
@@ -106,6 +121,7 @@ export class HermesContributionLayer implements Layer {
     let y = 12;
     band.drawText(titleFont, 0, y, "Hermes", 200);
     y += lineStep(titleFont) + 6;
+    if (text === "…") text = ".".repeat(this.dot + 1);
     const lines = text.split("\n").flatMap((paragraph) => wrapText(font, paragraph, available, { breakLongWords: true }));
     const capacity = Math.max(1, Math.floor((BAND_HEIGHT - 12 - y) / step));
     this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, lines.length - capacity)));
@@ -130,6 +146,7 @@ export class HermesContributionLayer implements Layer {
 
   onRemoved(): void {
     this.retired = true;
+    this.stopDots();
     this.hooks.removed();
   }
 }
