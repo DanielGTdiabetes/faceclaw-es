@@ -17,7 +17,7 @@ data class LocalDecodedText(val text: String, val language: String, val forced: 
 
 /**
  * Ephemeral context of one capture window for the EVO session contract (v3): a random id per Conversation
- * start/reset, a sequence per window and the window's capture times (PCM clock since start, overlap kept).
+ * start (kept across PCM-gap resets), a sequence per window and the window's capture times (PCM clock since start, overlap kept).
  * `report` is the phone's counters about the previous window. Never text, audio, profile or credentials.
  */
 data class LocalWindowContext(val sessionId: String, val seq: Long, val startMs: Long, val endMs: Long,
@@ -447,7 +447,7 @@ class LocalTranscriptSession(
     private var speechDetector = "not-configured"
     /** Speaker attribution requested by the accepted start (needs a pause window policy). */
     private var speakersRequested = false
-    /** Ephemeral stream identity for the EVO session contract; renewed on every start/reset. */
+    /** Ephemeral stream identity for the EVO session contract; renewed on start, cleared on stop, kept on reset. */
     private var streamId = ""
     private var streamSeq = 0L
     private var pendingReport: String? = null
@@ -555,8 +555,10 @@ class LocalTranscriptSession(
     fun resetStream() {
         condition.withLock {
             generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
-            // A new stream never inherits EVO session voices, sequence or a pending report.
-            streamId = ephemeralStreamId(); streamSeq = 0; pendingReport = null
+            // A PCM gap keeps the EVO session (id and growing seq) so its voice groups survive each answer;
+            // capture times stay monotonic because inputChunks only restarts on start(). Only the pending
+            // report of the invalidated window is dropped. Only start()/stop() renew or clear the id.
+            pendingReport = null
             job?.audio?.fill(0); job = null
             if (activeInputBytes == 0) busy = false
             condition.signalAll()

@@ -146,10 +146,40 @@ class LocalEvoSessionContractTest {
         assertTrue(second.startMs >= first.endMs)
         assertTrue(first.voices); assertNull(first.report)
         assertTrue(second.report!!.startsWith("{\"seq\":1,\"status\":\"ok\",\"words\":2,\"portador\":2"))
+        session.stop(); waitFor(session, "\"worker\":false")
+    }
+
+    @Test fun pcmGapResetKeepsTheEvoSessionWithGrowingSequenceAndMonotonicCaptureTimes() {
+        val (session, recorder, _) = session(speakers = true)
+        speak(session); speak(session)
+        val second = recorder.windows[1].first!!
+        // The gap after each answer shown on the G2 must not open a new EVO session (it would drop its voice groups).
         session.resetStream(); speak(session)
         val third = recorder.windows[2].first!!
-        assertNotEquals(first.sessionId, third.sessionId)
-        assertEquals(1L, third.seq); assertNull(third.report)
+        assertEquals(second.sessionId, third.sessionId)
+        assertEquals(3L, third.seq)
+        assertTrue(third.startMs >= second.endMs, "capture times must not restart after a reset")
+        session.resetStream(); speak(session)
+        val fourth = recorder.windows[3].first!!
+        assertEquals(second.sessionId, fourth.sessionId)
+        assertEquals(4L, fourth.seq)
+        assertTrue(fourth.startMs >= third.endMs)
+        session.stop(); waitFor(session, "\"worker\":false")
+    }
+
+    @Test fun conversationOffAndOnOpensANewEvoSession() {
+        val (session, recorder, _) = session(speakers = true)
+        speak(session); speak(session)
+        val second = recorder.windows[1].first!!
+        session.stop(); waitFor(session, "\"worker\":false")
+        assertTrue(session.start(LocalTranscriptLanguage.ES, LocalTranscriptSegmentation.WINDOWS, 120000,
+            LocalTranscriptWindowPolicy.PAUSE, speakers = true))
+        waitFor(session, "\"status\":\"listo\"")
+        speak(session)
+        val next = recorder.windows[2].first!!
+        assertTrue(Regex("^[0-9a-f]{32}$").matches(next.sessionId))
+        assertNotEquals(second.sessionId, next.sessionId)
+        assertEquals(1L, next.seq); assertNull(next.report)
         session.stop(); waitFor(session, "\"worker\":false")
     }
 

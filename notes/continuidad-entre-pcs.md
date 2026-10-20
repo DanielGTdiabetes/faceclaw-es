@@ -1,3 +1,13 @@
+## S2.23 sesión de voces continua instalada — 20/10/2026, 19:27 (Claude)
+
+**`0.8.4-es.15-conversation.s2.23-sesion-continua`/805, `232fe249…`, firma original, sobre S2.22 «presentación».**
+Un hueco de PCM >250 ms (tras cada respuesta en las G2) ya no abre una sesión de voces nueva en el EVO:
+`resetStream()` conserva el id y la secuencia sigue creciendo; solo ON/OFF crean o borran el id. Tiempos de
+captura monótonos (reloj `inputChunks`, que solo reinicia `start()`). Kotlin 365/365, Node 1335/0 fallos/1
+omitida, TypeScript correcto. Extraída idéntica, 48 ajustes idénticos, arranque estable. La S2.22 de presentación
+(`eed2cfda…`) estaba instalada en el Pixel: se conserva y es el retorno inmediato. Detalle, retorno a S2.22 y a
+S2.21 en [la nota](sesion-voces-continua-s2.23-2026-10-20.md). Pendiente: prueba real en G2.
+
 ## S2.22 presentación discreta PREPARADA, no instalada — 20/10/2026 (Codex)
 
 [Estado, APK y retorno](presentacion-discreta-g2-2026-10-20.md). Candidata firmada original/805;
