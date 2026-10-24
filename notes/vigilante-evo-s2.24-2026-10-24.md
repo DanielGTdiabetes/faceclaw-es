@@ -54,3 +54,11 @@ con la extraída. Mismo código 805 y misma firma: `install -r` conservando dato
 ```bash
 adb -s 61161FDCG0013L install -r dist/conversation-g0/faceclaw-0.8.4-es.15-conversation.s2.23-sesion-continua.apk
 ```
+
+## Prueba real — 24/10/2026, 07:41–07:53 (Dani)
+
+Modo avión en el Pixel. El puente registró el cierre a las 07:42:00. Hacia las 07:51:30 llegó la notificación
+«EVO-X2 inaccesible desde este móvil desde las 07:41. Puede ser el equipo, la red o Tailscale.» (canal
+`faceclaw-evo-status`, importancia alta). Al quitar el modo avión, el móvil reconectó a las 07:52:53 y llegó la de
+recuperación, que sustituye a la anterior (Dani: «llegó, aunque no me di cuenta»). La compilación de producción
+quita los `console.log`: el aviso se comprobó leyendo la notificación con `dumpsys notification`, no en logcat.
