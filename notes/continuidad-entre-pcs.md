@@ -1,3 +1,14 @@
+## S2.24 vigilante del EVO instalada — 24/10/2026, 07:38 (Claude)
+
+**`0.8.4-es.16-conversation.s2.24-vigilante-evo`/805, `814a9a22…`, firma original, sobre S2.23 (`232fe249…`, verificada
+extrayéndola del Pixel).** Solo bundle: nativas y DEX idénticos. El móvil avisa «EVO-X2 inaccesible desde este móvil»
+tras 10 min sin puente (notificación Android en canal propio y G2 si están puestas) y avisa de la recuperación; no
+avisa entre 21:00 y 03:50 (horario energético del EVO). Ping de aplicación cada 60 s; 150 s de silencio cierran un
+socket medio abierto y vuelven a marcar. Node 1344: 1343/0 fallos/1 omitida; `tsc` correcto. `install -r`: extraída
+idéntica, 48 ajustes idénticos, fecha de primera instalación conservada, reconexión al puente 07:38:00, sin errores.
+Falta una caída real (prueba sugerida: modo avión 11 min). Detalle y retorno en
+[la nota](vigilante-evo-s2.24-2026-10-24.md).
+
 ## S2.23 sesión de voces continua instalada — 20/10/2026, 19:27 (Claude)
 
 **`0.8.4-es.15-conversation.s2.23-sesion-continua`/805, `232fe249…`, firma original, sobre S2.22 «presentación».**

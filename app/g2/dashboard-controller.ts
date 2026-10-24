@@ -80,6 +80,8 @@ import { timerEngine } from "../apps/timer/timer-engine";
 import { registerNavigateTools } from "../assistant/navigate-tools";
 import { registerRoamTools } from "../assistant/roam-tools";
 import { assistantBridge } from "../assistant/bridge-client";
+import { EvoWatchdog } from "../assistant/evo-watchdog";
+import { postEvoAlertNotification } from "../native/evo-alert-notification";
 import { registerWindowTools } from "../assistant/window-tools";
 import { WorkerAppHost } from "../ui/shell/worker-window";
 import { ALL_APPS } from "../apps/all-apps";
@@ -529,6 +531,7 @@ class DashboardController {
     // connection stays up (with re-dial) so proactive tool calls work
     // outside voice turns.
     this.syncAssistantBridge();
+    this.startEvoWatchdog();
     // The watch drives the same synthetic-input path as the phone UI's test
     // buttons, plus app/window/lock commands; it mirrors the state below.
     startRemoteInput({
@@ -577,6 +580,28 @@ class DashboardController {
   private syncAssistantBridgeIfChanged(): void {
     if (this.bridgeConfigKey() === this.lastBridgeConfigKey) return;
     this.syncAssistantBridge();
+  }
+
+  /**
+   * "EVO-X2 unreachable from this phone" (Hermes proactive spec 12.6): the EVO cannot report its own outage.
+   * Always a phone notification; also on the glasses when they are worn and free.
+   */
+  private startEvoWatchdog(): void {
+    const watchdog = new EvoWatchdog({
+      now: () => Date.now(),
+      enabled: () => assistantBackendSetting.get() === "external" && assistantBridge.isConfigured(),
+      reachable: () => assistantBridge.isAlive(),
+      alert: (text) => {
+        console.log(`evo watchdog: ${text}`);
+        postEvoAlertNotification(text);
+        const presence = getGlassesPresence();
+        if (presence.connected && presence.worn === true && !presence.charging && this.customFirmwareConfirmed &&
+            !this.glassesLocked) {
+          presentHermesNotification(text, () => {});
+        }
+      },
+    });
+    setInterval(() => watchdog.check(), 30_000);
   }
 
   private syncAssistantBridge(): void {

@@ -26,6 +26,12 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
 /** Backstop on a turn the bridge never finishes (server-side cap is 2 min). */
 const TURN_TIMEOUT_MS = 3 * 60 * 1000;
+/**
+ * App-level liveness: the bridge answers ctl ping with pong. A host that loses power leaves a half-open
+ * socket that never reports a close, so silence for LIVENESS_TIMEOUT_MS drops the socket and re-dials.
+ */
+const LIVENESS_PING_MS = 60_000;
+const LIVENESS_TIMEOUT_MS = 150_000;
 
 export type AssistantBridgePhase = "idle" | "connecting" | "connected" | "failed";
 
@@ -69,6 +75,8 @@ export class AssistantBridgeClient {
   private stopped = true;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelayMs = RECONNECT_MIN_MS;
+  private livenessTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastFrameAtMs = 0;
   /** Callbacks from an earlier socket (closed, replaced or stopped) are ignored. */
   private socketGeneration = 0;
   private activeTurn: ActiveTurn | null = null;
@@ -88,6 +96,16 @@ export class AssistantBridgeClient {
 
   isConnected(): boolean {
     return this.phase === "connected";
+  }
+
+  /** Connected and still hearing from the bridge (EVO watchdog). */
+  isAlive(): boolean {
+    return this.phase === "connected" && Date.now() - this.lastFrameAtMs < LIVENESS_TIMEOUT_MS;
+  }
+
+  /** Whether a bridge is configured; while stopped there is nothing to watch. */
+  isConfigured(): boolean {
+    return !this.stopped && this.options !== null;
   }
 
   /**
@@ -118,6 +136,7 @@ export class AssistantBridgeClient {
     this.conversation.revoke();
     this.notifications.reset();
     this.clearReconnectTimer();
+    this.clearLivenessTimer();
     this.failActiveTurn("Bridge connection closed");
     if (this.unsubscribeToolsChanged) {
       this.unsubscribeToolsChanged();
@@ -225,6 +244,7 @@ export class AssistantBridgeClient {
       return;
     }
     if (!frame || typeof frame !== "object") return;
+    this.lastFrameAtMs = Date.now();
     switch (frame.chan) {
       case "ctl":
         this.handleCtl(frame);
@@ -252,6 +272,7 @@ export class AssistantBridgeClient {
       this.conversation.negotiate(frame.capabilities);
       this.setState("connected", `Connected to ${String(frame.serverName ?? "bridge")}`);
       this.notifications.connect(frame.capabilities, this.options?.notifications);
+      this.startLivenessTimer();
       return;
     }
     if (frame.type === "ping") {
@@ -304,7 +325,35 @@ export class AssistantBridgeClient {
     }
   }
 
+  private startLivenessTimer(): void {
+    this.clearLivenessTimer();
+    this.livenessTimer = setTimeout(() => {
+      this.livenessTimer = null;
+      if (this.phase !== "connected") return;
+      if (Date.now() - this.lastFrameAtMs >= LIVENESS_TIMEOUT_MS) {
+        const ws = this.ws;
+        this.handleConnectionLost("No response from bridge");
+        try {
+          ws?.close(1001, "no response");
+        } catch {
+          // ignore: the socket may already be dead
+        }
+        return;
+      }
+      this.send({ chan: "ctl", type: "ping", ts: Date.now() });
+      this.startLivenessTimer();
+    }, LIVENESS_PING_MS);
+  }
+
+  private clearLivenessTimer(): void {
+    if (this.livenessTimer) {
+      clearTimeout(this.livenessTimer);
+      this.livenessTimer = null;
+    }
+  }
+
   private handleConnectionLost(status: string): void {
+    this.clearLivenessTimer();
     this.socketGeneration++;
     // Same destination: an armed conversation may resume after the next authenticated hello-ack.
     this.conversation.reset();

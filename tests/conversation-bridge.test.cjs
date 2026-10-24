@@ -87,7 +87,8 @@ test('socket disconnect clears pending conv and old consent without replay on he
 
 test('the native sendText false result is treated as a failed conversation send', () => {
   const h = harness(); h.ready(); h.socket.accept = false;
-  assert.equal(h.request(), false); assert.deepEqual(h.results, [null]); assert.equal(h.timers.size, 0);
+  const before = h.timers.size;  // the connection's own liveness timer stays armed
+  assert.equal(h.request(), false); assert.deepEqual(h.results, [null]); assert.equal(h.timers.size, before);
   h.bridge.stop();
 });
 
@@ -127,4 +128,23 @@ test('phone tools act inside continuous listening: an enabled conversation is a 
   h.bridge.conversation.setEnabled(false);
   assert.equal(h.mcp().isTurnActive(), false);
   h.bridge.stop(); assert.equal(h.timers.size, 0);
+});
+
+test('liveness: an app-level ping every minute, and silence drops a half-open socket and re-dials', () => {
+  const h = harness(); h.ack(['chat', 'mcp']);
+  const fire = () => { const pending = [...h.timers]; h.timers.clear(); pending.forEach(cb => cb()); };
+  fire();
+  assert.equal(h.socket.frames.at(-1).type, 'ping');
+  assert.equal(h.socket.frames.at(-1).chan, 'ctl');
+  assert.equal(h.bridge.isAlive(), true);
+  h.message({ chan: 'ctl', type: 'pong', ts: 1 });
+  h.bridge.lastFrameAtMs = Date.now() - 151_000;       // nothing heard for longer than the timeout
+  assert.equal(h.bridge.isAlive(), false);
+  fire();
+  assert.equal(h.bridge.state().phase, 'failed');
+  assert.equal(h.bridge.state().status, 'No response from bridge');
+  assert.equal(h.bridge.isConfigured(), true);
+  assert.equal(h.timers.size, 1);                      // only the re-dial is armed
+  h.bridge.stop();
+  assert.equal(h.bridge.isConfigured(), false);
 });
