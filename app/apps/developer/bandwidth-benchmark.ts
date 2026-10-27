@@ -161,7 +161,8 @@ export class BandwidthBenchmarkLayer implements Layer {
         `Throughput: ${(payloadRate / 1024).toFixed(2)} KB/s payload (${(wireRate / 1024).toFixed(2)} KB/s wire)`,
         `Messages: ${r.messagesAcked}/${r.messagesSent} acked, ${r.timeouts} timeouts`,
         `Elapsed: ${seconds.toFixed(1)} s` + (r.aborted ? "  (aborted early)" : ""),
-        `Link request: ${LINK_MODES[r.linkMode] ?? "Current"}`,
+        `Link request: ${LINK_MODES[r.linkMode] ?? "Current"}`
+          + (r.leftPhy || r.rightPhy ? `; PHY L ${r.leftPhy ?? "?"}, R ${r.rightPhy ?? "?"}` : ""),
       ];
       for (const line of lines) {
         image.drawText(font, LIST_X, y, line, 190);
