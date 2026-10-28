@@ -9,6 +9,12 @@ import { type DetectorParticipation, type LocalParticipationSnapshot, type Parti
 /** Local capture, optional own-profile comparison and ASR; no network or assistant actions. */
 /** Upper bound handed to native workers and the capture wakelock when listening has no time limit. */
 export const NATIVE_SESSION_SAFETY_MS = 86_400_000;
+/** A gap beyond this invalidates the current acoustic window, but not the capture session. */
+export const PCM_GAP_RESET_MS = 250;
+/** First chunk after acquiring the BLE tap: allow more than the old 2 s watchdog (startup can be slow). */
+export const PCM_START_GRACE_MS = 10_000;
+/** Transient delivery gap kept alive before failing closed; recovering it is the point of S2.24. */
+export const PCM_GAP_GRACE_MS = 30_000;
 export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
 export type DetectorMetrics = {
   chunks: number; samples: number; bytes: number; maxGapMs: number;
@@ -96,6 +102,8 @@ export class ConversationCaptureCoordinator {
   private language: TextLanguage | null = null;
   private phases: PhaseDiagnostics | null = null;
   private gapCounted = false;
+  /** The current PCM gap already reset the acoustic window; do not reset it on every 500 ms tick. */
+  private gapOpen = false;
   private participationMode: ParticipationMode = "off";
   private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
   private stopReason: DetectorSnapshot["stopReason"] = "none";
@@ -243,6 +251,7 @@ export class ConversationCaptureCoordinator {
     this.lastVadStopAtMs = null;
     this.lastDiagnostics = "";
     this.gapCounted = false;
+    this.gapOpen = false;
     this.language = this.transcribing ? (options.language === "auto" ? "auto" : "es") : null;
     this.phases = options.diagnostics ? new PhaseDiagnostics(() => this.host.now()) : null;
     this.vad.setObserver(this.phases);
@@ -330,9 +339,15 @@ export class ConversationCaptureCoordinator {
     }
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
-      if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
-      if (now - (this.lastPcm || this.startedAt) > 2_000) {
-        this.fail("No llega PCM válido desde hace 2 s. Captura OFF; puedes reintentar cuando termine el cierre.");
+      if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
+      const silentMs = now - (this.lastPcm || this.startedAt);
+      const graceMs = this.lastPcm ? PCM_GAP_GRACE_MS : PCM_START_GRACE_MS;
+      if (silentMs > graceMs) {
+        this.fail(`No llega PCM válido desde hace más de ${Math.round(graceMs / 1000)} s. Captura OFF; puedes reintentar cuando termine el cierre.`);
+      } else if (silentMs > PCM_GAP_RESET_MS) {
+        this.state = "suspendido";
+        this.reason = `Sin PCM válido desde hace ${(silentMs / 1000).toFixed(1)} s. Mantengo la sesión ${Math.ceil((graceMs - silentMs) / 1000)} s por si el audio vuelve.`;
+        this.emit();
       } else {
         this.emit();
       }
@@ -378,8 +393,9 @@ export class ConversationCaptureCoordinator {
     if (this.timedOut(now)) { this.expire(); return; }
     if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
-    if (this.lastPcm && now - this.lastPcm > 250) { this.countGap(); this.resetAcousticStream(); }
+    if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
     this.lastPcm = now;
+    this.gapOpen = false;
     this.gapCounted = false;
     this.phases?.chunk();
     let sum = 0;
@@ -464,6 +480,8 @@ export class ConversationCaptureCoordinator {
     this.preparing = false;
     this.session = null;
     this.lastPcm = 0;
+    this.gapOpen = false;
+    this.gapCounted = false;
     this.resetAcousticStream();
     const lease = this.lease;
     this.lease = null;
@@ -484,6 +502,14 @@ export class ConversationCaptureCoordinator {
     this.host.participation?.stop();
     // After the acoustic reset above, so a pending candidate is settled as interrupted.
     this.phases?.stop();
+  }
+
+  /** One acoustic reset per PCM gap, even while the 500 ms tick observes the same outage. */
+  private openGap(): void {
+    if (this.gapOpen) return;
+    this.gapOpen = true;
+    this.countGap();
+    this.resetAcousticStream();
   }
 
   /** One gap counts once, whether the 500 ms tick or the next PCM chunk notices it first. */

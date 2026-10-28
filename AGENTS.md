@@ -1,3 +1,15 @@
+## S2.25 instalada — recuperación de huecos PCM — 28/10/2026 (Deepseek)
+
+**Instalada y comprobada; prueba hablada pendiente de cierre.** APK `1cd0e632…d67f8`
+(`0.8.4-es.16-conversation.s2.25-recuperacion-pcm`, código 805, firma original `57aaa887…c435`)
+instalada con `install -r` a las 14:01:36 UTC; extraída idéntica, 48 ajustes y fecha de primera
+instalación conservados, OFF observado sin wakelock de captura. Mantiene sesión y *lease* en huecos
+de hasta 30 s (arranque 10 s) con un reset acústico por hueco; más de 30 s sigue cerrando a
+propósito. No cambia ASR ni fin de turno. Suite completa 1348 (1346 correctas, 2 omitidas, 0
+fallos); `tsc` correcto. Dani percibe mejoría, pero no están validadas transcripción, pérdida de
+PCM ni recuperación física. Detalle y retorno: [nota](notes/s2.25-recuperacion-pcm-2026-10-28.md).
+Caso abierto: petición de foto en forma interrogativa («¿Puedes enviarme…?»), en curso con Codex.
+
 ## Cierre para continuar en casa — 19/10/2026 (Codex)
 
 **S2.20.5 instalada; ASR/V3/verificaciónCAM++ en EVO, reconocimiento aún irregular.**

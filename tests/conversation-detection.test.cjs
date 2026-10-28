@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { AudioCaptureArbiter } = require('../.test-build/app/native/audio-capture-arbiter.js');
-const { ConversationCaptureCoordinator } = require('../.test-build/app/conversation-detection/coordinator.js');
+const { ConversationCaptureCoordinator, PCM_GAP_GRACE_MS, PCM_START_GRACE_MS } = require('../.test-build/app/conversation-detection/coordinator.js');
 const { assistantAudioPriority } = require('../.test-build/app/assistant/audio-priority.js');
 
 function harness({ prepare, transcription, participation } = {}) {
@@ -336,17 +336,94 @@ for (const invalid of [0, 1599, 1602, 6400]) {
   });
 }
 
-test('missing first PCM and flow outage both release and latch the error', async () => {
+test('missing first PCM and a persistent flow outage fail closed only after their grace', async () => {
   for (const flowing of [false, true]) {
     const h = harness(); await h.on();
     if (flowing) h.leases[0].pcm(new Uint8Array(1600));
     h.tick(2500);
+    const waiting = h.detector.snapshot();
+    assert.equal(waiting.enabled, true);
+    assert.equal(waiting.state, 'suspendido');
+    assert.equal(waiting.resources.lease, true);
+    assert.equal(waiting.stopReason, 'none');
+    assert.equal(h.counts().stops, 0);
+    h.tick(flowing ? PCM_GAP_GRACE_MS : PCM_START_GRACE_MS);
     assert.equal(h.detector.snapshot().state, 'error');
     assert.equal(h.detector.snapshot().resources.lease, false);
     h.detector.refresh(); assert.equal(h.counts().starts, 1);
     h.detector.setEnabled(false); await h.on();
     assert.equal(h.counts().starts, 2);
   }
+});
+
+test('the first PCM may arrive after the old 2 s watchdog without closing the session', async () => {
+  const h = harness(); await h.on();
+  h.tick(2500);
+  assert.equal(h.detector.snapshot().enabled, true);
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  h.leases[0].pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+  assert.equal(h.counts().starts, 1); assert.equal(h.counts().stops, 0);
+  h.detector.setEnabled(false);
+});
+
+test('a transient PCM gap keeps the lease/session and one reset, then resumes without reacquiring', async () => {
+  const transcription = transcriptPort();
+  const h = harness({ transcription }); await h.on(true);
+  const lease = h.leases[0];
+  lease.pcm(new Uint8Array(1600));
+  const resets = () => transcription.events.filter(event => event === 'reset').length;
+  const base = resets();
+  h.tick(2500);
+  let snapshot = h.detector.snapshot();
+  assert.equal(snapshot.enabled, true);
+  assert.equal(snapshot.state, 'suspendido');
+  assert.equal(snapshot.resources.lease, true);
+  assert.match(snapshot.reason, /Sin PCM válido/);
+  assert.equal(h.counts().starts, 1); assert.equal(h.counts().stops, 0);
+  assert.equal(resets(), base + 1);
+  h.tick(500);
+  assert.equal(resets(), base + 1, 'the same gap must reset once, not every tick');
+  lease.pcm(new Uint8Array(1600));
+  snapshot = h.detector.snapshot();
+  assert.equal(snapshot.state, 'escuchando');
+  assert.equal(h.counts().starts, 1); assert.equal(h.counts().stops, 0);
+  h.detector.setEnabled(false);
+  assert.equal(h.counts().stops, 1);
+});
+
+test('a persistent PCM outage fails closed and late old callbacks cannot resurrect it', async () => {
+  const h = harness(); await h.on(); const old = h.leases[0];
+  old.pcm(new Uint8Array(1600));
+  const chunks = h.detector.snapshot().metrics.chunks;
+  h.tick(PCM_GAP_GRACE_MS + 1000);
+  const failed = h.detector.snapshot();
+  assert.equal(failed.state, 'error');
+  assert.equal(failed.stopReason, 'error');
+  assert.equal(failed.enabled, false);
+  assert.equal(failed.resources.lease, false);
+  assert.equal(h.counts().stops, 1); assert.equal(h.counts().timer, false);
+  old.pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().metrics.chunks, chunks);
+  await h.on(); assert.equal(h.counts().starts, 2);
+  h.leases[1].pcm(new Uint8Array(1600));
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+  h.detector.setEnabled(false);
+});
+
+test('OFF during a PCM recovery grace cancels it and old callbacks cannot restore capture', async () => {
+  const h = harness(); await h.on(); const old = h.leases[0];
+  old.pcm(new Uint8Array(1600));
+  h.tick(2500);
+  assert.equal(h.detector.snapshot().enabled, true);
+  h.detector.setEnabled(false);
+  assert.equal(h.detector.snapshot().enabled, false);
+  assert.equal(h.detector.snapshot().stopReason, 'manual');
+  assert.equal(h.counts().stops, 1);
+  const chunks = h.detector.snapshot().metrics.chunks;
+  old.pcm(new Uint8Array(1600)); h.tick(5000);
+  assert.equal(h.detector.snapshot().state, 'desactivado');
+  assert.equal(h.detector.snapshot().metrics.chunks, chunks);
 });
 
 test('disconnect/unwear invalidates old delivery, reacquires only in a new available session', async () => {
@@ -461,7 +538,7 @@ test('VAD never joins candidates across a 251 ms delivery gap', async () => {
   assert.equal(h.detector.snapshot().vad.state, 'candidato');
 });
 
-test('delivery outage removes stale possible voice before the existing watchdog error', async () => {
+test('delivery outage removes stale possible voice and only fails after the grace', async () => {
   const h = harness(); await h.on();
   for (let i = 0; i < 3; i++) { h.tick(50); h.leases[0].pcm(energyChunk()); }
   h.tick(500);
@@ -469,6 +546,10 @@ test('delivery outage removes stale possible voice before the existing watchdog 
   assert.equal(h.detector.snapshot().vad.interrupted, 1);
   assert.equal(h.detector.snapshot().resources.lease, true);
   h.tick(2000);
+  assert.equal(h.detector.snapshot().enabled, true);
+  assert.equal(h.detector.snapshot().state, 'suspendido');
+  assert.equal(h.detector.snapshot().resources.lease, true);
+  h.tick(PCM_GAP_GRACE_MS);
   assert.equal(h.detector.snapshot().state, 'error');
   assert.equal(h.detector.snapshot().resources.lease, false);
 });

@@ -312,7 +312,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.16-conversation.s2.24-vigilante-evo"
+    versionName "${faceclawVersionName}-es.16-conversation.s2.25-recuperacion-pcm"
     
     generatedDensities = []
   }
