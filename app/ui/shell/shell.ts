@@ -219,6 +219,11 @@ export type ShellConfig = {
   onKeyboardInputChanged?: (session: KeyboardInputSession | null) => void;
   /** Screen on/off changed: the controller blanks/unblanks the compositor. */
   onScreenStateChanged: (on: boolean) => void;
+  /**
+   * The shell already believes the screen is on and an independent overlay needs it visible: the
+   * controller re-asserts the unblank in case the lenses went dark behind the shell's back.
+   */
+  ensureScreenVisible?: () => void;
   /** Window registered/removed or foreground changed (persists the open-app list). */
   onWindowsChanged?: () => void;
   /**
@@ -1890,6 +1895,7 @@ class Shell {
     if (this.independentOverlay) this.retireIndependentOverlay(this.independentOverlay.layer, false);
     if (!this.stack.isAtBase() || this.independentDisplayBlocked()) return null;
     const woke = !this.screenOn && this.wake(this.focus);
+    if (!woke) this.config.ensureScreenVisible?.();
     this.lastInputAtMs = Date.now();
     this.independentOverlay = { layer, onYield, reading: false };
     this.stack.push(layer);

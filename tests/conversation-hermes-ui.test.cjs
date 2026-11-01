@@ -147,10 +147,11 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
   const ui = load('app/ui/shell/conversation-hermes-ui.ts');
   const { voiceActivity } = load('app/ui/shell/voice-activity.ts');
   const screen = [];
-  let renders = 0;
+  let renders = 0, reasserts = 0;
   shell.configure({
     actions: { requestRender: () => {} }, getScreenTimeoutMs: () => 10_000,
     requestShellRender: () => { renders++; }, onScreenStateChanged: (on) => screen.push(on),
+    ensureScreenVisible: () => { reasserts++; },
     prepareVoiceCapture: async () => true,
     conversationControl,
   });
@@ -163,7 +164,7 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
     return window;
   };
   addWindow('launcher', { closeable: false });
-  return { shell, ui, voiceActivity, screen, timers, windows, addWindow, renders: () => renders,
+  return { shell, ui, voiceActivity, screen, timers, windows, addWindow, renders: () => renders, reasserts: () => reasserts,
     input: (type) => shell.receiveInput({ type, source: 'ring', timestampMs: 0 }) };
 }
 
@@ -283,6 +284,27 @@ test('reading: an ellipsis that woke the lenses never puts a presented answer to
     h.advance(11999); assert.equal(h.text(), 'A', order);
     assert.equal(h.retirements.length, before, `${order}: no retirement inside the reading window`);
     h.presenter.dispose();
+  }
+});
+
+test('reading: an answer on an already-on shell re-asserts the unblank; a real wake does not need to', () => {
+  const dark = realShell(), f1 = fakeController(); dark.ui.bindHermesConversationUi(f1.controller); f1.arm();
+  assert.equal(dark.shell.isScreenOn(), false); f1.say('A');
+  assert.equal(dark.shell.isScreenOn(), true); assert.equal(dark.reasserts(), 0, 'the wake path already unblanks');
+  const lit = realShell(), f2 = fakeController(); lit.ui.bindHermesConversationUi(f2.controller); f2.arm();
+  lit.shell.wake('window'); f2.say('A');
+  assert.equal(lit.reasserts(), 1, 'shell on, lenses possibly dark: ask the controller to unblank');
+});
+
+test('reading: with the real Shell, an ellipsis that woke the lenses hands over to the answer without sleeping', () => {
+  for (const order of ['text-first', 'progress-first']) {
+    const h = realShell(), f = fakeController(); h.ui.bindHermesConversationUi(f.controller); f.arm();
+    f.tick({ working: true }); assert.equal(h.shell.isScreenOn(), true, order);
+    if (order === 'text-first') { f.say('Respuesta'); f.tick({ working: false }); }
+    else { f.tick({ working: false }); f.say('Respuesta'); }
+    assert.equal(h.shell.isScreenOn(), true, order); assert.match(overlayText(h.shell), /Respuesta/, order);
+    f.tick({ working: true }); assert.match(overlayText(h.shell), /Respuesta/, order);
+    if (order === 'text-first') assert.deepEqual(h.screen, [false, true], `${order}: one wake, no sleep`);
   }
 });
 

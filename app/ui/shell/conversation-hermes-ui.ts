@@ -20,7 +20,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string; outputVersion?: number }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -123,7 +123,7 @@ export class HermesConversationPresenter {
     }
     const raw = this.source.conversationHermesMessage;
     const state = this.source.conversationHermes.snapshot();
-    const key = raw ? `${state.outputVersion ?? ""}/${raw}` : "";
+    const key = raw;
     if (!snapshot.enabled || !snapshot.listening || state.link === "revocado") {
       // Suspended/OFF listening never shows a contribution, even one still pending expiry,
       // and that event is not shown later when listening resumes.
@@ -188,7 +188,7 @@ export class HermesConversationPresenter {
   /** Treat the controller's current message as already handled (restore/reconnect/bind): never shown. */
   ignoreExisting(): void {
     const raw = this.source.conversationHermesMessage;
-    this.handled = raw ? `${this.source.conversationHermes.snapshot().outputVersion ?? ""}/${raw}` : "";
+    this.handled = this.source.conversationHermesMessage;
   }
 
   isArmed(): boolean { return this.armed; }

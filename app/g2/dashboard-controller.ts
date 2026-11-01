@@ -335,6 +335,8 @@ class DashboardController {
     appendLog: (message) => this.appendLog(message),
   });
   private evenHubResumePromise: Promise<boolean> | null = null;
+  /** An in-flight unblank re-asserted for an independent overlay on an already-on shell. */
+  private screenReassertPromise: Promise<boolean> | null = null;
   /** Faceclaw's firmware at the required revision reported in; its extensions can be used. */
   private customFirmwareConfirmed = false;
   private faceclawWakeLeaseState: boolean | null = null;
@@ -497,6 +499,7 @@ class DashboardController {
         if (on) this.requestShellRender();
         this.emit();
       },
+      ensureScreenVisible: () => this.reassertScreenVisible(),
     });
     // Boot hooks register windows that exist from startup (the launcher,
     // pinned first in the sidebar and the boot foreground).
@@ -750,6 +753,29 @@ class DashboardController {
     })().catch((error) => {
       this.appendLog(`vertical reposition failed: ${this.formatError(error)}`);
     });
+  }
+
+  /**
+   * The shell is already on but a Hermes answer must really be visible: re-run the wake barrier when
+   * the EvenHub session is suspended, otherwise just re-assert screen-on and unblank (idempotent).
+   */
+  private reassertScreenVisible(): void {
+    const communicator = this.communicator;
+    if (!communicator || this.phase === "charging" || this.phase === "disconnected") return;
+    this.cancelEvenHubSuspendTimer();
+    const operation = this.evenHubSessionSuspended || this.evenHubResumePromise
+      ? this.ensureEvenHubSessionActive()
+      : (async () => {
+        await communicator.setG2ScreenOn(true);
+        await communicator.setScreenBlanked(false);
+        return true;
+      })();
+    const tracked = operation.catch((error) => {
+      this.appendLog(`screen re-assert failed: ${this.formatError(error)}`);
+      return false;
+    });
+    this.screenReassertPromise = tracked;
+    void tracked.then(() => { if (this.screenReassertPromise === tracked) this.screenReassertPromise = null; });
   }
 
   private handleScreenStateChanged(on: boolean): void {
@@ -3112,7 +3138,7 @@ class DashboardController {
     if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) {
       // A frame can be sent while the wake barrier is still unblanking the lenses; the Hermes reading
       // window (and its receipt) starts only once that wake has made the frame visible.
-      const wakeBarrier = this.evenHubResumePromise;
+      const wakeBarrier = this.evenHubResumePromise ?? this.screenReassertPromise;
       if (confirmHermes && wakeBarrier) {
         frameTimings.logFrame(frameId, "hermes presentation waits for the wake barrier");
         void wakeBarrier.then((ready) => { if (ready) confirmHermes(); }, () => {});
