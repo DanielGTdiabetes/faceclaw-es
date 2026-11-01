@@ -60,6 +60,11 @@ export const HERMES_QUIET_RESET_MS = 30_000;
  * must happen well before the episode closes for silence and its context is gone.
  */
 export const HERMES_PAUSE_RELEASE_MS = 5_000;
+/**
+ * A question or naming Hermes is someone waiting for an answer: settle this long after the last
+ * text instead of 2 s, and skip the 5 s floor and the back-off between requests.
+ */
+export const HERMES_DIRECT_SETTLE_MS = 700;
 export type HermesSavings = { short: number; backoff: number; directAssist: number };
 /** Why the back-off went back to 5 s; counted only when the gap was above 5 s. */
 export type HermesResetReason = "question" | "hermes" | "wearer" | "message" | "silence";
@@ -103,6 +108,8 @@ export class ConversationHermesRuntime {
   private messageHistory: ConversationHermesHistoryEntry[] = [];
   private cancelTimer: (() => void) | null = null;
   private lastTextAt = 0;
+  /** An accepted turn since the last request asked a question or named Hermes. */
+  private directPending = false;
   private lastClosedBy: ConversationTurn["closedBy"] | undefined;
   private lastRequestAt = -Infinity;
   private attempted = "";
@@ -173,7 +180,7 @@ export class ConversationHermesRuntime {
     this.requests = 0;
     this.maxRequests = maxRequests === null ? null
       : Number.isFinite(maxRequests) ? Math.max(1, Math.min(80, Math.floor(maxRequests))) : 8;
-    this.lastRequestAt = -Infinity;
+    this.lastRequestAt = -Infinity; this.directPending = false;
     this.lastClosedBy = undefined;
     this.adaptive = this.maxRequests === null;
     this.quiet = 0; this.sentEpisode = ""; this.sentThroughSeq = 0; this.savingCounted = "";
@@ -340,6 +347,7 @@ export class ConversationHermesRuntime {
       if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.resetQuiet("silence");
       this.lastTextAt = this.host.now();
       this.lastClosedBy = turn.closedBy;
+      if (isQuestion(turn.text) || mentionsHermes(turn.text)) this.directPending = true;
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
@@ -393,8 +401,8 @@ export class ConversationHermesRuntime {
       this.finishFlight(); this.channel.cancel();
     }
     if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
-      || this.host.now() - this.lastTextAt < 2000
-      || this.host.now() - this.lastRequestAt < 5000) return;
+      || this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS : 2000)
+      || (!this.directPending && this.host.now() - this.lastRequestAt < 5000)) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
     if (context) this.request(context, state === "candidata" ? "assess" : "assist");
@@ -425,7 +433,7 @@ export class ConversationHermesRuntime {
     this.counters.linkResumes++;
     // New context only: the episode heard before/during the outage is not sent after reconnecting.
     this.tracker.stop(); this.current = null; this.associationVersion = 0; this.attempted = "";
-    this.lastRequestAt = -Infinity;
+    this.lastRequestAt = -Infinity; this.directPending = false;
     this.notice = "Hermes reconectado. La escucha continúa con lo que se diga a partir de ahora.";
     this.noticeUntil = this.host.now() + 30_000;
     this.host.changed();
@@ -479,7 +487,7 @@ export class ConversationHermesRuntime {
     this.pauseRelease = false;
     const question = fresh.some((turn) => isQuestion(turn.text));
     if (!question && fresh.reduce((sum, turn) => sum + wordCount(turn.text), 0) < HERMES_MIN_FRESH_WORDS) return "short";
-    if (this.host.now() - this.lastRequestAt < this.gapMs()) {
+    if (wake !== "hermes" && !question && this.host.now() - this.lastRequestAt < this.gapMs()) {
       if (this.host.now() - this.lastTextAt < HERMES_PAUSE_RELEASE_MS) return "backoff";
       this.pauseRelease = true;
     }
@@ -507,6 +515,7 @@ export class ConversationHermesRuntime {
       || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
     const previousRequestAt = this.lastRequestAt;
     this.lastRequestAt = this.host.now();
+    this.directPending = false;
     if (this.adaptive && mode === "assist") {
       const step = String(this.gapMs());
       if (step in this.adaptiveStats.gapAtSend) this.adaptiveStats.gapAtSend[step]!++;

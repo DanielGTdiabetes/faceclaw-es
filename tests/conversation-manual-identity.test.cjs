@@ -288,16 +288,32 @@ test('runtime: an explicit finite diagnostic budget preserves 5 s spacing and th
   h.runtime.dispose();
 });
 
+test('runtime: a question or naming Hermes settles 0.7 s and skips the 5 s floor; other speech keeps 2 s and 5 s', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  h.say('1'); h.advance(2000); assert.equal(h.sent().length, 1, 'plain speech waits 2 s');
+  h.reply('assist', { kind: 'nada' });
+  h.say('1'); h.advance(2000); assert.equal(h.sent().length, 1, 'plain speech keeps the 5 s floor');
+  h.advance(3000); assert.equal(h.sent().length, 2, 'plain speech 5 s after the previous request');
+  h.reply('assist', { kind: 'nada' });
+  h.say('1', { text: 'Hermes, ¿cuál es la capital de Australia?' }); h.advance(500);
+  assert.equal(h.sent().length, 2, 'not before the short settle');
+  h.advance(500); assert.equal(h.sent().length, 3, 'question sent 1 s after the turn, within 5 s of the previous request');
+  h.reply('assist', { kind: 'mensaje', text: 'Canberra.' });
+  h.say('1', { text: 'oye Hermes dime la hora' }); h.advance(1000);
+  assert.equal(h.sent().length, 4, 'naming Hermes is direct too');
+  h.runtime.dispose();
+});
+
 test('runtime: manual listening can deliver after 80 abstentions while preserving cadence, one flight and OFF', () => {
   const h = runtimeHarness(); assert.equal(h.on(OPTIONAL, null), true);
   h.say('1'); h.advance(1500); assert.equal(h.sent().length, 0);
   h.advance(500); h.reply('assist', { kind: 'nada' });
   for (let i = 0; i < 80; i++) {
     const count = h.sent().length;
-    // Questions keep the 5 s cadence available whatever the abstention streak.
-    h.say('1', { text: '¿Y la isla de la cocina?' }); h.advance(1500);
-    assert.equal(h.sent().length, count, 'waits 2 s without a new turn');
-    h.advance(3500);
+    // A question settles 0.7 s and skips the 5 s floor and the back-off, whatever the abstention streak.
+    h.say('1', { text: '¿Y la isla de la cocina?' }); h.advance(500);
+    assert.equal(h.sent().length, count, 'a question still waits the short settle');
+    h.advance(1000);
     assert.equal(h.sent().length, count + 1, `evaluation ${i + 1} remains available`);
     const flight = h.sent().at(-1);
     h.say('2'); h.advance(5000);
