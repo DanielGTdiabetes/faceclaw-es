@@ -1,3 +1,17 @@
+## Telemetría instalada sobre S2.25 — 01/11/2026, 15:10:04 CET (Codex)
+
+**Prevalece sobre los estados inferiores.** APK extraída SHA256
+`9c5264da4b745d0af3786631a3955b45a0a584c68f13679f61262788adce1c10`, firma original,
+805; el versionName sigue siendo S2.25 porque se conserva el manifiesto. 48 ajustes,
+8 nativas, 2 DEX y primera instalación idénticos. Conectado, cero wakelocks de captura;
+no escucha ni inferencias iniciadas por el agente. Puente sobre R1 con telemetría
+`f26bc2d` desde 15:10:36 CET; PID255005/InvocationID9550095742e64445812aefc8cd2863d6.
+[Detalle, límites y retorno](telemetria-latencia-g2-2026-11-01.md). Fuente cliente
+`4ecef0d`, PR #3; puente PR #9. Retorno inmediato: S2.25 extraída `1cd0e632…d67f8`
+en `OUTBOX/FACECLAW_TELEMETRIA_20261101/RETORNO_S225.apk` de Buzz Nest.
+Pendientes: comprobación independiente del recibo y uso real/medición por Dani;
+ON lo hace Dani. No atribuir mejoras de latencia a una instalación de solo medición.
+
 ## S2.24 vigilante del EVO instalada — 24/10/2026, 07:38 (Claude)
 
 **`0.8.4-es.16-conversation.s2.24-vigilante-evo`/805, `814a9a22…`, firma original, sobre S2.23 (`232fe249…`, verificada
