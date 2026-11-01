@@ -52,6 +52,39 @@ class LocalSpeakerAttributionTest {
         assertTrue(buffer.diagnostics().contains("\"quietSkippedAudioMs\":1500"))
     }
 
+    private fun evoBuffer(windows: MutableList<ShortArray>) =
+        LocalTranscriptBuffer(segmentInfo = {}, canSubmit = { true }) { windows.add(it) }.also {
+            it.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        }
+
+    @Test fun evoIdentityClosesAShortQuestionAtALongPauseWithoutWaitingForFourSeconds() {
+        val windows = mutableListOf<ShortArray>()
+        val buffer = evoBuffer(windows)
+        repeat(40) { buffer.accept(pcm(loud), "posible voz") }             // 2 s question
+        repeat(13) { buffer.accept(pcm(quiet), "pausa") }
+        assertEquals(0, windows.size)                                      // 650 ms: maybe a mid-phrase pause
+        buffer.accept(pcm(quiet), "pausa")
+        assertEquals(1, windows.size)                                      // 700 ms: closed, not held until 4 s
+        assertEquals(40 * 800 + 14 * 800, windows[0].size)
+    }
+
+    @Test fun evoIdentityStillJoinsShortPausesAndNeverDecodesAClickAlone() {
+        val windows = mutableListOf<ShortArray>()
+        val buffer = evoBuffer(windows)
+        repeat(2) {                                                        // 2 x (1 s voice + 500 ms pause)
+            repeat(20) { buffer.accept(pcm(loud), "posible voz") }
+            repeat(10) { buffer.accept(pcm(quiet), "pausa") }
+        }
+        assertEquals(0, windows.size)                                      // 400-650 ms pauses keep one phrase
+        val click = mutableListOf<ShortArray>()
+        val other = evoBuffer(click)
+        repeat(2) { other.accept(pcm(loud), "posible voz") }               // 100 ms click
+        repeat(30) { other.accept(pcm(quiet), "pausa") }
+        assertEquals(0, click.size)
+        assertEquals(700, LocalTranscriptWindowPolicy.EVO_IDENTITY.longPauseCloseMs)
+        assertEquals(0, pause.longPauseCloseMs)
+    }
+
     @Test fun silenceAndVadQuietLowLevelAudioAreNeverDecoded() {
         val windows = mutableListOf<ShortArray>()
         val buffer = pauseBuffer(windows)

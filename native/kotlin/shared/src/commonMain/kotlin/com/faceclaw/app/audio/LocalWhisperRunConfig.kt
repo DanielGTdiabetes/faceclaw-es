@@ -64,7 +64,7 @@ data class LocalWhisperPerformance(val threads: Int, val provider: String = "cpu
  *   speech the energy VAD misses still reaches the decoder.
  */
 data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, val hopSamples: Int, val maxWindowSamples: Int,
-    val closesOnPause: Boolean = false) {
+    val closesOnPause: Boolean = false, val longPauseCloseMs: Int = 0) {
     val overlapSamples: Int get() = windowSamples - hopSamples
     val coalesces: Boolean get() = maxWindowSamples > windowSamples
 
@@ -75,8 +75,12 @@ data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, v
         val REFERENCE = LocalTranscriptWindowPolicy("ref-6-3", 16000 * 6, 16000 * 3, 16000 * 6)
         val COALESCE = LocalTranscriptWindowPolicy("coalesce-6-3-max12", 16000 * 6, 16000 * 3, 16000 * 12)
         val PAUSE = LocalTranscriptWindowPolicy("pause-2-12", 16000 * 2, 16000, 16000 * 12, closesOnPause = true)
-        /** EVO identity keeps complete voice spans; short pauses accumulate up to 4 s, bounded at 12 s. */
-        val EVO_IDENTITY = LocalTranscriptWindowPolicy("evo-identity-4-12", 16000 * 4, 16000 * 3, 16000 * 12, closesOnPause = true)
+        /**
+         * EVO identity keeps complete voice spans; short pauses accumulate up to 4 s, bounded at 12 s. A long
+         * pause (700 ms) ends a shorter phrase at once, so a 2 s question is not held until the window reaches 4 s.
+         */
+        val EVO_IDENTITY = LocalTranscriptWindowPolicy("evo-identity-4-12", 16000 * 4, 16000 * 3, 16000 * 12, closesOnPause = true,
+            longPauseCloseMs = 700)
         val ALL = listOf(REFERENCE, COALESCE, PAUSE, EVO_IDENTITY)
 
         fun byId(id: String?): LocalTranscriptWindowPolicy? = ALL.firstOrNull { it.id == id }

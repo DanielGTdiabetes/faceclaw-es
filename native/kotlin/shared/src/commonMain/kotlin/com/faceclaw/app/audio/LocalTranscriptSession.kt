@@ -152,6 +152,8 @@ class LocalTranscriptBuffer(
         const val PAUSE_CLOSE_CHUNKS = 8
         /** Pause policy: chunk RMS (~-52 dBFS) that counts as voiced even when the energy VAD stays quiet. */
         const val PAUSE_VOICE_RMS = 0.0025
+        /** Long-pause close: a phrase needs this much voice (300 ms) so a click or cough is not decoded alone. */
+        const val LONG_PAUSE_MIN_VOICED_CHUNKS = 6
     }
     private var samples = ShortArray(MAX_SAMPLES)
     private val pre = ShortArray(PRE_SAMPLES)
@@ -339,6 +341,8 @@ class LocalTranscriptBuffer(
         }
         if (count >= policy.maxWindowSamples) closeWindow(policy.overlapSamples, bySilence = false)
         else if (count >= policy.windowSamples && quietChunks >= PAUSE_CLOSE_CHUNKS && canSubmit()) closeWindow(0, bySilence = true)
+        else if (policy.longPauseCloseMs > 0 && quietChunks * (CHUNK_SAMPLES / 16) >= policy.longPauseCloseMs
+            && windowVoicedChunks >= LONG_PAUSE_MIN_VOICED_CHUNKS && canSubmit()) closeWindow(0, bySilence = true)
     }
 
     private fun dropLeadingChunks(chunksToDrop: Int) {
