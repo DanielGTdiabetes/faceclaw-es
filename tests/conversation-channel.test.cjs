@@ -101,7 +101,7 @@ test('memory receipt is negotiated, correlated, text-free and sent only once aft
   assert.equal(h.frames.length, 1, 'receiving does not acknowledge presentation');
   assert.equal(h.results[0].confirmPresented(), true);
   assert.deepEqual(h.frames[1], { chan: 'conv', type: 'presented', deliveryId: 'opaque-id',
-    requestId: h.frames[0].requestId, ref: h.frames[0].ref });
+    requestId: h.frames[0].requestId, ref: h.frames[0].ref, requestToPresentedMs: 0 });
   assert.equal(h.results[0].confirmPresented(), false);
   assert.equal(h.frames.length, 2);
 });
@@ -123,12 +123,29 @@ test('late, OFF, chat and old-connection receipt callbacks cannot claim presenta
 
 test('a receipt transport failure may retry on a later confirmed frame', () => {
   let available = false, sent = 0;
+  const timings = [];
   const h = harness(); h.channel.negotiate(['conv/1', 'conv/memory-ack/1']); h.channel.setEnabled(true);
   h.request('assist'); h.reply({ kind: 'mensaje', text: 'Idea', deliveryId: 'opaque-id' });
-  h.channel.host.send = () => { sent++; return available; };
+  h.channel.host.send = frame => { sent++; timings.push(frame.requestToPresentedMs); return available; };
+  h.advance(300, false);
   assert.equal(h.results[0].confirmPresented(), false);
+  h.advance(1000, false);
   available = true; assert.equal(h.results[0].confirmPresented(), true);
   assert.equal(h.results[0].confirmPresented(), false); assert.equal(sent, 2);
+  assert.deepEqual(timings, [300, 300], 'receipt retry preserves the first confirmed presentation');
+});
+
+test('client timing is optional, scalar-only and never changes request acceptance', () => {
+  for (const timing of [undefined, null, [], 'PRIVATE', { turnToRequestMs: -1, vadStopToRequestMs: Infinity,
+    gapSinceLastRequestMs: { text: 'PRIVATE' }, closedBy: 'PRIVATE', text: 'PRIVATE' },
+    { turnToRequestMs: 2000, vadStopToRequestMs: 2250, gapSinceLastRequestMs: 5000, closedBy: 'pausa', text: 'PRIVATE' }]) {
+    const h = harness(); h.ready();
+    assert.equal(h.channel.request(h.context, 'assist', 5000, () => {}, undefined, timing), true);
+    const actual = h.frames[0].clientTiming;
+    assert.deepEqual(actual, timing?.closedBy === 'pausa'
+      ? { turnToRequestMs: 2000, vadStopToRequestMs: 2250, gapSinceLastRequestMs: 5000, closedBy: 'pausa' } : undefined);
+    assert.ok(!JSON.stringify(actual ?? {}).includes('PRIVATE'));
+  }
 });
 
 test('OFF, disconnect, normal chat, replacement and timeout cancel only conv and deliver once', () => {

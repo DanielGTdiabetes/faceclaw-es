@@ -103,6 +103,7 @@ export class ConversationHermesRuntime {
   private messageHistory: ConversationHermesHistoryEntry[] = [];
   private cancelTimer: (() => void) | null = null;
   private lastTextAt = 0;
+  private lastClosedBy: ConversationTurn["closedBy"] | undefined;
   private lastRequestAt = -Infinity;
   private attempted = "";
   private requests = 0;
@@ -173,6 +174,7 @@ export class ConversationHermesRuntime {
     this.maxRequests = maxRequests === null ? null
       : Number.isFinite(maxRequests) ? Math.max(1, Math.min(80, Math.floor(maxRequests))) : 8;
     this.lastRequestAt = -Infinity;
+    this.lastClosedBy = undefined;
     this.adaptive = this.maxRequests === null;
     this.quiet = 0; this.sentEpisode = ""; this.sentThroughSeq = 0; this.savingCounted = "";
     this.savings = { short: 0, backoff: 0, directAssist: 0 };
@@ -337,6 +339,7 @@ export class ConversationHermesRuntime {
     if (accepted) {
       if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.resetQuiet("silence");
       this.lastTextAt = this.host.now();
+      this.lastClosedBy = turn.closedBy;
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
@@ -522,7 +525,10 @@ export class ConversationHermesRuntime {
         finalTokens: snapshot.transcription?.soniox?.finalTokens } };
     this.flight = flight;
     const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result),
-      (working) => { if (this.flight === flight) { this.working = working; this.host.changed(); } });
+      (working) => { if (this.flight === flight) { this.working = working; this.host.changed(); } },
+      { turnToRequestMs: flight.at - this.lastTextAt, closedBy: this.lastClosedBy,
+        ...(snapshot.lastVadStopAtMs != null ? { vadStopToRequestMs: flight.at - snapshot.lastVadStopAtMs } : {}),
+        ...(Number.isFinite(previousRequestAt) ? { gapSinceLastRequestMs: flight.at - previousRequestAt } : {}) });
     if (!accepted && this.flight === flight) this.finishFlight();
     this.host.changed();
   }

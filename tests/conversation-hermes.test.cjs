@@ -52,6 +52,21 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
 
+test('wire timing follows accepted closure, request spacing and confirmed presentation', () => {
+  const h = harness(); h.begin(undefined, true);
+  h.state.lastVadStopAtMs = 1500;
+  h.turn('1'); h.turn('2', 'Tema sintético', { closedBy: 'pausa' }); h.advance(2000);
+  assert.deepEqual(h.sent()[0].clientTiming, { turnToRequestMs: 2000, vadStopToRequestMs: 1500, closedBy: 'pausa' });
+  h.reply('assess');
+  assert.deepEqual(h.sent()[1].clientTiming, {
+    turnToRequestMs: 2000, vadStopToRequestMs: 1500, closedBy: 'pausa', gapSinceLastRequestMs: 0 });
+  h.advance(400, false); h.reply('assist', { deliveryId: 'opaque' });
+  assert.equal(h.frames.filter(f => f.type === 'presented').length, 0);
+  h.advance(200, false); h.runtime.capturePresentation()();
+  assert.equal(h.frames.find(f => f.type === 'presented').requestToPresentedMs, 600);
+  h.runtime.stop();
+});
+
 test('metrics follow listening, concurrent transcription and native sent without retaining speech', () => {
   const h = harness(); h.begin(undefined, true);
   h.state.metrics = { chunks: 40 };

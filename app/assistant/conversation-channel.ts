@@ -1,5 +1,7 @@
 import { type EpisodeAssessment, type EpisodeContext, type EpisodeModality, type EpisodeRef }
   from "../conversation-detection/conversation-episodes";
+import { clientDuration, readClientTiming, type ConversationClientTiming }
+  from "../conversation-detection/conversation-metrics";
 
 export const CONVERSATION_CAPABILITY = "conv/1";
 /**
@@ -35,6 +37,7 @@ type Pending = {
   requestId: string; ref: EpisodeRef; mode: "assess" | "assist"; modality: EpisodeModality; expiresAt: number;
   result: (result: ConversationResult | null) => void; cancelTimer: () => void;
   working: boolean; progress?: (working: boolean) => void;
+  requestedAt: number;
 };
 
 /**
@@ -151,7 +154,8 @@ export class ConversationChannel {
   }
 
   request(context: EpisodeContext, mode: "assess" | "assist", timeoutMs: number,
-    result: (result: ConversationResult | null) => void, progress?: (working: boolean) => void): boolean {
+    result: (result: ConversationResult | null) => void, progress?: (working: boolean) => void,
+    clientTiming?: ConversationClientTiming): boolean {
     if (!this.isReady() || (mode !== "assess" && mode !== "assist")
       || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000
       || !validContext(context, this.optionalIdentity)) { this.stats.rechazados++; return false; }
@@ -160,8 +164,9 @@ export class ConversationChannel {
     this.cancel();
     // The cancellation callback may have turned OFF or started normal chat.
     if (!this.isReady()) return false;
+    const requestedAt = this.host.now(), timing = readClientTiming(clientTiming);
     const pending: Pending = { requestId: `c${this.connection}-${++this.sequence}`, ref: { ...context.ref }, mode,
-      modality, expiresAt: this.host.now() + timeoutMs, result, working: false, progress, cancelTimer: () => {} };
+      modality, requestedAt, expiresAt: requestedAt + timeoutMs, result, working: false, progress, cancelTimer: () => {} };
     this.pending = pending;
     let sent = false;
     try {
@@ -170,6 +175,7 @@ export class ConversationChannel {
         ...(this.memoryAck ? { memoryAck: true } : {}),
         ...(this.dailyContextEnabled && this.dailyContextSupported ? { dailyContext: true } : {}),
         ...(modality === "identidad-opcional" ? { modality } : {}),
+        ...(timing ? { clientTiming: timing } : {}),
         timeoutMs, turns: context.turns.map((turn) => ({ seq: turn.seq, speaker: turn.speaker,
           relation: turn.relation, text: turn.text, startMs: turn.startMs, endMs: turn.endMs })) });
     } catch { /* Transport failure is a silent abstention, never a chat fallback. */ }
@@ -255,12 +261,15 @@ export class ConversationChannel {
       const deliveryId = frame.deliveryId, connection = this.connection, receiptEpoch = this.receiptEpoch;
       const ref = { ...pending.ref }, requestId = pending.requestId, expiresAt = this.host.now() + 30_000;
       let confirmed = false;
+      let presentedMs: number | undefined;
       const confirmPresented = this.memoryAck && typeof deliveryId === "string" && deliveryId.length > 0 && deliveryId.length <= 128
         ? () => {
           if (confirmed || connection !== this.connection || receiptEpoch !== this.receiptEpoch
             || !this.isReady() || this.host.now() >= expiresAt) return false;
           try {
-            confirmed = this.host.send({ chan: "conv", type: "presented", deliveryId, requestId, ref });
+            presentedMs ??= clientDuration(this.host.now() - pending.requestedAt);
+            confirmed = this.host.send({ chan: "conv", type: "presented", deliveryId, requestId, ref,
+              ...(presentedMs !== undefined ? { requestToPresentedMs: presentedMs } : {}) });
           } catch { /* A failed receipt cannot break display or normal chat; the next frame may retry. */ }
           return confirmed;
         } : undefined;

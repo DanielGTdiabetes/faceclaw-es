@@ -1,3 +1,26 @@
+import { type ConversationTurn } from "./conversation-turns";
+
+/** Optional wire diagnostics: only bounded durations and the turn-closing category. */
+export type ConversationClientTiming = {
+  vadStopToRequestMs?: number; turnToRequestMs?: number; gapSinceLastRequestMs?: number;
+  closedBy?: ConversationTurn["closedBy"];
+};
+export function clientDuration(ms: unknown): number | undefined {
+  return typeof ms === "number" && Number.isFinite(ms) && ms >= 0 && ms <= 86_400_000
+    ? Math.round(ms) : undefined;
+}
+export function readClientTiming(value: unknown): ConversationClientTiming | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>, result: ConversationClientTiming = {};
+  for (const key of ["vadStopToRequestMs", "turnToRequestMs", "gapSinceLastRequestMs"] as const) {
+    const ms = clientDuration(source[key]);
+    if (ms !== undefined) result[key] = ms;
+  }
+  if (typeof source.closedBy === "string" && ["pausa", "endpoint", "finalize", "frontera", "cambio-hablante",
+    "limite", "fin-sesion"].includes(source.closedBy)) result.closedBy = source.closedBy as ConversationTurn["closedBy"];
+  return Object.keys(result).length ? result : undefined;
+}
+
 /** Fixed-size RAM diagnostics. No speech, labels, request IDs or per-turn history. */
 export const LATENCY_BUCKETS_MS = [250, 500, 1000, 2000, 4000, 6000, 10000, 15000, 30000] as const;
 export class LatencyMetric {
