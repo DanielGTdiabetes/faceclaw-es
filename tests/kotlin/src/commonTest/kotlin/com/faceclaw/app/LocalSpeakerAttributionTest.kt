@@ -61,11 +61,11 @@ class LocalSpeakerAttributionTest {
         val windows = mutableListOf<ShortArray>()
         val buffer = evoBuffer(windows)
         repeat(40) { buffer.accept(pcm(loud), "posible voz") }             // 2 s question
-        repeat(13) { buffer.accept(pcm(quiet), "pausa") }
-        assertEquals(0, windows.size)                                      // 650 ms: maybe a mid-phrase pause
+        repeat(19) { buffer.accept(pcm(quiet), "pausa") }
+        assertEquals(0, windows.size)                                      // 950 ms: maybe a mid-phrase pause
         buffer.accept(pcm(quiet), "pausa")
-        assertEquals(1, windows.size)                                      // 700 ms: closed, not held until 4 s
-        assertEquals(40 * 800 + 14 * 800, windows[0].size)
+        assertEquals(1, windows.size)                                      // 1000 ms: closed, not held until 4 s
+        assertEquals(40 * 800 + 20 * 800, windows[0].size)
     }
 
     @Test fun evoIdentityStillJoinsShortPausesAndNeverDecodesAClickAlone() {
@@ -75,13 +75,13 @@ class LocalSpeakerAttributionTest {
             repeat(20) { buffer.accept(pcm(loud), "posible voz") }
             repeat(10) { buffer.accept(pcm(quiet), "pausa") }
         }
-        assertEquals(0, windows.size)                                      // 400-650 ms pauses keep one phrase
+        assertEquals(0, windows.size)                                      // 500 ms pauses keep one phrase
         val click = mutableListOf<ShortArray>()
         val other = evoBuffer(click)
         repeat(2) { other.accept(pcm(loud), "posible voz") }               // 100 ms click
         repeat(30) { other.accept(pcm(quiet), "pausa") }
         assertEquals(0, click.size)
-        assertEquals(700, LocalTranscriptWindowPolicy.EVO_IDENTITY.longPauseCloseMs)
+        assertEquals(1000, LocalTranscriptWindowPolicy.EVO_IDENTITY.longPauseCloseMs)
         assertEquals(0, pause.longPauseCloseMs)
     }
 

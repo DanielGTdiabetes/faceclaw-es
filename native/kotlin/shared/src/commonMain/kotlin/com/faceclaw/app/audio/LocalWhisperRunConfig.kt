@@ -77,10 +77,10 @@ data class LocalTranscriptWindowPolicy(val id: String, val windowSamples: Int, v
         val PAUSE = LocalTranscriptWindowPolicy("pause-2-12", 16000 * 2, 16000, 16000 * 12, closesOnPause = true)
         /**
          * EVO identity keeps complete voice spans; short pauses accumulate up to 4 s, bounded at 12 s. A long
-         * pause (700 ms) ends a shorter phrase at once, so a 2 s question is not held until the window reaches 4 s.
+         * pause (1000 ms) ends a shorter phrase at once, so a 2 s question is not held until the window reaches 4 s.
          */
         val EVO_IDENTITY = LocalTranscriptWindowPolicy("evo-identity-4-12", 16000 * 4, 16000 * 3, 16000 * 12, closesOnPause = true,
-            longPauseCloseMs = 700)
+            longPauseCloseMs = 1000)
         val ALL = listOf(REFERENCE, COALESCE, PAUSE, EVO_IDENTITY)
 
         fun byId(id: String?): LocalTranscriptWindowPolicy? = ALL.firstOrNull { it.id == id }
