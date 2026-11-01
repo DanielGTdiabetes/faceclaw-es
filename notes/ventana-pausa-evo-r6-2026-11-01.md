@@ -1,5 +1,10 @@
 # R6: pausa EVO de 1.000 ms instalada — 01/11/2026
 
+**NO ADOPTADA.** Dani decidió volver a R4 tras fallar las pausas y observar menos
+respuestas en la segunda ronda. R4 completa restaurada a las 19:52:58 CET;
+el experimento ca del EVO se conserva. [Recibo y motivo](retorno-r4-2026-11-01.md).
+La PR #7 no se mergea. El resto de esta nota conserva la evidencia histórica de R6.
+
 Código `1f7600d0fd787c1ed930ebac39cc82d32ef5ba1f`, sobre R5 `adffd69`, misma
 rama `feat/ventana-pausa-evo-20261101` y PR #7. Dani aprobó 1.000 ms en
 `057450992` y dio vía libre en `b32a4c76`. Claude aprobó código y APK en `9014bf2b`.

@@ -1,3 +1,15 @@
+## R4 restaurada; R5/R6 no adoptadas — 01/11/2026, 19:52:58 CET (Codex)
+
+**Prevalece sobre los estados inferiores.** Dani decide retorno a R4 y conservar
+ca en Whisper corto. APK R4 completa restaurada, firmada/extraída idéntica
+`f3e5b11bbf1f7774d13ecb030631e6b86da6e1fc03d8756ee68b6a9828163e57`,
+código041620a1 (PR #6), PID17014; 48 ajustes y primera instalación conservados.
+OFF declarado y cero wakelocks de captura; no se inició escucha. El EVO no se tocó.
+R5/R6 fallaron la aceptación física de pausas e identidad; PR #7 no adoptada y
+sin merge. [Motivo, límites y recibo del retorno](retorno-r4-2026-11-01.md).
+Deepseek estudiará mejores formas de diarización; contadores tras R4 pendientes
+de una sesión del usuario. No instalar R5/R6 ni pedir otra batería por defecto.
+
 ## R6 + experimento ca instalados — 01/11/2026, 19:25/19:29 CET (Codex)
 
 **Prevalece sobre los estados inferiores.** Código R6 `1f7600d`, PR #7; pausa EVO
