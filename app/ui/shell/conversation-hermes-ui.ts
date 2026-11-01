@@ -186,10 +186,7 @@ export class HermesConversationPresenter {
   }
 
   /** Treat the controller's current message as already handled (restore/reconnect/bind): never shown. */
-  ignoreExisting(): void {
-    const raw = this.source.conversationHermesMessage;
-    this.handled = this.source.conversationHermesMessage;
-  }
+  ignoreExisting(): void { this.handled = this.source.conversationHermesMessage; }
 
   isArmed(): boolean { return this.armed; }
   diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
