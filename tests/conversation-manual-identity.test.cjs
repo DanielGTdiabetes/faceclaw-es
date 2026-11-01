@@ -174,7 +174,8 @@ function runtimeHarness(caps = CONV2) {
   const channel = new ConversationChannel({ now: () => now, send: f => { frames.push(f); return true; }, after: (cb, ms) => timer(cb, ms, false) });
   channel.negotiate(caps);
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
-    every: (cb, ms) => timer(cb, ms, true), onOutput: text => outputs.push(text), changed() {} }, POLICY);
+    every: (cb, ms) => timer(cb, ms, true), after: (cb, ms) => timer(cb, ms, false),
+    onOutput: text => outputs.push(text), changed() {} }, POLICY);
   const notify = () => { for (const cb of [...observers]) cb(state); };
   const makeTurn = turnFactory();
   function association(version, speaker = null, kind = version ? 'perfil' : 'estado-inicial') {
@@ -302,6 +303,16 @@ test('runtime: a question or naming Hermes settles 0.7 s and skips the 5 s floor
   h.say('1', { text: 'oye Hermes dime la hora' }); h.advance(1000);
   assert.equal(h.sent().length, 4, 'naming Hermes is direct too');
   h.runtime.dispose();
+});
+
+test('runtime: a direct question is sent right at the 0.7 s settle, not on the next 500 ms tick', () => {
+  const h = runtimeHarness(); h.on(OPTIONAL, null);
+  h.advance(300); // the 500 ms tick is now out of phase with the turn
+  h.say('1', { text: '¿Cuál es la capital de Australia?' });
+  h.advance(699); assert.equal(h.sent().length, 0);
+  h.advance(1); assert.equal(h.sent().length, 1, 'sent at 700 ms, not at the next tick');
+  h.say('2'); h.advance(700); assert.equal(h.sent().length, 1, 'plain speech gets no early timer');
+  h.runtime.dispose(); assert.equal(h.timers.size, 0, 'stop cancels the one-shot timer');
 });
 
 test('runtime: manual listening can deliver after 80 abstentions while preserving cadence, one flight and OFF', () => {

@@ -88,6 +88,8 @@ export type ConversationHermesHost = {
   /** Wall-clock time for the phone history; defaults to Date.now(). */
   wallClock?(): number;
   every(callback: () => void, ms: number): () => void;
+  /** One-shot timer; when present a direct question is evaluated right at its settle, not on the next tick. */
+  after?(callback: () => void, ms: number): () => void;
   onOutput(text: string | null): void;
   changed(): void;
   dailyContextEnabled?(): boolean;
@@ -110,6 +112,7 @@ export class ConversationHermesRuntime {
   private lastTextAt = 0;
   /** An accepted turn since the last request asked a question or named Hermes. */
   private directPending = false;
+  private cancelDirectTimer: (() => void) | null = null;
   private lastClosedBy: ConversationTurn["closedBy"] | undefined;
   private lastRequestAt = -Infinity;
   private attempted = "";
@@ -202,6 +205,7 @@ export class ConversationHermesRuntime {
     this.flight = null;
     this.channel.setEnabled(false);
     this.cancelTimer?.(); this.cancelTimer = null;
+    this.cancelDirectTimer?.(); this.cancelDirectTimer = null;
     this.tracker.stop(); this.current = null; this.attempted = "";
     this.associationVersion = 0;
     this.clearOutput();
@@ -347,7 +351,12 @@ export class ConversationHermesRuntime {
       if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.resetQuiet("silence");
       this.lastTextAt = this.host.now();
       this.lastClosedBy = turn.closedBy;
-      if (isQuestion(turn.text) || mentionsHermes(turn.text)) this.directPending = true;
+      if (isQuestion(turn.text) || mentionsHermes(turn.text)) {
+        this.directPending = true;
+        this.cancelDirectTimer?.();
+        this.cancelDirectTimer = this.host.after?.(() => { this.cancelDirectTimer = null; this.tick(); },
+          HERMES_DIRECT_SETTLE_MS) ?? null;
+      }
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;

@@ -2247,6 +2247,7 @@ class DashboardController {
     dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
+    after: (callback, ms) => { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
     onOutput: (text) => this.setConversationHermesMessage(text),
     // No capture hook: losing Hermes (network, server, engine) never ends local listening. Only the
     // user's OFF or the capture's own error does.
