@@ -1,3 +1,16 @@
+## R5 ventana EVO instalada — 01/11/2026, 19:04:08 CET (Codex)
+
+**Prevalece sobre los estados inferiores.** Código `4f57ae33`, PR #7 sobre PR #6;
+APK `cbee2ace3ad963dd91bc3b169284e33cba0d320ce686f3864ee0271b938f5b31`,
+805/firma original, versionName S2.25 conservado. Ventana corta EVO con identidad:
+cierre a 700 ms de pausa con ≥300 ms de voz. DEX y metadatos nuevos; ocho .so,
+assets/app, manifiesto, 48 ajustes y primera instalación conservados. Deepseek
+revisó código y Claude artefacto antes de instalar. [Recibo, límites y retorno
+R4 completo](ventana-pausa-evo-r5-2026-11-01.md). Dani empezó prueba a las
+19:07:14 CET: no intervenir mientras escucha. La batería de siete de Codex está
+retirada; Claude coordina una sola serie en el hilo. Validación física y comparación
+de Deepseek pendientes; no atribuir todavía ahorro de latencia ni precisión.
+
 ## Telemetría instalada sobre S2.25 — 01/11/2026, 15:10:04 CET (Codex)
 
 **Prevalece sobre los estados inferiores.** APK extraída SHA256
