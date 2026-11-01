@@ -1,0 +1,878 @@
+package com.faceclaw.app
+
+/** Language configuration captured by each accepted start. A rejected start never changes it. */
+enum class LocalTranscriptLanguage(val wire: String) {
+    AUTO("auto"), ES("es");
+    companion object {
+        fun fromWire(value: String?): LocalTranscriptLanguage = if (value == "es") ES else AUTO
+    }
+}
+
+/** ASR can consume the whole stream; participation/enrollment retain their separate VAD buffer. */
+enum class LocalTranscriptSegmentation(val wire: String) { VAD("vad"), WINDOWS("windows") }
+
+/** `forced` marks a language imposed on the decoder: it is never a detected language or a confidence. */
+data class LocalDecodedText(val text: String, val language: String, val forced: Boolean = false,
+    val diarization: LocalDiarization? = null)
+
+/**
+ * Ephemeral context of one capture window for the EVO session contract (v3): a random id per Conversation
+ * start (kept across PCM-gap resets), a sequence per window and the window's capture times (PCM clock since start, overlap kept).
+ * `report` is the phone's counters about the previous window. Never text, audio, profile or credentials.
+ */
+data class LocalWindowContext(val sessionId: String, val seq: Long, val startMs: Long, val endMs: Long,
+    val voices: Boolean, val report: String?)
+
+/** 128 random bits as hex: identifies one stream, never a person, a device or a credential. */
+internal fun ephemeralStreamId(): String =
+    kotlin.random.Random.Default.nextBytes(16).joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
+interface LocalTranscriptDecoder {
+    /** Called on raw audio before conditioning/decoding. Unknown detectors preserve the window. */
+    val conditionAudio: Boolean get() = true
+    fun hasSpeech(samples: FloatArray): Boolean = true
+    fun decode(samples: FloatArray): LocalDecodedText
+    /** Remote decoders may use the window context; local ones ignore it. */
+    fun decode(samples: FloatArray, window: LocalWindowContext?): LocalDecodedText = decode(samples)
+    fun release()
+    /** Model label for diagnostics only (e.g. "whisper-small"); never a path. */
+    val engine: String get() = "whisper"
+    /** Runtime knobs for diagnostics only (e.g. "threads=4;provider=cpu;tail=default"); never a path. */
+    val runtime: String get() = ""
+    val speechDetector: String get() = "not-configured"
+}
+interface LocalTranscriptHost {
+    val dispatcher: CallbackDispatcher
+    fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder?
+    /** Called on the worker only for a start that asked for speakers. Null keeps windows anonymous. */
+    fun loadSpeakerAttributor(): LocalSpeakerAttributor? = null
+}
+interface FaceclawLocalTranscriptListener {
+    fun onText(text: String, language: String)
+    /** Capture-window bounds, not word alignment. Default preserves existing consumers. */
+    fun onSegment(text: String, language: String, startMs: Long, endMs: Long) = onText(text, language)
+    /**
+     * Only for a start with speakers: `speaker` is "" when unattributed and `relation` is
+     * portador/otro/desconocido. Default preserves consumers that ignore attribution.
+     */
+    fun onSpeakerSegment(text: String, language: String, startMs: Long, endMs: Long, speaker: String, relation: String) =
+        onSegment(text, language, startMs, endMs)
+}
+
+enum class LocalTextRejection { NONE, LANGUAGE, EMPTY, STRUCTURE, HALLUCINATION }
+
+/** Forced Spanish: an empty or "es" engine label becomes forced Spanish; any other explicit label is kept. */
+fun normalizeForcedLanguage(raw: String?): String {
+    val value = raw?.trim().orEmpty()
+    return if (value.isEmpty() || value == "es") "es" else value
+}
+
+/** Maps the engine result for the session language. Automatic mode keeps the engine label unchanged. */
+fun localDecodedText(text: String, rawLanguage: String?, mode: LocalTranscriptLanguage): LocalDecodedText =
+    if (mode == LocalTranscriptLanguage.ES) LocalDecodedText(text, normalizeForcedLanguage(rawLanguage), forced = true)
+    else LocalDecodedText(text, rawLanguage ?: "")
+
+/** No semantic confidence is exposed by this runtime. These are structural abstentions only. */
+fun localTextRejection(result: LocalDecodedText): LocalTextRejection {
+    val text = result.text.trim()
+    if (result.forced) {
+        // In forced Spanish, any other explicit label (including "ca") is a mismatch, never text.
+        if (result.language != "es") return LocalTextRejection.LANGUAGE
+    } else if (result.language != "es" && result.language != "ca") return LocalTextRejection.LANGUAGE
+    if (text.isEmpty()) return LocalTextRejection.EMPTY
+    if (text.length > 600 || !text.any { it.isLetterOrDigit() }) return LocalTextRejection.STRUCTURE
+    if (text.contains("<|") || text.startsWith("[") || text.startsWith("(")) return LocalTextRejection.STRUCTURE
+    if (text.any { it.isISOControl() && it != '\n' && it != '\t' }) return LocalTextRejection.STRUCTURE
+    if (isKnownWhisperHallucination(text) || isRepetitiveWhisperText(text)) return LocalTextRejection.HALLUCINATION
+    return LocalTextRejection.NONE
+}
+fun acceptedLocalText(result: LocalDecodedText): String =
+    if (localTextRejection(result) == LocalTextRejection.NONE) result.text.trim() else ""
+
+/**
+ * Remove the part of `current` that repeats the end of the adjacent previous window.
+ * Exact prefix match of >=2 whole words first (unchanged behaviour). A4 adds a tolerant pass for
+ * the 3 s overlap: up to 2 garbled leading words of `current` (word cut at the window start) and
+ * up to 2 trailing words of `previous` (word cut at its end) may be skipped, but then at least 3
+ * consecutive words must match. Never deletes a single isolated word; keeps everything if unsure.
+ */
+fun localWindowNovelText(previous: String, current: String): String {
+    val words = Regex("\\S+")
+    fun norm(value: String) = value.trim { c -> !c.isLetterOrDigit() }.lowercase()
+    val before = words.findAll(previous).map { norm(it.value) }.toList()
+    val after = words.findAll(current).toList()
+    val afterNorm = after.map { norm(it.value) }
+    var best: Int? = null
+    var bestSize = 0
+    for (skipEnd in 0..minOf(2, before.size)) {
+        for (skipStart in 0..minOf(2, afterNorm.size)) {
+            val minimum = if (skipEnd == 0 && skipStart == 0) 2 else 3
+            val limit = minOf(12, before.size - skipEnd, afterNorm.size - skipStart)
+            for (size in limit downTo minimum) {
+                if (size <= bestSize) break
+                val tail = before.subList(before.size - skipEnd - size, before.size - skipEnd)
+                val head = afterNorm.subList(skipStart, skipStart + size)
+                if (head.all { it.isNotEmpty() } && tail == head) { best = skipStart + size; bestSize = size; break }
+            }
+        }
+    }
+    val end = best ?: return current
+    return if (end >= after.size) "" else current.substring(after[end - 1].range.last + 1).trimStart()
+}
+
+/**
+ * Diagnostic phases are user marks, not speaker identification. Indices 0..4 are marks and 5 is a
+ * segment whose samples (including pre-roll) came from more than one mark.
+ */
+object LocalTranscriptPhases {
+    const val MARKED = 5
+    const val MIXED = 5
+    const val COUNT = 6
+    val NAMES = arrayOf("sin-marcar", "otra-persona", "yo", "referencia", "fin", "mixta")
+}
+
+/** Segments the existing provisional VAD. Copies PCM only into bounded, erasable RAM. */
+class LocalTranscriptBuffer(
+    private val segmentInfo: (Int) -> Unit = {},
+    private val segmentPhase: (Int) -> Unit = {},
+    /** Consulted only by a coalescing window policy: false while the consumer is still busy. */
+    private val canSubmit: () -> Boolean = { true },
+    private val submit: (ShortArray) -> Unit,
+) {
+    companion object {
+        const val MAX_SAMPLES = 16000 * 8
+        const val PRE_SAMPLES = 16000 / 5
+        const val MIN_VOICED_SAMPLES = 16000 * 3 / 10
+        const val CHUNK_SAMPLES = 800
+        const val WINDOW_SAMPLES = 16000 * 6
+        /** A4: 3 s hop. Every second is heard by two windows, so one busy drop loses no audio. */
+        const val OVERLAP_SAMPLES = 16000 * 3
+        /** Pause policy: pre-roll kept while nothing voiced has arrived (10 chunks). */
+        const val PAUSE_PRE_SAMPLES = 16000 / 2
+        /** Pause policy: consecutive quiet chunks (no VAD voice, level below PAUSE_VOICE_RMS) that close a window (400 ms). */
+        const val PAUSE_CLOSE_CHUNKS = 8
+        /** Pause policy: chunk RMS (~-52 dBFS) that counts as voiced even when the energy VAD stays quiet. */
+        const val PAUSE_VOICE_RMS = 0.0025
+    }
+    private var samples = ShortArray(MAX_SAMPLES)
+    private val pre = ShortArray(PRE_SAMPLES)
+    private val prePhases = IntArray(PRE_SAMPLES / CHUNK_SAMPLES)
+    private val segmentSamplesByPhase = LongArray(LocalTranscriptPhases.MARKED)
+    private var preCount = 0
+    private var preWrite = 0
+    private var count = 0
+    private var voiced = 0
+    private var active = false
+    private var segmentation = LocalTranscriptSegmentation.VAD
+    private var policy = LocalTranscriptWindowPolicy.REFERENCE
+    private var windowPhases = IntArray(WINDOW_SAMPLES / CHUNK_SAMPLES)
+    private var constantWindows = 0
+    private var deferredWindows = 0
+    private var coalescedWindows = 0
+    private var maxWindowSamples = 0
+    private var silenceClosures = 0
+    private var limitClosures = 0
+    private var shortSegments = 0
+    private var interruptedSegments = 0
+    private var interruptedSamples = 0L
+    private var submittedSamples = 0L
+    private var windowVoiced = false
+    private var windowVoicedChunks = 0
+    private var quietChunks = 0
+    private var quietSkippedSamples = 0L
+    private val phaseSilence = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseLimit = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseShort = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseInterrupted = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseInterruptedSamples = LongArray(LocalTranscriptPhases.COUNT)
+    private val phaseSubmittedSamples = LongArray(LocalTranscriptPhases.COUNT)
+    private val mixedSamplesByPhase = LongArray(LocalTranscriptPhases.MARKED)
+    fun bufferedBytes(): Int = (count + preCount) * 2
+
+    fun reset() {
+        if (active && count > 0) {
+            val phase = closePhase()
+            interruptedSegments++; interruptedSamples += count
+            phaseInterrupted[phase]++; phaseInterruptedSamples[phase] += count.toLong()
+        }
+        clearAudio()
+    }
+
+    fun resetMetrics(mode: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD,
+        windows: LocalTranscriptWindowPolicy = LocalTranscriptWindowPolicy.REFERENCE) {
+        clearAudio()
+        // Fixed capacity per start: never grows while audio arrives.
+        val capacity = maxOf(MAX_SAMPLES, windows.maxWindowSamples)
+        if (samples.size != capacity) samples = ShortArray(capacity)
+        if (windowPhases.size != windows.maxWindowSamples / CHUNK_SAMPLES) windowPhases = IntArray(windows.maxWindowSamples / CHUNK_SAMPLES)
+        segmentation = mode; policy = windows; constantWindows = 0
+        deferredWindows = 0; coalescedWindows = 0; maxWindowSamples = 0
+        silenceClosures = 0; limitClosures = 0; shortSegments = 0
+        interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0; quietSkippedSamples = 0
+        for (array in listOf(phaseSilence, phaseLimit, phaseShort, phaseInterrupted,
+            phaseInterruptedSamples, phaseSubmittedSamples, mixedSamplesByPhase)) array.fill(0)
+    }
+
+    /** Duration is PCM sample time, not wall time or confirmed speech. */
+    fun diagnostics(): String = "\"silenceClosures\":$silenceClosures,\"limitClosures\":$limitClosures," +
+        "\"shortSegments\":$shortSegments,\"interruptedSegments\":$interruptedSegments," +
+        "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}," +
+        "\"segmentation\":\"${segmentation.wire}\",\"constantWindows\":$constantWindows," +
+        "\"windowPolicy\":\"${policy.id}\",\"deferredWindows\":$deferredWindows,\"coalescedWindows\":$coalescedWindows," +
+        "\"maxWindowMs\":${maxWindowSamples / 16},\"quietSkippedAudioMs\":${quietSkippedSamples / 16}"
+
+    /** Same segment counters attributed to the origin phase of each segment. */
+    fun phaseDiagnostics(phase: Int): String = "\"silenceClosures\":${phaseSilence[phase]}," +
+        "\"limitClosures\":${phaseLimit[phase]},\"shortSegments\":${phaseShort[phase]}," +
+        "\"interruptedSegments\":${phaseInterrupted[phase]}," +
+        "\"interruptedAudioMs\":${phaseInterruptedSamples[phase] / 16}," +
+        "\"submittedAudioMs\":${phaseSubmittedSamples[phase] / 16}"
+
+    /** Audio of mixed segments (submitted, short or interrupted) split by the mark it arrived under. */
+    fun mixedDiagnostics(): String =
+        "\"mixedAudioMsByPhase\":[${mixedSamplesByPhase.joinToString(",") { (it / 16).toString() }}]"
+
+    private fun clearAudio() {
+        samples.fill(0); pre.fill(0); prePhases.fill(0); segmentSamplesByPhase.fill(0)
+        windowPhases.fill(0)
+        count = 0; voiced = 0; preCount = 0; preWrite = 0; active = false
+        windowVoiced = false; windowVoicedChunks = 0; quietChunks = 0
+    }
+
+    private fun segmentPhaseOf(): Int {
+        var found = -1
+        for (index in 0 until LocalTranscriptPhases.MARKED) {
+            if (segmentSamplesByPhase[index] > 0) {
+                if (found >= 0) return LocalTranscriptPhases.MIXED
+                found = index
+            }
+        }
+        return if (found < 0) 0 else found
+    }
+
+    /** Origin of the segment being closed; mixed segments also record their split. */
+    private fun closePhase(): Int {
+        val phase = segmentPhaseOf()
+        if (phase == LocalTranscriptPhases.MIXED) {
+            for (index in 0 until LocalTranscriptPhases.MARKED) mixedSamplesByPhase[index] += segmentSamplesByPhase[index]
+        }
+        return phase
+    }
+
+    fun accept(pcm: ByteArray, state: String, phase: Int = 0) {
+        if (pcm.size != 1600) { reset(); return }
+        if (segmentation == LocalTranscriptSegmentation.WINDOWS) {
+            val origin = phase.coerceIn(0, LocalTranscriptPhases.MARKED - 1)
+            if (policy.closesOnPause) acceptPause(pcm, state, origin) else acceptWindow(pcm, origin)
+            return
+        }
+        if (state != "posible voz" && state != "pausa" && state != "sin actividad" && state != "candidato") {
+            reset(); return
+        }
+        val origin = phase.coerceIn(0, LocalTranscriptPhases.MARKED - 1)
+        if (!active && state == "posible voz") {
+            val start = (preWrite - preCount + PRE_SAMPLES) % PRE_SAMPLES
+            repeat(preCount) {
+                val position = (start + it) % PRE_SAMPLES
+                samples[count++] = pre[position]
+                segmentSamplesByPhase[prePhases[position / CHUNK_SAMPLES]]++
+            }
+            pre.fill(0); prePhases.fill(0); preCount = 0; preWrite = 0; active = true
+        }
+        for (i in 0 until 800) {
+            val value = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
+            if (active) { samples[count++] = value; segmentSamplesByPhase[origin]++ }
+            else {
+                pre[preWrite] = value
+                prePhases[preWrite / CHUNK_SAMPLES] = origin
+                preWrite = (preWrite + 1) % PRE_SAMPLES
+                preCount = minOf(PRE_SAMPLES, preCount + 1)
+            }
+            if (active && state == "posible voz") voiced++
+            if (count == MAX_SAMPLES) finish(atLimit = true)
+        }
+        if (active && state == "sin actividad") finish(atLimit = false)
+    }
+
+    /**
+     * Every valid chunk reaches a window (six seconds in the reference policy), regardless of VAD or
+     * speaker identity. The overlap protects words at boundaries. Only a perfectly constant signal
+     * (digital silence/DC, including stuck saturation) is skipped: this is NOT a speech detector.
+     * Noise can still hallucinate in Whisper. This text never supplies participation evidence.
+     * A coalescing policy may keep growing the same bounded buffer while the consumer is busy.
+     */
+    private fun acceptWindow(pcm: ByteArray, origin: Int) {
+        active = true
+        windowPhases[count / CHUNK_SAMPLES] = origin
+        repeat(CHUNK_SAMPLES) { i ->
+            samples[count++] = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
+        }
+        segmentSamplesByPhase[origin] += CHUNK_SAMPLES.toLong()
+        if (count < policy.windowSamples) return
+        if (policy.coalesces && count < policy.maxWindowSamples && !canSubmit()) {
+            if (count == policy.windowSamples) deferredWindows++
+            return
+        }
+        closeWindow()
+    }
+
+    /**
+     * Pause policy (see [LocalTranscriptWindowPolicy.PAUSE]). Never drops a voiced chunk: a pause only
+     * chooses where a window ends, and quiet audio before any voice is trimmed to a short pre-roll.
+     */
+    private fun acceptPause(pcm: ByteArray, state: String, origin: Int) {
+        active = true
+        windowPhases[count / CHUNK_SAMPLES] = origin
+        var squares = 0.0
+        repeat(CHUNK_SAMPLES) { i ->
+            val value = ((pcm[i * 2].toInt() and 255) or (pcm[i * 2 + 1].toInt() shl 8)).toShort()
+            samples[count++] = value
+            squares += value.toDouble() * value
+        }
+        segmentSamplesByPhase[origin] += CHUNK_SAMPLES.toLong()
+        // Quiet means quiet for both the VAD and the level, so faint speech is never cut at every hop.
+        val voicedChunk = state == "posible voz" || state == "candidato" ||
+            kotlin.math.sqrt(squares / CHUNK_SAMPLES) / 32768.0 >= PAUSE_VOICE_RMS
+        if (voicedChunk) { windowVoiced = true; windowVoicedChunks++; quietChunks = 0 } else quietChunks++
+        if (!windowVoiced) {
+            if (count > PAUSE_PRE_SAMPLES) dropLeadingChunks((count - PAUSE_PRE_SAMPLES) / CHUNK_SAMPLES)
+            return
+        }
+        if (count >= policy.maxWindowSamples) closeWindow(policy.overlapSamples, bySilence = false)
+        else if (count >= policy.windowSamples && quietChunks >= PAUSE_CLOSE_CHUNKS && canSubmit()) closeWindow(0, bySilence = true)
+    }
+
+    private fun dropLeadingChunks(chunksToDrop: Int) {
+        val drop = chunksToDrop * CHUNK_SAMPLES
+        val chunks = count / CHUNK_SAMPLES
+        for (index in 0 until chunksToDrop) segmentSamplesByPhase[windowPhases[index]] -= CHUNK_SAMPLES.toLong()
+        samples.copyInto(samples, 0, drop, count)
+        samples.fill(0, count - drop, count)
+        windowPhases.copyInto(windowPhases, 0, chunksToDrop, chunks)
+        windowPhases.fill(0, chunks - chunksToDrop, chunks)
+        count -= drop
+        quietSkippedSamples += drop
+    }
+
+    private fun closeWindow(overlap: Int = policy.overlapSamples, bySilence: Boolean = false) {
+        val phase = closePhase()
+        if (bySilence) { silenceClosures++; phaseSilence[phase]++ } else { limitClosures++; phaseLimit[phase]++ }
+        val varying = (1 until count).any { samples[it] != samples[0] }
+        val audio = if (varying) samples.copyOf(count) else null
+        if (audio == null) constantWindows++
+        else {
+            submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong()
+            if (!policy.closesOnPause && count > policy.windowSamples) coalescedWindows++
+            maxWindowSamples = maxOf(maxWindowSamples, count)
+        }
+        val voicedSamples = windowVoicedChunks * CHUNK_SAMPLES
+        // A limit cut keeps its overlap, which held the voice that reached the limit.
+        windowVoiced = overlap > 0; windowVoicedChunks = 0; quietChunks = 0
+        // Keep only the overlap; no second PCM queue or unbounded conversation history.
+        val chunks = count / CHUNK_SAMPLES
+        samples.copyInto(samples, 0, count - overlap, count)
+        samples.fill(0, overlap)
+        val overlapChunks = overlap / CHUNK_SAMPLES
+        windowPhases.copyInto(windowPhases, 0, chunks - overlapChunks, chunks)
+        windowPhases.fill(0, overlapChunks)
+        segmentSamplesByPhase.fill(0)
+        repeat(overlapChunks) { segmentSamplesByPhase[windowPhases[it]] += CHUNK_SAMPLES.toLong() }
+        count = overlap
+        if (audio != null) {
+            if (policy.closesOnPause) segmentInfo(voicedSamples)
+            segmentPhase(phase); submit(audio)
+        }
+    }
+
+    private fun finish(atLimit: Boolean) {
+        val phase = closePhase()
+        if (atLimit) { limitClosures++; phaseLimit[phase]++ } else { silenceClosures++; phaseSilence[phase]++ }
+        val audio = if (voiced >= MIN_VOICED_SAMPLES) samples.copyOf(count) else null
+        val voicedSamples = voiced
+        if (audio == null) { shortSegments++; phaseShort[phase]++ }
+        else { submittedSamples += count; phaseSubmittedSamples[phase] += count.toLong() }
+        // Erase before handing a completed segment to an asynchronous consumer.
+        clearAudio()
+        if (audio != null) { segmentInfo(voicedSamples); segmentPhase(phase); submit(audio) }
+    }
+}
+
+/** One worker, at most one pending/in-flight segment; never queues utterances behind decoding. */
+class LocalTranscriptSession(
+    private val host: LocalTranscriptHost,
+    private val platform: ProtocolPlatform = protocolPlatform(),
+    /** A3: lift quiet speech in the ASR copy only. Off by default so fixtures see raw PCM. */
+    private val conditionAudio: Boolean = false,
+) {
+    /** Per-phase scalar counters. They never hold text, audio or model paths. */
+    private class LocalTranscriptPhaseStats {
+        var pcmChunks = 0L; var loadingChunks = 0L; var dropped = 0L
+        var decodeCalls = 0L; var decodedSamples = 0L; var decodeTotalMs = 0L; var decodeMaxMs = 0L
+        var rejectedLanguage = 0L; var rejectedEmpty = 0L; var rejectedStructure = 0L; var rejectedHallucination = 0L
+        var rejectedNoVoice = 0L
+        var decodeErrors = 0L; var processingErrors = 0L; var invalidatedDecodes = 0L
+        var languageEs = 0L; var languageCa = 0L; var languageOther = 0L; var languageForced = 0L; var forcedMismatch = 0L
+        var accepted = 0L; var abstentions = 0L; var delivered = 0L; var deliveredChars = 0L; var deliveryDiscarded = 0L
+    }
+    private data class Job(val generation: Long, val audio: ShortArray, val phase: Int, val endChunk: Long, val closedAtMs: Long,
+        val voicedSamples: Int = 0) {
+        val startChunk: Long get() = endChunk - audio.size / LocalTranscriptBuffer.CHUNK_SAMPLES
+    }
+    private data class Result(val generation: Long, val text: String, val language: String, val phase: Int, val endChunk: Long,
+        val sampleCount: Int, val closedAtMs: Long, val speaker: LocalSpeakerLabel? = null,
+        val turns: List<LocalSpeakerTurn>? = null) {
+        val startChunk: Long get() = endChunk - sampleCount / LocalTranscriptBuffer.CHUNK_SAMPLES
+    }
+    private val condition = platform.createCondition()
+    private var running = false
+    private var worker = false
+    private var ready = false
+    private var generation = 0L
+    private var deadline = 0L
+    private var status = "inactivo"
+    private var job: Job? = null
+    private var busy = false
+    private var activeInputBytes = 0
+    private var result: Result? = null
+    private var lastDelivered: Result? = null
+    private var inputChunks = 0L
+    private var windowed = false
+    private var phase = 0
+    private var pendingSegmentPhase = 0
+    private var languageMode = LocalTranscriptLanguage.AUTO
+    private var stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
+    private var listener: FaceclawLocalTranscriptListener? = null
+    private val levels = LocalAsrLevelStats()
+    private var engine = ""
+    private var runtime = ""
+    private var speechDetector = "not-configured"
+    /** Speaker attribution requested by the accepted start (needs a pause window policy). */
+    private var speakersRequested = false
+    /** Ephemeral stream identity for the EVO session contract; renewed on start, cleared on stop, kept on reset. */
+    private var streamId = ""
+    private var streamSeq = 0L
+    private var pendingReport: String? = null
+    private var speakerStatus = "off"
+    private var speakerVoices = 0
+    private var speakerWearer = 0L
+    private var speakerOther = 0L
+    private var speakerUnknown = 0L
+    private var speakerClustered = 0L
+    private var speakerErrors = 0L
+    private var pendingVoiced = 0
+    /**
+     * Unions of capture windows, in PCM chunks (windows reach the worker in capture order, so a running
+     * end mark is an exact union). Attempted = handed to the decoder, whatever the outcome. Covered =
+     * the decoder returned without throwing while the window's generation was still current
+     * ([TIMING_OK]); a failed or OFF/reset-invalidated window adds nothing, and a later successful
+     * window covers only its own span. Covered is decoder processing, not accepted or delivered text:
+     * a window rejected by the language/structure filters is covered but delivers nothing.
+     */
+    private var attemptedChunks = 0L
+    private var attemptedEndChunk = 0L
+    private var coveredChunks = 0L
+    private var coveredEndChunk = 0L
+    /** Window close (PCM time) to listener delivery, wall clock. Decode + queue + dispatcher. */
+    private var latencyCount = 0L
+    private var latencyTotalMs = 0L
+    private var latencyMaxMs = 0L
+    /** Last decoder attempts as (captureStartMs, captureEndMs, decodeMs, outcome) scalars; fixed size, never text/audio. */
+    private val timings = LongArray(TIMING_SLOTS * TIMING_FIELDS)
+    private var timingCount = 0L
+    // Both lambdas are called under condition by acceptPcm; do not acquire its non-reentrant lock again.
+    private val buffer = LocalTranscriptBuffer(segmentInfo = { pendingVoiced = it }, segmentPhase = { pendingSegmentPhase = it },
+        canSubmit = { running && ready && !busy }) { audio ->
+        if (!running || !ready || busy) { audio.fill(0); stats[pendingSegmentPhase].dropped++ }
+        else {
+            job = Job(generation, audio, pendingSegmentPhase, inputChunks, platform.elapsedRealtimeMs(), pendingVoiced)
+            busy = true; condition.signalAll()
+        }
+        pendingVoiced = 0
+    }
+
+    companion object {
+        /** Fixed ring: production RAM stays bounded; a longer run must be collected incrementally. */
+        const val TIMING_SLOTS = 256
+        private const val TIMING_FIELDS = 4
+        /** Decoder returned while the window's generation was current: counts as covered. */
+        const val TIMING_OK = 0L
+        /** Decoder threw while the generation was current (decodeErrors): timed, never covered. */
+        const val TIMING_FAILED = 1L
+        /** OFF, resetStream or deadline before the decoder returned (invalidatedDecodes): timed, never covered. */
+        const val TIMING_INVALIDATED = 2L
+    }
+
+    fun setListener(value: FaceclawLocalTranscriptListener?) { condition.withLock { listener = value } }
+
+    /**
+     * Benchmark detail kept out of [diagnostics] (polled by the UI): the most recent decoder attempts
+     * as [captureStartMs, captureEndMs, decodeMs, outcome], oldest first, outcome one of TIMING_*.
+     * Capture times are PCM time since start. `total` counts every attempt of this start and `first`
+     * is the attempt index of the first listed window: when `first` > 0 older attempts have left the
+     * ring and the list alone no longer describes the whole run.
+     */
+    fun decodeTimings(): String = condition.withLock {
+        val count = minOf(timingCount, TIMING_SLOTS.toLong()).toInt()
+        val first = timingCount - count
+        (0 until count).joinToString(",", "{\"total\":$timingCount,\"first\":$first,\"windows\":[", "]}") {
+            val slot = ((first + it) % TIMING_SLOTS).toInt() * TIMING_FIELDS
+            "[${timings[slot]},${timings[slot + 1]},${timings[slot + 2]},${timings[slot + 3]}]"
+        }
+    }
+    fun isWorkerActive(): Boolean = condition.withLock { worker }
+
+    /** The language is captured only by an accepted start and handed to that worker as an immutable value. */
+    fun start(language: LocalTranscriptLanguage = LocalTranscriptLanguage.AUTO,
+        segmentation: LocalTranscriptSegmentation = LocalTranscriptSegmentation.VAD, maxMs: Long = 120000,
+        windows: LocalTranscriptWindowPolicy = LocalTranscriptWindowPolicy.REFERENCE, speakers: Boolean = false): Boolean {
+        if (!LocalTranscriptWindowPolicy.isValid(windows)) return false
+        // A fixed window mixes voices; attribution only runs on windows closed at pauses.
+        if (speakers && (segmentation != LocalTranscriptSegmentation.WINDOWS || !windows.closesOnPause)) return false
+        condition.withLock {
+            if (worker) return false // A non-interruptible previous JNI call must drain first.
+            running = true; worker = true; ready = false; generation++
+            deadline = platform.elapsedRealtimeMs() + maxMs.coerceIn(1, 86_400_000)
+            status = "cargando"; phase = 0; pendingSegmentPhase = 0; languageMode = language
+            buffer.resetMetrics(segmentation, windows)
+            attemptedChunks = 0; attemptedEndChunk = 0; coveredChunks = 0; coveredEndChunk = 0; latencyCount = 0; latencyTotalMs = 0; latencyMaxMs = 0
+            timings.fill(0); timingCount = 0
+            inputChunks = 0; windowed = segmentation == LocalTranscriptSegmentation.WINDOWS; lastDelivered = null
+            stats = Array(LocalTranscriptPhases.COUNT) { LocalTranscriptPhaseStats() }
+            levels.reset(); engine = ""; runtime = ""; speechDetector = "not-configured"
+            speakersRequested = speakers; speakerStatus = if (speakers) "cargando" else "off"; speakerVoices = 0
+            streamId = ephemeralStreamId(); streamSeq = 0; pendingReport = null
+            speakerWearer = 0; speakerOther = 0; speakerUnknown = 0; speakerClustered = 0; speakerErrors = 0; pendingVoiced = 0
+        }
+        val config = language
+        startThread("FaceclawLocalTranscript", true) { runWorker(config) }
+        return true
+    }
+
+    /** User mark for diagnostics. Applies to the next PCM chunk; invalid values are ignored. */
+    fun setPhase(value: Int) {
+        condition.withLock { if (value in 0 until LocalTranscriptPhases.MARKED) phase = value }
+    }
+
+    fun resetStream() {
+        condition.withLock {
+            generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
+            // A PCM gap keeps the EVO session (id and growing seq) so its voice groups survive each answer;
+            // capture times stay monotonic because inputChunks only restarts on start(). Only the pending
+            // report of the invalidated window is dropped. Only start()/stop() renew or clear the id.
+            pendingReport = null
+            job?.audio?.fill(0); job = null
+            if (activeInputBytes == 0) busy = false
+            condition.signalAll()
+        }
+    }
+
+    /** Non-blocking. In-flight JNI decoding is invalidated and releases its stream on return. */
+    fun stop() {
+        condition.withLock {
+            running = false; ready = false; generation++; buffer.reset(); discardPendingResult(); lastDelivered = null
+            streamId = ""; streamSeq = 0; pendingReport = null
+            job?.audio?.fill(0); job = null
+            if (activeInputBytes == 0) busy = false
+            status = "inactivo"; condition.signalAll()
+        }
+    }
+
+    fun acceptPcm(pcm: ByteArray?, vadState: String) {
+        condition.withLock {
+            if (running && pcm != null && platform.elapsedRealtimeMs() < deadline) {
+                if (pcm.size == 1600) { stats[phase].pcmChunks++; if (!ready) stats[phase].loadingChunks++ }
+                if (ready) { if (pcm.size == 1600) inputChunks++; buffer.accept(pcm, vadState, phase) }
+            }
+        }
+    }
+
+    /** Single exit for a pending result that will not be delivered. Must run under condition. */
+    private fun discardPendingResult() {
+        result?.let { stats[it.phase].deliveryDiscarded++ }
+        result = null
+    }
+
+    private fun sum(field: (LocalTranscriptPhaseStats) -> Long): Long = stats.sumOf(field)
+
+    private fun phaseJson(index: Int): String {
+        val s = stats[index]
+        return "{\"phase\":\"${LocalTranscriptPhases.NAMES[index]}\",\"pcmAudioMs\":${s.pcmChunks * 50}," +
+            "\"loadingAudioMs\":${s.loadingChunks * 50}," + buffer.phaseDiagnostics(index) +
+            ",\"dropped\":${s.dropped},\"decodeCalls\":${s.decodeCalls},\"decodedAudioMs\":${s.decodedSamples / 16}," +
+            "\"decodeTotalMs\":${s.decodeTotalMs},\"decodeMaxMs\":${s.decodeMaxMs}," +
+            "\"rejectedLanguage\":${s.rejectedLanguage},\"rejectedEmpty\":${s.rejectedEmpty}," +
+            "\"rejectedNoVoice\":${s.rejectedNoVoice},\"rejectedStructure\":${s.rejectedStructure},\"rejectedHallucination\":${s.rejectedHallucination},\"decodeErrors\":${s.decodeErrors}," +
+            "\"processingErrors\":${s.processingErrors},\"invalidatedDecodes\":${s.invalidatedDecodes}," +
+            "\"languageEs\":${s.languageEs},\"languageCa\":${s.languageCa},\"languageOther\":${s.languageOther}," +
+            "\"languageForced\":${s.languageForced},\"forcedMismatch\":${s.forcedMismatch}," +
+            "\"accepted\":${s.accepted},\"abstentions\":${s.abstentions},\"delivered\":${s.delivered}," +
+            "\"deliveredChars\":${s.deliveredChars},\"deliveryDiscarded\":${s.deliveryDiscarded}}"
+    }
+
+    /** Scalar diagnostics only: no text/audio/model path in this snapshot. Totals first, phases last. */
+    fun diagnostics(): String = condition.withLock {
+        "{\"status\":\"$status\",\"worker\":$worker,\"busy\":$busy," +
+            "\"inputBufferedBytes\":${buffer.bufferedBytes() + (job?.audio?.size ?: 0) * 2 + activeInputBytes}," +
+            "\"accepted\":${sum { it.accepted }},\"abstentions\":${sum { it.abstentions }},\"dropped\":${sum { it.dropped }}," +
+            "\"analysis\":{\"pcmAudioMs\":${sum { it.pcmChunks } * 50},\"loadingAudioMs\":${sum { it.loadingChunks } * 50}," +
+            buffer.diagnostics() + ",\"decodeCalls\":${sum { it.decodeCalls }},\"decodedAudioMs\":${sum { it.decodedSamples } / 16}," +
+            "\"decodeTotalMs\":${sum { it.decodeTotalMs }},\"decodeMaxMs\":${stats.maxOf { it.decodeMaxMs }}," +
+            "\"rejectedLanguage\":${sum { it.rejectedLanguage }},\"rejectedEmpty\":${sum { it.rejectedEmpty }}," +
+            "\"rejectedNoVoice\":${sum { it.rejectedNoVoice }},\"rejectedStructure\":${sum { it.rejectedStructure }},\"rejectedHallucination\":${sum { it.rejectedHallucination }},\"decodeErrors\":${sum { it.decodeErrors }}," +
+            "\"processingErrors\":${sum { it.processingErrors }}," +
+            "\"invalidatedDecodes\":${sum { it.invalidatedDecodes }},\"languageEs\":${sum { it.languageEs }}," +
+            "\"languageCa\":${sum { it.languageCa }},\"languageOther\":${sum { it.languageOther }},\"delivered\":${sum { it.delivered }}," +
+            "\"languageForced\":${sum { it.languageForced }},\"forcedMismatch\":${sum { it.forcedMismatch }}," +
+            "\"deliveredChars\":${sum { it.deliveredChars }},\"deliveryDiscarded\":${sum { it.deliveryDiscarded }}," +
+            "\"languageMode\":\"${languageMode.wire}\",\"engine\":\"$engine\",\"conditioned\":${conditionAudio && decoderConditionAudio}," +
+            "\"vadStatus\":\"$speechDetector\",\"runtime\":\"$runtime\",\"windowedAudioMs\":${inputChunks * 50},\"attemptedAudioMs\":${attemptedChunks * 50}," +
+            "\"coveredAudioMs\":${coveredChunks * 50}," +
+            "\"deliveryLatencyCount\":$latencyCount,\"deliveryLatencyTotalMs\":$latencyTotalMs,\"deliveryLatencyMaxMs\":$latencyMaxMs," +
+            "\"speakers\":{\"status\":\"$speakerStatus\",\"voices\":$speakerVoices,\"wearer\":$speakerWearer," +
+            "\"other\":$speakerOther,\"clustered\":$speakerClustered,\"unknown\":$speakerUnknown,\"errors\":$speakerErrors}," +
+            levels.json() + "," + buffer.mixedDiagnostics() +
+            ",\"phases\":[${(0 until LocalTranscriptPhases.COUNT).joinToString(",") { phaseJson(it) }}]}}"
+    }
+
+    private fun nextJob(): Job? = condition.withLock {
+        while (running && job == null && platform.elapsedRealtimeMs() < deadline) condition.awaitMs(250)
+        if (platform.elapsedRealtimeMs() >= deadline) {
+            running = false; ready = false; status = "inactivo"
+            buffer.reset(); discardPendingResult(); lastDelivered = null; job?.audio?.fill(0)
+        }
+        val next = if (running) job else null
+        job = null
+        if (next != null) activeInputBytes = next.audio.size * 6 // PCM16 + float input until erased.
+        next
+    }
+
+    private var decoderConditionAudio = true
+
+    private fun runWorker(language: LocalTranscriptLanguage) {
+        var decoder: LocalTranscriptDecoder? = null
+        var attributor: LocalSpeakerAttributor? = null
+        try {
+            decoder = host.loadDecoder(language)
+            // A missing speaker model never blocks text: windows simply stay anonymous.
+            if (decoder != null && condition.withLock { speakersRequested && running }) {
+                attributor = try { host.loadSpeakerAttributor() } catch (_: Throwable) { null }
+            }
+            condition.withLock {
+                if (running) {
+                    ready = decoder != null
+                    decoderConditionAudio = decoder?.conditionAudio ?: true
+                    engine = decoder?.engine ?: ""
+                    runtime = decoder?.runtime ?: ""
+                    speechDetector = decoder?.speechDetector ?: "unavailable"
+                    status = if (ready) "listo" else "modelo no disponible"
+                    if (speakersRequested) speakerStatus = if (attributor != null) "activo" else "no disponible"
+                    if (!ready) running = false
+                }
+            }
+            while (true) {
+                val next = nextJob() ?: break
+                val floats = FloatArray(next.audio.size) { next.audio[it] / 32768f }
+                next.audio.fill(0)
+                // Voice prints use the raw level: the ASR conditioner reshapes loudness per frame.
+                val raw = if (attributor != null) floats.copyOf() else null
+                var decodeStarted: Long? = null
+                var decodeFailed = false
+                try {
+                    val canDecode = condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }
+                    if (canDecode && decoder?.hasSpeech(floats) == false) {
+                        condition.withLock {
+                            if (running && generation == next.generation) {
+                                stats[next.phase].rejectedNoVoice++; stats[next.phase].abstentions++
+                            }
+                        }
+                        continue // finally erases PCM and releases busy state; no Whisper inference
+                    }
+                    if (conditionAudio && decoderConditionAudio) {
+                        val level = LocalAsrConditioner.condition(floats)
+                        condition.withLock { levels.add(level) }
+                    }
+                    if (canDecode) {
+                        decodeStarted = platform.elapsedRealtimeMs()
+                        condition.withLock {
+                            stats[next.phase].decodeCalls++; stats[next.phase].decodedSamples += floats.size
+                            if (windowed && next.endChunk > attemptedEndChunk) {
+                                attemptedChunks += next.endChunk - maxOf(next.startChunk, attemptedEndChunk)
+                                attemptedEndChunk = next.endChunk
+                            }
+                        }
+                    }
+                    val window = if (canDecode) condition.withLock {
+                        if (running && generation == next.generation && streamId.isNotEmpty())
+                            LocalWindowContext(streamId, ++streamSeq, next.startChunk * 50, next.endChunk * 50,
+                                speakersRequested, pendingReport.also { pendingReport = null })
+                        else null
+                    } else null
+                    val decoded = if (canDecode) try {
+                        decoder?.decode(floats, window)
+                    } catch (failure: Throwable) {
+                        decodeFailed = true
+                        throw failure
+                    } finally {
+                        val elapsed = maxOf(0L, platform.elapsedRealtimeMs() - decodeStarted!!)
+                        condition.withLock {
+                            val s = stats[next.phase]
+                            s.decodeTotalMs += elapsed; s.decodeMaxMs = maxOf(s.decodeMaxMs, elapsed)
+                            // Same precedence as the counters below: a stale generation is invalidated even if it threw.
+                            val outcome = when {
+                                !running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline -> TIMING_INVALIDATED
+                                decodeFailed -> TIMING_FAILED
+                                else -> TIMING_OK
+                            }
+                            if (outcome == TIMING_OK && windowed && next.endChunk > coveredEndChunk) {
+                                coveredChunks += next.endChunk - maxOf(next.startChunk, coveredEndChunk)
+                                coveredEndChunk = next.endChunk
+                            }
+                            val slot = (timingCount % TIMING_SLOTS).toInt() * TIMING_FIELDS
+                            timings[slot] = next.startChunk * 50; timings[slot + 1] = next.endChunk * 50
+                            timings[slot + 2] = elapsed; timings[slot + 3] = outcome
+                            timingCount++
+                        }
+                    } else null
+                    val text = if (decoded != null) acceptedLocalText(decoded) else ""
+                    val turns = if (raw != null && text.isNotEmpty() && decoded?.diarization != null &&
+                        condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }) {
+                        try { attributor!!.attributeDiarized(raw, decoded) }
+                        catch (_: Throwable) {
+                            condition.withLock { speakerErrors++ }
+                            listOf(LocalSpeakerTurn(text, 0, raw.size / 16L, LocalSpeakerLabel.UNKNOWN))
+                        }
+                    } else null
+                    val label = if (raw != null && text.isNotEmpty() && decoded?.diarization == null &&
+                        condition.withLock { running && generation == next.generation && platform.elapsedRealtimeMs() < deadline }) {
+                        try { attributor!!.attribute(raw, next.voicedSamples) }
+                        catch (_: Throwable) { condition.withLock { speakerErrors++ }; LocalSpeakerLabel.UNKNOWN }
+                    } else null
+                    raw?.fill(0f)
+                    // Phone side of the window for EVO correlation, sent with the next window of this stream.
+                    if (window != null && decoded?.diarization != null) {
+                        val report = when {
+                            attributor == null -> LocalAttributionReport("off")
+                            text.isEmpty() || turns == null -> LocalAttributionReport("none")
+                            else -> attributor.report() ?: LocalAttributionReport("none")
+                        }.toJson(window.seq)
+                        condition.withLock { if (running && generation == next.generation) pendingReport = report }
+                    }
+                    val post = condition.withLock {
+                        val s = stats[next.phase]
+                        if (!running || generation != next.generation || platform.elapsedRealtimeMs() >= deadline) {
+                            // Result never used. Usually also TIMING_INVALIDATED; an OFF landing after the decoder
+                            // returned keeps that window covered (it was processed) but still yields no text.
+                            if (canDecode) s.invalidatedDecodes++
+                            false
+                        } else {
+                            when {
+                                decoded == null -> s.languageOther++
+                                decoded.forced -> if (decoded.language == "es") s.languageForced++ else s.forcedMismatch++
+                                decoded.language == "es" -> s.languageEs++
+                                decoded.language == "ca" -> s.languageCa++
+                                else -> s.languageOther++
+                            }
+                            when (decoded?.let { localTextRejection(it) }) {
+                                LocalTextRejection.LANGUAGE -> s.rejectedLanguage++
+                                LocalTextRejection.EMPTY -> s.rejectedEmpty++
+                                LocalTextRejection.STRUCTURE -> s.rejectedStructure++
+                                LocalTextRejection.HALLUCINATION -> s.rejectedHallucination++
+                                else -> Unit
+                            }
+                            if (text.isEmpty()) { s.abstentions++; false }
+                            else {
+                                s.accepted++
+                                // Single result slot (unchanged): an undelivered predecessor is counted, not queued.
+                                discardPendingResult()
+                                result = Result(next.generation, text, decoded!!.language, next.phase, next.endChunk, next.audio.size,
+                                    next.closedAtMs, label, turns)
+                                for (voice in (turns?.map { it.label } ?: listOfNotNull(label))) {
+                                    when (voice.relation) {
+                                        "portador" -> speakerWearer++
+                                        "otro" -> speakerOther++
+                                        else -> if (voice.speaker == null) speakerUnknown++ else speakerClustered++
+                                    }
+                                    speakerVoices = attributor?.voices ?: 0
+                                }
+                                true
+                            }
+                        }
+                    }
+                    if (post) publish(next.generation)
+                } catch (_: Throwable) {
+                    condition.withLock {
+                        val s = stats[next.phase]
+                        if (running && generation == next.generation && platform.elapsedRealtimeMs() < deadline) {
+                            s.abstentions++
+                            if (decodeFailed) s.decodeErrors++ else s.processingErrors++
+                        } else if (decodeStarted != null) s.invalidatedDecodes++
+                    }
+                    // No error popup, transcript dump or fallback recognizer.
+                } finally {
+                    floats.fill(0f); raw?.fill(0f); next.audio.fill(0)
+                    condition.withLock { activeInputBytes = 0; busy = false }
+                }
+            }
+        } catch (_: Throwable) {
+            condition.withLock { if (running) status = "error"; running = false }
+        } finally {
+            try { attributor?.release() } catch (_: Throwable) { /* no content in diagnostics */ }
+            try { decoder?.release() } catch (_: Throwable) { /* no content in diagnostics */ }
+            condition.withLock {
+                buffer.reset(); job?.audio?.fill(0); job = null; discardPendingResult(); lastDelivered = null
+                activeInputBytes = 0; busy = false; ready = false; running = false; worker = false
+            }
+        }
+    }
+
+    private fun publish(token: Long) {
+        host.dispatcher.post {
+            val delivery = condition.withLock {
+                val current = result
+                if (current == null || current.generation != token) null // Already counted or a newer generation.
+                else {
+                    result = null
+                    val target = listener
+                    if (running && generation == token && platform.elapsedRealtimeMs() < deadline && target != null) {
+                        val previous = lastDelivered
+                        // Adjacent = this window starts inside the previously delivered one. In the reference
+                        // policy that is exactly "one hop later"; any dropped/skipped window breaks it.
+                        val text = if (windowed && previous?.generation == current.generation &&
+                            current.startChunk < previous.endChunk && current.endChunk > previous.endChunk)
+                            localWindowNovelText(previous.text, current.text) else current.text
+                        lastDelivered = current
+                        if (text.isEmpty()) return@withLock null
+                        val latency = maxOf(0L, platform.elapsedRealtimeMs() - current.closedAtMs)
+                        latencyCount++; latencyTotalMs += latency; latencyMaxMs = maxOf(latencyMaxMs, latency)
+                        stats[current.phase].delivered++
+                        stats[current.phase].deliveredChars += text.length.toLong()
+                        Pair(target, current.copy(text = text))
+                    } else {
+                        // Invalid publication or consumption without a listener is never a delivery.
+                        stats[current.phase].deliveryDiscarded++
+                        null
+                    }
+                }
+            }
+            delivery?.let { (target, segment) ->
+                val endMs = segment.endChunk * 50
+                val startMs = maxOf(0L, endMs - segment.sampleCount / 16)
+                val label = segment.speaker
+                val turns = segment.turns
+                if (turns != null) {
+                    // Novel text is an exact suffix. Trim the matching prefix from the aligned turns too.
+                    val original = turns.joinToString(" ") { it.text }
+                    val removed = maxOf(0, original.length - segment.text.length)
+                    for (turn in turns) {
+                        if (!condition.withLock { running && generation == token && platform.elapsedRealtimeMs() < deadline }) break
+                        if (turn.endChar <= removed) continue
+                        val value = turn.text.drop(maxOf(0, removed - turn.startChar)).trimStart()
+                        if (value.isNotEmpty()) target.onSpeakerSegment(value, segment.language,
+                            minOf(endMs, startMs + turn.startMs), minOf(endMs, startMs + turn.endMs),
+                            turn.label.speaker ?: "", turn.label.relation)
+                    }
+                } else if (label != null) target.onSpeakerSegment(segment.text, segment.language, startMs, endMs, label.speaker ?: "", label.relation)
+                else target.onSegment(segment.text, segment.language, startMs, endMs)
+            }
+        }
+    }
+}

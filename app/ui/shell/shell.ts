@@ -7,6 +7,7 @@ import { acceptInput } from "../input-monitor";
 import type { RawInputEvent } from "../../native/faceclaw-communicator";
 import {
   directionalFallback,
+  type DirectionalInputEvent,
   GESTURE_SHORT_THEN_LONG_PRESS,
   gestureHints,
   InputEvent,
@@ -21,7 +22,9 @@ import { CONTEXT_MENU_DIM, MenuLayer, type MenuItem } from "../menu";
 import { VoiceInputLayer, type VoiceSendTarget } from "./voice-input";
 import { KeyboardInputLayer, type KeyboardInputSession } from "./keyboard-input";
 import { voiceActivity } from "./voice-activity";
+import { assistantAudioPriority } from "../../assistant/audio-priority";
 import { AssistantLayer } from "./assistant";
+import { ShellImageLayer } from "./image-layer";
 import { AssistantSession, type AssistantBackendConfig } from "../../assistant/session";
 import { resolveAssistantModel, type AssistantModel } from "../../assistant/models";
 import { AssistantConversations, type ReasoningLevel } from "../../assistant/conversations";
@@ -30,6 +33,8 @@ import type { AssistantContext } from "../../assistant/types";
 import { SingleNotificationLayer } from "../notifications";
 import {
   anthropicApiKeySetting,
+  assistantHermesKeySetting,
+  assistantHermesUrlSetting,
   assistantBackendSetting,
   assistantBridgeHostSetting,
   assistantBridgePortSetting,
@@ -40,23 +45,43 @@ import {
   brightnessSetting,
   onAnySettingChanged,
   openAiApiKeySetting,
+  statusBarPositionSetting,
+  statusBarVisibilitySetting,
   timeFormatSetting,
   wakeWordActionSetting,
+  wakeToLastAppSetting,
+  windowBorderSetting,
 } from "../dashboard-settings";
 import { onAmbientCardsChanged } from "./ambient-cards";
-import { ShellChromeLayer, sidebarContentLeft, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
+import {
+  sameStatusItem,
+  ShellChromeLayer,
+  sidebarContentSpan,
+  type ShellChromeState,
+  type ShellChromeWindow,
+  type StatusItem,
+} from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
+import { NotificationModalQueue } from "./notification-modal-queue";
+import { ALL_NOTIFICATIONS, readActiveNotifications } from "../../native/notification-icons";
+import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
+import type { InProcessWindow } from "./in-process-window";
 import { BrightnessPickerLayer } from "./brightness-picker-layer";
 import { toolRegistry } from "../../assistant/tool-registry";
 import {
+  appViewportRect,
   minWindowTop,
   sidebarWidth,
-  TOP_BAR_HEIGHT,
+  switcherPosition,
+  switcherRowHeight,
+  uiDepth,
   windowBandHeight,
+  windowFramed,
   windowTop,
   type WindowHeightMode,
 } from "./geometry";
+import type { AppSwitcherPosition } from "../dashboard-settings";
 
 /**
  * The shell: owns the window registry, focus, screen on/off, and the shell
@@ -130,9 +155,10 @@ export type ShellWindow = {
   /** Repaint and resubmit this window's surface. */
   requestRender: () => void;
   /**
-   * Re-measure against the current display mode (viewport size / band) and
-   * repaint. Windows without it (workers with a canvas fixed at open) are
-   * closed and relaunched by the controller instead.
+   * Re-measure against the current display mode and app switcher (viewport
+   * size / band) and repaint. Windows without it are closed and relaunched
+   * by the controller instead on a display mode change, and left at the size
+   * they opened with when the bottom switcher changes height.
    */
   relayout?: () => void;
   /**
@@ -169,6 +195,13 @@ export type ShellWindow = {
 export type ShellConfig = {
   /** Hosts without microphone support hide and reject voice entry points. */
   voiceInputEnabled?: boolean;
+  conversationControl?: {
+    enabled(): boolean;
+    setEnabled(enabled: boolean): string;
+    start?(mode: "hermes" | "text"): string;
+    wearerActions(): { label: string; run(): boolean }[];
+    wearerChoices(): { label: string; run(): boolean }[];
+  };
   /** Actions handed to shell overlay layers; requestRender must re-render the shell surface. */
   actions: LayerActions;
   getScreenTimeoutMs: () => number | null;
@@ -186,8 +219,71 @@ export type ShellConfig = {
   onKeyboardInputChanged?: (session: KeyboardInputSession | null) => void;
   /** Screen on/off changed: the controller blanks/unblanks the compositor. */
   onScreenStateChanged: (on: boolean) => void;
+  /**
+   * The shell already believes the screen is on and an independent overlay needs it visible: the
+   * controller re-asserts the unblank in case the lenses went dark behind the shell's back.
+   */
+  ensureScreenVisible?: () => void;
   /** Window registered/removed or foreground changed (persists the open-app list). */
   onWindowsChanged?: () => void;
+  /**
+   * The bottom switcher's layout changed its height (geometry.ts
+   * setSwitcherBarHeight): windows have to move, or resize, to suit. Called
+   * after the shell paint that found it.
+   */
+  onSwitcherBarHeightChanged?: () => void;
+  /**
+   * The Notifications app's window, opened in the background (neither
+   * foregrounded nor focused) unless it is open already, for the switcher
+   * to show a notification's detail view in; `opened` says this call opened
+   * it. Hosts that leave it out offer no notifications to select.
+   */
+  openNotificationsWindow?: () => { window: InProcessWindow; opened: boolean } | null;
+};
+
+/**
+ * What makes an app's tray icon (see Shell.setTrayIcon) a widget the app
+ * switcher's selection can move onto, as it can onto a notification's icon
+ * (bottom switcher only; see Shell.moveSelection).
+ */
+export type TrayWidget = {
+  /**
+   * The window to show while the selection is on the widget, opened in the
+   * background (neither foregrounded nor focused) unless it is open
+   * already; `opened` says this call opened it, and the shell closes it
+   * again once the selection moves on. Null when it can't be opened.
+   */
+  openWindow: () => { window: ShellWindow; opened: boolean } | null;
+};
+
+/**
+ * A new-notification popup: the shell modal, and the notification view inside
+ * it (null for an app notification, which brings its own layer).
+ */
+type NotificationPopup = { modal: ShellModalLayer; content: SingleNotificationLayer | null };
+
+/**
+ * The app switcher's selection while it is on a status bar item rather than
+ * a window's icon (bottom switcher only; see Shell.moveSelection): a
+ * notification's icon or an app widget. The item's window is the
+ * foreground window meanwhile: a notification's is the Notifications app's,
+ * with the notification's detail view on top of its stack; a widget's is
+ * whatever window it gives (TrayWidget.openWindow).
+ */
+type StatusSelection = {
+  item: StatusItem;
+  /** Where the item sat among the selectable ones, for once it has gone. */
+  index: number;
+  host: ShellWindow;
+  /** A notification's detail view, and the host's stack it is on. */
+  detail: { stack: LayerStack; layer: SingleNotificationLayer } | null;
+  /**
+   * The host window was opened for the selection: it has no switcher icon
+   * of its own, and closes once the selection moves off it.
+   */
+  transient: boolean;
+  /** The window selected before, to go back to when the screen sleeps. */
+  returnWindowId: string | null;
 };
 
 /** Which surfaces need re-rendering after an input event. */
@@ -205,6 +301,18 @@ export type AssistantActivityEvent = {
 };
 
 export type FocusKind = "sidebar" | "window";
+
+/**
+ * A notification an app posts itself, rather than one Android posted. It
+ * opens in the same modal (and waits in the same queue) as Android
+ * notifications, but is not listed in the Notifications app.
+ */
+export type AppNotification = {
+  /** Unique per notification; must not collide with Android notification keys. */
+  key: string;
+  /** The modal's content; `close` takes the modal down. */
+  createLayer: (close: () => void) => Layer;
+};
 
 const noopActions: LayerActions = noopLayerActions;
 
@@ -228,12 +336,14 @@ class ShellOverlayMenuLayer extends MenuLayer {
   constructor(items: MenuItem[], footer: string | undefined, private readonly onClosed: () => void) {
     // Aligned to the min-height window band (like the sidebar), wherever the
     // vertical position setting currently puts it; centered over the
-    // application area, i.e. the part of the screen past the sidebar strip
-    // (the whole screen in the full-panel mode, where the strip overlays).
+    // application area, i.e. the part of the screen beside a side strip
+    // (the whole width with a bottom row, or over an immersive window, where
+    // the strip overlays).
     const width = 272;
+    const area = appViewportRect("min");
     super("System", items, {
-      x: sidebarWidth() + (((G2_LENS_WIDTH - sidebarWidth() - width) / 2) | 0),
-      y: minWindowTop() + TOP_BAR_HEIGHT + 8,
+      x: area.x + (((area.width - width) / 2) | 0),
+      y: area.y + 8,
       width,
       minHeight: 150,
       squareCorners: true,
@@ -277,7 +387,7 @@ class ShellAlertLayer implements Layer {
     const alertY = minWindowTop() + ALERT_Y;
     image.fillRect(ALERT_X, alertY, ALERT_W, ALERT_H, 1);
     image.drawRect(ALERT_X, alertY, ALERT_W, ALERT_H, 90);
-    image.drawText(font, ALERT_X + 16, alertY + 12, "Assistant", 200);
+    image.drawText(font, ALERT_X + 16, alertY + 12, "Asistente", 200);
     image.drawTextWrapped({
       font,
       x: ALERT_X + 16,
@@ -308,9 +418,31 @@ class ShellAlertLayer implements Layer {
   }
 }
 
-/** Every setting the top bar paints from, as one comparable string. */
-function topBarSettingsKey(): string {
-  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}`;
+/**
+ * What a watch swipe means while the app switcher has focus, as the ring
+ * gesture it stands for. Swipes are spatial: along the strip they move the
+ * selection, toward the app area they enter the selected window, and away
+ * from it there is nowhere further to go (ignored). A popup's row of icons
+ * lies over the window, so either way across it enters the window.
+ */
+const SWITCHER_SWIPES: Record<
+  AppSwitcherPosition,
+  Partial<Record<DirectionalInputEvent["type"], "scroll-up" | "scroll-down" | "click">>
+> = {
+  left: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-right": "click" },
+  right: { "swipe-up": "scroll-up", "swipe-down": "scroll-down", "swipe-left": "click" },
+  bottom: { "swipe-left": "scroll-up", "swipe-right": "scroll-down", "swipe-up": "click" },
+  popup: { "swipe-left": "scroll-up", "swipe-right": "scroll-down", "swipe-up": "click", "swipe-down": "click" },
+};
+
+/**
+ * Every setting the shell's paint depends on that nothing else repaints it
+ * for (the top bar's contents and placement, the window frame, the scene's
+ * stereo depth), as one comparable string.
+ */
+function chromeSettingsKey(): string {
+  return `${batteryIndicatorSettingsKey()}|${timeFormatSetting.get()}|${uiDepth()}|${statusBarPositionSetting.get()}`
+    + `|${statusBarVisibilitySetting.get()}|${windowBorderSetting.get()}`;
 }
 
 class Shell {
@@ -328,12 +460,33 @@ class Shell {
   private battery: ShellChromeState["battery"] = {
     headset: null, headsetCharging: null, ring: null, ringCharging: null, watch: null, watchCharging: null,
   };
+  private readonly batteryListeners = new Set<() => void>();
   private attention = new Map<string, boolean>();
+  /** Set while the switcher's selection is on a status bar item (see StatusSelection). */
+  private selectedStatus: StatusSelection | null = null;
   // App-provided top-bar tray icons, keyed by owner id; drawn between the
   // notification icons and the battery indicators.
-  private readonly trayIcons = new Map<string, GrayImage>();
+  private readonly trayIcons = new Map<string, { icon: GrayImage; widget?: TrayWidget }>();
   private activeVoiceLayer: VoiceInputLayer | null = null;
   private activeKeyboardLayer: KeyboardInputLayer | null = null;
+  /**
+   * An overlay independent of the assistant (the Hermes conversation contribution, see
+   * conversation-hermes-ui.ts) and its yield callback. Explicit interactions take priority over it.
+   */
+  private independentOverlay: { layer: Layer; onYield: () => void; reading: boolean } | null = null;
+  /** Retired independent overlays still buried under another layer; dropped once they surface. */
+  private readonly retiredOverlays = new WeakSet<Layer>();
+  // App-posted notifications that are open or queued, by key.
+  private readonly appNotifications = new Map<string, AppNotification>();
+  private readonly notificationModals = new NotificationModalQueue<NotificationPopup>({
+    open: (notificationKey) => this.pushNotificationModal(notificationKey),
+    isAvailable: (notificationKey) => {
+      if (this.appNotifications.has(notificationKey)) return true;
+      const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
+      return !!notification && shouldShowNotificationOnGlasses(notification.packageName);
+    },
+    sleep: () => this.sleep(),
+  });
   private conversations: AssistantConversations | null = null;
   private get assistantSession(): AssistantSession | null {
     return this.conversations?.current().session ?? null;
@@ -360,6 +513,8 @@ class Shell {
   private assistantLayer: AssistantLayer | null = null;
   private readonly assistantActivityListeners = new Set<(event: AssistantActivityEvent) => void>();
   private readonly alertListeners = new Set<(text: string) => void>();
+  /** The assistant picture on screen (glasses.show_image), if any; a new one replaces it. */
+  private imageLayer: ShellImageLayer | null = null;
   private escapeMenuTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly actions: LayerActions = { ...noopActions };
   private config: ShellConfig = {
@@ -368,13 +523,14 @@ class Shell {
     requestShellRender: () => {},
     onScreenStateChanged: () => {},
   };
-  private readonly chrome = new ShellChromeLayer(() => this.chromeState());
+  private readonly chrome = new ShellChromeLayer(() => this.chromeState(), () => this.switcherBarHeightChanged());
   private readonly stack = new LayerStack(this.chrome, this.actions);
+  private switcherBarChangePending = false;
 
   // Top-bar settings we mirror into the chrome; a change to any of them
   // repaints the shell surface so the top bar reflects it immediately.
-  private topBarSettingsSubscribed = false;
-  private lastTopBarSettingsKey: string | null = null;
+  private chromeSettingsSubscribed = false;
+  private lastChromeSettingsKey: string | null = null;
 
   configure(config: ShellConfig): void {
     // Nearly every state change ends in a shell render request, so it is
@@ -382,12 +538,13 @@ class Shell {
     this.config = {
       ...config,
       requestShellRender: () => {
+        this.sweepRetiredOverlays();
         this.syncInputFocus();
         config.requestShellRender();
       },
     };
     this.stack.setActions(config.actions);
-    this.subscribeToTopBarSettings();
+    this.subscribeToChromeSettings();
     this.subscribeToAmbientCards();
   }
 
@@ -405,16 +562,31 @@ class Shell {
     });
   }
 
-  private subscribeToTopBarSettings(): void {
-    if (this.topBarSettingsSubscribed) return;
-    this.topBarSettingsSubscribed = true;
-    this.lastTopBarSettingsKey = topBarSettingsKey();
+  private subscribeToChromeSettings(): void {
+    if (this.chromeSettingsSubscribed) return;
+    this.chromeSettingsSubscribed = true;
+    this.lastChromeSettingsKey = chromeSettingsKey();
     onAnySettingChanged(() => {
-      const key = topBarSettingsKey();
-      if (key === this.lastTopBarSettingsKey) return;
-      this.lastTopBarSettingsKey = key;
+      const key = chromeSettingsKey();
+      if (key === this.lastChromeSettingsKey) return;
+      this.lastChromeSettingsKey = key;
       this.config.requestShellRender();
     });
+  }
+
+  /**
+   * The chrome found, mid-paint, that the bottom switcher's height changed.
+   * The controller moves or resizes windows once the paint is over: a
+   * window's relayout repaints it, which mustn't happen inside the shell's
+   * own paint.
+   */
+  private switcherBarHeightChanged(): void {
+    if (this.switcherBarChangePending) return;
+    this.switcherBarChangePending = true;
+    setTimeout(() => {
+      this.switcherBarChangePending = false;
+      this.config.onSwitcherBarHeightChanged?.();
+    }, 0);
   }
 
   /** Add a window (or replace one with the same windowId, keeping its slot). */
@@ -448,6 +620,9 @@ class Shell {
   removeWindow(windowId: string): void {
     const index = this.windows.findIndex((w) => w.windowId === windowId);
     if (index < 0) return;
+    // Closing the window under a selected status bar item (from the system
+    // menu) takes the selection with it.
+    if (this.selectedStatus?.host.windowId === windowId) this.selectedStatus = null;
     const wasSelected = index === this.selectedIndex;
     this.windows.splice(index, 1);
     this.attention.delete(windowId);
@@ -505,19 +680,37 @@ class Shell {
   }
 
   setBatteryLevels(levels: Partial<ShellChromeState["battery"]>): void {
-    this.battery = { ...this.battery, ...levels };
+    const next = { ...this.battery, ...levels };
+    const keys = Object.keys(next) as (keyof ShellChromeState["battery"])[];
+    if (keys.every((key) => next[key] === this.battery[key])) return;
+    this.battery = next;
+    for (const listener of Array.from(this.batteryListeners)) listener();
+  }
+
+  /** Called after any battery level or charging state changes. Returns an unsubscribe function. */
+  onBatteryLevelsChanged(listener: () => void): () => void {
+    this.batteryListeners.add(listener);
+    return () => {
+      this.batteryListeners.delete(listener);
+    };
   }
 
   /**
    * Set or clear an app's top-bar tray icon (a small grayscale image, drawn
    * between the notification icons and the battery indicators). Small and
-   * infrequently updated by design; not a framebuffer.
+   * infrequently updated by design; not a framebuffer. With `widget`, the
+   * switcher's selection can move onto it. A widget that goes, or stops
+   * being one, while the selection is on it leaves the selection on its
+   * window, as an ordinary window.
    */
-  setTrayIcon(ownerId: string, icon: GrayImage | null): void {
+  setTrayIcon(ownerId: string, icon: GrayImage | null, widget?: TrayWidget): void {
     if (icon) {
-      this.trayIcons.set(ownerId, icon);
+      this.trayIcons.set(ownerId, { icon, widget });
     } else if (!this.trayIcons.delete(ownerId)) {
       return;
+    }
+    if ((!icon || !widget) && sameStatusItem(this.selectedStatus?.item, { kind: "widget", key: ownerId })) {
+      this.endStatusSelection(true);
     }
     this.config.requestShellRender();
   }
@@ -557,8 +750,32 @@ class Shell {
 
   /** The window whose sidebar icon is at screen (x, y), for mirror touches. */
   windowAtSidebarPoint(x: number, y: number): ShellWindow | null {
-    const index = this.chrome.windowIndexAt(x, y, this.windows.length);
-    return index === null ? null : this.windows[index] ?? null;
+    const windows = this.switcherWindows();
+    const index = this.chrome.windowIndexAt(x, y, windows.length);
+    return index === null ? null : windows[index] ?? null;
+  }
+
+  /**
+   * A touch from the phone's mirror on a selectable status bar item's icon
+   * (a notification's or an app widget's): select it and go into its
+   * window, as a touch on a window's icon focuses that window. False when
+   * there is no such icon at (x, y).
+   */
+  focusStatusItemAt(x: number, y: number): boolean {
+    const items = this.selectableStatusItems();
+    const touched = this.chrome.statusItemAt(x, y);
+    const index = items.findIndex((item) => sameStatusItem(item, touched));
+    if (index < 0) return false;
+    this.selectStatusItem(items[index]!, index);
+    const selected = this.selectedStatus;
+    const host = selected && sameStatusItem(selected.item, touched) ? selected.host : null;
+    if (!host) return false;
+    const alreadyFocused = this.isFocusTarget(host);
+    this.focus = "window";
+    if (!alreadyFocused) host.onFocus?.(this.lastInput);
+    host.requestRender();
+    this.syncInputFocus();
+    return true;
   }
 
   /** Whether input focus currently targets this window (regardless of screen state). */
@@ -617,11 +834,16 @@ class Shell {
     return true;
   }
 
-  /** Turn the screen off, closing any shell overlays. Sidebar selection is kept. */
+  /**
+   * Turn the screen off, closing any shell overlays. Sidebar selection is
+   * kept, except that one on a status bar item goes back to its window.
+   */
   sleep(): void {
     if (!this.screenOn) return;
+    this.returnFromStatusItem();
     this.cancelEscapeMenuTimer();
     this.screenOn = false;
+    this.independentOverlay = null;
     this.stack.clearToBase();
     for (const window of this.windows) {
       window.setScreenOn?.(false);
@@ -637,6 +859,9 @@ class Shell {
     const target = this.windows[index];
     const alreadyFocused = this.isFocusTarget(target);
     this.setSelectedIndex(index);
+    // Asked for by id, a status bar item's window stays, whether or not it
+    // was opened for the selection.
+    this.endStatusSelection(target === this.selectedStatus?.host);
     this.focus = "window";
     if (!alreadyFocused) target?.onFocus?.(this.lastInput);
     this.syncInputFocus();
@@ -646,6 +871,10 @@ class Shell {
   applyScreenTimeout(nowMs = Date.now()): boolean {
     const timeoutMs = this.config.getScreenTimeoutMs();
     if (timeoutMs === null || !this.screenOn) return false;
+    if (this.independentOverlay?.reading) {
+      this.lastInputAtMs = nowMs;
+      return false;
+    }
     // An open voice dialog suspends the timeout: a long dictation or refine
     // has no button presses, but the screen must stay on for it. Sliding
     // lastInputAtMs forward also restarts the full timeout when it closes.
@@ -666,28 +895,70 @@ class Shell {
   }
 
   /**
-   * Show a new notification in a shell modal over the app viewport. If the
-   * notification woke the screen, closing the modal goes back to sleep
+   * Show a new notification in a shell modal over the app viewport, or queue
+   * it behind the one already open (see NotificationModalQueue). If
+   * notifications woke the screen, closing the last modal goes back to sleep
    * (matching the old sleep-popup behavior).
    */
   openNotificationModal(notificationKey: string, wokeScreen: boolean): void {
     if (!this.screenOn) return;
-    const modal: ShellModalLayer = new ShellModalLayer(
-      new SingleNotificationLayer(notificationKey, {
-        origin: "new-notification-modal",
-        closeModal: () => this.closeNotificationModal(modal, wokeScreen),
-      }),
-      this.config.actions,
-    );
-    this.stack.push(modal);
+    this.notificationModals.post(notificationKey, wokeScreen);
     this.config.requestShellRender();
   }
 
-  private closeNotificationModal(modal: ShellModalLayer, wokeScreen: boolean): void {
-    this.stack.popIfTop((layer) => layer === modal);
-    if (wokeScreen) {
-      this.sleep();
+  /**
+   * A notification went away on the phone: cancelled by its source (e.g. a
+   * placeholder replaced moments later by the real notification under another
+   * key), or dismissed. A popup queued for it is dropped, and one showing it
+   * closes so the next one opens, as if the user had closed it -- unless it
+   * is asking to confirm turning off its source, which outlives the
+   * notification it dismissed.
+   */
+  notificationRemoved(notificationKey: string): void {
+    const popup = this.notificationModals.withdrawn(notificationKey);
+    if (popup && !popup.content?.outlivesNotification()) {
+      this.closeNotificationModal(popup, notificationKey);
     }
+  }
+
+  /**
+   * Show an app's own notification the way new Android notifications are
+   * shown: in the notification modal, waking the screen for it if it was off.
+   */
+  postAppNotification(notification: AppNotification): void {
+    this.appNotifications.set(notification.key, notification);
+    const wokeScreen = this.screenOn ? false : this.wake("sidebar");
+    this.openNotificationModal(notification.key, wokeScreen);
+  }
+
+  private pushNotificationModal(notificationKey: string): NotificationPopup {
+    const appNotification = this.appNotifications.get(notificationKey);
+    const close = () => this.closeNotificationModal(popup, notificationKey);
+    const content = appNotification
+      ? null
+      : new SingleNotificationLayer(notificationKey, { origin: "new-notification-modal", onClose: close });
+    const popup: NotificationPopup = {
+      content,
+      modal: new ShellModalLayer(
+        appNotification ? appNotification.createLayer(close) : content!,
+        this.config.actions,
+        () => {
+          this.appNotifications.delete(notificationKey);
+          this.notificationModals.removed(popup, this.screenOn);
+        },
+      ),
+    };
+    this.stack.push(popup.modal);
+    return popup;
+  }
+
+  private closeNotificationModal(popup: NotificationPopup, notificationKey: string): void {
+    this.appNotifications.delete(notificationKey);
+    // The queue first: it opens the next notification or puts the screen back
+    // to sleep, and then ignores the removal below. remove() rather than a
+    // pop, so a menu opened over the modal doesn't leave it stuck.
+    this.notificationModals.closed(popup);
+    this.stack.remove(popup.modal);
     this.config.requestShellRender();
   }
 
@@ -701,8 +972,16 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  /** Paint the shell surface: transparent chrome, or all-transparent when asleep. */
-  paintScene(): Uint8Array { return encodeShellScene(this.screenOn ? this.stack.paintUndimmed() : []); }
+  /**
+   * Paint the shell surface: transparent chrome, or all-transparent when
+   * asleep. The scene also carries the whole display's stereo depth (none
+   * under a Full Screen or immersive window).
+   */
+  paintScene(): Uint8Array {
+    return this.screenOn
+      ? encodeShellScene(this.stack.paintUndimmed(), uiDepth(this.foregroundWindow()?.appId))
+      : encodeShellScene([]);
+  }
 
   paintSurface(): Plane[] {
     if (!this.screenOn) {
@@ -727,6 +1006,7 @@ class Shell {
     try {
       return await this.routeInput(event, frameId);
     } finally {
+      this.sweepRetiredOverlays();
       // Whatever the input did (opened an overlay, moved focus, slept the
       // screen), windows learn about the resulting input-focus change.
       this.syncInputFocus();
@@ -744,6 +1024,12 @@ class Shell {
       }
       return { shell: false, window: false };
     }
+    // Explicit controls outrank an independent overlay: they remove it and then act as usual
+    // (taps and scrolls still reach it, to dismiss or page the contribution).
+    if (event.type === "long-press" || event.type === "short-then-long-press"
+      || (event.type === "wakeword" && wakeWordActionSetting.get() !== "off")) {
+      this.yieldIndependentOverlay();
+    }
     const previous = this.lastInput;
     this.lastInput = event;
     // A visible window may paint a source-dependent indicator (see
@@ -756,7 +1042,7 @@ class Shell {
     // "wake". Keep that directionality if delivery is delayed or duplicated.
     if (event.type === "display-wake") {
       this.lastInputAtMs = Date.now();
-      const wokeScreen = !this.screenOn && this.wake("sidebar");
+      const wokeScreen = !this.screenOn && this.wake(this.userWakeFocus());
       return { shell: wokeScreen, window: false };
     }
 
@@ -795,7 +1081,7 @@ class Shell {
 
     if (!this.screenOn) {
       if (event.type === "double-click") {
-        this.wake("sidebar");
+        this.wake(this.userWakeFocus());
         return { shell: true, window: false };
       }
       return { shell: false, window: false };
@@ -898,26 +1184,40 @@ class Shell {
     return { shell: false, window: false };
   }
 
+  /** Where a user's double-tap wake lands: the last app, or the switcher (setting). */
+  userWakeFocus(): FocusKind {
+    return wakeToLastAppSetting.get() && this.foregroundWindow() ? "window" : "sidebar";
+  }
+
   foregroundWindow(): ShellWindow | undefined {
     return this.windows[this.selectedIndex] ?? this.windows[0];
   }
 
   /**
    * Screen rect actually occupied by content, for cropping screenshots: the
-   * foreground window's band (full screen for a max-height window, the
-   * vertical-position-dependent 288px band otherwise), minus the sidebar
-   * strip left of the icon columns when the one-column variant is active.
+   * foreground window's band (full height for a max-height window, the
+   * vertical-position-dependent 288px band otherwise) plus the switcher: a
+   * side strip's icon columns (minus the outer dead strip the one-column
+   * variant leaves), or the row under it, and the window frame's sides. A
+   * popup switcher lies within the band.
    */
   screenshotCropRect(): { x: number; y: number; width: number; height: number } {
     const appId = this.foregroundWindow()?.appId;
     const heightMode = this.foregroundWindow()?.heightMode ?? "min";
-    const x = sidebarWidth(appId) === 0 ? 0 : sidebarContentLeft(this.windows.length);
-    return {
-      x,
-      y: windowTop(heightMode, appId),
-      width: G2_LENS_WIDTH - x,
-      height: windowBandHeight(heightMode, appId),
-    };
+    const viewport = appViewportRect(heightMode, appId);
+    let left = viewport.x, right = viewport.x + viewport.width;
+    if (sidebarWidth(appId) > 0) {
+      const strip = sidebarContentSpan(this.windows.length);
+      left = Math.min(left, strip.left);
+      right = Math.max(right, strip.right);
+    }
+    if (windowFramed(appId)) {
+      left -= 1;
+      right += 1;
+    }
+    const y = windowTop(heightMode, appId);
+    const bottom = y + windowBandHeight(heightMode, appId) + switcherRowHeight(appId);
+    return { x: left, y, width: right - left, height: bottom - y };
   }
 
   /**
@@ -966,7 +1266,8 @@ class Shell {
   }
 
   private handleSidebarInput(event: InputEvent): ShellInputOutcome {
-    switch (event.type) {
+    const type = isDirectionalInput(event) ? SWITCHER_SWIPES[switcherPosition()][event.type] : event.type;
+    switch (type) {
       case "double-click":
         // A double-tap at the root (the app switcher selected) turns the
         // display off — from the ring and the watch scheme alike; watch-scheme
@@ -974,17 +1275,12 @@ class Shell {
         this.sleep();
         return { shell: true, window: false };
       case "scroll-up":
-      case "swipe-up":
         this.moveSelection(-1);
         return { shell: true, window: false };
       case "scroll-down":
-      case "swipe-down":
         this.moveSelection(1);
         return { shell: true, window: false };
       case "click":
-      case "swipe-right":
-        // Right: into the selected window (spatially, the window is to the
-        // sidebar's right). Left has nowhere further to go and is ignored.
         if (this.windows.length) {
           this.focus = "window";
           this.foregroundWindow()?.onFocus?.(this.lastInput);
@@ -998,10 +1294,183 @@ class Shell {
     }
   }
 
+  /**
+   * Step the switcher's selection through the windows and then, with a
+   * bottom switcher, on through the status bar's selectable items whose
+   * icons are showing (notifications, then app widgets), wrapping round at
+   * either end.
+   */
   private moveSelection(delta: number): void {
-    if (!this.windows.length) return;
-    const count = this.windows.length;
-    this.setSelectedIndex((this.selectedIndex + delta + count) % count);
+    const windows = this.switcherWindows();
+    const items = this.selectableStatusItems();
+    const count = windows.length + items.length;
+    if (!count) return;
+    let current = this.selectedIndex;
+    const selected = this.selectedStatus;
+    if (selected) {
+      // Once its item has gone, the selection stands between the
+      // neighbours it left.
+      const at = items.findIndex((item) => sameStatusItem(item, selected.item));
+      current = windows.length + (at >= 0 ? at : Math.min(selected.index, items.length) - (delta > 0 ? 1 : 0));
+    }
+    const next = (((current + delta) % count) + count) % count;
+    if (next < windows.length) {
+      this.selectSwitcherWindow(windows[next]!);
+    } else {
+      this.selectStatusItem(items[next - windows.length]!, next - windows.length);
+    }
+  }
+
+  /**
+   * Windows with an icon in the switcher: all of them, except a window
+   * opened just to show a selected status bar item.
+   */
+  private switcherWindows(): ShellWindow[] {
+    const hidden = this.selectedStatus?.transient ? this.selectedStatus.host : null;
+    return hidden ? this.windows.filter((window) => window !== hidden) : this.windows;
+  }
+
+  /**
+   * The status bar items the switcher's selection can move onto, in order:
+   * with a bottom switcher (the selection reaches them past the last
+   * window), those whose icons are showing that have a window to show,
+   * which notifications have where the host gives the Notifications window,
+   * and app widgets always do.
+   */
+  private selectableStatusItems(): StatusItem[] {
+    if (switcherPosition() !== "bottom") return [];
+    return this.chrome.statusItems().filter((item) => item.kind === "notification"
+      ? !!this.config.openNotificationsWindow
+      : !!this.trayIcons.get(item.key)?.widget);
+  }
+
+  /** Move the switcher's selection onto a window, off a status bar item if it was on one. */
+  private selectSwitcherWindow(window: ShellWindow): void {
+    // Foreground first, so a status bar item's window closing with its
+    // selection can't hand the foreground elsewhere first.
+    this.setSelectedIndex(this.windows.indexOf(window));
+    this.endStatusSelection(window === this.selectedStatus?.host);
+  }
+
+  /**
+   * Move the switcher's selection onto a status bar item: its window
+   * (opened in the background first, if need be) comes to the foreground,
+   * a notification's showing its detail view. The window the selection was
+   * on before is left as endStatusSelection leaves it, unless it is this
+   * one too.
+   */
+  private selectStatusItem(item: StatusItem, index: number): void {
+    const previous = this.selectedStatus;
+    if (previous && sameStatusItem(previous.item, item)) {
+      previous.index = index;
+      return;
+    }
+    const returnWindowId = previous ? previous.returnWindowId : (this.foregroundWindow()?.windowId ?? null);
+    const opened = this.openStatusItemWindow(item);
+    const hostIndex = opened ? this.windows.indexOf(opened.window) : -1;
+    if (!opened || hostIndex < 0) return;
+    const host = opened.window;
+    const sameHost = previous?.host === host;
+    if (sameHost && previous.detail) previous.detail.stack.popThrough(previous.detail.layer);
+    const detail = item.kind === "notification" && opened.stack
+      ? { stack: opened.stack, layer: this.notificationDetailLayer(item.key) } : null;
+    if (detail) detail.stack.push(detail.layer);
+    this.selectedStatus = {
+      item, index, host, detail, returnWindowId,
+      transient: sameHost ? previous.transient : opened.opened,
+    };
+    if (hostIndex === this.selectedIndex) {
+      host.requestRender();
+    } else {
+      this.setSelectedIndex(hostIndex);
+    }
+    if (previous && !sameHost) this.releaseStatusWindow(previous, false);
+  }
+
+  /**
+   * The window a status bar item shows in, opened in the background unless
+   * it is open already (`opened` says this call opened it), and for a
+   * notification, the stack its detail view goes on.
+   */
+  private openStatusItemWindow(item: StatusItem): { window: ShellWindow; opened: boolean; stack?: LayerStack } | null {
+    if (item.kind === "widget") return this.trayIcons.get(item.key)?.widget?.openWindow() ?? null;
+    const opened = this.config.openNotificationsWindow?.();
+    return opened ? { window: opened.window.window, opened: opened.opened, stack: opened.window.stack } : null;
+  }
+
+  /**
+   * Take the switcher's selection off its status bar item, leaving its
+   * window as releaseStatusWindow does.
+   */
+  private endStatusSelection(keepWindow = false): void {
+    const selected = this.selectedStatus;
+    if (!selected) return;
+    this.selectedStatus = null;
+    this.releaseStatusWindow(selected, keepWindow);
+  }
+
+  /**
+   * A status bar item's window, once the selection has left the item: it
+   * drops a notification's detail view (and anything opened over it), and
+   * closes if it was opened for the selection, unless `keepWindow` (it is
+   * the window being selected instead).
+   */
+  private releaseStatusWindow(selection: StatusSelection, keepWindow: boolean): void {
+    if (selection.detail) selection.detail.stack.popThrough(selection.detail.layer);
+    if (selection.transient && !keepWindow) {
+      this.closeWindow(selection.host.windowId);
+      return;
+    }
+    selection.host.requestRender();
+    // A window opened for the selection is now one with an icon of its own.
+    if (selection.transient) this.config.onWindowsChanged?.();
+  }
+
+  /** End a status bar item selection by going back to the window selected before it. */
+  private returnFromStatusItem(): void {
+    const selected = this.selectedStatus;
+    if (!selected) return;
+    const back = this.windows.find((window) => window.windowId === selected.returnWindowId);
+    if (back) this.setSelectedIndex(this.windows.indexOf(back));
+    this.endStatusSelection(back === selected.host);
+  }
+
+  private notificationDetailLayer(key: string): SingleNotificationLayer {
+    const layer: SingleNotificationLayer = new SingleNotificationLayer(key, {
+      origin: "notification-tray",
+      onClose: (_ctx, gone) => this.notificationDetailClosed(layer, gone),
+    });
+    return layer;
+  }
+
+  /**
+   * A selected notification's detail view asked to close. Back (or a
+   * double-tap) hands focus back to the switcher, its selection still on
+   * the notification. Once the notification is gone (dismissed, or removed
+   * by an action), the selection also moves on to the status bar item that
+   * took its place, or back to the windows when there are none left; that
+   * waits for the current paint to finish, since a vanished notification
+   * closes its view from inside its paint.
+   */
+  private notificationDetailClosed(layer: SingleNotificationLayer, gone: boolean): void {
+    if (!gone) {
+      if (this.selectedStatus?.detail?.layer === layer) this.yieldFocusToSidebar();
+      return;
+    }
+    setTimeout(() => {
+      const selected = this.selectedStatus;
+      if (selected?.detail?.layer !== layer) return;
+      this.focus = "sidebar";
+      const items = this.selectableStatusItems().filter((item) => !sameStatusItem(item, selected.item));
+      const windows = this.switcherWindows();
+      if (items.length) {
+        const index = Math.min(selected.index, items.length - 1);
+        this.selectStatusItem(items[index]!, index);
+      } else if (windows.length) {
+        this.selectSwitcherWindow(windows[windows.length - 1]!);
+      }
+      this.config.requestShellRender();
+    }, 0);
   }
 
   /** Change selection; the selected window is the foreground window. */
@@ -1096,14 +1565,14 @@ class Shell {
     if (this.isAssistantAvailable()) {
       targets.push({
         id: "assistant",
-        label: "Send to Assistant",
+        label: "Enviar al asistente",
         onSend: (text) => this.sendToAssistant(text),
       });
     }
     if (this.foregroundWindow()?.receiveTextInput) {
       targets.push({
         id: "app",
-        label: "Type Into App",
+        label: "Escribir en la app",
         onSend: (text) => this.sendTextToForegroundWindow(text),
       });
     }
@@ -1111,7 +1580,7 @@ class Shell {
     if (targets.length === 0) {
       targets.push({
         id: "app",
-        label: "Type Into App",
+        label: "Escribir en la app",
         onSend: (text) => this.sendTextToForegroundWindow(text),
       });
     }
@@ -1127,16 +1596,20 @@ class Shell {
    * Open the voice dialog aimed at the foreground window. Called when the
    * user picks Voice input from the system menu (or an app asks via a
    * start-voice-input message). The menu click already ended the press, so
-   * the dialog finishes on click instead of long-press-release.
+   * the dialog finishes on click instead of long-press-release. Returns
+   * false when the dialog can't open now (voice input disabled, screen off,
+   * another dialog or overlay up); true means it is opening, though a
+   * microphone-permission prompt can still stop it.
    */
-  startVoiceInput(): void {
-    if (this.config.voiceInputEnabled === false) return;
-    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return;
+  startVoiceInput(): boolean {
+    if (this.config.voiceInputEnabled === false || this.voiceDialogPending) return false;
+    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return false;
     // The transcript is aimed at the window whose menu requested it; the menu
     // entry point defaults the highlight to Type Into App.
     this.focus = "window";
     this.openVoiceDialog({ finishOnClick: true, defaultTarget: "app" });
     this.config.requestShellRender();
+    return true;
   }
 
   /**
@@ -1151,6 +1624,7 @@ class Shell {
   startKeyboardInput(): KeyboardInputSession | null {
     if (this.activeKeyboardLayer) return this.activeKeyboardLayer;
     if (this.activeVoiceLayer || this.foregroundWindow()?.isVoiceCapturing?.()) return null;
+    this.yieldIndependentOverlay();
     if (!this.screenOn) this.wake("sidebar");
     const assistantLayer = this.assistantLayer;
     const assistantSession = this.assistantSession;
@@ -1160,7 +1634,7 @@ class Shell {
       targets = [
         {
           id: "assistant",
-          label: "Send",
+          label: "Enviar",
           onSend: (text) => this.runAssistantTurn(assistantSession, assistantLayer, text),
         },
       ];
@@ -1251,6 +1725,8 @@ class Shell {
     const llm = resolveAssistantModel(model, {
       anthropic: anthropicApiKeySetting.get(),
       openai: openAiApiKeySetting.get(),
+      hermesUrl: assistantHermesUrlSetting.get(),
+      hermesKey: assistantHermesKeySetting.get(),
     });
     if (llm && reasoning !== "default" && llm.effort) llm.effort = reasoning;
     return llm ? { kind: "direct", llm } : null;
@@ -1275,6 +1751,7 @@ class Shell {
   sendToAssistant(text: string, showOverlay = true): void {
     text = text.trim();
     if (!text) return;
+    this.yieldIndependentOverlay();
     const session = this.ensureAssistantSession();
     if (!session) {
       this.showAlert(
@@ -1303,12 +1780,14 @@ class Shell {
           // Removed by any path (Done, or the screen sleeping mid-conversation):
           // stop the turn and drop the overlay reference; keep shared history.
           this.assistantSession?.cancel();
+          assistantAudioPriority.setActive(created, false);
           if (this.assistantLayer === created) this.assistantLayer = null;
           this.emitAssistantActivity({ phase: "closed", text: "" });
         },
       });
       layer = created;
       this.assistantLayer = created;
+      assistantAudioPriority.setActive(created, true);
       this.stack.push(created);
     }
     this.runAssistantTurn(session, layer, text);
@@ -1360,7 +1839,7 @@ class Shell {
         this.stack.popIfTop((top) => top === voice);
       },
       sendTargets: [
-        { id: "assistant", label: "Send", onSend: (text) => this.runAssistantTurn(session, layer, text) },
+        { id: "assistant", label: "Enviar", onSend: (text) => this.runAssistantTurn(session, layer, text) },
       ],
       finishOnClick: !handsFree,
       handsFree,
@@ -1385,6 +1864,107 @@ class Shell {
     return closed;
   }
 
+  /**
+   * Whether an explicit interaction owns the display: voice/keyboard dialogs, the assistant overlay
+   * or a turn in flight, push-to-talk/voice capture, or the chat window focused on screen.
+   */
+  private independentDisplayBlocked(): boolean {
+    return !!(this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantLayer || this.voiceDialogPending
+      || this.assistantSession?.isTurnActive() || voiceActivity.isActive() || assistantAudioPriority.isActive()
+      || this.foregroundWindow()?.isVoiceCapturing?.() || this.isWindowFocused("ai-chat"));
+  }
+
+  /**
+   * Turn the lenses off with the real sleep path (compositor blank), for a listening mode that must
+   * not show anything. Refused while an explicit interaction or any shell overlay is open, so it
+   * never closes a chat, dialog or menu. Returns whether the screen went off.
+   */
+  blankForIndependentListening(): boolean {
+    if (!this.screenOn || !this.stack.isAtBase() || this.independentDisplayBlocked()) return false;
+    this.sleep();
+    return true;
+  }
+
+  /**
+   * Show an overlay independent of the assistant (never an AssistantLayer, history or audio).
+   * Wakes a dark screen with the regular wake path. Refused (null) while an explicit interaction or
+   * another shell overlay is open. `onYield` runs if a higher-priority interaction removes it.
+   */
+  presentIndependentOverlay(layer: Layer, onYield: () => void): { woke: boolean } | null {
+    if (this.independentOverlay?.layer === layer) return { woke: false };
+    if (this.independentOverlay) this.retireIndependentOverlay(this.independentOverlay.layer, false);
+    if (!this.stack.isAtBase() || this.independentDisplayBlocked()) return null;
+    const woke = !this.screenOn && this.wake(this.focus);
+    if (!woke) this.config.ensureScreenVisible?.();
+    this.lastInputAtMs = Date.now();
+    this.independentOverlay = { layer, onYield, reading: false };
+    this.stack.push(layer);
+    this.config.requestShellRender();
+    return { woke };
+  }
+
+  /** Whether any independent overlay (e.g. a conversation contribution) currently owns the slot. */
+  hasIndependentOverlay(): boolean {
+    return this.independentOverlay !== null;
+  }
+
+  /** Repaint a showing independent overlay (its content changed); no wake, no new layer. */
+  isIndependentOverlayVisible(layer: Layer): boolean {
+    return this.screenOn && this.independentOverlay?.layer === layer && this.stack.topMatches((top) => top === layer);
+  }
+
+  repaintIndependentOverlay(layer: Layer): void {
+    if (this.screenOn && this.independentOverlay?.layer === layer) this.config.requestShellRender();
+  }
+
+  /** Only the owner of the independent overlay can hold/release its reading window. */
+  holdIndependentOverlayForReading(layer: Layer, reading: boolean): void {
+    if (this.independentOverlay?.layer !== layer) return;
+    if (this.independentOverlay.reading !== reading) this.lastInputAtMs = Date.now();
+    this.independentOverlay.reading = reading;
+  }
+
+  /**
+   * Remove an independent overlay. With restoreSleep (the caller woke the screen for it) the screen
+   * goes back to sleep only if the overlay was on top and nothing explicit opened meanwhile; a
+   * buried overlay is dropped later, once whatever covers it closes, without re-sleeping.
+   */
+  retireIndependentOverlay(layer: Layer, restoreSleep: boolean): void {
+    if (this.independentOverlay?.layer === layer) this.independentOverlay = null;
+    if (!this.stack.popIfTop((top) => top === layer)) {
+      this.retiredOverlays.add(layer);
+      // A transparent alert may still show the retained contribution below it.
+      // Recompose now; waiting for the alert to close would leave invalid text visible.
+      this.config.requestShellRender();
+      return;
+    }
+    if (restoreSleep && this.screenOn && this.stack.isAtBase() && !this.independentDisplayBlocked()) {
+      this.sleep();
+      return;
+    }
+    this.config.requestShellRender();
+  }
+
+  /** An explicit interaction takes the display: drop the independent overlay without re-sleeping. */
+  private yieldIndependentOverlay(): void {
+    const current = this.independentOverlay;
+    if (!current) return;
+    this.independentOverlay = null;
+    if (!this.stack.popIfTop((top) => top === current.layer)) this.retiredOverlays.add(current.layer);
+    try {
+      current.onYield();
+    } catch (error) {
+      console.warn("independent overlay yield failed", error);
+    }
+    this.config.requestShellRender();
+  }
+
+  private sweepRetiredOverlays(): void {
+    while (this.stack.topMatches((top) => this.retiredOverlays.has(top))) {
+      this.stack.pop();
+    }
+  }
+
   /** Show a brief text popup on the lenses (assistant show_alert / notices). */
   showAlert(text: string): void {
     if (!this.screenOn) this.wake("sidebar");
@@ -1401,6 +1981,29 @@ class Shell {
     });
     this.stack.push(layer);
     this.config.requestShellRender();
+  }
+
+  /**
+   * Show a picture from the assistant (glasses.show_image) over whatever is on
+   * screen. During an assistant conversation the reply's menu gains an
+   * "Imagen" row that brings it back after it times out or is dismissed.
+   */
+  showImage(image: GrayImage, caption: string, seconds: number): void {
+    if (!this.screenOn) this.wake("sidebar");
+    const open = () => {
+      const previous = this.imageLayer;
+      if (previous) this.stack.popIfTop((top) => top === previous);
+      const layer = new ShellImageLayer(image, caption, seconds, () => {
+        if (this.imageLayer === layer) this.imageLayer = null;
+        this.stack.popIfTop((top) => top === layer);
+        this.config.requestShellRender();
+      });
+      this.imageLayer = layer;
+      this.stack.push(layer);
+      this.config.requestShellRender();
+    };
+    this.assistantLayer?.setImage(open);
+    open();
   }
 
   private startEscapeMenuTimer(): void {
@@ -1443,7 +2046,7 @@ class Shell {
     const items: MenuItem[] = [];
     if (foreground.closeable) {
       items.push({
-        label: "Close window",
+        label: "Cerrar ventana",
         onSelect: (ctx) => {
           // Pop the menu first (its onRemoved returns focus to the sidebar),
           // then close the window the menu was opened over.
@@ -1460,13 +2063,13 @@ class Shell {
         // Defocus the app (hand focus to the sidebar) without closing it: the
         // reliable way out of an app that consumes double-click. Closing the
         // menu is what yields focus, so popping is the whole action.
-        label: "Focus app switcher",
+        label: "Ir al selector de apps",
         onSelect: (ctx) => {
           ctx.stack.pop();
         },
       },
       ...(this.config.voiceInputEnabled === false ? [] : [{
-        label: "Voice input",
+        label: "Entrada de voz",
         onSelect: (ctx) => {
           // The transcript is aimed at the foreground window, so keep focus
           // there through the pop instead of yielding to the sidebar.
@@ -1478,13 +2081,44 @@ class Shell {
     );
     if (brightnessSetting.get() !== "auto") {
       items.push({
-        label: "Brightness",
+        label: "Brillo",
         onSelect: (ctx) => {
           ctx.stack.pop();
           ctx.stack.push(new BrightnessPickerLayer(() => this.yieldFocusToSidebar()));
           this.config.requestShellRender();
         },
       });
+    }
+    const conversation = this.config.conversationControl;
+    if (conversation) {
+      const wanted = !conversation.enabled();
+      if (wanted && conversation.start) {
+        for (const [label, mode] of [["Escuchar con Hermes", "hermes"], ["Solo transcribir", "text"]] as const) {
+          items.push({ label, onSelect: (ctx) => {
+            ctx.stack.pop();
+            if (conversation.enabled()) return;
+            const notice = conversation.start!(mode);
+            if (notice) {
+              ctx.stack.push(new ShellOverlayMenuLayer([{ label: notice, onSelect: (inner) => { inner.stack.pop(); } }], undefined, () => this.yieldFocusToSidebar()));
+              this.config.requestShellRender();
+            }
+          } });
+        }
+      } else {
+      items.push({
+        label: conversation.start ? "Detener escucha" : `Hermes en conversación: ${wanted ? "OFF · iniciar" : "ON · detener"}`,
+        onSelect: (ctx) => {
+          // Re-read the owner at the moment of the action: an expired session cannot be stopped
+          // or resurrected by a stale menu label. Both controls operate the same live session.
+          ctx.stack.pop();
+          const notice = conversation.setEnabled(wanted);
+          if (notice) {
+            ctx.stack.push(new ShellOverlayMenuLayer([{ label: notice, onSelect: (inner) => { inner.stack.pop(); } }], undefined, () => this.yieldFocusToSidebar()));
+            this.config.requestShellRender();
+          }
+        },
+      });
+      }
     }
     items.push({
       label: "Debug",
@@ -1530,20 +2164,21 @@ class Shell {
 
   private chromeState(): ShellChromeState {
     return {
-      windows: this.windows.map((window) => ({
+      windows: this.switcherWindows().map((window) => ({
         windowId: window.windowId,
         title: window.title,
         attention: Boolean(this.attention.get(window.windowId)),
         drawIcon: window.drawIcon,
       })),
-      selectedIndex: this.selectedIndex,
+      selectedIndex: this.selectedStatus ? -1 : this.selectedIndex,
+      selectedStatusItem: this.selectedStatus?.item ?? null,
       focus: this.focus,
       foregroundHeightMode: this.foregroundWindow()?.heightMode ?? "min",
       foregroundAppId: this.foregroundWindow()?.appId,
       battery: this.battery,
       trayIcons: Array.from(this.trayIcons.keys())
         .sort()
-        .map((key) => this.trayIcons.get(key)!),
+        .map((ownerId) => ({ ownerId, icon: this.trayIcons.get(ownerId)!.icon })),
     };
   }
 }

@@ -1,0 +1,126 @@
+package com.faceclaw.app
+
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import java.io.File
+
+/**
+ * Independent local-only Whisper route. No storage, BLE or network client.
+ *
+ * Explicit base/small/medium selection, verified before JNI, without substitution or automatic downloads.
+ * The ASR copy of each window is
+ * level-conditioned (LocalAsrConditioner) before decoding; capture, VAD and profile are untouched.
+ *
+ * Model, runtime knobs (threads/provider/tail padding) and window policy are captured together by one
+ * accepted start. A start while a worker is alive is rejected, so a later call can never mutate the
+ * active decoder. [start] keeps the production defaults; [startConfigured] exists for benchmarks and
+ * diagnostics and accepts only validated values.
+ *
+ * [startWithSpeakers] closes windows at pauses and labels each one with a session voice: the wearer's
+ * saved own-voice profile when present, plus other voices clustered in RAM for this session only.
+ *
+ * [startRemote] keeps that same capture, windowing and speaker attribution but transcribes each window on
+ * the EVO-X2 ASR gateway ([EvoRemoteTranscriptDecoder]) instead of a local Whisper model.
+ */
+class FaceclawLocalTranscriber internal constructor(context: Context, private val root: File) {
+    constructor(context: Context) : this(context, File(context.applicationContext.filesDir, "faceclaw-voice-asr"))
+
+    private class Remote(val url: String, val key: String)
+    private class Config(val model: LocalWhisperModels.Model, val performance: LocalWhisperPerformance,
+        val remote: Remote? = null)
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val appContext = context.applicationContext
+    private val selectionLock = Any()
+    private var selected = Config(LocalWhisperModels.SMALL, LocalWhisperPerformance(4))
+    /** D0 speaker diagnostic, off by default; read by the worker when it loads the attributor. */
+    private var probeRequested = false
+    @Volatile private var speakerProbe: LocalSpeakerProbe? = null
+
+    private val session = LocalTranscriptSession(object : LocalTranscriptHost {
+        override val dispatcher = CallbackDispatcher { action -> handler.post { action() } }
+        /** `language` comes from the accepted start that owns this worker; it is never re-read later. */
+        override fun loadDecoder(language: LocalTranscriptLanguage): LocalTranscriptDecoder? {
+            val config = synchronized(selectionLock) { selected }
+            config.remote?.let {
+                val profile = try { OwnLocalVoiceStore(appContext).load(512) } catch (_: Throwable) { null }
+                return EvoRemoteTranscriptDecoder(it.url, it.key, language, profile)
+            }
+            // Never substitute a different model during a comparison.
+            if (!LocalWhisperModels.verified(root, config.model)) return null
+            return LocalWhisperModels.load(root, config.model, language, config.performance)
+        }
+        override fun loadSpeakerAttributor(): LocalSpeakerAttributor? {
+            speakerProbe = null
+            if (synchronized(selectionLock) { selected.remote != null }) return LocalEvoSpeakerAttributor()
+            val decoder = loadOwnVoiceDecoder(appContext) ?: return null
+            val profile = try { OwnLocalVoiceStore(appContext).load(decoder.dimension) } catch (_: Throwable) { null }
+            val remote = synchronized(selectionLock) { selected.remote != null }
+            val probe = if (!remote && synchronized(selectionLock) { probeRequested }) LocalSpeakerProbe() else null
+            speakerProbe = probe
+            return try {
+                if (remote) LocalTargetSpeakerVerifier(decoder, profile, probeWholeWindow = true) { android.util.Log.i("FaceclawVoz", it) }
+                else LocalSpeakerTracker(decoder, profile, probe)
+            } finally { profile?.fill(0f) }
+        }
+    }, conditionAudio = true)
+    fun setListener(listener: FaceclawLocalTranscriptListener?) = session.setListener(listener)
+    /** "es" forces Spanish for this session only; anything else keeps automatic detection. */
+    fun start(language: String, modelId: String, maxMs: Long): Boolean {
+        val performance = LocalWhisperPerformance.defaultFor(modelId) ?: return false
+        return startWith(language, modelId, maxMs, performance, LocalTranscriptWindowPolicy.REFERENCE)
+    }
+    /** Production start with speaker attribution: pause-closed windows labelled per session voice. */
+    fun startWithSpeakers(language: String, modelId: String, maxMs: Long): Boolean {
+        val performance = LocalWhisperPerformance.defaultFor(modelId) ?: return false
+        return startWith(language, modelId, maxMs, performance, LocalTranscriptWindowPolicy.PAUSE, speakers = true)
+    }
+    /**
+     * Conversation through the EVO-X2 gateway (`ws://` or `wss://` URL and its key). `speakers` asks for the
+     * same pause windows and session voices as [startWithSpeakers]; otherwise reference windows, unlabelled.
+     */
+    fun startRemote(language: String, url: String, key: String, maxMs: Long, speakers: Boolean): Boolean =
+        synchronized(selectionLock) {
+            if (session.isWorkerActive()) return false
+            val endpoint = EvoRemoteTranscriptDecoder.validUrl(url) ?: return false
+            if (key.isBlank()) return false
+            selected = Config(LocalWhisperModels.SMALL, LocalWhisperPerformance(4), Remote(endpoint, key.trim()))
+            val policy = if (speakers) LocalTranscriptWindowPolicy.EVO_IDENTITY else LocalTranscriptWindowPolicy.REFERENCE
+            session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS, maxMs, policy, speakers)
+        }
+    /**
+     * Benchmark/diagnostic start, not wired to the phone UI. `tailPaddingFrames` 0 keeps the runtime
+     * default. Returns false for an unknown model or any unmeasured thread count, provider, padding or policy.
+     */
+    fun startConfigured(language: String, modelId: String, maxMs: Long, threads: Int, provider: String,
+        tailPaddingFrames: Int, windowPolicyId: String): Boolean {
+        val performance = LocalWhisperPerformance.validated(threads, provider, tailPaddingFrames) ?: return false
+        val policy = LocalTranscriptWindowPolicy.byId(windowPolicyId) ?: return false
+        return startWith(language, modelId, maxMs, performance, policy)
+    }
+    private fun startWith(language: String, modelId: String, maxMs: Long, performance: LocalWhisperPerformance,
+        policy: LocalTranscriptWindowPolicy, speakers: Boolean = false): Boolean = synchronized(selectionLock) {
+        if (session.isWorkerActive()) return false
+        val model = LocalWhisperModels.byId(modelId) ?: return false
+        selected = Config(model, performance)
+        session.start(LocalTranscriptLanguage.fromWire(language), LocalTranscriptSegmentation.WINDOWS, maxMs, policy, speakers)
+    }
+    fun setPhase(phase: Int) = session.setPhase(phase)
+    fun stop() = session.stop()
+    fun resetStream() = session.resetStream()
+    fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)
+    fun diagnostics(): String = session.diagnostics()
+    /** Benchmark detail: recent window capture bounds and decode times (scalars only). */
+    fun decodeTimings(): String = session.decodeTimings()
+    /**
+     * D0 diagnostic, not wired to the phone UI: probe the speaker windows of the next accepted start
+     * ([LocalSpeakerProbe]). Labels, profile and thresholds are unchanged. Rejected while a worker is alive;
+     * an accepted call also drops the previous session's aggregates.
+     */
+    fun setSpeakerProbe(enabled: Boolean): Boolean = synchronized(selectionLock) {
+        if (session.isWorkerActive()) false else { probeRequested = enabled; speakerProbe = null; true }
+    }
+    /** Scalar aggregates of the last probed session, or status "off". */
+    fun speakerProbe(): String = speakerProbe?.json() ?: "{\"status\":\"off\"}"
+}

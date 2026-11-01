@@ -359,23 +359,8 @@ internal fun GlassesSessionCore.firstUnpairedArm(): String? {
  */
 internal fun GlassesSessionCore.handleUnpairedFailure(address: String) {
     logError("Connect failed and $address is not paired; suspending reconnect")
-    monitor.withLock {
-        reconnectHalted = true
-        sessionReady = false
-        fixedLayoutCreated = false
-        startupProbePending = false
-        shutdownRequested = false
-        chargingMode = false
-        imageRetryAfterMs = 0
-        displayedFingerprint = ""
-        faceclawWakePendingNonce = -1
-        lastFaceclawWakeLeaseQueuedAtMs = 0
-        faceclawWakeControlSentCount = 0
-        clearAllMessagesLocked("arm not paired: $address")
-        reconnectAfterMs = Long.MAX_VALUE
-        link.disconnect(rightAddress)
-        link.disconnect(leftAddress)
-    }
+    ConnectionCounters.increment("g2.unpaired")
+    monitor.withLock { haltReconnectLocked("arm not paired: $address") }
     if (!userDisconnectRequested) {
         setStateDisplay(
             "unpaired",
@@ -387,16 +372,72 @@ internal fun GlassesSessionCore.handleUnpairedFailure(address: String) {
 }
 
 /**
+ * The settings ack reported firmware this app can't run: stock, another
+ * project's, or an older Faceclaw revision (see
+ * [BleProtocol.FirmwareInfo.isCompatible]). Everything else this session
+ * would send is a private-mode message the glasses may misread (stock leaves
+ * them unacked until the CFW retry limit drops the link), and a redial would
+ * only find the same firmware, so park the worker loop like
+ * [handleUnpairedFailure], without any cleanup messages. The firmware info
+ * was emitted just before this, so the TS side can explain the mismatch and
+ * offer the custom-firmware install.
+ */
+internal fun GlassesSessionCore.handleIncompatibleFirmware() {
+    val info = monitor.withLock {
+        val pending = incompatibleFirmware
+        incompatibleFirmware = null
+        pending
+    } ?: return
+    ConnectionCounters.increment("g2.incompatible-firmware")
+    logError("Glasses report incompatible firmware L=" + info.leftVersion + " R=" + info.rightVersion
+        + " ext=\"" + info.extension + "\" (need Faceclaw/" + requiredFirmwareRevision + "); suspending reconnect")
+    monitor.withLock { haltReconnectLocked("incompatible firmware") }
+    if (!userDisconnectRequested) {
+        setStateDisplay(
+            "incompatible-firmware",
+            "The glasses firmware is not compatible with this version of Faceclaw."
+                + " Install the custom firmware, then connect."
+        )
+    }
+    interruptibleSleep.interrupt()
+}
+
+/**
+ * Park the worker loop for good: drop both arms, discard queued traffic and
+ * stop redialing. Only an explicit connect (start() on a fresh communicator)
+ * tries again.
+ */
+internal fun GlassesSessionCore.haltReconnectLocked(reason: String) {
+    reconnectHalted = true
+    sessionReady = false
+    fixedLayoutCreated = false
+    startupProbePending = false
+    shutdownRequested = false
+    chargingMode = false
+    imageRetryAfterMs = 0
+    displayedFingerprint = ""
+    faceclawWakePendingNonce = -1
+    lastFaceclawWakeLeaseQueuedAtMs = 0
+    faceclawWakeControlSentCount = 0
+    clearAllMessagesLocked(reason)
+    reconnectAfterMs = Long.MAX_VALUE
+    link.disconnect(rightAddress)
+    link.disconnect(leftAddress)
+}
+
+/**
  * Tear the session down and schedule a reconnect. [displayStatus], when given, replaces the
  * generic "Reconnecting after <reason>" status line.
  */
 internal fun GlassesSessionCore.handleTransportFailure(reason: String?, displayStatus: String? = null) {
     logError("Transport failure: $reason")
+    ConnectionCounters.increment("g2.failure." + ConnectionCounters.slug(reason ?: "unknown"))
     val retryDelayMs: Long
     monitor.withLock {
         maybeEmitEvenAppConflictLocked(reason)
         finishBenchmarkLocked(true, "transport failure")
         val sessionWasReady = sessionReady
+        if (sessionWasReady) countSessionEnded("failure")
         sessionReady = false
         fixedLayoutCreated = false
         startupProbePending = false
@@ -421,6 +462,23 @@ internal fun GlassesSessionCore.handleTransportFailure(reason: String?, displayS
         })
     }
     interruptibleSleep.interrupt()
+}
+
+/**
+ * Counts a ready session ending, by [cause] and by how long it had been up
+ * (for the analytics in app/analytics/).
+ */
+internal fun GlassesSessionCore.countSessionEnded(cause: String) {
+    ConnectionCounters.increment("g2.session-end.$cause")
+    val minutes = (now() - lastSessionReadyAtMs) / 60_000
+    ConnectionCounters.increment(
+        "g2.session-length." + when {
+            minutes < 1 -> "under-1m"
+            minutes < 10 -> "1m-10m"
+            minutes < 60 -> "10m-1h"
+            else -> "over-1h"
+        }
+    )
 }
 
 /**
@@ -454,6 +512,7 @@ internal fun GlassesSessionCore.resetSessionStateLocked() {
     reconnectAfterMs = 0
     consecutiveReconnects = 0
     reconnectHalted = false
+    incompatibleFirmware = null
     ringReconnectAfterMs = 0
     lastAckAtMs = 0
     lastIncomingAtMs = 0
@@ -474,6 +533,7 @@ internal fun GlassesSessionCore.resetSessionStateLocked() {
     for (transport in cfwTransports) transport.reset()
     lastCfwCleanupAckMagic = 0
     wearState = -1
+    wearStateReportRequested = false
     displayedFingerprint = ""
     // Deliberately not clearing silentMode: it is a property of the glasses,
     // not of our session, and silent mode blocks app launches, so it can be
@@ -699,6 +759,7 @@ internal fun GlassesSessionCore.maybeEmitEvenAppConflictLocked(reason: String?) 
         return
     }
     lastEvenAppConflictAtMs = now
+    ConnectionCounters.increment("g2.even-app-conflict")
     emitEvenAppConflict("The Even Realities app still appears to be running. It can hold the glasses BLE link and cause Faceclaw write failures. Open its app settings and force stop it, then reconnect Faceclaw.")
 }
 

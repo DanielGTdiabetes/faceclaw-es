@@ -127,10 +127,16 @@ class GlassesSessionCore(
     internal val audioMonitorListeners = CopyOnWriteList<FaceclawAudioPacketListener>(platform)
     @Volatile internal var running = false
     @Volatile internal var userDisconnectRequested = false
-    // Set when a connect attempt failed while an arm's OS bond is gone:
-    // retrying is pointless until the user re-pairs, so the worker loop parks
+    // Set when a connect attempt failed while an arm's OS bond is gone, or the
+    // glasses reported firmware this app can't run: retrying is pointless until
+    // the user re-pairs or installs the custom firmware, so the worker loop parks
     // instead of redialing. Cleared by start() (a fresh explicit connect).
     @Volatile internal var reconnectHalted = false
+    // The Faceclaw firmware revision this app needs; see setRequiredFirmwareRevision.
+    @Volatile internal var requiredFirmwareRevision = 0
+    // Firmware info from a settings ack that failed requiredFirmwareRevision. While
+    // set, driveSession sends nothing; the worker loop halts on it (handleIncompatibleFirmware).
+    internal var incompatibleFirmware: BleProtocol.FirmwareInfo? = null
 
     internal var phase = "disconnected"
     internal var status = "Disconnected."
@@ -179,9 +185,9 @@ class GlassesSessionCore(
     /**
      * The last firmware-info read said the glasses run Faceclaw's custom
      * firmware. Gates the private modes (cleanup, resource cache, ...) so stock
-     * or third-party firmware never sees them; the TS side checks the actual
-     * revision and disconnects on a mismatch, so no per-feature gating is
-     * needed here.
+     * or third-party firmware never sees them; a revision mismatch halts the
+     * session (handleIncompatibleFirmware), so no per-feature gating is needed
+     * here.
      */
     internal var customFirmwareDetected = false
     internal val brightnessPolicy = BrightnessPolicy()
@@ -227,10 +233,10 @@ class GlassesSessionCore(
     // Silent mode: 1 = on, 0 = off, -1 = not yet known. See updateSilentModeLocked.
     internal var silentMode = -1
     internal var wearState = -1
+    internal var wearStateReportRequested = false
     internal var phoneLockState = -1
     internal var lastPhoneLockCheckAtMs = 0L
     internal var audioCaptureActive = false
-    internal var firmwareInfoQueried = false
     // Glasses are in the charging case: nobody is wearing them, so display
     // communication pauses and only battery polls flow (see driveSession).
     internal var chargingMode = false
@@ -371,6 +377,15 @@ class GlassesSessionCore(
         emitPhoneLockStateIfChanged(true)
     }
 
+    /**
+     * The Faceclaw firmware revision this app needs (REQUIRED_FACECLAW_FIRMWARE_VERSION in
+     * app/g2/firmware-compat.ts; the TS bridges pass it in before start()). A settings ack
+     * reporting anything else halts the session. 0 accepts any Faceclaw revision.
+     */
+    fun setRequiredFirmwareRevision(revision: Int) {
+        requiredFirmwareRevision = revision
+    }
+
     /** Start the worker (through the host); false when it was already running. */
     fun start(): Boolean {
         monitor.withLock {
@@ -380,6 +395,7 @@ class GlassesSessionCore(
             running = true
             userDisconnectRequested = false
             reconnectHalted = false
+            incompatibleFirmware = null
             shutdownRequested = false
             host.startWorker { run() }
             return true
@@ -395,6 +411,8 @@ class GlassesSessionCore(
             releaseFaceclawFramebufferLease()
         }
         monitor.withLock {
+            ConnectionCounters.increment("g2.disconnect-requested")
+            if (sessionReady) countSessionEnded("requested")
             userDisconnectRequested = true
             running = false
             audioCaptureActive = false
@@ -655,6 +673,9 @@ class GlassesSessionCore(
             }
             clearMessagesOfKindLocked("wear-detection-control")
             clearMessagesOfKindLocked("wear-query-control")
+            // Forward the next actual firmware report even if its value is unchanged.
+            // TS may have invalidated its session-scoped snapshot during reconnect.
+            wearStateReportRequested = true
             val queryLeft = messageBuilder.faceclawWearQuery(true)
             val queryRight = messageBuilder.faceclawWearQuery(false)
             val enable = messageBuilder.setWearDetection(true)
@@ -868,16 +889,17 @@ class GlassesSessionCore(
      * Queue a CFW mic_control record (['M','C',ver,op,...]) as a settings
      * field-103 write to both temples, or to a single one. Fire-and-forget:
      * the firmware answers with a field-104 status notify per temple, which
-     * arrives through addMicStatusListener.
+     * arrives through addMicStatusListener. Returns false when nothing was
+     * queued (no session, or a malformed record).
      */
-    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean) {
+    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean): Boolean {
         if (record == null || record.size < 4) {
-            return
+            return false
         }
         monitor.withLock {
             if (!running || !sessionReady) {
                 logLine("skip mic control ($label); session not ready")
-                return
+                return false
             }
             if (rightTemple) {
                 pendingMessages.addLast(messageBuilder.faceclawMicControl(record, label, false))
@@ -888,6 +910,7 @@ class GlassesSessionCore(
             logLine("queue mic control $label")
         }
         interruptibleSleep.interrupt()
+        return true
     }
 
     /**
@@ -955,6 +978,9 @@ class GlassesSessionCore(
 
     /** The current composite for previews/screenshots, or null before any surface exists. */
     fun previewComposite(): SurfaceCompositor.Composite? = compositor.previewComposite()
+
+    /** See SurfaceCompositor.setPreviewAnimationListener; runs on the redraw scheduler's thread. */
+    fun setPreviewAnimationListener(listener: (() -> Unit)?) = compositor.setPreviewAnimationListener(listener)
 
     /**
      * Show or hide a compositor surface, immediately submitting the resulting
@@ -1297,6 +1323,10 @@ class GlassesSessionCore(
                     break
                 }
                 emitPhoneLockStateIfChanged(false)
+                if (monitor.withLock { incompatibleFirmware != null }) {
+                    handleIncompatibleFirmware()
+                    continue
+                }
                 if (!sessionReady) {
                     if (reconnectHalted) {
                         interruptibleSleep.sleep(ConnectionOptions.IDLE_SLEEP_MS.toLong())
@@ -1362,6 +1392,7 @@ class GlassesSessionCore(
                         val ingress = if (message.isLeftArmMessage) leftAddress else rightAddress
                         if (message.sid == CfwTransport.SID && address.equals(ingress, ignoreCase = true) && message.magic == ack.streamId) {
                             message.acceptCfwAck(ack)
+                            if (ack.nack) ConnectionCounters.increment("g2.cfw-nack")
                             logLine("CFW " + (if (ack.nack) "NACK" else "ACK") + " id=" + ack.streamId
                                     + " ordinal=" + ack.messageId + " lens=" + ack.lens + " txseq=" + (data[2].toInt() and 255)
                                     + " redundant=" + (ack !== acks[0])
@@ -1398,12 +1429,13 @@ class GlassesSessionCore(
         var event: G2Event? = null
         monitor.withLock {
             lastIncomingAtMs = now()
-            if (decodedWearState >= 0 && decodedWearState != wearState) {
+            if (decodedWearState >= 0 && (decodedWearState != wearState || wearStateReportRequested)) {
                 // An observed OFF_HEAD -> ON_HEAD means charging is over, up
                 // to CHARGING_BATTERY_POLL_MS before a battery poll would say
                 // so. Like TS's put-on wake, a first snapshot doesn't count.
                 putOnWhileCharging = chargingMode && wearState == 0 && decodedWearState == 1
                 wearState = decodedWearState
+                wearStateReportRequested = false
                 emitWearState = true
             }
             var faceclawWakeNotification = false
@@ -1558,13 +1590,31 @@ class GlassesSessionCore(
                         updateSilentModeLocked(false)
                     }
                     if ("sys-event" == decoded.kind) {
-                        if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_EXIT || decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT || decoded.eventType == BleProtocol.EVENT_SYSTEM_EXIT) {
+                        if (decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT || decoded.eventType == BleProtocol.EVENT_SYSTEM_EXIT) {
                             if (shutdownRequested) {
                                 lastShutdownExitAtMs = now()
+                            } else {
+                                ConnectionCounters.increment(
+                                    if (decoded.eventType == BleProtocol.EVENT_ABNORMAL_EXIT) "g2.firmware-abnormal-exit"
+                                    else "g2.firmware-system-exit"
+                                )
                             }
                             fixedLayoutCreated = false
                             displayedFingerprint = ""
                             clearAllMessagesLocked("firmware exit event")
+                        } else if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_ENTER) {
+                            logLine("firmware overlay opened over the EvenHub page")
+                        } else if (decoded.eventType == BleProtocol.EVENT_FOREGROUND_EXIT) {
+                            // Despite its name this does not end the page: stock
+                            // evenhub_page_event_handler sends it when a firmware
+                            // overlay announced by FOREGROUND_ENTER closes, and
+                            // restores the page and its keepalive. Teardown is
+                            // always SYSTEM_EXIT/ABNORMAL_EXIT. Re-creating the
+                            // layout here sent a create the firmware ignores while
+                            // the page exists, so the session timed out (#42).
+                            // Re-present over whatever the overlay left instead.
+                            logLine("firmware overlay closed; re-presenting")
+                            lastEnqueuedFingerprint = ""
                         }
                     }
                 }
@@ -1656,6 +1706,7 @@ class GlassesSessionCore(
                     ringReconnectAfterMs = now() + ConnectionOptions.RING_RECONNECT_DELAY_MS
                 }
             }
+            ConnectionCounters.increment(if (connected) "ring.direct.connect" else "ring.direct.disconnect")
             logLine(if (connected) "direct ring BLE connected" else "direct ring BLE disconnected")
             interruptibleSleep.interrupt()
             return
@@ -1674,6 +1725,12 @@ class GlassesSessionCore(
                 // dropping mid-setup): the connect sequence notices on its own and
                 // schedules the retry, so leave the backoff alone.
                 lostSession = sessionReady
+                if (lostSession) {
+                    ConnectionCounters.increment(
+                        if (address.equals(rightAddress, ignoreCase = true)) "g2.arm-drop.right" else "g2.arm-drop.left"
+                    )
+                    countSessionEnded("arm-drop")
+                }
                 sessionReady = false
                 fixedLayoutCreated = false
                 startupProbePending = false
@@ -1703,8 +1760,10 @@ class GlassesSessionCore(
             // reconnect; forget ours too, or the new session's first report
             // (the CFW query reply) is deduped away and TS never relearns it.
             wearState = -1
+            wearStateReportRequested = false
         }
         setStateDisplay("connecting", "Connecting to the glasses...")
+        ConnectionCounters.increment("g2.connect-attempt")
         try {
             // Dial both arms at once, so the left arm's attempt is already pending (and
             // can land) while the right arm is being set up; they share one window.
@@ -1758,18 +1817,19 @@ class GlassesSessionCore(
                 }
             }
             setStateDisplay("connected", "Connected.")
+            ConnectionCounters.increment("g2.session-ready")
             logLine("session ready")
             monitor.withLock {
-                // Query settings promptly on the first session so firmware
+                // Query settings at the start of every session so firmware
                 // version/extension (and battery) arrive without waiting for
-                // the input-quiet battery poll. The settings response doubles as
-                // the firmware-compatibility check surfaced during onboarding.
-                if (!firmwareInfoQueried) {
-                    firmwareInfoQueried = true
-                    lastBatteryRefreshAtMs = now()
-                    pendingMessages.addLast(createBatteryQueryMessageLocked())
-                    logLine("queue settings query for firmware info")
-                }
+                // the input-quiet battery poll. The reply is the firmware-
+                // compatibility check, and the drive loop only creates the
+                // layout once the queue is empty, so it lands before any
+                // custom-firmware traffic -- including after a reconnect to
+                // glasses that were reflashed in the meantime.
+                lastBatteryRefreshAtMs = now()
+                pendingMessages.addLast(createBatteryQueryMessageLocked())
+                logLine("queue settings query for firmware info")
             }
             tryConnectRing("initial")
         } catch (t: Throwable) {
@@ -1964,6 +2024,7 @@ class GlassesSessionCore(
         monitor.withLock {
             if (!inFlightMessages.isEmpty()) {
                 clearInFlightMessagesLocked("security auth timeout")
+                ConnectionCounters.increment("g2.auth-unacknowledged")
                 logLine("security auth not acknowledged; continuing (2.2.9 stock requires it; older/custom firmware may not answer)")
                 return
             }
@@ -1990,7 +2051,7 @@ class GlassesSessionCore(
         prelude.onAck = MessageCallback {
         }
         prelude.onTimeout = MessageCallback {
-            handleTransportFailure("ack timeout")
+            handleTransportFailure("prelude ack timeout")
         }
         prelude.sentAtMs = now
         writeMessage(prelude)

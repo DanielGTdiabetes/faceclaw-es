@@ -1,0 +1,46 @@
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [1]
+INFO: Min runs duration (seconds): [0]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [1]
+INFO: Graph: [whisper-medium.tflite]
+INFO: Signature to run: [serving_default]
+INFO: Input layers: [input_features]
+INFO: Input shapes: [1,80,3000]
+INFO: Input value files: [input_features:es-fleurs-00.mel.f32]
+INFO: Enable op profiling: [1]
+INFO: Op profiling output mode.: [csv]
+INFO: Op profiling output file.: [out/cpu-t4-profile.csv]
+INFO: CSV File to export profiling data to: [out/cpu-t4-profile.csv]
+INFO: #threads used for CPU inference: [4]
+INFO: Use xnnpack: [1]
+INFO: Loaded model whisper-medium.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Using signature: serving_default
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+VERBOSE: Replacing 2784 out of 2814 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 15 partitions for subgraph 0.
+VERBOSE: Replacing 2712 out of 2715 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 3 partitions for subgraph 1.
+VERBOSE: Replacing 3 out of 11 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 4.
+VERBOSE: Replacing 3 out of 11 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 5.
+VERBOSE: Replacing 8 out of 51 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 13 partitions for subgraph 18.
+VERBOSE: Replacing 8 out of 51 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 13 partitions for subgraph 19.
+VERBOSE: Replacing 3 out of 5 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 24.
+VERBOSE: Replacing 3 out of 5 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 25.
+VERBOSE: Replacing 1606 out of 1698 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 7 partitions for subgraph 27.
+VERBOSE: Replacing 1610 out of 1706 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 7 partitions for subgraph 29.
+WARN: Tensor # 0 is named serving_default_input_features:0 but flags call it input_features
+INFO: XNNPACK delegate created.
+INFO: Explicitly applied XNNPACK delegate, and the model graph will be partially executed by the delegate w/ 7 delegate kernels.
+INFO: The input model file size (MB): 773.801
+INFO: Initialized session in 2477.54ms.
+INFO: Running benchmark for at least 1 iterations and at least 0.5 seconds but terminate if exceeding 150 seconds.
+INFO: count=1 curr=4499249 p5=4499249 median=4499249 p95=4499249
+
+INFO: Running benchmark for at least 1 iterations and at least 0 seconds but terminate if exceeding 150 seconds.
+INFO: Warning: Dropping ProfileBuffer event.
+INFO: count=1 curr=4078293 p5=4078293 median=4078293 p95=4078293
+
+INFO: Inference timings in us: Init: 2477539, First inference: 4499249, Warmup (avg): 4.49925e+06, Inference (avg): 4.07829e+06
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=3173.05 overall=3919.49

@@ -1,0 +1,533 @@
+import { LocalEnergyVad, type LocalVadSnapshot } from "./local-vad";
+import { type DetectorTranscription, type LocalTranscriptionSnapshot, type ObservedSpeaker, type SonioxSessionSummary,
+  type TextLanguage } from "./transcription";
+import { type ConversationTurn } from "./conversation-turns";
+import { type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } from "./wearer-identity";
+import { PhaseDiagnostics, type DiagnosticPhase, type PhaseDiagnosticsSnapshot } from "./phase-diagnostics";
+import { type DetectorParticipation, type LocalParticipationSnapshot, type ParticipationMode } from "./participation";
+
+/** Local capture, optional own-profile comparison and ASR; no network or assistant actions. */
+/** Upper bound handed to native workers and the capture wakelock when listening has no time limit. */
+export const NATIVE_SESSION_SAFETY_MS = 86_400_000;
+/** A gap beyond this invalidates the current acoustic window, but not the capture session. */
+export const PCM_GAP_RESET_MS = 250;
+/** First chunk after acquiring the BLE tap: allow more than the old 2 s watchdog (startup can be slow). */
+export const PCM_START_GRACE_MS = 10_000;
+/** Transient delivery gap kept alive before failing closed; recovering it is the point of S2.24. */
+export const PCM_GAP_GRACE_MS = 30_000;
+export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
+export type DetectorMetrics = {
+  chunks: number; samples: number; bytes: number; maxGapMs: number;
+  clippedSamples: number; rms: number; preemptions: number; starts: number;
+};
+export type DetectorSnapshot = {
+  enabled: boolean; state: DetectorState; reason: string; epoch: number;
+  metrics: DetectorMetrics; vad: LocalVadSnapshot;
+  /** Monotonic completion of local VAD release, not the exact physical end of speech. */
+  lastVadStopAtMs?: number | null;
+  resources: { lease: boolean; timer: boolean; bufferedBytes: number };
+  transcription?: LocalTranscriptionSnapshot;
+  participation?: LocalParticipationSnapshot;
+  participationMode: ParticipationMode;
+  /** Language frozen for the last session that used ASR; kept after OFF until the next ON. */
+  languageMode?: TextLanguage;
+  /** C1 acoustics per user-marked phase; present only when diagnostics were chosen before ON. */
+  phases?: PhaseDiagnosticsSnapshot;
+  enrollmentOutcome: "none" | "saved" | "canceled" | "expired" | "error";
+  /** `silence` is historical (S2.9 and earlier): continuous listening no longer ends without voice. */
+  stopReason: "none" | "manual" | "expired" | "silence" | "saved" | "error";
+  /**
+   * Null: manual continuous listening without a silence or session limit. Native engines keep a 24 h
+   * technical bound; reaching it ends the session visibly (stopReason `expired`), never silently.
+   */
+  sessionLimitMs: number | null;
+  manualConversation: boolean;
+  /**
+   * Own-profile attribution in a manual session with optional identity. `no-aplica` outside that
+   * mode; `sin-perfil` when no profile was loaded; `no-disponible` after a load failure, which never
+   * stops Soniox/Hermes. No score, label or vector is exposed.
+   */
+  voiceProfile: VoiceProfileUse;
+  /** Null while listening without a time limit. */
+  remainingMs: number | null;
+};
+export type VoiceProfileUse = "no-aplica" | "sin-perfil" | "cargando" | "activo" | "no-disponible";
+/** Upper bound for an optional profile to load before the manual session continues without it. */
+export const OPTIONAL_PROFILE_LOAD_MS = 10_000;
+/** RAM-only choices made while OFF and frozen for the session. */
+export type SessionOptions = { language?: TextLanguage; diagnostics?: boolean; manualConversation?: boolean;
+  textEngine?: "soniox" | "local";
+  /** Manual only: own-profile comparison improves attribution but its absence/failure never blocks. */
+  optionalProfile?: boolean };
+export type DetectorLease = { stop(): void; diagnostics(): string };
+export type DetectorEnvironment = { available: boolean; reason: string; session: unknown };
+export type DetectorHost = {
+  environment(): DetectorEnvironment;
+  prepare(): Promise<boolean>;
+  acquire(pcm: (bytes: Uint8Array) => void, revoked: () => void, failed: () => void): DetectorLease | null;
+  now(): number;
+  every(callback: () => void, ms: number): () => void;
+  transcription?: DetectorTranscription;
+  participation?: DetectorParticipation;
+};
+
+const emptyMetrics = (): DetectorMetrics => ({
+  chunks: 0, samples: 0, bytes: 0, maxGapMs: 0, clippedSamples: 0, rms: 0, preemptions: 0, starts: 0,
+});
+
+export class ConversationCaptureCoordinator {
+  private enabled = false;
+  private state: DetectorState = "desactivado";
+  private reason = "G2: VAD local provisional, sin detección de participación.";
+  private epoch = 0;
+  private metrics = emptyMetrics();
+  private vad = new LocalEnergyVad();
+  private lastVadStopAtMs: number | null = null;
+  private lease: DetectorLease | null = null;
+  private cancelTimer: (() => void) | null = null;
+  private preparing = false;
+  private session: unknown = null;
+  private lastPcm = 0;
+  private startedAt = 0;
+  private enabledAt = 0;
+  private sessionLimitMs: number | null = 120_000;
+  private manualConversation = false;
+  private expectedTextEngine: "soniox" | "local" = "soniox";
+  private optionalProfile = false;
+  private voiceProfile: VoiceProfileUse = "no-aplica";
+  /** Local engine reported ready in this session: a later "inactivo" while ON is the native bound. */
+  private engineReady = false;
+  private lastDiagnostics = "";
+  private transcribing = false;
+  private language: TextLanguage | null = null;
+  private phases: PhaseDiagnostics | null = null;
+  private gapCounted = false;
+  /** The current PCM gap already reset the acoustic window; do not reset it on every 500 ms tick. */
+  private gapOpen = false;
+  private participationMode: ParticipationMode = "off";
+  private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
+  private stopReason: DetectorSnapshot["stopReason"] = "none";
+  private readonly listeners = new Set<(snapshot: DetectorSnapshot) => void>();
+
+  constructor(private readonly host: DetectorHost) {}
+
+  snapshot(): DetectorSnapshot {
+    return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
+      metrics: { ...this.metrics }, vad: this.vad.snapshot(), lastVadStopAtMs: this.lastVadStopAtMs,
+      participationMode: this.participationMode,
+      enrollmentOutcome: this.enrollmentOutcome,
+      ...(this.language ? { languageMode: this.language } : {}),
+      ...(this.phases ? { phases: this.phases.snapshot() } : {}),
+      stopReason: this.stopReason,
+      sessionLimitMs: this.sessionLimitMs,
+      manualConversation: this.manualConversation,
+      voiceProfile: this.voiceProfile,
+      remainingMs: !this.enabled ? 0 : this.sessionLimitMs === null ? null
+        : Math.max(0, this.sessionLimitMs - (this.host.now() - this.enabledAt)),
+      resources: { lease: this.lease !== null, timer: this.cancelTimer !== null, bufferedBytes: 0 },
+      ...(this.host.transcription ? { transcription: this.host.transcription.snapshot() } : {}),
+      ...(this.host.participation ? { participation: this.host.participation.snapshot() } : {}) };
+  }
+
+  subscribe(listener: (snapshot: DetectorSnapshot) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.snapshot());
+    return () => this.listeners.delete(listener);
+  }
+
+  diagnostics(): string { return this.lease?.diagnostics() ?? this.lastDiagnostics; }
+  holdsSession(): boolean { return this.preparing || this.lease !== null; }
+
+  transcriptText(): string { return this.host.transcription?.text() ?? ""; }
+  hasOwnProfile(): boolean { return this.host.participation?.hasProfile() ?? false; }
+  ownProfileState(): string {
+    return this.host.participation?.profileState?.() ?? (this.hasOwnProfile() ? "guardado" : "sin perfil");
+  }
+  hasPreviousOwnProfile(): boolean { return this.host.participation?.hasPreviousProfile?.() ?? false; }
+  restorePreviousOwnProfile(): boolean {
+    const snapshot = this.snapshot();
+    if (snapshot.enabled || this.holdsSession() || snapshot.participation?.worker || snapshot.participation?.busy
+      || snapshot.transcription?.worker || snapshot.transcription?.busy) return false;
+    return this.host.participation?.restorePreviousProfile?.() ?? false;
+  }
+  deleteOwnProfile(): boolean { this.setEnabled(false); return this.host.participation?.deleteProfile() ?? false; }
+
+  /**
+   * S2: explicit wearer identification. Only acts on a listening session; never starts capture.
+   * The reference is captured by phrase action menus when built; null while OFF or without Soniox.
+   */
+  wearerActionRef(): WearerActionRef | null {
+    return this.enabled ? this.host.transcription?.wearerActionRef?.() ?? null : null;
+  }
+  identifyWearer(ref?: WearerActionRef): boolean {
+    if (!this.enabled || this.state !== "escuchando") return false;
+    return this.afterWearerAction(this.host.transcription?.identifyWearer?.(ref) ?? false);
+  }
+  finishWearerIdentification(ref?: WearerActionRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.finishWearerIdentification?.(ref) ?? false);
+  }
+  cancelWearerIdentification(ref?: WearerActionRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.cancelWearerIdentification?.(ref) ?? false);
+  }
+  /** Manual choice or clear; the reference must belong to the live session and stream. */
+  assignWearer(ref: SpeakerRef): boolean {
+    if (!this.enabled) return false;
+    return this.afterWearerAction(this.host.transcription?.assignWearer?.(ref) ?? false);
+  }
+  observedSpeakers(): ObservedSpeaker[] {
+    return this.enabled ? this.host.transcription?.observedSpeakers?.() ?? [] : [];
+  }
+  subscribeTurns(listener: (turn: ConversationTurn) => void): () => void {
+    return this.host.transcription?.subscribeTurns?.(listener) ?? (() => {});
+  }
+  subscribeAssociation(listener: (event: WearerAssociationEvent) => void): () => void {
+    return this.host.transcription?.subscribeAssociation?.(listener) ?? (() => {});
+  }
+  /** Aggregate of the last Soniox session; `endedBy` is this coordinator's stopReason once OFF. */
+  lastSessionSummary(): SonioxSessionSummary | null {
+    const summary = this.host.transcription?.lastSessionSummary?.() ?? null;
+    return summary && !this.enabled ? { ...summary, endedBy: this.stopReason } : summary;
+  }
+  private afterWearerAction(done: boolean): boolean {
+    if (done) this.emit();
+    return done;
+  }
+
+  /**
+   * Diagnostic mark from an explicit user control. Same thread as PCM delivery: the mark applies to
+   * the next chunk in both the acoustic accumulator and the native ASR session. Not a speaker label.
+   */
+  markPhase(phase: DiagnosticPhase): boolean {
+    if (!this.enabled || !this.phases || !this.phases.mark(phase)) return false;
+    this.host.transcription?.setPhase?.(this.phases.index());
+    this.emit();
+    return true;
+  }
+
+  /** Original native array, after accept() validated PCM/epoch/expiry; avoids a second JS copy. */
+  acceptNativePcm(pcm: unknown): void {
+    if (this.enabled && this.lease && this.state === "escuchando") {
+      const state = this.vad.snapshot().state;
+      const before = this.host.transcription?.snapshot().soniox?.sentMs;
+      if (this.transcribing) this.host.transcription?.acceptNative(pcm, state);
+      if (this.participationMode !== "off") {
+        if (this.manualConversation) {
+          const after = this.host.transcription?.snapshot();
+          if (after?.engine !== "soniox" || before === undefined || after.soniox?.sentMs !== before + 50) return;
+          this.host.participation?.acceptNative(pcm, state, before);
+        } else this.host.participation?.acceptNative(pcm, state);
+      }
+    }
+  }
+
+  setEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off", options: SessionOptions = {}): void {
+    if (this.enabled === enabled) return;
+    if (!enabled && this.participationMode === "enrollment" && this.enrollmentOutcome === "none") this.enrollmentOutcome = "canceled";
+    if (enabled && participation === "enrollment") this.enrollmentOutcome = "none";
+    this.enabled = enabled;
+    this.stopReason = enabled ? "none" : "manual";
+    this.cleanup();
+    this.transcribing = enabled && transcribe && participation !== "enrollment";
+    this.manualConversation = enabled && this.transcribing && options.manualConversation === true;
+    this.expectedTextEngine = options.textEngine === "local" ? "local" : "soniox";
+    this.optionalProfile = this.manualConversation && options.optionalProfile === true;
+    // Manual continuous listening has no time limit; diagnostics and enrollment keep 2 min.
+    if (enabled) this.sessionLimitMs = this.manualConversation ? null : 120_000;
+    this.participationMode = enabled ? participation : "off";
+    // Kept after OFF for the aggregate diagnostics; replaced at the next ON.
+    if (enabled) this.voiceProfile = !this.optionalProfile ? "no-aplica" : participation === "conversation" ? "cargando" : "sin-perfil";
+    if (!enabled) {
+      this.state = "desactivado";
+      this.reason = "OFF: concesión, suscripciones y temporizadores retirados.";
+      this.emit();
+      return;
+    }
+    this.metrics = emptyMetrics();
+    this.engineReady = false;
+    this.enabledAt = this.host.now();
+    this.vad = new LocalEnergyVad();
+    this.lastVadStopAtMs = null;
+    this.lastDiagnostics = "";
+    this.gapCounted = false;
+    this.gapOpen = false;
+    this.language = this.transcribing ? (options.language === "auto" ? "auto" : "es") : null;
+    this.phases = options.diagnostics ? new PhaseDiagnostics(() => this.host.now()) : null;
+    this.vad.setObserver(this.phases);
+    if (this.participationMode !== "off" && !this.host.participation?.start(this.participationMode === "enrollment", this.manualConversation ? this.nativeLimitMs() : undefined)) {
+      if (this.optionalProfile) this.withoutProfile();
+      else {
+        this.fail("El perfil local no está disponible. Revisa el modelo de voz o espera al cierre anterior.");
+        return;
+      }
+    }
+    if (this.transcribing && !this.host.transcription?.start(this.language ?? "auto", this.manualConversation, this.nativeLimitMs())) {
+      this.fail("El motor seleccionado no está disponible. Revisa su descarga o espera al cierre anterior.");
+      return;
+    }
+    this.state = "suspendido";
+    this.reason = this.sessionLimitMs === null ? "Preparando captura. Sin límite de tiempo."
+      : `Preparando captura. Máximo ${this.sessionLimitMs / 60_000} minutos.`;
+    this.cancelTimer = this.host.every(() => this.refresh(), 500);
+    this.refresh();
+  }
+
+  /** Availability changes are also delivered synchronously, before transport teardown. */
+  refresh(): void {
+    if (!this.enabled || this.state === "error") return;
+    const now = this.host.now();
+    if (this.timedOut(now)) {
+      this.expire(); return;
+    }
+    if (this.participationMode !== "off") {
+      const participation = this.host.participation?.snapshot();
+      if (this.participationMode === "enrollment" && participation?.profileSaved) {
+        this.enrollmentOutcome = "saved";
+        this.setEnabled(false);
+        this.stopReason = "saved";
+        this.reason = "OFF · Mi perfil se ha guardado localmente. Ya puedes iniciar conversación.";
+        this.emit();
+        return;
+      }
+      if (!participation || ["error", "modelo no disponible", "sin perfil compatible"].includes(participation.status)) {
+        if (!this.optionalProfile) {
+          this.fail("No se puede usar el perfil local. Revisa Mi perfil en Opciones; recursos liberados.");
+          return;
+        }
+        this.withoutProfile();
+      } else if (participation.status === "cargando") {
+        if (!this.optionalProfile || now - this.enabledAt < OPTIONAL_PROFILE_LOAD_MS) {
+          this.reason = "Preparando mi voz local; captura todavía suspendida.";
+          this.emit();
+          return;
+        }
+        // Optional identity: a slow profile never holds the manual session hostage.
+        this.withoutProfile();
+      } else if (this.optionalProfile) this.voiceProfile = "activo";
+    }
+    if (this.transcribing) {
+      if (this.manualConversation && this.host.transcription?.snapshot().engine !== this.expectedTextEngine) {
+        this.fail("El motor seleccionado no está disponible. Conversación OFF; puedes reintentar.");
+        return;
+      }
+      const status = this.host.transcription?.snapshot().status ?? "error";
+      if (this.expectedTextEngine === "local" && this.host.transcription?.snapshot().engine !== "soniox") {
+        if (status === "listo") this.engineReady = true;
+        else if (status === "inactivo" && this.engineReady && this.manualConversation) {
+          this.expire(`OFF · Límite técnico de ${NATIVE_SESSION_SAFETY_MS / 3_600_000} h del reconocimiento alcanzado. Puedes iniciar otra sesión.`);
+          return;
+        }
+      }
+      if (["error", "modelo no disponible"].includes(status)) {
+        this.fail("El motor de texto local no está disponible. Captura OFF, sin alternativa en red.");
+        return;
+      }
+      if (status === "cargando") {
+        this.reason = "Preparando texto local; captura todavía suspendida.";
+        this.emit();
+        return;
+      }
+    }
+    const env = this.host.environment();
+    if (!env.available) {
+      this.release();
+      this.state = "suspendido";
+      this.reason = env.reason;
+      this.emit();
+      return;
+    }
+    if (this.session !== null && this.session !== env.session) this.release();
+    if (this.lease) {
+      if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
+      const silentMs = now - (this.lastPcm || this.startedAt);
+      const graceMs = this.lastPcm ? PCM_GAP_GRACE_MS : PCM_START_GRACE_MS;
+      if (silentMs > graceMs) {
+        this.fail(`No llega PCM válido desde hace más de ${Math.round(graceMs / 1000)} s. Captura OFF; puedes reintentar cuando termine el cierre.`);
+      } else if (silentMs > PCM_GAP_RESET_MS) {
+        this.state = "suspendido";
+        this.reason = `Sin PCM válido desde hace ${(silentMs / 1000).toFixed(1)} s. Mantengo la sesión ${Math.ceil((graceMs - silentMs) / 1000)} s por si el audio vuelve.`;
+        this.emit();
+      } else {
+        this.emit();
+      }
+      return;
+    }
+    if (this.preparing) return;
+    this.preparing = true;
+    this.session = env.session;
+    const epoch = ++this.epoch;
+    this.state = "suspendido";
+    this.reason = "Preparando sesión de audio; esperando el primer PCM válido.";
+    this.emit();
+    void this.host.prepare().then((ready) => {
+      if (epoch !== this.epoch || !this.enabled) return;
+      if (this.timedOut(this.host.now())) { this.expire(); return; }
+      this.preparing = false;
+      const current = this.host.environment();
+      if (!current.available || current.session !== this.session) { this.refresh(); return; }
+      if (!ready) { this.fail("La sesión BLE no está lista. Captura OFF; puedes reintentar."); return; }
+      this.startedAt = this.host.now();
+      this.lastPcm = 0;
+      const lease = this.host.acquire(
+        (pcm) => this.accept(pcm, epoch),
+        () => this.preempt(epoch),
+        () => { if (this.epoch === epoch) this.fail("La captura nativa falló. Captura OFF; puedes reintentar."); },
+      );
+      // A synchronous failure/revocation during acquire cannot resurrect a lease.
+      if (epoch !== this.epoch) { lease?.stop(); return; }
+      if (!lease) { this.fail("El audio no está libre. Captura OFF; puedes reintentar."); return; }
+      this.lease = lease;
+      this.metrics.starts++;
+      this.emit();
+    }).catch(() => {
+      if (epoch === this.epoch) this.fail("No se pudo preparar el audio BLE. Captura OFF; puedes reintentar.");
+    });
+  }
+
+  private accept(pcm: Uint8Array, epoch: number): void {
+    if (epoch !== this.epoch || !this.enabled || this.state === "error") return;
+    // Existing LC3 decoder: 5 x 10 ms, 800 samples, mono 16 kHz signed PCM16 LE.
+    if (pcm.length !== 1600) { this.fail("Formato PCM inesperado: se requieren 800 muestras / 1600 B por chunk."); return; }
+    const now = this.host.now();
+    if (this.timedOut(now)) { this.expire(); return; }
+    if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
+    // Never join acoustic candidates across missing delivery or an old stream.
+    if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
+    this.lastPcm = now;
+    this.gapOpen = false;
+    this.gapCounted = false;
+    this.phases?.chunk();
+    let sum = 0;
+    for (let i = 0; i < pcm.length; i += 2) {
+      const unsigned = pcm[i]! | (pcm[i + 1]! << 8);
+      const value = unsigned >= 32768 ? unsigned - 65536 : unsigned;
+      sum += value * value;
+      if (Math.abs(value) >= 32760) this.metrics.clippedSamples++;
+    }
+    this.metrics.rms = Math.sqrt(sum / 800) / 32768;
+    this.metrics.chunks++;
+    this.metrics.samples += 800;
+    this.metrics.bytes += pcm.length;
+    const vadBefore = this.vad.snapshot();
+    this.vad.accept(pcm);
+    if (this.vad.snapshot().completed > vadBefore.completed) this.lastVadStopAtMs = now;
+    // Silence never ends continuous listening: it only saves inference (native VAD vetoes windows).
+    if (this.manualConversation && this.participationMode !== "off") {
+      for (const match of this.host.participation?.drainProfileMatches?.() ?? []) this.host.transcription?.acceptProfileMatch?.(match);
+    }
+    this.state = "escuchando";
+    this.reason = this.participationMode === "enrollment"
+      ? "Registro guiado: lee la frase visible cuando indique Habla ahora. OFF cancela."
+      : this.participationMode === "conversation"
+      ? `Comparación de mi voz y turnos provisionales; ${this.transcribing ? "texto local temporal" : "sin transcripción"}.`
+      : this.transcribing
+      ? "VAD y transcripción local provisionales. Sin grabación ni envío de audio; no confirma participación."
+      : "VAD local por energía; posible voz no confirma participación. Sin grabación ni envío de audio.";
+    // No PCM is retained. UI notification is coalesced by the 500 ms lifecycle tick.
+  }
+
+  /** Optional identity only: release the profile engine and keep capture, Soniox and Hermes running. */
+  private withoutProfile(): void {
+    this.host.participation?.stop();
+    this.participationMode = "off";
+    this.voiceProfile = "no-disponible";
+  }
+
+  private preempt(epoch: number): void {
+    if (epoch !== this.epoch) return;
+    this.metrics.preemptions++;
+    this.phases?.preemption();
+    this.release();
+    this.state = "suspendido";
+    this.reason = "Audio cedido a Hey Even, PTT, asistente u otra función.";
+    this.emit();
+  }
+
+  private timedOut(now: number): boolean {
+    return this.sessionLimitMs !== null && now - this.enabledAt >= this.sessionLimitMs;
+  }
+
+  /** Native deadline: the session limit, or a 24 h safety bound for unlimited manual listening. */
+  nativeLimitMs(): number {
+    const remaining = this.snapshot().remainingMs;
+    return remaining === null ? NATIVE_SESSION_SAFETY_MS : Math.max(1, remaining);
+  }
+
+  private expire(reason?: string): void {
+    if (this.participationMode === "enrollment") this.enrollmentOutcome = "expired";
+    const limitMs = this.sessionLimitMs;
+    this.setEnabled(false);
+    this.stopReason = "expired";
+    this.reason = reason ?? `OFF · Tiempo agotado (${(limitMs ?? 0) / 60_000} min). La sesión ha terminado; puedes iniciar otra.`;
+    this.emit();
+  }
+
+  private fail(reason: string): void {
+    if (this.participationMode === "enrollment") this.enrollmentOutcome = "error";
+    this.enabled = false;
+    this.transcribing = false;
+    this.participationMode = "off";
+    this.stopReason = "error";
+    this.cleanup();
+    this.state = "error";
+    this.reason = reason;
+    this.emit();
+  }
+
+  private release(): void {
+    ++this.epoch; // Revoke delivery before native STOP and its queued callbacks.
+    this.preparing = false;
+    this.session = null;
+    this.lastPcm = 0;
+    this.gapOpen = false;
+    this.gapCounted = false;
+    this.resetAcousticStream();
+    const lease = this.lease;
+    this.lease = null;
+    if (lease) {
+      lease.stop();
+      try { this.lastDiagnostics = lease.diagnostics(); } catch { this.lastDiagnostics = "Diagnóstico no disponible."; }
+    }
+  }
+
+  private cleanup(): void {
+    this.cancelTimer?.();
+    this.cancelTimer = null;
+    // S2: OFF/expiry/terminal error end the identity before release() resets the stream, so a
+    // pending attempt is recorded as cancelled by OFF instead of as an audio interruption.
+    this.host.transcription?.prepareStop?.();
+    this.release();
+    this.host.transcription?.stop();
+    this.host.participation?.stop();
+    // After the acoustic reset above, so a pending candidate is settled as interrupted.
+    this.phases?.stop();
+  }
+
+  /** One acoustic reset per PCM gap, even while the 500 ms tick observes the same outage. */
+  private openGap(): void {
+    if (this.gapOpen) return;
+    this.gapOpen = true;
+    this.countGap();
+    this.resetAcousticStream();
+  }
+
+  /** One gap counts once, whether the 500 ms tick or the next PCM chunk notices it first. */
+  private countGap(): void {
+    if (this.gapCounted) return;
+    this.gapCounted = true;
+    this.phases?.gapReset();
+  }
+
+  private resetAcousticStream(): void {
+    this.lastVadStopAtMs = null;
+    this.vad.resetStream();
+    this.host.transcription?.resetStream();
+    this.host.participation?.resetStream();
+  }
+
+  private emit(): void {
+    const snapshot = this.snapshot();
+    for (const listener of this.listeners) listener(snapshot);
+  }
+}

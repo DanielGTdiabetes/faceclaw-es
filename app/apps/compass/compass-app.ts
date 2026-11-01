@@ -23,7 +23,14 @@ import {
 import { shell } from "../../ui/shell/shell";
 import { ensureLocationPermission, hasLocationPermission } from "../../native/location-permissions";
 import { isCompassCalibrated, normalizeHeading } from "./calibration";
-import { cardinalDirection, createCompassBackground, drawCompassRose, layoutCompassRose, TICK_HEIGHT } from "./compass-rose";
+import {
+  cardinalDirection,
+  createCompassBackground,
+  drawCompassRose,
+  layoutCompassRose,
+  magneticAccuracyDots,
+  TICK_HEIGHT,
+} from "./compass-rose";
 import { CompassCalibrationLayer } from "./calibration-layer";
 import { getDeclinationAvailability, onDeclinationChanged, refreshDeclination } from "./declination";
 import { getNorthReference, resolveHeading, setNorthReference, type NorthReference } from "./heading";
@@ -38,6 +45,9 @@ const TOP_PAD = 2;
 const BOTTOM_PAD = 4;
 /** Clearance between the rose's widest point and the viewport edge. */
 const EDGE_PAD = 8;
+/** Inset of the top-right magnetometer calibration readout from the window edges. */
+const ACCURACY_TOP_PAD = TOP_PAD + 4;
+const ACCURACY_RIGHT_PAD = EDGE_PAD + 4;
 /** Cap on the rose's radius, so a tall window doesn't get a comical one. */
 const MAX_ROSE_RADIUS = 98;
 
@@ -161,7 +171,7 @@ class CompassLayer implements Layer {
     const readoutHeight = headingFont.lineHeight;
 
     // One column centred on the display's true centre, so the rose sits where
-    // the wearer is looking rather than 32px right of it.
+    // the wearer is looking rather than 32px beside it (with a side strip).
     const cx = screenCenterInViewportX();
 
     // The rose is sized and placed first — it hangs off the bottom edge — and
@@ -197,7 +207,7 @@ class CompassLayer implements Layer {
       y += smallStep;
     }
     const accuracyText = magneticAccuracyText(this.diagnostics);
-    image.drawText(small, width - EDGE_PAD - small.measureText(accuracyText), TOP_PAD, accuracyText, 175);
+    image.drawText(small, width - ACCURACY_RIGHT_PAD - small.measureText(accuracyText), ACCURACY_TOP_PAD, accuracyText, 175);
 
     return image;
   }
@@ -274,14 +284,7 @@ function frameStatusText(): string {
   }
 }
 
-/**
- * The firmware's magnetometer calibration readiness (0-3) as filled/empty
- * dots, e.g. "Calibration: ●●○" for 2/3. This is the glasses' own sensor
- * calibration, not the wearer-fit offset set on the calibration screen.
- */
+/** The firmware's magnetometer calibration readiness, e.g. "Calibration: ●●○" for 2/3. */
 function magneticAccuracyText(diagnostics: CompassDiagnostics | null): string {
-  const accuracy = diagnostics && (diagnostics.flags & 0x80) ? diagnostics.magneticAccuracy : -1;
-  if (accuracy < 0) return "Calibration: --";
-  const filled = Math.min(3, accuracy);
-  return `Calibration: ${"●".repeat(filled)}${"○".repeat(3 - filled)}`;
+  return `Calibration: ${magneticAccuracyDots(diagnostics) ?? "--"}`;
 }

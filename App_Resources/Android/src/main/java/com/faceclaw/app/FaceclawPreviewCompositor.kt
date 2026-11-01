@@ -51,11 +51,13 @@ class FaceclawPreviewCompositor(context: Context) {
         if (activeInstance === this) {
             activeInstance = null
         }
-        frameListener = null
+        setFrameListener(null)
     }
 
+    /** Also notified after each step of an animation the preview is replaying (see SurfaceCompositor). */
     fun setFrameListener(listener: Runnable?) {
         this.frameListener = listener
+        compositor.setPreviewAnimationListener(listener?.let { { mainHandler.post(it); Unit } })
     }
 
     /** Set the compositor's output frame size. Call before configuring surfaces. */
@@ -135,6 +137,15 @@ class FaceclawPreviewCompositor(context: Context) {
         }
         return PreviewBitmapUtil.fromGray(
                 java.nio.ByteBuffer.wrap(composite.gray), composite.width, composite.height, brightenGamma, green)
+    }
+
+    /** As above, cropped to a screen area (Settings > Phone display > Preview scaling); black past the screen's edges. */
+    fun getCompositePreviewBitmap(brightenGamma: Double, green: Boolean,
+                                  cropX: Int, cropY: Int, cropWidth: Int, cropHeight: Int): android.graphics.Bitmap? {
+        val composite = compositor.previewComposite() ?: return null
+        return PreviewBitmapUtil.fromGray(
+                java.nio.ByteBuffer.wrap(composite.gray), composite.width, composite.height, brightenGamma, green,
+                cropX, cropY, cropWidth, cropHeight)
     }
 
     /** Save the current composite as a 4-bit grayscale PNG; returns the path or "". */

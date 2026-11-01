@@ -86,7 +86,7 @@ function ui(fontSize = 12) {
     '../util/render-freshness': { renderPassAllowsStaleData: () => false },
     './menu-highlight-motion': require('../.test-build/app/ui/menu-highlight-motion.js'), '../graphics/menu-scroll-list': require('../.test-build/app/graphics/menu-scroll-list.js'), './menu-scroll-motion': require('../.test-build/app/ui/menu-scroll-motion.js'), '../graphics/draw-expression': require('../.test-build/app/graphics/draw-expression.js'),
     './metrics': load('app/ui/metrics.ts'),
-    './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), '../native/settings-store': { getBooleanSetting: (_key, fallback) => fallback },
+    './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), './animation-speed': require('../.test-build/app/ui/animation-speed.js'), '../native/settings-store': { getStringSetting: (_key, fallback) => fallback },
     './gestures': {},
   };
   const requireModule = (name) => {
@@ -98,13 +98,39 @@ function ui(fontSize = 12) {
   const { SingleNotificationLayer } = load('app/ui/notifications.ts', requireModule);
   const { NotificationFilterLayer } = load('app/ui/notification-filter.ts', requireModule);
   const ctx = { stack: { getBaseSize: () => ({ width: 540, height: 224 }), isFocused: () => true, pop: () => closes++ } };
-  const popup = new SingleNotificationLayer('key', { origin: 'new-notification-modal', closeModal: () => closes++ });
+  const popup = new SingleNotificationLayer('key', { origin: 'new-notification-modal', onClose: () => closes++ });
+  const trayCloses = [];
+  const tray = new SingleNotificationLayer('key', { origin: 'notification-tray', onClose: (_ctx, gone) => trayCloses.push(gone) });
   const filter = new NotificationFilterLayer();
-  const paint = (layer) => layer.paint(ctx, () => new RecordingImage(540, 224));
+  let paintedBelow = 0;
+  const paint = (layer) => layer.paint(ctx, () => { paintedBelow++; return new RecordingImage(540, 224); });
   const input = (layer, type) => layer.handleInput({ type }, ctx);
-  return { prefs, popup, filter, paint, input, active: (value) => { active = value; },
-    dismissals: () => dismissals, closes: () => closes };
+  return { prefs, popup, tray, filter, paint, input, active: (value) => { active = value; },
+    dismissals: () => dismissals, closes: () => closes, trayCloses, paintedBelow: () => paintedBelow };
 }
+
+test('a notification the switcher selected reports back and dismissal to it, and repeats its last frame once gone', async () => {
+  const app = ui();
+  const labels = (image) => image.texts.map(({ text }) => text);
+  assert.ok(labels(app.paint(app.tray)).includes('Back'));
+  assert.ok(!labels(app.paint(app.tray)).some((text) => text.includes("Don't show")));
+  await app.input(app.tray, 'double-click');
+  await app.input(app.tray, 'click');
+  assert.deepEqual(app.trayCloses, [false, false]);
+  await app.input(app.tray, 'scroll-down');
+  const last = app.paint(app.tray);
+  await app.input(app.tray, 'click');
+  assert.equal(app.dismissals(), 1);
+  assert.deepEqual(app.trayCloses, [false, false, true]);
+  // The switcher swaps in a neighbour after the paint; until then the paint
+  // holds what was showing rather than the list below.
+  const again = app.paint(app.tray);
+  assert.deepEqual(app.trayCloses, [false, false, true, true]);
+  assert.equal(app.paintedBelow(), 0);
+  // (Compared unbaked: the menu highlight's draws animate with the clock.)
+  assert.deepEqual(Buffer.from(again.pixels), Buffer.from(last.pixels));
+  assert.deepEqual(again.drawList, last.drawList);
+});
 
 test('popup dismisses before confirmation; confirming disables the source even after the notification disappears', async () => {
   const app = ui();
@@ -161,29 +187,69 @@ test('popup action wraps fully and stays visible with small and large fonts', as
   }
 });
 
-test('controller filters before waking or opening a popup, and still refreshes the tray', async () => {
+test('controller filters before waking or opening a popup, and still refreshes the tray', () => {
   const file = ts.createSourceFile('controller.ts', source('app/g2/dashboard-controller.ts'), ts.ScriptTarget.Latest, true);
   const controller = file.statements.find((node) => ts.isClassDeclaration(node) && node.name.text === 'DashboardController');
-  const handler = controller.members.find((node) => node.name?.getText(file) === 'handleAndroidNotificationPosted');
+  const members = ['handleAndroidNotificationPosted', 'handleAndroidNotificationRemoved', 'popUpAndroidNotification']
+    .map((name) => controller.members.find((node) => node.name?.getText(file) === name).getText(file));
+  const { NotificationPopupDelay, notificationPopupDelayMs } = require('../.test-build/app/ui/shell/notification-popup-delay.js');
   const prefs = store();
+  let active = [{ ...mail, key: 'key' }];
   let wakes = 0, popups = 0, renders = 0;
-  const { Harness } = evaluate(`export class Harness { ${handler.getText(file)} }`, null, {
+  const removed = [];
+  const { Harness } = evaluate(`export class Harness { ${members.join('\n')} }`, null, {
     ALL_NOTIFICATIONS: 0x7fffffff,
-    readActiveNotifications: () => [{ ...mail, key: 'key' }],
+    readActiveNotifications: () => active,
     shouldShowNotificationOnGlasses: prefs.shouldShowNotificationOnGlasses,
-    shell: { isScreenOn: () => false, wake: () => { wakes++; return true; }, openNotificationModal: () => popups++ },
+    notificationPopupDelayMs,
+    shell: {
+      isScreenOn: () => false,
+      wake: () => { wakes++; return true; },
+      openNotificationModal: () => popups++,
+      notificationRemoved: (key) => removed.push(key),
+    },
   });
+  // Popup delays run when the test says so.
+  let timers = [];
+  const elapse = () => { const due = timers; timers = []; for (const timer of due) if (!timer.cancelled) timer.run(); };
   const instance = new Harness();
+  instance.notificationPopups = new NotificationPopupDelay((key) => instance.popUpAndroidNotification(key), (run) => {
+    const timer = { run, cancelled: false };
+    timers.push(timer);
+    return () => { timer.cancelled = true; };
+  });
   instance.requestShellRender = () => renders++;
   instance.appendLog = () => {};
+
   prefs.setNotificationSourceEnabled(mail, false);
-  await instance.handleAndroidNotificationPosted('key');
-  await instance.handleAndroidNotificationPosted('gone');
+  instance.handleAndroidNotificationPosted('key');
+  instance.handleAndroidNotificationPosted('gone');
+  elapse();
   assert.equal(wakes, 0);
   assert.equal(popups, 0);
   assert.equal(renders, 2);
+
   prefs.setNotificationSourceEnabled(mail, true);
-  await instance.handleAndroidNotificationPosted('key');
+  instance.handleAndroidNotificationPosted('key');
+  assert.equal(popups, 0, 'the popup waits out its delay');
+  elapse();
   assert.equal(wakes, 1);
+  assert.equal(popups, 1);
+
+  // Withdrawn by its source during the delay: no wake, no popup, and the shell hears of it.
+  active = [{ ...mail, key: 'working', foregroundService: true }];
+  instance.handleAndroidNotificationPosted('working');
+  active = [];
+  instance.handleAndroidNotificationRemoved('working');
+  elapse();
+  assert.equal(wakes, 1);
+  assert.equal(popups, 1);
+  assert.deepEqual(removed, ['working']);
+
+  // The filter is checked again once the delay is over.
+  active = [{ ...mail, key: 'key' }];
+  instance.handleAndroidNotificationPosted('key');
+  prefs.setNotificationSourceEnabled(mail, false);
+  elapse();
   assert.equal(popups, 1);
 });

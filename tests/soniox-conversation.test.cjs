@@ -1,0 +1,241 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { SonioxConversationTranscription, SONIOX_MODEL } = require('../.test-build/app/native/soniox-conversation.js');
+
+function localPort() {
+  const events = [];
+  let text = '';
+  const emptyDiagnostics = () => ({ enabled: true, status: 'listo', worker: true, busy: false, inputBufferedBytes: 0, accepted: 0, abstentions: 0, dropped: 0 });
+  let diagnostics = emptyDiagnostics();
+  return {
+    events,
+    setText(value) { text = value; },
+    setDiagnostics(value) { diagnostics = { ...diagnostics, ...value }; },
+    starts: [],
+    start(language, speakers, maxMs) { diagnostics = emptyDiagnostics(); events.push(`start:${language}`); this.starts.push([language, speakers, maxMs]); return true; },
+    stop() { events.push('stop'); text = ''; },
+    resetStream() { events.push('reset'); },
+    setPhase() {},
+    acceptNative() { events.push('pcm'); },
+    text: () => text,
+    snapshot: () => ({ ...diagnostics }),
+  };
+}
+
+function harness({ key = 'sk-test', engine = 'soniox' } = {}) {
+  const local = localPort();
+  const sockets = [];
+  let now = 0, tick = null;
+  let engineMode = engine;
+  const host = {
+    apiKey: () => key,
+    engine: () => engineMode,
+    now: () => now,
+    every(cb) { tick = cb; return () => { tick = null; }; },
+    connect(url, listener) {
+      const socket = { url, listener, texts: [], binary: 0, closed: false,
+        sendText(message) { this.texts.push(message); return true; },
+        sendBinary() { this.binary++; return true; },
+        close() { this.closed = true; } };
+      sockets.push(socket);
+      return socket;
+    },
+  };
+  const engineUnderTest = new SonioxConversationTranscription(local, host);
+  return { local, sockets, engine: engineUnderTest, setEngine(value) { engineMode = value; }, advance(ms) { now += ms; tick?.(); }, hasTick: () => !!tick };
+}
+
+const msg = (tokens, extra = {}) => JSON.stringify({ tokens, ...extra });
+
+test('actual native model is read from analysis during capture and retained after OFF', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('auto');
+  // Android emits model identity inside analysis, not at the diagnostics root.
+  h.local.setDiagnostics({ analysis: { engine: 'whisper-small', decodeCalls: 2 }, worker: false });
+  assert.equal(h.engine.snapshot().model, 'whisper-small');
+  h.engine.stop();
+  assert.equal(h.engine.snapshot().model, 'whisper-small');
+  h.local.setDiagnostics({ analysis: { engine: 'whisper-base', decodeCalls: 0 } });
+  assert.equal(h.engine.snapshot().model, 'whisper-small', 'OFF cannot acquire another decoder identity');
+});
+
+test('saved-profile matches automatically associate finalized labels without a phrase or manual choice', () => {
+  const h = harness(); h.engine.start('auto', true); h.sockets[0].listener.onOpen();
+  const events = []; h.engine.subscribeAssociation(e => events.push(e));
+  for (let seq = 1; seq <= 4; seq++) {
+    const startMs = (seq - 1) * 4000, endMs = seq * 4000;
+    for (let i = 0; i < 80; i++) h.engine.acceptNative({}, 'posible voz');
+    const speaker = seq <= 2 ? '1' : '2';
+    h.sockets[0].listener.onTextMessage(msg([{ text: ' Texto sintético', is_final: true, speaker, start_ms: startMs + 200, end_ms: startMs + 3200 }], { final_audio_proc_ms: endMs }));
+    h.engine.acceptProfileMatch({ seq, startMs, endMs, voicedMs: 3000, similarity: seq <= 2 ? 0.9 : 0.3 });
+  }
+  const identity = h.engine.snapshot().identity;
+  assert.equal(identity.source, 'perfil'); assert.equal(identity.speaker, '1'); assert.equal(identity.knownOthers, 1);
+  assert.equal(h.engine.lastSessionSummary(), null);
+  assert.equal(events.at(-1).kind, 'perfil'); assert.deepEqual(events.at(-1).knownOthers, ['2']);
+  h.engine.resetStream(); assert.equal(h.engine.snapshot().identity.speaker, undefined);
+  h.engine.acceptProfileMatch({ seq: 5, startMs: 0, endMs: 4000, voicedMs: 3000, similarity: 0.99 });
+  assert.equal(h.engine.snapshot().identity.speaker, undefined);
+  h.engine.stop(); h.sockets[0].listener.onTextMessage(msg([]));
+  assert.equal(h.engine.snapshot().identity.speaker, undefined);
+});
+
+test('a manual conversation asks the local engine for session voices; other starts do not', () => {
+  // Regression: S2.9 added local speakers but this wrapper always passed false, so they never ran.
+  const h = harness({ engine: 'local' });
+  assert.equal(h.engine.start('auto', true, 1200000), true);
+  assert.deepEqual(h.local.starts.at(-1), ['auto', true, 1200000]);
+  h.engine.stop();
+  assert.equal(h.engine.start('es', false, 120000), true);
+  assert.deepEqual(h.local.starts.at(-1), ['es', false, 120000]);
+  h.engine.stop();
+  const fallback = harness();
+  assert.equal(fallback.engine.start('auto', true, 1200000), true);
+  fallback.sockets[0].listener.onFailure('boom');
+  assert.deepEqual(fallback.local.starts.at(-1), ['auto', true, 1200000]);
+});
+
+test('without a key or with the local engine it starts on-device Whisper and opens no socket', () => {
+  for (const options of [{ key: '' }, { engine: 'local' }]) {
+    const h = harness(options);
+    assert.equal(h.engine.start('es'), true);
+    assert.deepEqual(h.local.events, ['start:es']);
+    assert.equal(h.sockets.length, 0);
+    assert.equal(h.engine.snapshot().engine, 'local');
+  }
+});
+
+test('Soniox config enables diarization, Spanish hints and endpoint detection; key never in snapshot', () => {
+  const h = harness();
+  assert.equal(h.engine.start('es'), true);
+  assert.equal(h.engine.snapshot().status, 'cargando');
+  h.sockets[0].listener.onOpen();
+  const config = JSON.parse(h.sockets[0].texts[0]);
+  assert.equal(config.model, SONIOX_MODEL);
+  assert.equal(config.audio_format, 'pcm_s16le');
+  assert.equal(config.sample_rate, 16000);
+  assert.deepEqual(config.language_hints, ['es']);
+  assert.equal(config.enable_speaker_diarization, true);
+  assert.equal(config.enable_endpoint_detection, true);
+  const snapshot = h.engine.snapshot();
+  assert.equal(snapshot.status, 'listo');
+  assert.equal(snapshot.engine, 'soniox');
+  assert.ok(!JSON.stringify(snapshot).includes('sk-test'));
+  h.engine.acceptNative({}, 'sin actividad');
+  assert.equal(h.sockets[0].binary, 1);
+  assert.equal(h.engine.snapshot().soniox.sentMs, 50);
+});
+
+test('final tokens are grouped by speaker and non-final text is shown provisionally', () => {
+  const h = harness();
+  h.engine.start('es'); h.sockets[0].listener.onOpen();
+  const l = h.sockets[0].listener;
+  l.onTextMessage(msg([{ text: 'Hola', is_final: true, speaker: '1' }, { text: ' qué tal', is_final: true, speaker: '1' },
+    { text: ' Bien', is_final: false, speaker: '2' }]));
+  assert.equal(h.engine.text(), '1: Hola qué tal\n2: Bien');
+  l.onTextMessage(msg([{ text: 'Bien', is_final: true, speaker: '2' }, { text: ', ¿y tú?', is_final: true, speaker: '2' },
+    { text: '<end>', is_final: true }]));
+  assert.equal(h.engine.text(), '1: Hola qué tal\n2: Bien, ¿y tú?');
+  assert.equal(h.engine.snapshot().soniox.speakers, 2);
+});
+
+test('a dropped socket or server error falls back to local Whisper and keeps the earlier text', () => {
+  for (const failure of ['closed', 'error']) {
+    const h = harness();
+    h.engine.start('es'); h.sockets[0].listener.onOpen();
+    h.sockets[0].listener.onTextMessage(msg([{ text: 'Hola', is_final: true, speaker: '1' }]));
+    if (failure === 'closed') h.sockets[0].listener.onClosed();
+    else h.sockets[0].listener.onTextMessage(JSON.stringify({ error_code: 503, error_message: 'busy' }));
+    assert.deepEqual(h.local.events, ['start:es'], failure);
+    assert.equal(h.sockets[0].closed, true);
+    h.local.setText('seguimos aquí');
+    assert.equal(h.engine.text(), 'Texto anterior · Soniox:\n1: Hola\nLocal · sin identificación:\nseguimos aquí');
+    assert.equal(h.engine.snapshot().engine, 'local (sin red)');
+    h.engine.acceptNative({}, 'posible voz');
+    assert.ok(h.local.events.includes('pcm'));
+    // Late callbacks from the dead socket are ignored.
+    h.sockets[0].listener.onTextMessage(msg([{ text: 'tarde', is_final: true, speaker: '1' }]));
+    assert.ok(!h.engine.text().includes('tarde'));
+  }
+});
+
+test('connection failure before open falls back to local', () => {
+  const h = harness();
+  h.engine.start('auto');
+  h.sockets[0].listener.onFailure('dns');
+  assert.deepEqual(h.local.events, ['start:auto']);
+  assert.equal(h.engine.snapshot().soniox.lastError, 'dns');
+});
+
+test('stop closes the stream gracefully, clears text and ignores late messages; keepalive only in silence', () => {
+  const h = harness();
+  h.engine.start('es'); h.sockets[0].listener.onOpen();
+  assert.ok(h.hasTick());
+  h.advance(8000);
+  assert.ok(h.sockets[0].texts.includes(JSON.stringify({ type: 'keepalive' })));
+  h.engine.resetStream();
+  assert.ok(h.sockets[0].texts.includes(JSON.stringify({ type: 'finalize' })));
+  h.sockets[0].listener.onTextMessage(msg([{ text: 'Hola', is_final: true, speaker: '1' }]));
+  h.engine.stop();
+  assert.equal(h.sockets[0].texts.at(-1), '');
+  assert.equal(h.sockets[0].closed, true);
+  assert.equal(h.engine.text(), '');
+  assert.equal(h.hasTick(), false);
+  h.sockets[0].listener.onTextMessage(msg([{ text: 'tarde', is_final: true, speaker: '1' }]));
+  h.sockets[0].listener.onClosed();
+  assert.equal(h.engine.text(), '');
+  assert.deepEqual(h.local.events, []);
+  assert.equal(h.engine.start('es'), true);
+});
+
+test('local diagnostics refresh from draining to complete after OFF without retaining text or reviving capture', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('es');
+  h.local.setText('texto que debe borrarse');
+  h.local.setDiagnostics({ engine: 'whisper-medium', status: 'inactivo', worker: true, busy: true,
+    inputBufferedBytes: 3200, accepted: 3, abstentions: 2, dropped: 1,
+    analysis: { pcmAudioMs: 4000, decodeCalls: 2, decodeTotalMs: 900 } });
+  h.engine.stop();
+  const afterOff = h.engine.snapshot();
+  assert.equal(h.engine.text(), '');
+  assert.deepEqual(h.local.events, ['start:es', 'stop']);
+  assert.deepEqual({ enabled: afterOff.enabled, engine: afterOff.engine, model: afterOff.model,
+    worker: afterOff.worker, busy: afterOff.busy, inputBufferedBytes: afterOff.inputBufferedBytes,
+    accepted: afterOff.accepted, abstentions: afterOff.abstentions, dropped: afterOff.dropped },
+  { enabled: false, engine: 'local', model: 'whisper-medium', worker: true, busy: true,
+    inputBufferedBytes: 3200, accepted: 3, abstentions: 2, dropped: 1 });
+  assert.equal(afterOff.analysis.decodeCalls, 2);
+  assert.equal(afterOff.soniox.sentMs, 0);
+  // The real decoder can finish after OFF.  Its final scalar counters must be
+  // observable, without re-opening PCM, transcript, or turns.
+  h.local.setDiagnostics({ worker: false, busy: false, inputBufferedBytes: 0,
+    accepted: 4, abstentions: 3, dropped: 2,
+    analysis: { pcmAudioMs: 4800, decodeCalls: 3, decodeTotalMs: 1200 } });
+  const drained = h.engine.snapshot();
+  assert.deepEqual({ worker: drained.worker, busy: drained.busy, inputBufferedBytes: drained.inputBufferedBytes,
+    accepted: drained.accepted, abstentions: drained.abstentions, dropped: drained.dropped },
+  { worker: false, busy: false, inputBufferedBytes: 0, accepted: 4, abstentions: 3, dropped: 2 });
+  assert.equal(drained.analysis.decodeCalls, 3);
+  h.engine.stop(); // OFF is idempotent; it neither re-stops nor drops the final diagnostics.
+  assert.equal(h.engine.snapshot().accepted, 4);
+  h.engine.acceptNative({}, 'posible voz');
+  assert.deepEqual(h.local.events, ['start:es', 'stop']);
+});
+
+test('a new local session or local-to-cloud transition clears retained local diagnostics', () => {
+  const h = harness({ engine: 'local' });
+  h.engine.start('es');
+  h.local.setDiagnostics({ engine: 'whisper-medium', accepted: 7 });
+  h.engine.stop();
+  assert.equal(h.engine.snapshot().accepted, 7);
+  h.engine.start('es');
+  assert.equal(h.engine.snapshot().accepted, 0);
+  h.local.setDiagnostics({ accepted: 1, worker: false, busy: false });
+  assert.equal(h.engine.snapshot().accepted, 1);
+  h.engine.stop();
+  h.local.setDiagnostics({ accepted: 9, worker: true, busy: true });
+  h.setEngine('soniox');
+  h.engine.start('es'); h.sockets[0].listener.onOpen();
+  assert.equal(h.engine.snapshot().accepted, 0);
+  assert.equal(h.engine.snapshot().engine, 'soniox');
+});

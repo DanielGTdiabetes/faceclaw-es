@@ -1,12 +1,11 @@
 import { Utils } from "@nativescript/core";
 
-import { type CloudSttTranscriptEvent, type CloudSttOptions, CloudSttClient } from "./cloud-stt";
-import { ReconnectingSttClient } from "./reconnecting-stt";
+import { type CloudSttTranscriptEvent, CloudSttClient, toJavaBytes } from "./cloud-stt";
+import { createCloudSttClient } from "./cloud-stt-provider";
 import { SpeechPauseDetector } from "./speech-pause";
-import { ElevenLabsSttClient } from "./elevenlabs-stt";
-import { OpenAiRealtimeSttClient } from "./openai-stt";
-import { SonioxSttClient } from "./soniox-stt";
 import { toUint8Array } from "../util/array-util";
+import { AudioCaptureArbiter } from "./audio-capture-arbiter";
+import { type DetectorLease } from "../conversation-detection/coordinator";
 
 declare const com: any;
 
@@ -31,7 +30,9 @@ export type VoiceControlState = {
 // family, not with "onboard-whisper" below, which is the on-device sherpa-onnx
 // Whisper backend added alongside "onboard" (Moonshine). Kept as-is rather than
 // renamed, since it's a persisted settings value on real installs already.
-export type VoiceProviderKind = "onboard" | "onboard-whisper" | "elevenlabs" | "whisper" | "soniox";
+// "whisper-server" is a self-hosted OpenAI-compatible Whisper over HTTP
+// (whisper-server-stt.ts); "even" is the EVO-X2 NeMo-Speech service (even-stt.ts).
+export type VoiceProviderKind = "onboard" | "onboard-whisper" | "onboard-whisper-small" | "onboard-whisper-medium" | "elevenlabs" | "whisper" | "soniox" | "whisper-server" | "even";
 
 export type VoiceTranscriptEvent = CloudSttTranscriptEvent & {
   /**
@@ -55,6 +56,12 @@ export type PushToTalkOptions = {
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
+  whisperServerUrl?: string;
+  whisperServerModel?: string;
+  whisperServerLanguage?: string;
+  whisperServerApiKey?: string;
+  evenAsrUrl?: string;
+  evenAsrKey?: string;
   saveRecording: boolean;
   /**
    * Watch the mic and fire onSpeechEnd when the speaker stops. For hands-free
@@ -97,12 +104,19 @@ export type MicFrameMeta = { angleDegrees: number; ssr: number };
 export type FrameMetaListener = (meta: MicFrameMeta) => void;
 
 export class FaceclawVoiceControlBridge {
+  private readonly audioArbiter = new AudioCaptureArbiter();
+  private readonly normalRawOwners = new Set<string>();
+  private experimentalLeaseId: number | null = null;
+  private experimentalPcm: RawPcmListener | null = null;
+  private experimentalNativePcm: ((pcm: unknown) => void) | null = null;
+  private experimentalFailure: (() => void) | null = null;
   private readonly statusListeners = new Set<(state: VoiceControlState) => void>();
   private readonly transcriptListeners = new Set<(event: VoiceTranscriptEvent) => void>();
   private readonly speechPauseListeners = new Set<() => void>();
   private readonly speechPause = new SpeechPauseDetector();
   private readonly speechEndListeners = new Set<() => void>();
   private controller: any = null;
+  private readonly localTranscriptionListeners = new Set<any>();
   private listenerProxy: any = null;
   private status = "Voice control stopped.";
   private listening = false;
@@ -125,10 +139,11 @@ export class FaceclawVoiceControlBridge {
   private captureEndpointing = false;
   // Non-null while a cloud provider owns the transcript; Java only decodes PCM.
   private cloudClient: CloudSttClient | null = null;
-  // Raw-PCM tap (EvenHub mic apps): when active, the controller runs in the
-  // decode-only "cloud" mode and every decoded PCM frame is broadcast to these
-  // listeners. STT capture preempts it — a live assistant/transcribe session
-  // owns the single G2 mic and the raw tap is stopped for its duration.
+  // Raw-PCM tap (EvenHub mic apps, the Microphones app): when active, the
+  // controller runs in the decode-only "cloud" mode and every decoded PCM
+  // frame is broadcast to these listeners. STT capture preempts it — a live
+  // assistant/transcribe session owns the single G2 mic and the raw tap is
+  // stopped for its duration.
   private readonly rawPcmListeners = new Set<RawPcmListener>();
   private readonly frameMetaListeners = new Set<FrameMetaListener>();
   private rawActive = false;
@@ -186,6 +201,13 @@ export class FaceclawVoiceControlBridge {
     );
   }
 
+  /** Keep the local model between utterances for the lifetime of an open Chat window. */
+  setKeepTranscriberLoaded(enabled: boolean): void {
+    if (!global.isAndroid) return;
+    if (enabled) this.ensureController();
+    this.controller?.setKeepTranscriberLoaded(enabled);
+  }
+
   /** Begin push-to-talk capture (momentary; released with stopPushToTalk). */
   startPushToTalk(options: PushToTalkOptions): void {
     this.acquireCapture("ptt", options);
@@ -193,12 +215,10 @@ export class FaceclawVoiceControlBridge {
 
   /** End push-to-talk: for cloud, commit for a final result if it was the last holder. */
   stopPushToTalk(): Promise<void> | void {
-    // Shared continuous capture keeps running; cloud providers finalize via
-    // their own callbacks. Only a stopped native recognizer must be awaited.
+    // Wait for PCM delivery to drain and for a remote/local fallback final too.
     const finished = !this.cloudClient && this.captureHolders.has("ptt") && this.captureHolders.size === 1
       ? this.nativeCaptureFinished : undefined;
-    this.releaseCapture("ptt", true);
-    return finished;
+    return this.releaseCapture("ptt", true) ?? finished;
   }
 
   /** Begin continuous capture (Transcribe): the mic stays on until released. */
@@ -207,7 +227,7 @@ export class FaceclawVoiceControlBridge {
   }
 
   stopContinuousCapture(): void {
-    this.releaseCapture("continuous", false);
+    void this.releaseCapture("continuous", false);
   }
 
   /** Subscribe to decoded raw mic PCM (16 kHz mono S16LE). */
@@ -223,11 +243,93 @@ export class FaceclawVoiceControlBridge {
   }
 
   /**
-   * Start the decode-only raw-PCM tap for an EvenHub mic app. Fails (returns
-   * false) if an STT capture already owns the mic; the caller re-tries when its
-   * eligibility is re-evaluated. Idempotent while already running.
+   * Start the decode-only raw-PCM tap on behalf of `owner`. Fails (returns
+   * false) if an STT capture already owns the mic; the owner stays registered
+   * and re-tries later (the EvenHub router when eligibility is re-evaluated,
+   * the Microphones app from its capture check). Idempotent while already
+   * running.
    */
-  startRawCapture(options: { communicator: any }): boolean {
+  startRawCapture(options: { communicator: any; owner?: string }): boolean {
+    const owner = options.owner ?? "legacy-raw";
+    this.normalRawOwners.add(owner);
+    this.audioArbiter.setOwner(`raw:${owner}`, true);
+    return this.beginRawCapture(options.communicator, false);
+  }
+
+  /**
+   * Whether the raw tap is running and its glasses mic enable still holds
+   * (or is still coming up). False after an STT preemption or a session drop.
+   */
+  isRawCaptureLive(): boolean {
+    return this.rawActive && this.micIsLive();
+  }
+
+  /** Reserve audio for a normal function before it can replace the BLE listener. */
+  setAudioPriority(owner: string, active: boolean): void {
+    this.audioArbiter.setOwner(owner, active);
+  }
+
+  experimentalAudioAvailable(includeOwnLease = false): boolean {
+    return !this.audioArbiter.isBusy() && !this.isCaptureHeld()
+      && (!this.rawActive || (includeOwnLease && this.experimentalLeaseId !== null))
+      && !this.cloudClient && this.nativeCaptureResolvers.size === 0;
+  }
+
+  /** Exclusive low-priority decode-only stream; never subscribes to STT PCM. */
+  acquireExperimentalRaw(
+    communicator: any, pcm: RawPcmListener, revoked: () => void, failed: () => void,
+    nativePcm?: (pcm: unknown) => void,
+    sessionLimitMs = 120_000,
+  ): DetectorLease | null {
+    if (!global.isAndroid || !this.experimentalAudioAvailable() || communicator?.isAudioCaptureActive()) return null;
+    let lastDiagnostics = "";
+    const diagnostics = () => this.experimentalLeaseId === id
+      ? String(this.controller?.experimentalAudioDiagnostics() ?? "") : lastDiagnostics;
+    const stop = () => {
+      if (this.experimentalLeaseId !== id) return;
+      this.stopExperimentalRaw(id!);
+      // Read the stopped controller before any other owner starts a fresh capture. The lease keeps
+      // this snapshot, so old diagnostics never describe the next owner's stream.
+      lastDiagnostics = String(this.controller?.experimentalAudioDiagnostics() ?? "");
+    };
+    const id = this.audioArbiter.acquireDetector(() => {
+      // Detach delivery before touching the native controller or invoking the coordinator.
+      stop();
+      revoked();
+    });
+    if (id === null) return null;
+    this.experimentalLeaseId = id;
+    this.experimentalPcm = pcm;
+    this.experimentalNativePcm = nativePcm ?? null;
+    this.experimentalFailure = failed;
+    try {
+      this.ensureController();
+      this.controller?.setExperimentalSessionLimitMs(Math.max(1, Math.min(86_400_000, Math.floor(sessionLimitMs))));
+      if (!this.beginRawCapture(communicator, true)) {
+        this.stopExperimentalRaw(id);
+        return null;
+      }
+    } catch {
+      this.stopExperimentalRaw(id);
+      return null;
+    }
+    return {
+      stop,
+      diagnostics,
+    };
+  }
+
+  private stopExperimentalRaw(id: number): void {
+    if (this.experimentalLeaseId !== id) return; // Old STOP cannot stop someone else's capture.
+    this.experimentalLeaseId = null;
+    this.experimentalPcm = null;
+    this.experimentalNativePcm = null;
+    this.experimentalFailure = null;
+    this.audioArbiter.releaseDetector(id);
+    this.stopRawStream();
+  }
+
+  private beginRawCapture(communicator: any, experimental: boolean): boolean {
     if (!global.isAndroid) return false;
     if (this.rawActive && this.micIsLive()) return true;
     // An STT holder owns the mic even while its stream waits on a new glasses
@@ -237,7 +339,8 @@ export class FaceclawVoiceControlBridge {
     if (this.started || this.rawActive) this.teardownCapture();
     this.suspendedRaw = false;
     this.ensureController();
-    this.controller?.setCommunicator(options.communicator);
+    this.controller?.setCommunicator(communicator);
+    this.controller?.setExperimentalRawMode(experimental);
     // The raw tap is strictly the G2 stream; clear any phone-mic flag a
     // preview-mode capture may have left on the shared controller.
     this.controller?.setUsePhoneMic(false);
@@ -257,7 +360,14 @@ export class FaceclawVoiceControlBridge {
     return true;
   }
 
-  stopRawCapture(): void {
+  stopRawCapture(owner = "legacy-raw"): void {
+    this.normalRawOwners.delete(owner);
+    this.audioArbiter.setOwner(`raw:${owner}`, false);
+    if (this.normalRawOwners.size > 0 || this.experimentalLeaseId !== null) return;
+    this.stopRawStream();
+  }
+
+  private stopRawStream(): void {
     this.suspendedRaw = false;
     if (!this.rawActive) return;
     this.rawActive = false;
@@ -267,9 +377,10 @@ export class FaceclawVoiceControlBridge {
 
   private acquireCapture(holder: CaptureHolder, options: PushToTalkOptions): void {
     if (!global.isAndroid) return;
+    this.audioArbiter.setOwner(`stt:${holder}`, true);
     // STT preempts the raw-PCM tap: a live transcription session owns the mic,
     // and an EvenHub app gets no audio for its duration.
-    if (this.rawActive) this.stopRawCapture();
+    if (this.rawActive) this.stopRawStream();
     // Whether the mic is already running is a question about the stream, not
     // about this set: a holder whose capture died with the glasses session
     // (or whose mic enable was refused) is still in it. Trusting the set here
@@ -286,6 +397,7 @@ export class FaceclawVoiceControlBridge {
     // Any leftover capture is dead; drop it before starting the new one.
     if (this.started) this.teardownCapture();
     this.ensureController();
+    this.controller?.setExperimentalRawMode(false);
     this.controller?.setCommunicator(options.communicator);
     this.controller?.setUsePhoneMic(Boolean(options.usePhoneMic));
     this.controller?.setSaveRecordings(options.saveRecording);
@@ -317,21 +429,25 @@ export class FaceclawVoiceControlBridge {
     // A previous push-to-talk commit may still be awaiting its final result.
     this.cloudClient?.stop();
     const cloudClient = this.createCloudClient(options);
+    const captureId = this.nextNativeCaptureId++;
+    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
     if (cloudClient) {
       this.cloudClient = cloudClient;
       cloudClient.start();
       this.started = true;
-      this.controller?.start("cloud");
+      this.controller?.start("cloud", captureId);
       return;
     }
 
     this.cloudClient = null;
     this.started = true;
     // Which on-device model to load; a no-op setter for every provider except
-    // "onboard-whisper" (FaceclawVoiceController defaults to Moonshine).
-    this.controller?.setOnboardModelKind(options.provider === "onboard-whisper" ? "whisper" : "moonshine");
-    const captureId = this.nextNativeCaptureId++;
-    this.nativeCaptureFinished = new Promise((resolve) => { this.nativeCaptureResolvers.set(captureId, resolve); });
+    // the three explicit Whisper choices (FaceclawVoiceController defaults to Moonshine).
+    this.controller?.setOnboardModelKind(
+      options.provider === "onboard-whisper-medium" ? "whisper-medium" :
+      options.provider === "onboard-whisper-small" || options.provider === "even" ? "whisper-small" :
+      options.provider === "onboard-whisper" ? "whisper" : "moonshine",
+    );
     this.controller?.start("onboard", captureId);
   }
 
@@ -341,47 +457,46 @@ export class FaceclawVoiceControlBridge {
    * than failing the capture outright.
    */
   private createCloudClient(options: PushToTalkOptions): CloudSttClient | null {
-    if (options.provider === "onboard" || options.provider === "onboard-whisper") return null;
-    const sttOptions = {
-      apiKey: "",
+    return createCloudSttClient(options, {
       onTranscript: (event: CloudSttTranscriptEvent) =>
         this.emitTranscript(event.text, event.isFinal, event),
       onStatus: (status: string) => this.setStatus(status),
       onError: (message: string) => this.setStatus(message),
-    };
-    const reconnecting = (create: (options: CloudSttOptions) => CloudSttClient, apiKey: string) =>
-      new ReconnectingSttClient(create, { ...sttOptions, apiKey }, () => this.captureHolders.has("continuous"));
-    if (options.provider === "elevenlabs") {
-      const apiKey = options.elevenLabsApiKey.trim();
-      if (!apiKey) {
-        this.setStatus("No ElevenLabs key set; using on-device voice.");
-        return null;
-      }
-      return reconnecting((config) => new ElevenLabsSttClient(config), apiKey);
-    }
-    if (options.provider === "soniox") {
-      const apiKey = options.sonioxApiKey.trim();
-      if (!apiKey) {
-        this.setStatus("No Soniox key set; using on-device voice.");
-        return null;
-      }
-      return reconnecting((config) => new SonioxSttClient(config), apiKey);
-    }
-    const apiKey = options.openAiApiKey.trim();
-    if (!apiKey) {
-      this.setStatus("No OpenAI key set; using on-device voice.");
-      return null;
-    }
-    return reconnecting((config) => new OpenAiRealtimeSttClient(config), apiKey);
+    }, () => this.captureHolders.has("continuous"), (pcm) => this.transcribeLocally(pcm));
   }
 
-  private releaseCapture(holder: CaptureHolder, commit: boolean): void {
+  /**
+   * On-device Whisper over an already captured utterance, for when the EVO-X2
+   * service fails mid-capture. Prefers the most accurate downloaded model;
+   * rejects when none is downloaded (never falls back to another cloud).
+   */
+  private transcribeLocally(pcm: Uint8Array): Promise<string> {
+    this.ensureController();
+    const controller = this.controller;
+    if (!controller) return Promise.reject(new Error("on-device voice unavailable"));
+    return new Promise((resolve, reject) => {
+      // Held until the native thread answers, like listenerProxy, so the JS
+      // implementation cannot be collected while Java still calls it.
+      const listener = new com.faceclaw.app.FaceclawBufferTranscriptionListener({
+        onResult: (text: string | null, error: string | null) => {
+          this.localTranscriptionListeners.delete(listener);
+          if (error) reject(new Error(String(error)));
+          else resolve(String(text ?? ""));
+        },
+      });
+      this.localTranscriptionListeners.add(listener);
+      controller.transcribeBuffer(toJavaBytes(pcm), "whisper-small,whisper,whisper-medium", listener);
+    });
+  }
+
+  private releaseCapture(holder: CaptureHolder, commit: boolean): Promise<void> | void {
+    this.audioArbiter.setOwner(`stt:${holder}`, false);
     // A holder that gives up while its capture is parked must not be resumed
     // by the next session.
     this.suspendedHolders.delete(holder);
     if (!this.captureHolders.delete(holder)) {
       // Never held; still finish a dangling cloud commit if one is pending.
-      if (commit) this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
       return;
     }
     if (this.captureHolders.size > 0) {
@@ -389,7 +504,9 @@ export class FaceclawVoiceControlBridge {
       return;
     }
     if (!this.started) {
-      this.cloudClient?.finish();
+      if (commit) return this.cloudClient?.finish();
+      this.cloudClient?.stop();
+      this.cloudClient = null;
       return;
     }
     // Order matters for cloud: stopping the Java controller flushes any final
@@ -397,7 +514,11 @@ export class FaceclawVoiceControlBridge {
     this.controller?.stop();
     this.started = false;
     if (commit) {
-      this.cloudClient?.finish();
+      const client = this.cloudClient;
+      if (client) return this.nativeCaptureFinished.then(() => {
+        if (this.cloudClient !== client) throw new Error("Voice capture cancelled.");
+        return client.finish();
+      });
     } else {
       this.cloudClient?.stop();
       this.cloudClient = null;
@@ -405,6 +526,8 @@ export class FaceclawVoiceControlBridge {
   }
 
   stop(): void {
+    this.audioArbiter.revokeDetector();
+    for (const holder of ["ptt", "continuous"]) this.audioArbiter.setOwner(`stt:${holder}`, false);
     this.captureHolders.clear();
     this.suspendedHolders.clear();
     this.suspendedRaw = false;
@@ -420,6 +543,7 @@ export class FaceclawVoiceControlBridge {
    * resumeCapture() can bring the mic back on the next session.
    */
   handleSessionEnded(): void {
+    this.audioArbiter.revokeDetector();
     if (this.captureHolders.size === 0 && !this.started && !this.rawActive) return;
     for (const holder of this.captureHolders) {
       this.suspendedHolders.add(holder);
@@ -435,6 +559,11 @@ export class FaceclawVoiceControlBridge {
   /** Whether a capture is parked waiting for a session to come back. */
   hasSuspendedCapture(): boolean {
     return this.suspendedHolders.size > 0 || this.suspendedRaw;
+  }
+
+  /** Whether `holder` holds the mic, including across a session outage. */
+  holdsCapture(holder: CaptureHolder): boolean {
+    return this.captureHolders.has(holder) || this.suspendedHolders.has(holder);
   }
 
   /** Whether anyone holds the mic, including across a session outage. */
@@ -458,7 +587,7 @@ export class FaceclawVoiceControlBridge {
       this.acquireCapture(holder, { ...options, endpointing: this.captureEndpointing });
     }
     if (resumeRaw && !holders.length) {
-      this.startRawCapture({ communicator: options.communicator });
+      this.beginRawCapture(options.communicator, false);
     }
   }
 
@@ -515,6 +644,16 @@ export class FaceclawVoiceControlBridge {
           this.rawPcmListeners.forEach((listener) => listener(bytes));
         }
       },
+      onExperimentalPcm: (pcm: any) => {
+        const lease = this.experimentalLeaseId;
+        if (lease !== null) {
+          this.experimentalPcm?.(toUint8Array(pcm));
+          if (this.experimentalLeaseId === lease) this.experimentalNativePcm?.(pcm);
+        }
+      },
+      onExperimentalStatus: (status: string) => {
+        if (this.experimentalLeaseId !== null && !String(status).startsWith("Listening")) this.experimentalFailure?.();
+      },
       onFrameMeta: (angleDegrees: number, ssr: number) => {
         if (this.frameMetaListeners.size === 0) return;
         const meta = { angleDegrees: Number(angleDegrees), ssr: Number(ssr) };
@@ -539,6 +678,10 @@ export class FaceclawVoiceControlBridge {
   }
 
   private emitTranscript(text: string, isFinal: boolean, metadata?: CloudSttTranscriptEvent): void {
+    if (isFinal && this.captureHolders.size === 0 && this.suspendedHolders.size === 0) {
+      this.cloudClient?.stop();
+      this.cloudClient = null;
+    }
     // "My voice only": a rejected session's final transcript is emptied so
     // nothing downstream (assistant, dictation) acts on another speaker's
     // words. The verification verdict is posted before the final, and cloud

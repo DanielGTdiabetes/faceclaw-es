@@ -17,7 +17,7 @@ import { dashboardController, type MirrorTouchKind } from "../g2/dashboard-contr
 import {
   mirrorTouchSetting,
   onAnySettingChanged,
-  showBleBandwidthSetting,
+  showBleBandwidthSetting, sonioxApiKeySetting,
 } from "../ui/dashboard-settings";
 import { sampleBleTraffic } from "../native/ble-traffic";
 import { isValidMacAddress, loadDeviceAddresses } from "../g2/device-addresses";
@@ -26,12 +26,34 @@ import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
+import { asrModelState, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
+import { conversationModelOption, conversationModelState } from "../native/conversation-model-options";
+import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
+import { profileGuide } from "../conversation-detection/profile-guide";
+import { conversationDetail, conversationStartPlan, hermesHistoryText, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
+import { hermesPresentationDiagnostics } from "../ui/shell/conversation-hermes-ui";
+import {
+  conversationDiagnosticsSelected, conversationTextEngine, conversationTextLanguage, conversationTextSelected, onConversationTextSelected,
+  setConversationDiagnosticsSelected, setConversationTextLanguage, setConversationTextSelected,
+  wearerActions, wearerChoices,
+  CONVERSATION_MODELS, conversationModel, conversationLocalModel, setConversationModel, conversationUsesHermes, setConversationUsesHermes,
+  conversationDailyContextSelected, setConversationDailyContextSelected,
+  selectConversationListeningMode,
+  conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
+  conversationSpeakerProbe, setConversationSpeakerProbe,
+  EVO_CONVERSATION_MODEL,
+} from "../conversation-detection/session-controls";
+import { speakerProbeSummary } from "../conversation-detection/speaker-probe-summary";
+import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
+import { assistantBridge } from "../assistant/bridge-client";
 
 const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 
 type LayoutOrientation = "portrait" | "landscape";
 
 export class MainViewModel extends RemoteControlsViewModel {
+  private _conversationPanelOpen = false;
+  private _conversationSettingsOpen = false;
   private _status = "Disconnected.";
   private _displayPreview: ImageSource | null = null;
   private _displayPreviewMessage = "";
@@ -66,6 +88,12 @@ export class MainViewModel extends RemoteControlsViewModel {
   private _previewMode = false;
   private _evenHubPhoneUi: PhoneUiButton | null = null;
   private _phase: "disconnected" | "connecting" | "connected" | "charging" | "disconnecting" = "disconnected";
+  private get conversationWithText(): boolean { return conversationTextSelected(); }
+  private set conversationWithText(value: boolean) { setConversationTextSelected(value); }
+  private localCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Brief refusal notice for «Hermes en conversación»; cleared by the next tap or bridge change. */
+  private hermesNotice = "";
+  private hermesShown = { button: "", status: "", history: "", summary: "", vad: "" };
 
   // A new view model is built on every navigation to the main page; these
   // module-level subscriptions must die with it (see dispose) or each
@@ -124,6 +152,543 @@ export class MainViewModel extends RemoteControlsViewModel {
     }));
     this.syncBleBandwidthPolling();
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
+    this.unsubscribers.push(dashboardController.conversationDetector.subscribe(() => {
+      this.refreshConversationUi();
+      this.refreshHermesUi();
+    }));
+    // Hermes selection/runtime and bridge capability: labels only, never audio or channel calls.
+    this.unsubscribers.push(dashboardController.onConversationHermesChange(() => this.refreshHermesUi()));
+    this.unsubscribers.push(assistantBridge.onStateChange(() => {
+      this.hermesNotice = ""; this.refreshHermesUi();
+      this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
+      this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+    }));
+    this.hermesShown = { button: "", status: "", history: "", summary: "", vad: "" };
+    this.refreshHermesUi();
+    this.unsubscribers.push(onConversationTextSelected(() => this.refreshConversationUi()));
+    this.unsubscribers.push(() => {
+      if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
+      this.localCloseTimer = null;
+    });
+    for (const id of ["whisper-base-es", "whisper-small-es", "whisper-medium-es"] as const) {
+      this.unsubscribers.push(onAsrModelStateChanged(id, () => {
+        this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+        this.refreshConversationUi();
+      }));
+    }
+    this.unsubscribers.push(onMicModelStateChanged((id) => {
+      if (id !== "speaker-embedding") return;
+      this.refreshConversationUi();
+    }));
+  }
+
+  private refreshConversationUi(pollsLeft = 60): void {
+    if (this.localCloseTimer !== null) clearTimeout(this.localCloseTimer);
+    this.localCloseTimer = null;
+    this.notifyPropertyChange("conversationDetectorLabel", this.conversationDetectorLabel);
+    this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+    this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    this.notifyPropertyChange("conversationTextButton", this.conversationTextButton);
+    this.notifyPropertyChange("conversationLanguageButton", this.conversationLanguageButton);
+    this.notifyPropertyChange("conversationDiagnosticsButton", this.conversationDiagnosticsButton);
+    this.notifyPropertyChange("conversationPhaseLabel", this.conversationPhaseLabel);
+    this.notifyPropertyChange("conversationPhaseVisibility", this.conversationPhaseVisibility);
+    this.notifyPropertyChange("conversationWearerLabel", this.conversationWearerLabel);
+    this.notifyPropertyChange("conversationWearerVisibility", this.conversationWearerVisibility);
+    this.notifyPropertyChange("conversationWearerPhraseButton", this.conversationWearerPhraseButton);
+    this.notifyPropertyChange("localTranscript", this.localTranscript);
+    this.notifyPropertyChange("conversationEngineButton", this.conversationEngineButton);
+    this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
+    this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
+    this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+    this.notifyPropertyChange("conversationVadStatus", this.conversationVadStatus);
+    for (const name of ["conversationStartVisibility", "conversationStopVisibility", "conversationModeSummary", "conversationEntryLabel",
+      "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus",
+      "conversationStartNotice", "conversationStartNoticeVisibility"]) {
+      this.notifyPropertyChange(name, this[name as keyof MainViewModel]);
+    }
+    this.notifyPropertyChange("conversationDownloadButton", this.conversationDownloadButton);
+    this.notifyPropertyChange("conversationDownloadVisibility", this.conversationDownloadVisibility);
+    this.notifyPropertyChange("conversationModelStatus", this.conversationModelStatus);
+    this.notifyPropertyChange("conversationTranscriptVisibility", this.conversationTranscriptVisibility);
+    this.notifyPropertyChange("conversationHermesButton", this.conversationHermesButton);
+    this.notifyPropertyChange("localTranscriptionLabel", this.localTranscriptionLabel);
+    this.notifyPropertyChange("localTranscriptionButton", this.localTranscriptionButton);
+    this.notifyPropertyChange("localTranscriptionCanStart", this.localTranscriptionCanStart);
+    this.notifyPropertyChange("voiceProfileSetupLabel", this.voiceProfileSetupLabel);
+    this.notifyPropertyChange("voiceProfileButton", this.voiceProfileButton);
+    // UI-only polling after OFF until native ASR drains: no audio, no auto-start, cancelled on unload.
+    // A slow JNI decode can outlast 30 s, so polling slows down instead of leaving the controls frozen.
+    if (this.conversationClosing) {
+      this.localCloseTimer = setTimeout(() => this.refreshConversationUi(Math.max(0, pollsLeft - 1)), pollsLeft > 0 ? 500 : 2000);
+    }
+  }
+
+  /** Capture is OFF but a native worker still drains: starting now would be refused. */
+  get conversationClosing(): boolean {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return !snapshot.enabled && !!(snapshot.participation?.worker || snapshot.participation?.busy
+      || snapshot.transcription?.worker || snapshot.transcription?.busy);
+  }
+
+  /**
+   * Shown in the start card while OFF: a refused start, the closing state or why the last session ended.
+   * The ON-only status card is hidden in OFF, so this is where refusals stay visible.
+   */
+  get conversationStartNotice(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    if (snapshot.enabled) return "";
+    if (this.conversationClosing) return "Terminando reconocimiento… Los botones se activan solos al terminar.";
+    if (this.hermesNotice) return this.hermesNotice;
+    if (snapshot.state === "error" || snapshot.stopReason === "expired") return snapshot.reason;
+    return "";
+  }
+  get conversationStartNoticeVisibility(): string { return this.conversationStartNotice ? "visible" : "collapse"; }
+
+  /** Notifies only on a changed label: runtime ticks (500 ms) never flood the binding. */
+  private refreshHermesUi(): void {
+    const button = this.conversationHermesButton, status = this.conversationHermesStatus, history = this.conversationHermesHistory;
+    if (button !== this.hermesShown.button) this.notifyPropertyChange("conversationHermesButton", button);
+    if (status !== this.hermesShown.status) {
+      this.notifyPropertyChange("conversationHermesStatus", status);
+      this.notifyPropertyChange("conversationStartNotice", this.conversationStartNotice);
+      this.notifyPropertyChange("conversationStartNoticeVisibility", this.conversationStartNoticeVisibility);
+    }
+    if (history !== this.hermesShown.history) {
+      this.notifyPropertyChange("conversationHermesHistory", history);
+      this.notifyPropertyChange("conversationHermesHistoryVisibility", this.conversationHermesHistoryVisibility);
+    }
+    const summary = this.conversationModeSummary, vad = this.conversationVadStatus;
+    if (summary !== this.hermesShown.summary) this.notifyPropertyChange("conversationModeSummary", summary);
+    if (vad !== this.hermesShown.vad) this.notifyPropertyChange("conversationVadStatus", vad);
+    this.hermesShown = { button, status, history, summary, vad };
+  }
+
+  get conversationHermesButton(): string {
+    return `${conversationUsesHermes() ? "Hermes en conversación" : "Solo texto"}: ${dashboardController.conversationDetector.snapshot().enabled ? "ON · detener" : "OFF · iniciar"}`;
+  }
+
+  get conversationHermesStatus(): string {
+    if (!conversationUsesHermes()) {
+      const snapshot = dashboardController.conversationDetector.snapshot();
+      return this.hermesNotice || (snapshot.enabled ? `Solo transcripción · ${snapshot.reason}` : "Solo texto, sin consultas a Hermes. Sin límite de tiempo; OFF borra el texto.");
+    }
+    const runtime = dashboardController.conversationHermes.snapshot();
+    if (this.hermesNotice) return this.hermesNotice;
+    const conversation = assistantBridge.conversation;
+    return manualHermesStatus(dashboardController.conversationDetector.snapshot(), runtime, {
+      supported: conversation.isSupported(), optionalIdentity: conversation.supportsOptionalIdentity?.() ?? false });
+  }
+
+  /** Last Hermes messages of this session (RAM only), visible while ON. */
+  get conversationHermesHistory(): string {
+    return hermesHistoryText(dashboardController.conversationDetector.snapshot().enabled,
+      dashboardController.conversationHermes.history());
+  }
+
+  get conversationHermesHistoryVisibility(): string { return this.conversationHermesHistory ? "visible" : "collapsed"; }
+
+  /** The same explicit session ON/OFF as the glasses system menu. */
+  onConversationHermesTap(): void {
+    this.hermesNotice = dashboardController.toggleManualConversation();
+    this.refreshHermesUi();
+  }
+
+  get conversationPanelVisibility(): string { return this._conversationPanelOpen ? "visible" : "collapse"; }
+  get remotePanelVisibility(): string { return this._conversationPanelOpen ? "collapse" : "visible"; }
+  get conversationSettingsVisibility(): string { return this._conversationSettingsOpen ? "visible" : "collapse"; }
+  get conversationSettingsButton(): string { return this._conversationSettingsOpen ? "Cerrar ajustes" : "Ajustes de conversación"; }
+  private get conversationOn(): boolean { return dashboardController.conversationDetector.snapshot().enabled; }
+  get conversationEntryLabel(): string { return this.conversationOn ? "Conversación · escuchando" : "Conversación"; }
+  get conversationStartVisibility(): string { return this.conversationOn ? "collapse" : "visible"; }
+  get conversationStopVisibility(): string { return this.conversationOn ? "visible" : "collapse"; }
+  get conversationModeSummary(): string {
+    if (this.conversationClosing) return "Escucha apagada · terminando reconocimiento";
+    if (!this.conversationOn) return "Escucha apagada";
+    return !conversationUsesHermes() ? "Escucha activa · solo transcripción" : "Escucha activa · Hermes";
+  }
+  get conversationSettingsHint(): string {
+    return this.localTranscriptionCanStart ? "Elige cómo reconocer la voz y qué recordar."
+      : this.conversationClosing ? "Terminando reconocimiento; los ajustes se activan al terminar."
+      : "Detén la escucha para cambiar los ajustes.";
+  }
+  onConversationPanelTap(): void { this.setConversationPanel(true); }
+  onRemotePanelTap(): void { this.setConversationPanel(false); }
+  closeConversationPanel(): boolean {
+    if (!this._conversationPanelOpen) return false;
+    this.setConversationPanel(false); return true;
+  }
+  private setConversationPanel(open: boolean): void {
+    this._conversationPanelOpen = open;
+    this.notifyPropertyChange("conversationPanelVisibility", this.conversationPanelVisibility);
+    this.notifyPropertyChange("remotePanelVisibility", this.remotePanelVisibility);
+  }
+  onConversationSettingsTap(): void {
+    this._conversationSettingsOpen = !this._conversationSettingsOpen;
+    this.notifyPropertyChange("conversationSettingsVisibility", this.conversationSettingsVisibility);
+    this.notifyPropertyChange("conversationSettingsButton", this.conversationSettingsButton);
+  }
+  onConversationDirectStartTap(): void { this.startConversation("hermes"); }
+  onConversationTextStartTap(): void { this.startConversation("text"); }
+  /** The mode applies atomically to the next session; a refusal stays visible in the start card. */
+  private startConversation(mode: "hermes" | "text"): void {
+    if (this.conversationOn) return;
+    if (this.conversationClosing) { this.refreshConversationUi(); return; }
+    if (!selectConversationListeningMode(mode)) return;
+    this.hermesNotice = dashboardController.setManualConversationEnabled(true);
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
+  onConversationStopTap(): void {
+    if (!this.conversationOn) return;
+    this.hermesNotice = dashboardController.setManualConversationEnabled(false);
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
+
+  get conversationDetectorLabel(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return `Conversación local · ${snapshot.enabled ? snapshot.state : snapshot.state === "error" ? "OFF · error" : "OFF"}`;
+  }
+
+  get conversationDetectorDetail(): string {
+    return conversationDetail(dashboardController.conversationDetector.snapshot(), this.conversationPlan.hint);
+  }
+
+  private get conversationPlan() {
+    const detector = dashboardController.conversationDetector;
+    return conversationStartPlan(detector.snapshot(), detector.ownProfileState(),
+      micModelState("speaker-embedding").status, this.conversationTextReady, this.conversationWithText,
+      conversationTextLanguage());
+  }
+
+  /** RAM selector, OFF only; the running session keeps the language it started with. */
+  get conversationLanguageButton(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const language = snapshot.enabled ? snapshot.languageMode : conversationTextLanguage();
+    const label = language === "es" ? "Solo español" : language === "auto" ? "Automático" : "Sin texto";
+    return `Idioma: ${label}`;
+  }
+
+  onConversationLanguageTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    setConversationTextLanguage(conversationTextLanguage() === "es" ? "auto" : "es");
+  }
+
+  get conversationDiagnosticsButton(): string {
+    return `Diagnóstico por fases: ${conversationDiagnosticsSelected() ? "ON" : "OFF"} · ${this.localTranscriptionCanStart ? "tocar para cambiar" : "sesión en curso"}`;
+  }
+
+  onConversationDiagnosticsTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    setConversationDiagnosticsSelected(!conversationDiagnosticsSelected());
+  }
+
+  /** Phase marks exist only during a session started with diagnostics; they are the user's marks. */
+  get conversationPhaseVisibility(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return snapshot.enabled && snapshot.phases ? "visible" : "collapsed";
+  }
+
+  get conversationPhaseLabel(): string {
+    const phases = dashboardController.conversationDetector.snapshot().phases;
+    const names: Record<DiagnosticPhase, string> = { "sin-marcar": "sin marcar", "otra-persona": "otra persona",
+      yo: "yo", referencia: "referencia (nadie habla)", fin: "fin" };
+    return phases ? `Fase marcada por ti: ${names[phases.current]} · ${phases.marks} marcas` : "";
+  }
+
+  private markPhase(phase: DiagnosticPhase): void {
+    dashboardController.conversationDetector.markPhase(phase);
+    this.notifyPropertyChange("conversationPhaseLabel", this.conversationPhaseLabel);
+  }
+  onPhaseOtherTap(): void { this.markPhase("otra-persona"); }
+  onPhaseMeTap(): void { this.markPhase("yo"); }
+  onPhaseReferenceTap(): void { this.markPhase("referencia"); }
+  onPhaseEndTap(): void { this.markPhase("fin"); }
+
+  get conversationDetectorButton(): string {
+    return this.conversationPlan.button;
+  }
+
+  get conversationTextButton(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const selected = snapshot.enabled ? snapshot.transcription?.enabled : this.conversationWithText;
+    return `Texto local opcional: ${selected ? "ON" : "OFF"} · ${snapshot.enabled ? "sesión en curso" : "tocar para cambiar"}`;
+  }
+
+  onConversationTextTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    this.conversationWithText = !this.conversationWithText;
+    this.notifyPropertyChange("conversationTextButton", this.conversationTextButton);
+    this.notifyPropertyChange("conversationDetectorButton", this.conversationDetectorButton);
+    this.notifyPropertyChange("conversationDetectorDetail", this.conversationDetectorDetail);
+  }
+
+  get voiceProfileButton(): string {
+    return dashboardController.conversationDetector.ownProfileState() === "guardado" ? "Mi perfil · guardado" : "Mi perfil · consultar / crear";
+  }
+
+  get voiceProfileSetupLabel(): string {
+    const detector = dashboardController.conversationDetector;
+    return profileGuide(detector.snapshot(), detector.ownProfileState(), micModelState("speaker-embedding").status).state;
+  }
+
+  onVoiceProfileTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    Frame.topmost()?.navigate("phone-ui/voice-profile-page");
+  }
+
+  onConversationDetectorTap(): void {
+    const detector = dashboardController.conversationDetector;
+    if (detector.snapshot().enabled) { dashboardController.setConversationCaptureEnabled(false); return; }
+    this.refreshConversationUi();
+    const plan = this.conversationPlan;
+    if (!plan.canStart) {
+      void Dialogs.alert({ title: "Conversación local · OFF", message: plan.hint, okButtonText: "Cerrar" });
+      return;
+    }
+    dashboardController.setConversationCaptureEnabled(true, plan.transcribe, plan.mode);
+  }
+
+  /** S2: wearer association line; empty when OFF or before Soniox opens. */
+  get conversationWearerLabel(): string {
+    return wearerLine(dashboardController.conversationDetector.snapshot());
+  }
+
+  get conversationWearerVisibility(): "visible" | "collapse" {
+    return wearerActions(dashboardController.conversationDetector).length ? "visible" : "collapse";
+  }
+
+  /** Primary phrase action on the page itself, visible without opening the manual voice list. */
+  get conversationWearerPhraseButton(): string {
+    return wearerActions(dashboardController.conversationDetector)[0]?.label ?? "Identificar mi voz (frase)";
+  }
+
+  onConversationWearerPhraseTap(): void {
+    wearerActions(dashboardController.conversationDetector)[0]?.run();
+    this.refreshConversationUi();
+  }
+
+  /** Identify, finish, cancel or correct the wearer. Actions captured now; stale ones are rejected. */
+  async onConversationWearerTap(): Promise<void> {
+    const detector = dashboardController.conversationDetector;
+    const actions = [...wearerActions(detector), ...wearerChoices(detector)];
+    if (!actions.length) return;
+    const choice = await Dialogs.action({ title: "Mi voz en esta sesión", cancelButtonText: "Cerrar",
+      message: "Identifica tu voz con la frase o elige la etiqueta. Elegir cancela un intento pendiente.",
+      actions: actions.map((action) => action.label) });
+    actions.find((action) => action.label === choice)?.run();
+    this.refreshConversationUi();
+  }
+
+  onConversationDetectorMetricsTap(): void {
+    const detector = dashboardController.conversationDetector;
+    if (detector.snapshot().enabled) return; // Aggregate inspection after OFF, not during capture.
+    const snapshot = detector.snapshot();
+    const draining = snapshot.transcription?.worker || snapshot.transcription?.busy
+      || snapshot.participation?.worker || snapshot.participation?.busy;
+    const note = draining ? "Drenando motores locales: cifras todavía no finales. Vuelve a abrir en unos segundos.\n" : "";
+    const summary = detector.lastSessionSummary();
+    void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
+      + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
+      + "\nHermes (métricas, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
+      + "\nLentes Hermes (recuentos, sin texto): " + JSON.stringify({ ...hermesPresentationDiagnostics(),
+        shellRenderFailures: dashboardController.shellRenderDiagnostics() })
+      + "\nNativo: " + detector.diagnostics(), okButtonText: "Cerrar" });
+  }
+
+  /** Soniox needs only its key; the local engine needs downloaded Whisper weights. */
+  private get conversationTextReady(): string {
+    return conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
+      : conversationModelState(conversationLocalModel()).status;
+  }
+
+  get conversationEngineButton(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    const active = snapshot.enabled && snapshot.state === "escuchando" && snapshot.transcription?.model ? " · en uso" : "";
+    const model = conversationModel();
+    const name = model === "soniox" ? "Soniox (nube)" : model === EVO_CONVERSATION_MODEL ? "Parakeet (EVO-X2)"
+      : `Whisper ${model.split("-")[1]} (local)`;
+    return `Motor: ${name}${active}`;
+  }
+  get conversationModeButton(): string { return `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`; }
+  get conversationMemoryButton(): string {
+    return "Memoria del día: " + (conversationDailyContextSelected() ? "24 h" : "desactivada");
+  }
+  get conversationMemoryStatus(): string {
+    if (!assistantBridge.conversation.supportsDailyContext()) return "Memoria de 24 h no disponible en el servidor conectado.";
+    if (!conversationDailyContextSelected()) return "No se consulta ni añade memoria. Los resúmenes anteriores caducan; puedes borrarlos desde este menú.";
+    return conversationUsesHermes()
+      ? "Resúmenes en tu servidor durante 24 h. Se borran automáticamente; consultarlos no renueva el plazo."
+      : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
+  }
+  get conversationSpeakersButton(): string {
+    // Where voices are told apart depends on the transcription source (EVO or this phone), not on this switch.
+    return "Voces: " + (conversationLocalSpeakers() ? "distinguir" : "sin distinguir")
+      + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "")
+      + (conversationSpeakerProbe() ? " · diagnóstico D0" : "");
+  }
+  get conversationSpeakersStatus(): string {
+    const speakers = conversationLocalSpeakers()
+      ? "Cada frase se corta en las pausas y se asocia a tu voz o a otra voz de la conversación. Con el EVO-X2, la identificación se hace allí y conserva las voces durante toda la sesión; con Whisper en el móvil necesita el modelo de voz descargado."
+      : "Whisper o Parakeet entregan el texto sin saber quién habla.";
+    const filtered = conversationSingleVoiceFilter()
+      ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
+      : speakers;
+    const transcription = dashboardController.conversationDetector.snapshot().transcription;
+    const probe = speakerProbeSummary(transcription?.speakerProbe, transcription?.speakers);
+    const probeHint = conversationSpeakerProbe() && !probe
+      ? " Diagnóstico D0 activo para la próxima sesión con voces: compara copias de cada ventana sin cambiar quién habla." : "";
+    return `${filtered}${probeHint}${probe ? `\n${probe}` : ""}`;
+  }
+  async onConversationSpeakersTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const actions = [
+      conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces",
+      conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
+      conversationSpeakerProbe() ? "Desactivar diagnóstico de voces (D0)" : "Activar diagnóstico de voces (D0)",
+    ];
+    const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === actions[0]) setConversationLocalSpeakers(!conversationLocalSpeakers());
+    else if (choice === actions[1]) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
+    else if (choice === actions[2]) setConversationSpeakerProbe(!conversationSpeakerProbe());
+    this.refreshConversationUi();
+  }
+  async onConversationMemoryTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const actions = ["Usar resúmenes durante 24 h", "No usar memoria del día", "Borrar memoria del día"];
+    const choice = await Dialogs.action({ title: "Continuidad durante el día", cancelButtonText: "Cerrar", actions });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === actions[1]) {
+      setConversationDailyContextSelected(false);
+    } else if (choice === actions[0]) {
+      if (!assistantBridge.conversation.supportsDailyContext()) {
+        this.hermesNotice = "El servidor conectado todavía no ofrece memoria de 24 h.";
+      } else {
+        const accepted = await Dialogs.confirm({ title: "Memoria de 24 horas",
+          message: "Hermes conservará resúmenes breves por tema en tu servidor para retomar conversaciones durante el día. Caducan 24 h después de actualizarse. No se guarda audio ni la transcripción completa.",
+          okButtonText: "Activar 24 h", cancelButtonText: "Cancelar" });
+        if (accepted && this.localTranscriptionCanStart && assistantBridge.conversation.supportsDailyContext()) {
+          setConversationDailyContextSelected(true);
+        }
+      }
+    } else if (choice === actions[2]) {
+      const accepted = await Dialogs.confirm({ title: "Borrar memoria del día",
+        message: "Se eliminarán todos los resúmenes temporales del servidor. No afecta al perfil de voz ni al historial del asistente.",
+        okButtonText: "Borrar", cancelButtonText: "Cancelar" });
+      if (accepted && this.localTranscriptionCanStart) {
+        const sent = assistantBridge.conversation.forgetDailyContext((ok) => {
+          this.hermesNotice = ok ? "Memoria del día borrada." : "No se pudo confirmar el borrado de la memoria del día.";
+          this.refreshHermesUi();
+        });
+        if (!sent) this.hermesNotice = "Memoria del día no disponible o borrado en curso.";
+      }
+    }
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
+  get conversationModelStatus(): string {
+    const model = conversationModel();
+    if (model === "soniox") return sonioxApiKeySetting.get().trim() ? "Reconoce y separa voces en la nube." : "Falta la clave de Soniox en Ajustes.";
+    if (model === EVO_CONVERSATION_MODEL) {
+      return conversationModelState(model).error
+        ?? "Transcribe en tu EVO-X2 con Parakeet (misma dirección y clave que Hey Even). Las voces se distinguen en el móvil.";
+    }
+    const state = asrModelState(model);
+    if (state.error) return state.error;
+    const ready = state.status === "ready" ? "Descargado. Puedes iniciar." : "Pulsa Descargar; al terminar, pulsa Iniciar.";
+    return `${ready} Reconocimiento en el móvil, sin separar voces.${model === "whisper-medium-es" ? " Medium es experimental y puede tardar más." : ""}`;
+  }
+  get conversationDownloadVisibility(): string {
+    const model = conversationModel();
+    return model !== "soniox" && model !== EVO_CONVERSATION_MODEL && asrModelState(model).status !== "ready" ? "visible" : "collapse";
+  }
+  get conversationDownloadButton(): string {
+    const model = conversationModel();
+    if (model === "soniox" || model === EVO_CONVERSATION_MODEL) return "";
+    const state = asrModelState(model);
+    return state.status === "downloading" ? `Descargando ${Math.floor(state.bytesDownloaded * 100 / state.totalBytes)} % · pausar`
+      : `Descargar ${Math.ceil(state.totalBytes / 1_000_000)} MB`;
+  }
+  onConversationDownloadTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    const model = conversationModel();
+    if (model === "soniox" || model === EVO_CONVERSATION_MODEL) return;
+    if (asrModelState(model).status === "downloading") cancelAsrModelDownload(model); else startAsrModelDownload(model);
+    this.refreshConversationUi();
+  }
+  get conversationTranscriptVisibility(): string {
+    const snapshot = dashboardController.conversationDetector.snapshot();
+    return snapshot.enabled && snapshot.state === "escuchando" ? "visible" : "collapse";
+  }
+  async onConversationModeTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const options = ["Texto y Hermes", "Solo texto (sin consultar a Hermes)"];
+    const choice = await Dialogs.action({ title: "Modo de conversación", cancelButtonText: "Cerrar", actions: options });
+    if (!this.localTranscriptionCanStart || !options.includes(choice)) return;
+    setConversationUsesHermes(choice === options[0]); this.hermesNotice = "";
+    this.refreshConversationUi(); this.refreshHermesUi();
+  }
+  async onConversationEngineTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const labels = CONVERSATION_MODELS.map(conversationModelOption);
+    const choice = await Dialogs.action({ title: "Motor de conversación", cancelButtonText: "Cerrar",
+      message: "Parakeet transcribe en tu EVO-X2; Whisper funciona en el móvil. Hermes sigue usando el puente y su proveedor. Medium puede tardar más y consumir más memoria.", actions: labels });
+    if (!this.localTranscriptionCanStart) return;
+    const index = labels.indexOf(choice);
+    if (index < 0) return;
+    const model = CONVERSATION_MODELS[index]!;
+    setConversationModel(model); this.hermesNotice = ""; this.refreshConversationUi(); this.refreshHermesUi();
+  }
+
+  /** A4: the phone label is line-limited, so show the newest tail instead of the oldest head. */
+  get localTranscript(): string {
+    const text = dashboardController.conversationDetector.transcriptText();
+    if (text.length <= 320) return text;
+    const tail = text.slice(-320);
+    const space = tail.indexOf(" ");
+    return "…" + (space >= 0 && space < 40 ? tail.slice(space + 1) : tail);
+  }
+  /** OFF and fully closed: settings and starts are enabled only once native ASR has drained. */
+  get localTranscriptionCanStart(): boolean { return !this.conversationOn && !this.conversationClosing; }
+  get localTranscriptionLabel(): string {
+    const state = dashboardController.conversationDetector.snapshot().transcription;
+    const language = dashboardController.conversationDetector.snapshot().languageMode;
+    const engine = state?.engine === "soniox" ? "Soniox (nube)" : state?.model ?? state?.engine ?? "local";
+    return state?.enabled ? `Texto provisional ${textLanguageLabel(language)} · ${engine} · ${state.status} · puede equivocarse con ruido. Se borra al parar.` : "";
+  }
+  get localTranscriptionButton(): string {
+    if (conversationTextEngine() === "soniox") return "Solo transcripción con Soniox";
+    const model = conversationModelState(conversationLocalModel());
+    if (model.status === "downloading") return `Modelo local: ${Math.floor(model.bytesDownloaded * 100 / model.totalBytes)} %`;
+    return model.status === "ready" ? "Solo transcripción con el modelo seleccionado" : "Descargar el modelo seleccionado";
+  }
+  onLocalTranscriptionTap(): void {
+    if (!this.localTranscriptionCanStart) return;
+    const selected = conversationModel();
+    if (selected === EVO_CONVERSATION_MODEL && conversationModelState(selected).status !== "ready") {
+      this.hermesNotice = conversationModelState(selected).error ?? "";
+      this.refreshHermesUi();
+      return;
+    }
+    if (selected !== "soniox" && selected !== EVO_CONVERSATION_MODEL && asrModelState(selected).status !== "ready") {
+      startAsrModelDownload(selected);
+      return; // Weights only; download completion never starts capture.
+    }
+    setConversationUsesHermes(false);
+    this.onConversationHermesTap();
+  }
+
+  async onConversationOptionsTap(): Promise<void> {
+    if (!this.localTranscriptionCanStart) return;
+    const choice = await Dialogs.action({ title: "Diagnóstico de conversación", cancelButtonText: "Cerrar",
+      actions: ["Métricas de la última sesión"] });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === "Métricas de la última sesión") this.onConversationDetectorMetricsTap();
+  }
+
+  /** Only the voice-filter warning remains here; call spacing is reported in the session metrics. */
+  get conversationVadStatus(): string {
+    const vad = dashboardController.conversationDetector.snapshot().transcription?.analysis?.vadStatus;
+    return vad === "unavailable" ? "Aviso: WebRTC VAD no disponible. Whisper continúa sin ese filtro de voz; consulta las métricas." : "";
   }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */
@@ -153,20 +718,20 @@ export class MainViewModel extends RemoteControlsViewModel {
   get connectionStatusLabel(): string {
     switch (this._phase) {
       case "connected":
-        return "Connected";
+        return "Conectado";
       case "charging":
-        return "Charging";
+        return "Cargando";
       case "disconnecting":
-        return "Disconnecting";
+        return "Desconectando";
       case "connecting":
         // The transport reports retry loops as "Reconnecting..." with the
         // phase still "connecting"; keep that distinction visible.
-        return this._status.startsWith("Reconnecting") ? "Reconnecting" : "Connecting";
+        return this._status.startsWith("Reconnecting") ? "Reconectando" : "Conectando";
       default:
-        if (this._status.startsWith("Failed")) return "Failed";
+        if (this._status.startsWith("Failed")) return "Error";
         // The headless preview display is live; "Disconnected" would suggest
         // the interactive mirror below it is broken.
-        return this._previewMode ? "Preview" : "Disconnected";
+        return this._previewMode ? "Vista previa" : "Desconectado";
     }
   }
 
@@ -183,7 +748,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   onConnectionStatusTap(): void {
-    void Dialogs.alert({ title: "Connection status", message: this._status, okButtonText: "OK" });
+    void Dialogs.alert({ title: "Estado de conexión", message: this._status, okButtonText: "OK" });
   }
 
   get displayPreview(): ImageSource | null {
@@ -841,11 +1406,11 @@ export class MainViewModel extends RemoteControlsViewModel {
       case "connecting":
       case "connected":
       case "charging":
-        return "Disconnect";
+        return "Desconectar";
       case "disconnecting":
-        return "Disconnecting...";
+        return "Desconectando...";
       default:
-        return "Connect";
+        return "Conectar";
     }
   }
 
@@ -1124,11 +1689,18 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   /** What the next gesture lands on, as the watch pad shows it. */
   get padFocusLine(): string {
-    return dashboardController.glassesDisplayLabel();
+    const focus = dashboardController.glassesDisplayLabel();
+    return focus === "Display off" ? "" : focus;
+  }
+
+  protected override get padDisplayAsleep(): boolean {
+    return dashboardController.glassesDisplayAsleep();
   }
 
   private refreshPadFocusLine(): void {
     this.notifyPropertyChange("padFocusLine", this.padFocusLine);
+    this.notifyPropertyChange("padFocusClass", this.padFocusClass);
+    this.notifyPropertyChange("padWakeHintVisibility", this.padWakeHintVisibility);
   }
 
   async onPadTap(): Promise<void> {

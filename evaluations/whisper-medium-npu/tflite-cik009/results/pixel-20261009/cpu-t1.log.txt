@@ -1,0 +1,52 @@
+## before-cpu-t1 20:38:29 thermal=ThermalStatus:1 battery=temperature:378
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [3]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [900]
+INFO: Num threads: [1]
+INFO: Min warmup runs: [1]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-tflite-medium/whisper-medium.tflite]
+INFO: Signature to run: [serving_default]
+INFO: Input layers: [input_features]
+INFO: Input shapes: [1,80,3000]
+INFO: Input value files: [input_features:/data/local/tmp/fc-tflite-medium/es-fleurs-00.mel.f32]
+INFO: File path to export outputs layer to: [/data/local/tmp/fc-tflite-medium/out/cpu-t1.tokens.bin]
+INFO: #threads used for CPU inference: [1]
+INFO: Use xnnpack: [1]
+INFO: Loaded model /data/local/tmp/fc-tflite-medium/whisper-medium.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Using signature: serving_default
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+VERBOSE: Replacing 2784 out of 2814 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 15 partitions for subgraph 0.
+VERBOSE: Replacing 2712 out of 2715 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 3 partitions for subgraph 1.
+VERBOSE: Replacing 3 out of 11 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 4.
+VERBOSE: Replacing 3 out of 11 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 5.
+VERBOSE: Replacing 8 out of 51 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 13 partitions for subgraph 18.
+VERBOSE: Replacing 8 out of 51 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 13 partitions for subgraph 19.
+VERBOSE: Replacing 3 out of 5 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 24.
+VERBOSE: Replacing 3 out of 5 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 2 partitions for subgraph 25.
+VERBOSE: Replacing 1606 out of 1698 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 7 partitions for subgraph 27.
+VERBOSE: Replacing 1610 out of 1706 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 7 partitions for subgraph 29.
+WARN: Tensor # 0 is named serving_default_input_features:0 but flags call it input_features
+INFO: XNNPACK delegate created.
+INFO: Explicitly applied XNNPACK delegate, and the model graph will be partially executed by the delegate w/ 7 delegate kernels.
+INFO: The input model file size (MB): 773.801
+INFO: Initialized session in 2429.1ms.
+INFO: Running benchmark for at least 1 iterations and at least 0.5 seconds but terminate if exceeding 900 seconds.
+INFO: count=1 curr=8032100 p5=8032100 median=8032100 p95=8032100
+
+INFO: Running benchmark for at least 3 iterations and at least 0 seconds but terminate if exceeding 900 seconds.
+INFO: count=3 first=7969993 curr=8592271 min=7969993 max=8592271 avg=8.27857e+06 std=254069 p5=7969993 median=8273453 p95=8592271
+
+INFO: Inference timings in us: Init: 2429096, First inference: 8032100, Warmup (avg): 8.0321e+06, Inference (avg): 8.27857e+06
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=3172.14 overall=3920.61
+INFO: Overall peak memory footprint (MB) via periodic monitoring: 3929.69
+INFO: Memory status at the end of exeution:
+INFO: - VmRSS              : 3843 MB
+INFO: + RssAnnon           : 3095 MB
+INFO: + RssFile + RssShmem : 748 MB
+## exit 0 20:39:05
+## after-cpu-t1 20:39:06 thermal=ThermalStatus:1 battery=temperature:378

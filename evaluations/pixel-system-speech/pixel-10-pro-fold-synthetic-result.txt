@@ -1,0 +1,37 @@
+Prueba local con una frase sintética. Sin permiso de micrófono ni Internet.
+SDK=37
+onDeviceAvailable=true
+support es-ES external=false installed=[en-US, es-ES] pending=[] supported=[cmn-Hans-CN, cmn-Hant-TW, de-AT, de-BE, de-CH, de-DE, en-CA, en-IN, es-US, fr-BE, fr-CA, fr-CH, fr-FR, hi-IN, id-ID, it-CH, it-IT, ko-KR, pl-PL, pt-BR, ru-RU, th-TH, tr-TR, vi-VN, ja-JP, en-AU, en-GB, en-IE, en-SG, da-DK, nb-NO, nl-NL, sv-SE, zh-Hant-TW, zh-TW]
+support ca-ES external=false installed=[en-US, es-ES] pending=[] supported=[cmn-Hans-CN, cmn-Hant-TW, de-AT, de-BE, de-CH, de-DE, en-CA, en-IN, es-US, fr-BE, fr-CA, fr-CH, fr-FR, hi-IN, id-ID, it-CH, it-IT, ko-KR, pl-PL, pt-BR, ru-RU, th-TH, tr-TR, vi-VN, ja-JP, en-AU, en-GB, en-IE, en-SG, da-DK, nb-NO, nl-NL, sv-SE, zh-Hant-TW, zh-TW]
+support es-ES external=true installed=[en-US, es-ES] pending=[] supported=[cmn-Hans-CN, cmn-Hant-TW, de-AT, de-BE, de-CH, de-DE, en-CA, en-IN, es-US, fr-BE, fr-CA, fr-CH, fr-FR, hi-IN, id-ID, it-CH, it-IT, ko-KR, pl-PL, pt-BR, ru-RU, th-TH, tr-TR, vi-VN, ja-JP, en-AU, en-GB, en-IE, en-SG, da-DK, nb-NO, nl-NL, sv-SE, zh-Hant-TW, zh-TW]
+syntheticSource=Microsoft-Helena-Desktop-offline
+syntheticInputMs=4265 format=PCM16-mono-16000
+transport=pipe-realtime-50ms segmented=true
+expected=El lunes iremos al mercado para comprar tomates y preparar la cena.
+ready-for-synthetic-audio
+partial=[el]
+partial=[el lunes]
+partial=[el lunes I]
+partial=[el lunes iremos]
+partial=[el lunes iremos]
+partial=[el lunes iremos al]
+partial=[el lunes iremos al mercado]
+partial=[el lunes iremos al mercado]
+partial=[el lunes iremos al mercado para]
+partial=[el lunes iremos al mercado para]
+partial=[el lunes iremos al mercado para]
+partial=[el lunes iremos al mercado para comprar]
+partial=[el lunes iremos al mercado para comprar]
+partial=[el lunes iremos al mercado para comprar toma]
+partial=[el lunes iremos al mercado para comprar tomates]
+partial=[el lunes iremos al mercado para comprar tomates]
+partial=[el lunes iremos al mercado para comprar tomates y]
+partial=[el lunes iremos al mercado para comprar tomates y preparar]
+partial=[el lunes iremos al mercado para comprar tomates y preparar]
+partial=[el lunes iremos al mercado para comprar tomates y preparar la]
+partial=[el lunes iremos al mercado para comprar tomates y preparar la cena]
+partial=[el lunes iremos al mercado para comprar tomates y preparar la cena]
+resultKeys=[current_locale, results_recognition, confidence_scores]
+recognized=[el lunes iremos al mercado para comprar tomates y preparar la cena]
+elapsedMs=4663
+finished=recognition-result

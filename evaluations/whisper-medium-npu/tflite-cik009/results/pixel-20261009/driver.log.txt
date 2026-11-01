@@ -1,0 +1,1 @@
+Failed to write while dumping service thermalservice: Broken pipe

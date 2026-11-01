@@ -1,0 +1,424 @@
+# Ahorro de llamadas a Hermes en la escucha continua · 10-10-2026
+
+Claude Code, rama `ccr-1c613d47-jr1ovg` sobre `codex/conversation-detection-g0` @ `5ecb2e5` (S2.11).
+Encargo del usuario: revisar a fondo la escucha continua para que sea lo más fiable posible y gaste lo
+mínimo de créditos de `gpt-6-luna` en el puente Hermes (BMAX/Jarvis) **sin limitarla**.
+
+La preparación inicial de Claude fue sin APK ni despliegue. **Actualización Codex, 10-10-2026:**
+S2.12 instalada con firma original y medición desplegada en Jarvis; evidencia y reversión en §8.
+**Actualización posterior:** S2.13 instalada sobre S2.12, sin tocar Jarvis; cierre en §9.
+**Prueba mínima posterior completada:** 2 min 51 s, 10 llamadas/5 mensajes entregados,
+tokens brutos móvil/journal idénticos y esfuerzo low; evidencia y discrepancia de cálculo en §10.
+Menú físico de gafas confirmado después por el usuario. Protección de cuota Plus pendiente: §11.
+
+## 1. Dónde se van los créditos
+
+Cada evaluación es una llamada completa al modelo. No hay historial: se reenvía todo cada vez.
+
+| Componente por llamada | Tamaño |
+|---|---|
+| `STYLE` de conversación (+ `DAILY_STYLE`) | 7121 caracteres, ~1800 tokens, idéntico en `assess` y `assist` |
+| Contexto del episodio | hasta 12 turnos / 6000 caracteres, ~1500 tokens |
+| Memoria diaria (opcional) | hasta 3 × 600 caracteres |
+| Razonamiento | `effort: low` también para `assess`, que solo devuelve una etiqueta |
+
+Cadencia antes de este cambio en «Escuchar con Hermes» (sin filtros, `maxRequests = null`):
+
+- Una petición por cada revisión nueva del episodio en cuanto hay 2 s sin texto y han pasado 5 s desde
+  la anterior. Con Whisper local cada ventana de 2–12 s es un turno: ~1 llamada cada 6 s si se habla.
+- `assess` y luego `assist` al abrir cada episodio: dos llamadas secuenciales antes de la primera
+  respuesta.
+- Un «vale» o «sí, sí» bastaba para reenviar los 12 turnos completos.
+- Ninguna reducción cuando Hermes no participa. Evidencia previa en estas notas: TV a 2 m, 21 llamadas
+  en 4 min con 18 `nada`; S2.8, 38 ayudas con 37 `nada`; journal del 10-10, 75 `assist/nada` seguidos
+  sin aportación. Ese es el gasto que crece con las horas de escucha: TV, radio, gente hablando entre
+  sí sin dar pie.
+
+Estimación con la cadencia antigua: ~600 llamadas/h hablando sin pausa, ~300/h con conversación normal.
+A ~3300 tokens de entrada por llamada son 1–2 M de tokens de entrada por hora. **Estimación, no
+medida**: el puente no registraba tokens de `conv` (sí los del chat).
+
+## 2. Cambios implementados
+
+### Móvil (`app/conversation-detection/`)
+
+1. **Enfriamiento adaptativo** (`conversation-hermes.ts`, solo escucha manual sin tope y sin filtros).
+   Tras resultados sin aportación (`nada`, cortesía, incierto, fallo o caducidad), el intervalo mínimo
+   crece 5 → 10 → 20 → 40 → 60 s (tope: al menos una evaluación por minuto de habla continua).
+   Vuelve a 5 s **al instante** cuando:
+   - llega una aportación válida de Hermes,
+   - hay una pregunta (`¿`/`?` o arranque interrogativo en castellano/catalán, por si Whisper omite
+     la puntuación),
+   - alguien nombra a Hermes,
+   - habla el portador (perfil de voz reconocido),
+   - hay 30 s sin voz (empieza otro intercambio).
+   El enfriamiento solo actúa **mientras se sigue hablando**: tras 8 s de pausa se evalúa lo retenido.
+   Una pausa es justo cuando encaja una aportación, y así nunca se pierde contexto por el cierre del
+   episodio a los 30 s de silencio. No se descarta nada oído: la siguiente petición lleva todo el
+   contexto acotado (12 turnos).
+2. **Muletillas solo como contexto.** Si lo nuevo desde la última petición tiene menos de 3 palabras y
+   no es una pregunta («vale», «sí, sí», «ajá»), no se llama: se queda en el contexto de la siguiente.
+3. **Ayuda directa en identidad opcional** (`conversation-episodes.ts: promote()`). En la escucha
+   manual con conv/2 ya no se envía `assess` antes de `assist`. Ahorra una llamada por episodio y un
+   viaje de ida y vuelta (1–3 s) antes de la primera respuesta. El prompt de `assist` ya se abstiene
+   ante saludos y cortesías. Identidad requerida (puentes conv/1, sesiones de diagnóstico) conserva
+   `assess`.
+4. **Contadores visibles** en «Métricas tras OFF» → `savings`: `short`, `backoff`, `directAssist`
+   (`assess` evitados), `quiet` y `gapMs` actuales. Sin texto.
+5. Texto del botón: «Escuchar con Hermes sin límite de llamadas», con una línea que explica el
+   espaciado adaptativo.
+
+No cambia: filtro de llamadas (`mechanical-gatekeeper.ts`, 20 s/120 por hora), sesiones de diagnóstico
+con presupuesto finito, contrato del protocolo, captura, VAD ni ASR.
+
+Simulación sintética (prueba nueva): 10 min de TV con un turno cada 3 s y Hermes siempre en `nada`.
+Antes ~100 peticiones, ahora **13** (−87 %). En conversación real el ahorro depende de cuántas veces
+Hermes aporta. Con aportaciones frecuentes, el ritmo apenas cambia: ese es el objetivo.
+
+### Puente (`integrations/hermes/conversation.py`) — **no desplegado**
+
+1. Cada petición `conv` registra en `conv timing` sus tokens: `inputTokens`, `cacheReadTokens`,
+   `outputTokens`, `reasoningTokens` y `promptChars`. Solo números, como el chat. Permite medir el
+   coste real por hora en el journal y comprobar si la caché de prompts funciona.
+2. `FACECLAW_CONV_REASONING_EFFORT` (`none|minimal|low|medium|high`, por defecto `low`, valor actual):
+   permite bajar el razonamiento pagado de la conversación sin tocar el chat. Probar `minimal` solo
+   después de medir y si el proveedor lo admite para `gpt-6-luna` (**no verificado**).
+
+Despliegue: los helpers `scripts/deploy-hermes-*.py` fijan hashes históricos de `conversation.py`. Hace
+falta uno nuevo para esta fuente o una copia manual reversible con respaldo, con autorización del
+usuario. El móvil funciona igual con el puente actual: los campos nuevos de `timing` son aditivos y el
+cliente los ignora.
+
+## 3. Errores encontrados
+
+| Error | Estado |
+|---|---|
+| `tests/conversation-local-speakers.test.cjs` importaba `gatekeeper.ts`, retirado en S2.10: el archivo entero fallaba y ocultaba 5 pruebas válidas | Corregido: retirada solo la prueba del prompt del Gatekeeper |
+| Riesgo de diseño detectado al implementar: con esperas largas, un silencio de 30 s cerraba el episodio y se perdía lo retenido | Evitado con la liberación tras 8 s de pausa, con prueba |
+| La ayuda inmediata tras `tema` quedaba retenida por el propio intervalo | Exceptuada (`followUp`), con prueba |
+| 4 fallos previos ajenos (eventos de entrada, ajustes del asistente iOS/Android) | Sin cambios, iguales en `5ecb2e5` |
+
+## 4. Recomendaciones no implementadas, por impacto
+
+1. **Medir antes de seguir.** Desplegar el registro de tokens y hacer una sesión de 30 min (conversación
+   y TV). Sin esa cifra, cualquier ajuste del prompt es a ciegas.
+2. **Caché de prompts.** `STYLE` es constante y supera 1024 tokens: si va primero y sin datos variables
+   (fecha, IDs), el proveedor puede cobrar la parte cacheada mucho más barata. Comprobar
+   `cacheReadTokens > 0` en el journal. Si sale 0, revisar cómo construye Hermes el prompt de sistema
+   (`ephemeral_system_prompt`). **No verificado** desde aquí: el código de Hermes no está en el repo.
+3. **Prompt de `assess` corto.** Donde siga habiendo `assess` (identidad requerida), usar un prompt de
+   ~200 tokens en vez del `STYLE` completo y `effort` mínimo. Requiere despliegue.
+4. **Modelo barato solo para descartar**: ya descartado por el usuario (sin clasificador de pago) y
+   sin LLM local viable en el N5095A sin AVX. Queda fuera.
+5. **Respaldo OpenRouter**: un `timeout` del principal a los 6 s ya está facturado y luego se paga el
+   respaldo. Vigilar `fallbackReason=timeout` en el journal; si es frecuente, subir `PRIMARY_SECONDS`
+   cuesta menos que pagar dos veces.
+
+## 5. Validación
+
+- Node completo: 1093/1099 correctas, 4 fallos previos ajenos, 2 omitidas. Conversación incluida.
+- Pruebas nuevas: escalera 5/10/20/40/60 s con habla continua, liberación por pausa, reinicio por
+  pregunta/Hermes/portador/aportación/silencio, muletillas retenidas sin perderse, 10 min de TV,
+  sesiones finitas sin enfriamiento.
+- Python: 62 pruebas de conversación/memoria/fallback/bridge, `test_bridge.py` correcto, 2 nuevas
+  (tokens por petición, esfuerzo configurable).
+- TypeScript de la app y de pruebas, oxlint: correctos.
+- Sin build Android ni prueba física.
+
+## 6. Pendiente
+
+1. Build e instalación de la APK con firma original (Windows, `install-conversation-g0.ps1`).
+2. Prueba física: una conversación con preguntas, otra sin preguntas y 10 min de TV. Comparar
+   `savings` y peticiones por minuto con S2.11.
+3. Despliegue reversible del registro de tokens en Jarvis y lectura del journal.
+4. Con los datos: decidir si retirar «Escucha continua con filtros locales». El enfriamiento adaptativo
+   cubre el ahorro sin su cadencia fija de 20 s, que retrasaba respuestas.
+
+## 7. Paso 1: solo medición (sin cambio de comportamiento ni despliegue)
+
+Acordado con el usuario tras la revisión de las propuestas de Codex. `FACECLAW_CONV_REASONING_EFFORT`
+sigue en `low` para tener una referencia limpia.
+
+Móvil, «Métricas tras OFF»:
+- `savings.resets`: reinicios de la espera por motivo (`question`, `hermes`, `wearer`, `message`,
+  `silence`), contados solo cuando la espera era mayor de 5 s.
+- `savings.pauseReleases`: envíos adelantados por 8 s de pausa.
+- `savings.gapAtSend`: espera vigente en cada envío (5/10/20/40/60 s). `savings.interval`: tiempo real
+  entre peticiones (media, máximo, p50/p95 por intervalos).
+- `usage`: tokens que informa el puente (entrada, caché, salida, razonamiento, `promptChars`) y por cada
+  «mensaje»: peticiones, tokens de entrada, de salida y totales. Con el puente actual queda a cero.
+
+Puente (`conversation.py`, sin desplegar): cada línea `conv timing` añade `effort`, `primaryOutcome`
+y `fallbackOutcome` (`ok`, `timeout`, `error`, `invalid`, `cancelled`), además de los tokens y
+`promptChars` ya añadidos.
+
+Resumen del journal: `integrations/hermes/conv_journal_summary.py`, solo biblioteca estándar.
+
+```sh
+journalctl -u faceclaw-hermes.service -o short-iso --since "2026-10-11 10:00" --until "2026-10-11 10:15" \
+  | python3 conv_journal_summary.py --since 2026-10-11T10:00 --until 2026-10-11T10:15 --label "A conversación"
+```
+
+Opciones: `--json`, `--duration-min`, `--price-input/--price-cached/--price-output` (por millón).
+Detecta si Hermes informa de la caché o del razonamiento fuera de entrada o salida. Con líneas del puente
+actual (S2.11) ya da llamadas, resultados, respaldo y latencia, sin tokens: sirve como línea base hoy.
+
+## 8. Despliegue S2.12 en este PC, Pixel y Jarvis — Codex, 10-10-2026
+
+Autorización humana directa en este chat: pull conservando cambios, build e instalación con firma
+original/`install -r`, despliegue de solo `conversation.py` mediante el helper, prueba conjunta de
+2–3 min y commit/push. Orden seguido: repositorio → línea base S2.11 → APK → Jarvis → prueba mínima.
+La batería A/B/C queda aplazada y requiere coordinación con el usuario.
+
+### Repositorio y validación
+
+- Checkout `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`; árbol inicial limpio.
+  Pull fast-forward `5ecb2e5` → `2cae53c`, sin reset ni stash nuevo. Fuentes protegidas sin editar.
+- `npm test` con acceso a sockets locales: **1095 correctas, 5 fallos, 1 omitida / 1101**. Cuatro
+  fallos previos documentados (dos eventos de entrada y dos ajustes iOS/Android); quinto en
+  `ios-config-scripts.test.cjs`, aserción de permisos POSIX `0600` en Windows. La primera ejecución
+  aislada añadió dos fallos de sockets `EACCES`, resueltos al ejecutarla fuera del aislamiento.
+- Python conversación/journal/memoria/bridge/daily-context: **68/68**. Desplegador: **4/4 en Linux**,
+  sobre copia temporal del Git público, con servicios simulados; su aserción `0700/0600` no es
+  aplicable a Windows. TypeScript app/pruebas y oxlint de los tres módulos modificados: correctos.
+- Receta local adaptada `.tools/s2.12-build.ps1`, entorno `.tools/s2.10-env.ps1`; `ns prepare`
+  producción y Gradle offline `assembleRelease lintVitalRelease`, sin reconstruir nativas: correctos.
+
+### Línea base S2.11, obtenida antes de instalar o modificar el puente
+
+Journal **de usuario**, `faceclaw-hermes.service`, 10-10-2026 **15:00–15:20 Europe/Madrid**,
+procesado en `/tmp/faceclaw-conv-journal-summary-20261010.py`. Solo salida agregada; no se imprimió
+texto de conversación. Ventana de 20 min, no equivale a 20 min de habla efectiva.
+
+| Métrica | S2.11 |
+|---|---:|
+| Llamadas / proveedor / por hora de ventana | 63 / 63 / 189 |
+| assess / assist | 26 / 37 |
+| nada / tema / mensaje / incierto | 20 / 17 / 17 / 9 |
+| Llamadas por mensaje | 3,7 |
+| Inválidos / timeouts / errores / respaldos | 0 / 0 / 0 / 0 |
+| Latencia total p50 / p95, ms | 1239 / 2155 |
+| Latencia principal p50 / p95, ms | 1237 / 2154 |
+
+Tokens, `promptChars` y esfuerzo **no registrados por S2.11**; los ceros del JSON no representan
+consumo cero. Resumen local: `.tools/s2.12-baseline-user.json`. No se estimó coste monetario.
+
+### APK instalada
+
+- `com.faceclaw.app`, **0.8.2-es.5-conversation.s2.12-measurement / 805**.
+- SHA-256 firmada y extraída: `f062cc3ceceb92ab2dc5199f5c6e70a81f74f3bc52d70baf173b33c30ec452a0`.
+  Local: `dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.12-measurement.apk`.
+  Unsigned: `d0055d9ca23bae8212b60384b3f7cdfd1dccd146fcf60d74f064b20c6c777431`.
+- Certificado original verificado: `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`.
+  Ocho `.so` byte idénticas a la APK S2.11 extraída. Sin cambios Kotlin/nativos.
+- OFF previo observado en UI y métricas: `enabled=false`, ambos `worker=false`, `busy=false`,
+  `inputBufferedBytes=0`; ningún wakelock Faceclaw activo. Instalación `install -r` correcta,
+  apertura/proceso estable y «Escucha apagada» comprobados después.
+- **35 ajustes idénticos** antes/después, respaldo privado con ACL usuario/SYSTEM en
+  `.tools/s2.12-measurement-private/`; sin contenido privado en Git ni chat. Sin leer/copiar el vector.
+- Reversión fresca: `dist/conversation-g0/before-install-20261010-170550.apk`, S2.11,
+  SHA-256 `28d24f8a8304dc7d8ab217e45d763db62b0311b40c6905e5c4027adc2d34517e`.
+  Restaurar únicamente con Conversación OFF y `adb -s 61161FDCG0013L install -r <ruta>`.
+
+### Jarvis
+
+- Con OFF confirmado, candidato y helper en `/tmp/faceclaw-s2.12-tests-20261010/`.
+  `--check` devolvió **`CHECK_OK live=417dc5c98ceb -> 5b9020d050a2`**, incluidos hashes fijos correctos.
+- Aplicación: **`MEASUREMENT_APPLIED=TRUE ready_in=7.4s`**. Solo se reemplazó
+  `/home/dani/faceclaw-hermes-bridge/conversation.py` y reinició `faceclaw-hermes.service`.
+  SHA-256 final `5b9020d050a2704e924a0ae6387e6da3ec2da1d75668ff26ed80938da2a6db1a`.
+- Respaldo: `/home/dani/faceclaw-hermes-bridge/rollback-20261010-measurement/conversation.py`,
+  carpeta `700`, archivo `600`; hash original `417dc5c98ceb617ee996adf8889935ec6bdfce33635dc04f0121a4fc6845e8dc`.
+- Helper comprobó puerto 8791, marcador `listening` y ausencia de `conversation unavailable`.
+  Ambos servicios activos; `hermes-gateway.service` conservó PID **557095**.
+- `bridge.py`, `daily_context.py` y `private.json`: hashes antes/después idénticos. Sin cambios de
+  proveedor, credenciales ni unidad gateway. Proceso del puente sin override de
+  `FACECLAW_CONV_REASONING_EFFORT`, efectivo **low** por defecto verificado.
+- Reversión, con OFF: `python3 /tmp/faceclaw-s2.12-tests-20261010/scripts/deploy-hermes-measurement.py --rollback`.
+  El helper queda también versionado en este repositorio para volver a copiarlo si se limpia `/tmp`.
+
+### Prueba mínima conjunta
+
+**No realizada:** solicitada a las 19:08 Europe/Madrid; el usuario respondió «Aún no puedo hacer la
+prueba». Quedan pendientes la comprobación real de `inputTokens`, `cacheReadTokens`, `outputTokens`,
+`reasoningTokens`, `promptChars` y `effort low`, la lectura móvil de `savings`/`usage` tras esa sesión,
+y la observación de aportaciones en gafas. No se inició captura ni se hicieron llamadas reales por
+el agente. Resumen posterior al despliegue desde 19:07: **0 llamadas**, por tanto no es una prueba
+de registro de tokens ni evidencia de un problema con el journal. El journal de usuario sí contiene
+la línea base S2.11 y los marcadores de arranque comprobados por el helper.
+
+Cierre comprobado: móvil **Conectado / Escucha apagada**, sin wakelock Faceclaw activo. A/B/C
+aplazada hasta otra prueba conjunta; no hay ahorro físico general ni coste por hora acreditados.
+Notas de continuidad y copia compartida del NAS actualizadas; no se copiaron APKs ni ajustes
+privados al NAS en esta entrega. Código y notas publicados en `codex/conversation-detection-g0`.
+## 9. S2.13: retirada de «Escucha continua con filtros locales»
+
+Decidido por el usuario el 10-10-2026, con S2.12 ya instalada por Codex. Motivos comprobados en el código:
+
+- Con `assess` eliminado, la excepción de la ayuda inmediata tras `tema` ya no se daba: en ese modo todas
+  las respuestas, preguntas incluidas, esperaban la cadencia fija de 20 s.
+- Desactivaba la espera creciente (5→60 s), que gasta menos con TV o ruido de fondo (~78/h frente a
+  hasta 180/h, con tope de 120/h) y responde antes en conversación.
+- Venía **activado por defecto** (`mechanicalFilters = true`): un ON desde el interruptor de las gafas sin
+  elegir modo usaba los filtros.
+- Su tope de 120 llamadas/h pausaba Hermes hasta una hora: contrario a «sin limitarla».
+
+Cambios: quedan dos modos en el móvil, el menú de sistema de las gafas y la app Conversación: «Escuchar con
+Hermes» (con espera creciente) y «Solo transcribir». Retirados `mechanical-gatekeeper.ts`, su prueba, el
+ajuste `conversationFiltersEnabled`, la sección «Filtros locales» de los ajustes y la entrada de su
+diagnóstico. El estado de la tarjeta de ON solo muestra el aviso de VAD (`conversationVadStatus`); los avisos
+de enlace con Hermes (`sin-red`, `revocado`) se conservan. Sin cambios en el puente ni en Kotlin.
+
+No incluido, a decidir con datos: tope de seguridad alto en el modo sin límite (p. ej. 400/h), y si hace
+falta evaluar durante habla continua sin pausas de 2 s (los filtros lo permitían a los 12 s; el modo sin
+límite espera a una pausa, como antes).
+
+Versión `0.8.2-es.5-conversation.s2.13-hermes-only`/805. Node 1088/1094 (4 fallos previos ajenos,
+2 omitidas), TypeScript y oxlint correctos. Sin build Android en esta sesión.
+
+### Instalación y cierre Codex — 10-10-2026
+
+La prueba aplazada en este cierre se completó después con el usuario: véase §10. La observación
+física de las dos opciones del menú de gafas y la batería A/B/C siguen pendientes.
+
+Autorización directa del usuario para S2.13 con firma original/`install -r`, sin desinstalar ni borrar
+datos y sin tocar Jarvis. Checkout `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`;
+árbol inicial limpio, pull fast-forward `a0ee061` → `f71a7fc`. Ningún cambio local descartado.
+
+- `npm test` en Windows: **1088 correctas, 5 fallos, 1 omitida / 1094**. Son los cuatro fallos
+  previos de eventos de entrada/ajustes iOS-Android y el de permisos POSIX `0600` del codec iOS en
+  Windows. Sin nuevos fallos respecto a la entrega anterior. TypeScript app/pruebas y oxlint de
+  los seis módulos modificados: correctos.
+- Pixel conectado tras confirmación del usuario. OFF previo observado en UI y diagnóstico:
+  `enabled=false`, ambos `worker=false`/`busy=false`, buffers de entrada `0` y sin wakelock Faceclaw.
+- Build con `.tools/s2.13-build.ps1`, derivada de S2.12 cambiando la versión y los nombres de
+  log/artefacto; entorno `.tools/s2.10-env.ps1`. `ns prepare android --release --env.production` y
+  Gradle offline `assembleRelease lintVitalRelease`, saltando preparación de nativas: correctos.
+  Las **8 `.so` son byte idénticas a S2.12**, sin cambios Kotlin ni nativos.
+- Instalada **`com.faceclaw.app` / `0.8.2-es.5-conversation.s2.13-hermes-only` / 805** con
+  `scripts/install-conversation-g0.ps1 -Install`. Certificado original comprobado:
+  `57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`.
+- APK firmada: `dist/conversation-g0/faceclaw-0.8.2-es.5-conversation.s2.13-hermes-only.apk`, SHA-256
+  **`976aab3fda58364f7a027a084b26b49cb13b35e20b8c263009e95ce345a3922b`**. APK extraída
+  `.tools/s2.13-installed.apk`: mismo hash. Unsigned:
+  `3ed77e3d03ef5c8c1670167b76fa4fe70b378699e60b9ec5644ea5f8cda0850a`.
+- **35 ajustes idénticos** antes/después. Respaldo privado con ACL usuario/SYSTEM en
+  `.tools/s2.13-hermes-only-private/`, sin contenido en chat/Git/NAS. Perfil sin leer/copiar/reenrolar.
+- Reversión fresca a S2.12: `dist/conversation-g0/before-install-20261010-172440.apk`, SHA-256
+  **`f062cc3ceceb92ab2dc5199f5c6e70a81f74f3bc52d70baf173b33c30ec452a0`**.
+  Solo con OFF: `adb -s 61161FDCG0013L install -r <ruta de reversión>`.
+- Apertura estable comprobada por el instalador. UI del móvil comprobada: **«Escuchar con Hermes»
+  y «Solo transcribir»**, sin el tercer inicio de filtros ni el nombre anterior «sin límite de
+  llamadas». Cierre **Conectado / Escucha apagada**, sin wakelock Faceclaw activo.
+- Menú de sistema y app Conversación de las gafas: código de los dos inicios y tests de los menús
+  correctos. Se intentó abrir el menú desde el mando sin seleccionar inicio, pero **no se consiguió
+  confirmar visualmente en las lentes**. Esa observación física queda pendiente; no atribuir al
+  test de software una comprobación física.
+- **Prueba mínima de 2–3 min aplazada por el usuario** («Ahora no; deja la prueba pendiente»).
+  No captura ni llamadas reales iniciadas. Tokens reales/`cacheReadTokens`/`effort low`, `savings`
+  y `usage` tras una sesión siguen pendientes de validación conjunta; A/B/C también pendiente.
+- **Jarvis no se consultó ni modificó en esta entrega**: continúa la medición S2.12 desplegada en §8,
+  sin cambios de puente, proveedor, credenciales ni esfuerzo. Notas compartidas/NAS actualizadas;
+  commit y push en `codex/conversation-detection-g0`, sin APKs nuevas copiadas al NAS.
+
+## 10. Prueba mínima conjunta S2.13 — 10-10-2026, 19:30–19:34 Europe/Madrid
+
+Usuario pide «hagamos la prueba». S2.13/805 ya instalada; árbol limpio en `a31ec35` al comenzar.
+El móvil ya estaba escuchando al primer chequeo (19:30:20), por lo que el agente no inició ni
+reinició captura. Jarvis consultado **solo en lectura**: ambos servicios activos y `conversation.py`
+con el mismo hash `5b9020d0…6db1a`. Sin cambios de código/APK, modelos, proveedor, esfuerzo,
+credenciales ni servicios. No se imprimió audio, texto de conversación ni secretos.
+
+El usuario terminó la prueba y confirmó **«OFF; vi aportaciones en las gafas»**. Después se comprobaron
+Conectado/Escucha apagada, ambos workers/busy falsos, buffers de entrada a cero y ningún wakelock
+Faceclaw activo. Se leyeron `savings` y `usage` del diagnóstico únicamente después de OFF.
+
+### Correspondencia entre móvil y journal
+
+El resumen provisional de la ventana 19:28–19:34 dio **17 peticiones/7 mensajes**, con un timeout
+resuelto por el respaldo. Esa ventana incluye un tramo anterior a la última sesión retenida y **no
+se usa como resultado de la prueba final**. Los contadores del móvil se refieren a **171261 ms
+(2 min 51,261 s), 10 peticiones**. Las últimas diez líneas `conv timing` (secuencias 8–17, de
+19:31:00 a 19:33:34) coinciden exactamente con el móvil en número de peticiones/mensajes y las
+cuatro sumas de tokens. Selección realizada en memoria con las funciones de
+`conv_journal_summary.py`; sin exportar el journal bruto. No hay identificador de sesión en esas
+líneas: la correspondencia se acredita por los recuentos y las sumas coincidentes.
+
+| Métrica | Última sesión retenida |
+|---|---:|
+| Duración de escucha, ms | 171261 |
+| Llamadas / assess / assist | 10 / 0 / 10 |
+| mensaje / nada / entregados móvil | 5 / 5 / 5 |
+| Esfuerzo | low en 10/10 |
+| inputTokens / cacheReadTokens | 13511 / 7168 |
+| outputTokens / reasoningTokens | 198 / 0 |
+| promptChars total / media / p50 / p95 | 7071 / 707 / 685 / 1099 |
+| Total tokens según resumidor (caché aparte) | 20877 |
+| Llamadas por mensaje | 2 |
+| Inválidos / timeouts / errores / respaldos | 0 / 0 / 0 / 0 |
+| Latencia servidor total p50 / p95, ms | 1193 / 1651 |
+| Roundtrip móvil medio / máximo, ms | 1349 / 1826 |
+| Resultado → envío nativo medio / máximo, ms | 500 / 613 |
+| Turno → envío nativo medio / máximo, ms | 4800 / 7423 |
+
+`reasoningTokens=0` es el contador informado; no implica que se haya cambiado el esfuerzo ni permite
+asegurar ausencia de razonamiento facturado. Cinco entregas del móvil, junto a la confirmación del
+usuario, acreditan aportaciones en esta prueba; no una garantía general de entrega o precisión ASR.
+
+### Espera adaptativa observada
+
+`adaptive=true`, identidad opcional, 11 turnos aceptados/0 ignorados, 5 candidatos y 5 ayudas directas
+sin `assess`; `short=0`, `backoff=1`. Nueve envíos con espera vigente de 5 s y uno con 10 s;
+`pauseReleases=0`, un reinicio de espera por `message` y cero por los demás motivos. Nueve intervalos
+entre envíos: media 17111 ms, máximo 39000 ms; p50 del histograma ≤15000 ms y p95 ≤39000 ms.
+Cero pérdidas/reanudaciones de enlace, cero turnos offline. El contador de reinicios por pregunta
+solo aumenta cuando la espera supera 5 s: su cero no demuestra ausencia de preguntas.
+
+### Hallazgo: cálculos derivados de caché del móvil
+
+Los **tokens brutos coinciden**, pero el resumidor detecta caché informada aparte de la entrada
+(`cacheReportedApart=true`). Por ello usa entrada total 13511 + 7168 = 20679, caché **34,7 %** y
+**4175 tokens por mensaje**, mientras el móvil divide caché/entrada y muestra **53,1 %** y
+**2742 tokens por mensaje** al omitir la caché de ese total. `usageReport()` asume que la caché está
+incluida en `inputTokens`. **Discrepancia documentada, sin corregir código en esta prueba.** Para
+analizar este tramo, usar los contadores brutos y el total del resumidor. No se estima dinero sin
+precios verificados ni se compara ahorro porcentual con S2.11: son sesiones distintas.
+
+La tasa de esta sesión es 210,2 llamadas/h si se extrapolan sus 2,85 min; **no es una medición de
+una hora ni ahorro validado**. No se ejercitaron los escalones 20/40/60 s ni TV/silencios de A/B/C.
+El usuario confirmó después que al mantener pulsada la patilla aparece el menú con
+«Escuchar con Hermes» y «Solo transcribir», sin filtros locales. Comprobación física completada,
+sin seleccionar un inicio. Quedan pendientes A/B/C y la corrección del cálculo derivado móvil.
+La prueba mínima de tokens/esfuerzo/aportaciones sí está completada.
+
+Artefactos locales de solo métricas: `.tools/s2.13-mobile-metrics.json`,
+`.tools/s2.13-test-summary-session.json` y `.tools/s2.13-test-summary-window.txt`.
+Notas/continuidad/copia NAS actualizadas y publicadas en `codex/conversation-detection-g0`.
+
+## 11. Prioridad del usuario: conservar la cuota Plus de Codex
+
+El usuario pide sobre todo asegurarse de que Faceclaw no consuma todo su plan Plus. **La versión
+actual no ofrece esa garantía.** El proceso activo de Jarvis se consultó solo en lectura y usa
+`FACECLAW_PROVIDER=openai-codex`, modelo `gpt-6-luna` y esfuerzo efectivo `low`; el código de Hermes
+resuelve ese proveedor mediante credenciales OAuth de Codex. Sus llamadas consumen la cuota Codex
+de la cuenta conectada. No se comparó la identidad de esa cuenta con la del escritorio.
+
+La lectura de límites del escritorio del 10-10-2026 muestra Plus, **24 % usado / 76 % disponible**
+tanto en la ventana de **5 horas** como en la **semanal**. Es consumo global de esa cuenta,
+incluido el trabajo de desarrollo: no hay lectura anterior a la prueba que permita atribuir una
+variación a Faceclaw. No se guardaron identificadores de cuenta ni credenciales en las notas.
+
+La [documentación oficial](https://developers.openai.com/codex/pricing#what-are-the-usage-limits-for-my-plan)
+indica que el consumo depende del modelo, contexto, razonamiento, herramientas y caché; no existe
+una conversión fija de estos tokens a porcentaje de cuota. Por ello ni `low`, ni la caché, ni el
+enfriamiento adaptativo acreditan por sí solos que una escucha prolongada sea sostenible. Las diez
+llamadas en 171261 ms solo caracterizan esta prueba breve; no predicen la semana.
+
+**Siguiente prioridad antes de recomendar uso prolongado:** diseñar una protección que reserve
+cuota para el usuario, comprobando ambos límites y suspendiendo nuevas llamadas a Hermes antes
+de agotar la reserva. Debe definirse la reserva, comprobar la cuenta real de Hermes y decidir el
+comportamiento cuando la cuota no pueda consultarse. No basta con esperar al 429 ni con limitar
+solo llamadas por hora. Esta protección **no está implementada**; no se ha fijado un umbral ni
+reintroducido un límite de llamadas. Requeriría un encargo de código y despliegue distinto del
+cierre S2.13, que prohíbe modificar Jarvis. Modelo, proveedor, esfuerzo, credenciales y servicios
+siguen intactos. Conversación queda OFF.

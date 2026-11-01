@@ -1,14 +1,13 @@
 import { imageFromAsciiArt } from "../../graphics/image";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { appViewportSize } from "../../ui/shell/geometry";
-import { LIST_ROW_TEXT_INSET } from "../../ui/metrics";
 import {
   MenuLayer,
   TextPageLayer,
   drawRightValueMenuItem,
-  drawSubmenuIndicator,
   drawToggleMenuItem,
   openModalMenu,
+  submenuItem,
   type MenuItem,
 } from "../../ui/menu";
 import { enumSettingMenuItem, toggleSettingMenuItem } from "../../ui/dashboard-settings";
@@ -23,7 +22,7 @@ import { isAsrModelReady, startAsrModelDownload, asrModelState } from "../../nat
 import { CaptionsLayer } from "./captions-layer";
 import { LevelsLayer } from "./levels-layer";
 import { RadarLayer } from "./radar-layer";
-import { loadMicConfig, micArrayController, micControlSupported, saveMicConfig } from "./mic-control";
+import { loadMicConfig, micArrayController, micControlSupported } from "./mic-control";
 import { isMicModelReady, micModelState, startMicModelDownload } from "./mic-models";
 import { micChannelLabel, type MicChannelKey, type MicConfig } from "./mic-protocol";
 import { micSession } from "./mic-session";
@@ -60,7 +59,7 @@ const TRAY_ICON = imageFromAsciiArt(
     "  #       #   ",
     "  ###     ### ",
   ],
-  220,
+  { "#": 220 },
 );
 
 const MENU_LAYOUT = {
@@ -73,26 +72,9 @@ const MENU_LAYOUT = {
   opaque: true,
 };
 
-function submenuItem(label: string, onSelect: MenuItem["onSelect"]): MenuItem {
-  return {
-    label,
-    onSelect,
-    render: ({ image, x, y, width, height, selected, disabled, text }) => {
-      const font = getDefaultSmallFont();
-      const value = disabled ? 70 : selected ? 255 : 200;
-      image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, value);
-      drawSubmenuIndicator(image, font, x, y, width, height, value);
-    },
-  };
-}
-
-/** Persist a config change and re-apply it live when the array is streaming. */
+/** Persist a config change; the running session applies it live. */
 function updateMicConfig(mutate: (config: MicConfig) => MicConfig): void {
-  const updated = mutate(loadMicConfig());
-  saveMicConfig(updated);
-  if (micSession.getState().mode === "extended") {
-    micArrayController.apply(updated);
-  }
+  micSession.updateConfig(mutate);
 }
 
 function micChannelToggleItem(
@@ -471,8 +453,9 @@ export function createMicrophonesAppWindow(options: InProcessAppOptions): InProc
       }),
       configToggleItem(
         "Captions",
-        () => captionsEnabledSetting.get(),
-        () => micSession.setCaptionsEnabled(!captionsEnabledSetting.get()),
+        // Shows off after repeated engine failures, so turning it on retries.
+        () => micSession.captionsEnabled(),
+        () => micSession.setCaptionsEnabled(!micSession.captionsEnabled()),
         undefined,
         captionsEnabledSetting.description,
       ),

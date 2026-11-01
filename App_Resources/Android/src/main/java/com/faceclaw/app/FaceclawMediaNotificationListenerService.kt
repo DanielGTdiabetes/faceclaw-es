@@ -87,8 +87,14 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
             return false
         }
 
+        /**
+         * The tray's notification icons, iconSize*iconSize gray bytes each: one
+         * per notification group. When keysOut is given, each icon's
+         * notification key (the group member it was taken from) is appended
+         * to it in step, so the tray can tell which notification an icon is.
+         */
         @JvmStatic
-        fun getActiveNotificationIconGrays(iconSize: Int, maxIcons: Int): ByteArray {
+        fun getActiveNotificationIconGrays(iconSize: Int, maxIcons: Int, keysOut: MutableList<String>?): ByteArray {
             val service = activeService
             val size = Math.max(1, Math.min(96, iconSize))
             val limit = Math.max(0, maxIcons)
@@ -130,6 +136,7 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
                     + " drawable=" + drawable.javaClass.simpleName
                     + " intrinsic=" + drawable.intrinsicWidth + "x" + drawable.intrinsicHeight)
                 appendIconGrayBytes(drawable, size, out, service, emitted, statusBarNotification.packageName)
+                keysOut?.add(statusBarNotification.key ?: "")
                 if (dedupeGroupKey != null) {
                     emittedGroupKeys.add(dedupeGroupKey)
                 }
@@ -260,13 +267,21 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
         }
 
         private fun emitNotificationPosted(key: String?) {
+            emitNotificationEvent(key) { listener, eventKey -> listener.onNotificationPosted(eventKey) }
+        }
+
+        private fun emitNotificationRemoved(key: String?) {
+            emitNotificationEvent(key) { listener, eventKey -> listener.onNotificationRemoved(eventKey) }
+        }
+
+        private fun emitNotificationEvent(key: String?, deliver: (FaceclawNotificationListener, String) -> Unit) {
             if (key == null || key.isEmpty() || notificationListeners.isEmpty()) {
                 return
             }
             for (listener in notificationListeners) {
                 mainHandler.post {
                     try {
-                        listener.onNotificationPosted(key)
+                        deliver(listener, key)
                     } catch (t: Throwable) {
                         Log.w(TAG, "notification listener failed", t)
                     }
@@ -312,16 +327,17 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
             return !alreadyActive || !isPersistentNotification(statusBarNotification)
         }
 
-        private fun forgetActiveNotificationWakeKey(statusBarNotification: StatusBarNotification?) {
+        /** Stop tracking a notification; returns whether it was tracked (i.e. listed on the glasses). */
+        private fun forgetActiveNotificationWakeKey(statusBarNotification: StatusBarNotification?): Boolean {
             if (statusBarNotification == null) {
-                return
+                return false
             }
             val key: String? = statusBarNotification.key
             if (key == null || key.isEmpty()) {
-                return
+                return false
             }
             synchronized(activeNotificationWakeKeys) {
-                activeNotificationWakeKeys.remove(key)
+                return activeNotificationWakeKeys.remove(key)
             }
         }
 
@@ -524,6 +540,7 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
             out.put("appName", getNotificationAppName(service, statusBarNotification))
             out.put("postTime", statusBarNotification.postTime)
             out.put("when", notification.`when`)
+            out.put("foregroundService", (notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0)
             putString(out, "category", notification.category)
             if (extras != null) {
                 putCharSequence(out, "title", firstNonEmpty(
@@ -647,7 +664,10 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
     override fun onNotificationPosted(statusBarNotification: StatusBarNotification?) {
         super.onNotificationPosted(statusBarNotification)
         if (!shouldShowNotificationInList(this, statusBarNotification)) {
-            forgetActiveNotificationWakeKey(statusBarNotification)
+            // An update that takes a listed notification off the list removes it as far as the glasses go.
+            if (forgetActiveNotificationWakeKey(statusBarNotification)) {
+                emitNotificationRemoved(statusBarNotification!!.key)
+            }
             return
         }
         if (shouldEmitNotificationPosted(statusBarNotification!!)) {
@@ -656,7 +676,12 @@ class FaceclawMediaNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(statusBarNotification: StatusBarNotification?) {
-        forgetActiveNotificationWakeKey(statusBarNotification)
+        // Includes notifications their source cancels on its own, e.g. a
+        // short-lived foreground-service notification that was standing in
+        // for one posted moments later under another key.
+        if (forgetActiveNotificationWakeKey(statusBarNotification)) {
+            emitNotificationRemoved(statusBarNotification!!.key)
+        }
         super.onNotificationRemoved(statusBarNotification)
     }
 }

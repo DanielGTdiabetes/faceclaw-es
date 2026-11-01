@@ -1,0 +1,36 @@
+## 20:56:03 thermal=ThermalStatus:0
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [10]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [120]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [2]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-enc-probe/enc-stem-int8.tflite]
+INFO: Signature to run: []
+INFO: #threads used for CPU inference: [4]
+INFO: Use xnnpack: [1]
+INFO: Loaded model /data/local/tmp/fc-enc-probe/enc-stem-int8.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+INFO: XNNPACK delegate created.
+VERBOSE: Replacing 6 out of 8 node(s) with delegate (TfLiteXNNPackDelegate) node, yielding 4 partitions for subgraph 0.
+INFO: Explicitly applied XNNPACK delegate, and the model graph will be partially executed by the delegate w/ 2 delegate kernels.
+INFO: The input model file size (MB): 3.44835
+INFO: Initialized session in 30.188ms.
+INFO: Running benchmark for at least 2 iterations and at least 0.5 seconds but terminate if exceeding 120 seconds.
+INFO: count=14 first=127228 curr=19518 min=19518 max=127228 avg=36175.5 std=31100 p5=19518 median=22095 p95=127228
+
+INFO: Running benchmark for at least 10 iterations and at least 0 seconds but terminate if exceeding 120 seconds.
+INFO: count=10 first=19533 curr=10920 min=10815 max=20564 avg=14680.8 std=3994 p5=10815 median=12343 p95=20564
+
+INFO: Inference timings in us: Init: 30188, First inference: 127228, Warmup (avg): 36175.5, Inference (avg): 14680.8
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=17.25 overall=20.543
+INFO: Overall peak memory footprint (MB) via periodic monitoring: 29.7656
+INFO: Memory status at the end of exeution:
+INFO: - VmRSS              : 30 MB
+INFO: + RssAnnon           : 16 MB
+INFO: + RssFile + RssShmem : 14 MB
+## exit 0 20:56:04

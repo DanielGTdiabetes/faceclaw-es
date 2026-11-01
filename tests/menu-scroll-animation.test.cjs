@@ -1,17 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Menu } = require('../.test-build/app/ui/menu-core.js');
-const { MENU_HIGHLIGHT_DURATION_MS } = require('../.test-build/app/ui/menu-highlight-motion.js');
+const { MenuHighlightMotion, MENU_HIGHLIGHT_DURATION_MS } = require('../.test-build/app/ui/menu-highlight-motion.js');
 const { GrayImage } = require('../.test-build/app/graphics/image.js');
 const { DrawOp, encodeDisplayList, readDisplayList } = require('../.test-build/app/graphics/display-list.js');
 const { evaluate } = require('../.test-build/app/graphics/draw-expression.js');
 const { DrawExpression: E } = require('../.test-build/app/graphics/draw-expression.js');
 const { menuScrollList, slidingHighlightY } = require('../.test-build/app/graphics/menu-scroll-list.js');
-const { MENU_BOUNCE_DURATION_MS, scrollOffsetExpression } = require('../.test-build/app/ui/menu-scroll-motion.js');
+const { MenuScrollMotion, MENU_BOUNCE_DURATION_MS, scrollOffsetExpression } = require('../.test-build/app/ui/menu-scroll-motion.js');
 const { encodePresentation } = require('../.test-build/app/graphics/presentation-wire.js');
 const { setMenuAnimationReader } = require('../.test-build/app/ui/menu-animation-pref.js');
 // Also consumed by FrameDisplayListTest.kt.
-const SCROLL = '078a000000030002000400020000070000009600000001000200040011223344556677880200020000000000ff250100300102300180f0800180f0161101001732800180f01610300180f0302341403101001102000200010008000000ff280101300100300180f0800180f0161101001732800180f01610300180f030234140310100170100160400020000000103';
+const SCROLL = '078b000000030002000400020000070000009600000001000200040011223344556677880200020000000000ff250100300102300180f0800180f0161101001732800180f01610300180f0302341403101001102000200010008000000ff280101300100300180f0800180f0161101001732800180f01610300180f03023414031010017010016040002000000010310';
 
 const BOX = { x: 10, y: 5, width: 40, height: 60 };
 const ITEMS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
@@ -189,17 +189,17 @@ test('a bounce during a scroll starts from the offset on screen', () => {
   menu.moveSelection(1);
   paint(menu, 2000); // 60 -> 80, the end
   menu.moveSelection(1);
-  paint(menu, 2060); // the highlight moves to the last row; no further scroll
+  paint(menu, 2000 + MENU_HIGHLIGHT_DURATION_MS / 4); // still during the faster scroll
   assert.equal(menu.selectedIndex, 6);
   menu.moveSelection(1);
-  const [list] = scrollLists(paint(menu, 2120));
+  const [list] = scrollLists(paint(menu, 2000 + MENU_HIGHLIGHT_DURATION_MS / 2));
   const offsets = [0, MENU_BOUNCE_DURATION_MS].map((ms) => evaluate(list.calls[0].y, ms, 0).value);
   assert.ok(offsets[0] < offsets[1], 'it starts where the scroll had got to, above its settled offset');
 });
 
-test('with menu animation off, scrolls, slides and bounces snap', (t) => {
-  setMenuAnimationReader(() => false);
-  t.after(() => setMenuAnimationReader(() => true));
+test('with menu animation disabled, scrolls, slides and bounces snap', (t) => {
+  setMenuAnimationReader(() => 'disabled');
+  t.after(() => setMenuAnimationReader(() => 'normal'));
   const timed = (image) => image.draws.filter((draw) => draw.presentation?.displayList?.timeline);
   const menu = inkMenu();
   paint(menu, 1000);
@@ -217,10 +217,28 @@ test('with menu animation off, scrolls, slides and bounces snap', (t) => {
   assert.equal(timed(paint(menu, 5000)).length, 0, 'no bounce');
 });
 
+test('menu animation speed scales slide, scroll and bounce durations', (t) => {
+  t.after(() => setMenuAnimationReader(() => 'normal'));
+  for (const [speed, factor] of [['very-fast', 5], ['fast', 2], ['normal', 1], ['slow', 0.5]]) {
+    setMenuAnimationReader(() => speed);
+    const highlight = new MenuHighlightMotion();
+    highlight.paint(0, 0, 10, 20, 100, 20, 0);
+    highlight.navigate(0, false);
+    assert.equal(highlight.paint(1, 0, 10, 40, 100, 20, 100).durationMs, MENU_HIGHLIGHT_DURATION_MS / factor, speed);
+    const scroll = new MenuScrollMotion();
+    scroll.paint(0, BOX, 0);
+    scroll.navigate(false);
+    assert.equal(scroll.paint(20, BOX, 100).durationMs, MENU_HIGHLIGHT_DURATION_MS / factor, speed);
+    scroll.bounce(8);
+    assert.equal(scroll.paint(20, BOX, 1000).durationMs, MENU_BOUNCE_DURATION_MS / factor, speed);
+  }
+});
+
 test('scroll lists survive the bridge with animated copy coordinates', () => {
   const strip = { width: 2, height: 4, pixels: Uint8Array.of(17, 34, 51, 68, 85, 102, 119, 136) };
-  const timeline = { from: 0, to: 2, startedAt: 1000, token: 7, durationMs: MENU_HIGHLIGHT_DURATION_MS };
-  const y = slidingHighlightY(0, { dx: 0, dy: 1, startedAt: 1000, token: 7, durationMs: MENU_HIGHLIGHT_DURATION_MS }, 1000);
+  // The shared wire golden has a fixed 240 ms timeline, independent of UI speed defaults.
+  const timeline = { from: 0, to: 2, startedAt: 1000, token: 7, durationMs: 240 };
+  const y = slidingHighlightY(0, { dx: 0, dy: 1, startedAt: 1000, token: 7, durationMs: 240 }, 1000);
   const list = menuScrollList(strip, 1, 2, timeline, scrollOffsetExpression(timeline).sub(E.i32(0)),
     { y, width: 4, height: 2, radius: 0, background: 15, border: 45 });
   const bytes = encodeDisplayList({ displayList: list, x: 3, y: 2, width: 4, height: 2, depth: 0 }, 1150);

@@ -105,11 +105,14 @@ class FaceclawSettingsPortReceiver : BroadcastReceiver() {
         val prefs = prefsFile(context)
         prefs.parentFile?.mkdirs()
         if (prefs.exists()) {
-            copy(prefs, File(prefs.path + ".bak"))
+            // Android reserves .bak for an interrupted SharedPreferences write
+            // and restores it on the next launch. Keep our backup separate so
+            // the imported settings survive the required process restart.
+            copy(prefs, File(prefs.path + ".import-backup"))
         }
         copy(staged, prefs)
         staged.delete()
-        return "imported: $prefs (previous settings in $PREFS_FILE.bak)"
+        return "imported: $prefs (previous settings in $PREFS_FILE.import-backup)"
     }
 
     /** Reject files that are not a SharedPreferences <map> document. */

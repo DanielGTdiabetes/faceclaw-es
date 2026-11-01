@@ -4,6 +4,7 @@ import {
   describeAssistantContext,
 } from "../prompts";
 import { assistantBridge } from "./bridge-client";
+import { assistantAudioPriority } from "./audio-priority";
 import { DirectAssistantBackend } from "./direct-backend";
 import type { LlmMessage, LlmToolDefinition } from "./llm-protocol";
 import type { ResolvedAssistantModel } from "./models";
@@ -22,6 +23,8 @@ export type AssistantSessionHistory = {
   transcript: AssistantTranscriptEntry[];
   /** Model identity for safe replay after Auto resolves differently on restart. */
   engine?: string;
+  /** The Hermes server-side session for this conversation (Hermes keeps the history). */
+  hermesSessionId?: string;
 };
 
 /** Which engine answers utterances, plus what it needs to do so. */
@@ -31,6 +34,11 @@ export type AssistantBackendConfig =
 
 /** Trim history from the head once it grows past this many messages. */
 const MAX_HISTORY_MESSAGES = 40;
+
+
+/** Hermes brings its own persona and tools; it only needs to know where the reply is shown. */
+const HERMES_SYSTEM_PROMPT =
+  "The user is talking to you through smart glasses with a small text display. Reply briefly in plain text, without Markdown.";
 
 export class AssistantSession {
   private readonly directBackend = new DirectAssistantBackend();
@@ -43,12 +51,18 @@ export class AssistantSession {
   // API-safe tool name -> canonical registry name. Provider APIs restrict tool
   // names, so dotted registry names are sanitized and mapped back on calls.
   private readonly toolNameMap = new Map<string, string>();
+  // Saved with the history: Faceclaw only sends Hermes the latest message, so a
+  // restored conversation must keep addressing the same server-side session.
+  private readonly hermesSessionId: string;
 
   constructor(
     private config: AssistantBackendConfig,
     private readonly registry: ToolRegistry = toolRegistry,
     history?: AssistantSessionHistory,
   ) {
+    this.hermesSessionId = typeof history?.hermesSessionId === "string" && history.hermesSessionId
+      ? history.hermesSessionId
+      : `faceclaw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     if (history) {
       this.messages.push(...history.messages);
       this.transcript.push(...history.transcript);
@@ -62,13 +76,14 @@ export class AssistantSession {
   }
 
   private changed(): void {
+    assistantAudioPriority.setActive(this, this.isTurnActive());
     for (const listener of this.listeners) {
       try { listener(); } catch (error) { console.warn("assistant history listener failed", error); }
     }
   }
 
   history(): AssistantSessionHistory {
-    return { messages: this.messages, transcript: this.transcript, engine: this.engine() };
+    return { messages: this.messages, transcript: this.transcript, engine: this.engine(), hermesSessionId: this.hermesSessionId };
   }
 
   configure(config: AssistantBackendConfig): void {
@@ -108,7 +123,7 @@ export class AssistantSession {
     const generation = ++this.turnGeneration;
     const reply: AssistantTranscriptEntry = { role: "assistant", text: "" };
     this.transcript.push({ role: "user", text }, reply);
-    this.status = "Thinking...";
+    this.status = "…";
     // Install a sentinel before calling providers: some failures are synchronous.
     this.turnHandle = { cancel: () => {} };
     this.changed();
@@ -118,23 +133,22 @@ export class AssistantSession {
       this.turnHandle = null;
       this.changed();
     };
+    let finalText = "";
     const wrappedCallbacks: AssistantTurnCallbacks = {
-      onTextDelta: (delta, full) => {
+      onTextDelta: (_delta, full) => {
         if (generation !== this.turnGeneration) return;
-        reply.text = full;
-        this.status = "Thinking...";
-        this.changed();
-        callbacks.onTextDelta(delta, full);
+        finalText = full; // Provisional text stays outside every visible transcript.
       },
-      onToolActivity: (label) => {
+      onToolActivity: (_label) => {
         if (generation !== this.turnGeneration) return;
-        this.status = `→ ${label}`;
+        this.status = "…";
         this.changed();
-        callbacks.onToolActivity(label);
       },
       onTurnDone: (result) => {
         if (generation !== this.turnGeneration) return;
         this.status = "";
+        reply.text = finalText;
+        callbacks.onTextDelta(reply.text, reply.text);
         finish();
         callbacks.onTurnDone(result);
       },
@@ -173,7 +187,10 @@ export class AssistantSession {
       apiKey: llm.apiKey,
       model: llm.model,
       effort: llm.effort,
-      system: isLocal ? ASSISTANT_SYSTEM_PROMPT_BASE : buildAssistantSystemPrompt(ctx),
+      baseUrl: llm.baseUrl,
+      sessionId: this.hermesSessionId,
+      system: llm.provider === "hermes" ? HERMES_SYSTEM_PROMPT
+        : isLocal ? ASSISTANT_SYSTEM_PROMPT_BASE : buildAssistantSystemPrompt(ctx),
       messages: turnMessages,
       buildTools: () => this.buildToolDefinitions(),
       registry: this.registry,

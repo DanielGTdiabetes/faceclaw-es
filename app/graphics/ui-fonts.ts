@@ -73,7 +73,7 @@ export function parseFontSelection(raw: string): UiFontSelection | null {
 }
 
 /** Default UI font when the user has never picked one. */
-const DEFAULT_UI_FONT: UiFontSelection = { kind: "ttf", file: "Roboto-Light.ttf", size: 14 };
+const DEFAULT_UI_FONT: UiFontSelection = { kind: "ttf", file: "Roboto-Light.ttf", size: 16 };
 
 export function getUiFontSelection(): UiFontSelection {
   const parsed = parseFontSelection(getStringSetting(UI_FONT_SELECTION_KEY, ""));

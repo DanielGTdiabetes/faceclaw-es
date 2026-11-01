@@ -20,6 +20,12 @@ interface FaceclawVoiceControllerListener {
      */
     fun onPcm(pcm16le: ByteArray?): Unit
 
+    /** Separate, bounded decode-only tap; never carries assistant/STT samples. */
+    fun onExperimentalPcm(pcm16le: ByteArray?) {}
+
+    /** Separate status channel so a late assistant error cannot fail a new raw lease. */
+    fun onExperimentalStatus(status: String?) {}
+
     /**
      * Per-packet DSP metadata the glasses firmware appends to each 50 ms audio packet, computed on
      * the raw stereo capture before its mono downmix: the direction-of-arrival in signed degrees (0

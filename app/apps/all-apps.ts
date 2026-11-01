@@ -4,10 +4,12 @@ import launcherApp from "./launcher";
 import timerApp from "./timer";
 import calculatorApp from "./calculator";
 import terminalApp from "./terminal";
+import t3codeApp from "./t3code";
 import filesApp from "./files";
 import musicApp from "./music";
 import nightscoutApp from "./nightscout";
 import transcribeApp from "./transcribe";
+import localConversationApp from "./local-conversation";
 import teleprompterApp from "./teleprompter";
 import microphonesApp from "./microphones";
 import notificationsApp from "./notifications";
@@ -25,6 +27,7 @@ import developerApp from "./developer";
 import evenhubApp from "./evenhub";
 import glanceboardApp from "./glanceboard";
 import settingsApp from "./settings";
+import onboardingApp from "./onboarding";
 
 /**
  * Every app, in launcher-grid order (the launcher itself is first but hidden
@@ -37,10 +40,12 @@ export const ALL_APPS: readonly AppDefinition[] = [
   timerApp,
   calculatorApp,
   terminalApp,
+  t3codeApp,
   filesApp,
   musicApp,
   nightscoutApp,
   transcribeApp,
+  localConversationApp,
   teleprompterApp,
   microphonesApp,
   notificationsApp,
@@ -58,4 +63,5 @@ export const ALL_APPS: readonly AppDefinition[] = [
   evenhubApp,
   glanceboardApp,
   settingsApp,
+  onboardingApp,
 ];

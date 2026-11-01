@@ -1,0 +1,168 @@
+package com.faceclaw.app
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.system.Os
+import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
+import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
+import java.io.ByteArrayInputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.security.KeyStore
+import java.security.MessageDigest
+import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+private const val OWN_VOICE_MODEL_HASH = "c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef"
+
+/** Isolated from historical microphone profiles. Android noBackupFilesDir excludes biometric backup. */
+internal class OwnLocalVoiceStore(context: Context) {
+    private val directory = File(context.noBackupFilesDir, "faceclaw-own-voice")
+    private val target = File(directory, "profile.aes")
+    private val alias = "faceclaw.conversation.own-voice.v1"
+    private val archive = LocalProfileArchive(object : LocalProfileFiles {
+        override fun exists(name: String): Boolean = File(directory, name).isFile
+        override fun read(name: String): ByteArray {
+            val file = File(directory, name)
+            check(file.length() in 32..17000)
+            return file.readBytes()
+        }
+        override fun writeSynced(name: String, bytes: ByteArray) {
+            java.io.FileOutputStream(File(directory, name)).use { output -> output.write(bytes); output.fd.sync() }
+        }
+        override fun replace(from: String, to: String) { Os.rename(File(directory, from).absolutePath, File(directory, to).absolutePath) }
+        override fun remove(name: String) { val file = File(directory, name); check(!file.exists() || file.delete()) }
+    })
+    fun exists(): Boolean = target.isFile
+    fun hasPrevious(): Boolean = archive.hasPrevious()
+    fun restorePrevious(): Boolean = archive.restore()
+    private fun aad(dimension: Int): ByteArray = "faceclaw-own-voice:1:$OWN_VOICE_MODEL_HASH:$dimension:16000".toByteArray(Charsets.UTF_8)
+    private fun key(create: Boolean): SecretKey? {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(alias, null) as? SecretKey)?.let { return it }
+        if (!create) return null
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true).build())
+        return generator.generateKey()
+    }
+    fun load(dimension: Int): FloatArray? {
+        if (!target.isFile || target.length() !in 32..17000 || dimension !in 1..4096) return null
+        var plain: ByteArray? = null
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val encrypted = DataInputStream(target.inputStream()).use { input ->
+                if (input.readInt() != 1 || input.readInt() != dimension) return null
+                val iv = ByteArray(12); input.readFully(iv)
+                cipher.init(Cipher.DECRYPT_MODE, key(false) ?: return null, GCMParameterSpec(128, iv))
+                cipher.updateAAD(aad(dimension))
+                input.readBytes()
+            }
+            plain = cipher.doFinal(encrypted)
+            if (plain.size != dimension * 4) return null
+            return DataInputStream(ByteArrayInputStream(plain)).use { input -> FloatArray(dimension) { input.readFloat() } }
+        } catch (_: Throwable) { return null }
+        finally { plain?.fill(0) }
+    }
+    fun prepare(vector: FloatArray): PreparedLocalVoiceProfile {
+        require(vector.size in 1..4096)
+        check(directory.isDirectory || directory.mkdirs())
+        val temporary = File(directory, "${UUID.randomUUID()}.pending")
+        val plain = ByteArray(vector.size * 4)
+        // Use a fixed array instead of a growing stream which could retain a second plaintext copy.
+        val floats = java.nio.ByteBuffer.wrap(plain)
+        for (value in vector) floats.putFloat(value)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, key(true) ?: error("key unavailable"))
+            cipher.updateAAD(aad(vector.size))
+            val encrypted = cipher.doFinal(plain)
+            java.io.FileOutputStream(temporary).use { output ->
+                val data = DataOutputStream(output)
+                data.writeInt(1); data.writeInt(vector.size); data.write(cipher.iv); data.write(encrypted); data.flush()
+                output.fd.sync()
+            }
+            // Preserve the encrypted original without deleting or replacing its Keystore key.
+            // A failure aborts preparation, leaving the active profile untouched.
+            archive.preserveCurrent()
+            return object : PreparedLocalVoiceProfile {
+                override fun commit(): Boolean { Os.rename(temporary.absolutePath, target.absolutePath); return true }
+                override fun cancel() { temporary.delete() }
+            }
+        } catch (failure: Throwable) { temporary.delete(); throw failure }
+        finally { plain.fill(0) }
+    }
+    fun delete(): Boolean {
+        val previous = File(directory, LocalProfileArchive.PREVIOUS)
+        val removed = (!target.exists() || target.delete()) && (!previous.exists() || previous.delete())
+        // A canceled worker may still drain JNI, but cannot commit after session.stop().
+        directory.listFiles()?.filter { it.name.endsWith(".pending") }?.forEach { it.delete() }
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (store.containsAlias(alias)) store.deleteEntry(alias)
+        return removed && !target.exists()
+    }
+}
+
+/** Speaker-embedding model shared by own-voice participation and Whisper speaker attribution. */
+internal fun ownVoiceModelFile(context: Context): File =
+    File(context.applicationContext.filesDir, "faceclaw-mic-models/speaker-embedding/speaker-embedding.onnx")
+
+/** Loads the speaker model only when its SHA-256 matches the one the saved profile was made with. */
+internal fun loadOwnVoiceDecoder(context: Context): LocalVoiceDecoder? {
+    val model = ownVoiceModelFile(context)
+    if (!model.isFile) return null
+    val digest = MessageDigest.getInstance("SHA-256")
+    model.inputStream().use { input ->
+        val block = ByteArray(65536)
+        while (true) { val count = input.read(block); if (count < 0) break; digest.update(block, 0, count) }
+        block.fill(0)
+    }
+    if (digest.digest().joinToString("") { "%02x".format(it) } != OWN_VOICE_MODEL_HASH) return null
+    val extractor = SpeakerEmbeddingExtractor(SpeakerEmbeddingExtractorConfig.builder()
+        .setModel(model.absolutePath).setNumThreads(1).setDebug(false).setProvider("cpu").build())
+    return object : LocalVoiceDecoder {
+        override val dimension: Int = extractor.dim
+        override fun embed(samples: FloatArray): FloatArray? {
+            val stream = extractor.createStream()
+            try {
+                stream.acceptWaveform(samples, 16000); stream.inputFinished()
+                return if (extractor.isReady(stream)) extractor.compute(stream) else null
+            } finally { stream.release() }
+        }
+        override fun release() { extractor.release() }
+    }
+}
+
+/** No networking, recording, legacy speaker registry, content logs or positive fallback. */
+class FaceclawLocalParticipation(context: Context) {
+    private val app = context.applicationContext
+    private val store = OwnLocalVoiceStore(app)
+    private val session = LocalParticipationSession(object : LocalParticipationHost {
+        override fun loadDecoder(): LocalVoiceDecoder? = loadOwnVoiceDecoder(app)
+        override fun loadProfile(dimension: Int): FloatArray? = store.load(dimension)
+        override fun prepareProfile(vector: FloatArray): PreparedLocalVoiceProfile = store.prepare(vector)
+    })
+    fun hasProfile(): Boolean = store.exists()
+    fun hasPreviousProfile(): Boolean = store.hasPrevious()
+    fun restorePreviousProfile(): Boolean {
+        if (session.isWorkerActive()) return false
+        return try { store.restorePrevious() } catch (_: Throwable) { false }
+    }
+    /** Presence only; never exposes a vector, filename, audio or key. Compatibility checked on activation. */
+    fun profileState(): String = if (store.exists()) "guardado" else "sin perfil"
+    fun deleteProfile(): Boolean { session.stop(); return try { store.delete() } catch (_: Throwable) { false } }
+    fun start(enrollment: Boolean, requiredSegments: Int): Boolean = session.start(enrollment, requiredSegments)
+    fun startTimed(requiredSegments: Int, durationMs: Int): Boolean = session.start(false, requiredSegments, durationMs)
+    fun stop() = session.stop()
+    fun resetStream() = session.resetStream()
+    fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)
+    fun acceptTimedPcm(pcm: ByteArray?, vadState: String, startMs: Int) = session.acceptTimedPcm(pcm, vadState, startMs)
+    fun drainMatches(): String = session.drainMatches()
+    fun diagnostics(): String = session.diagnostics()
+}

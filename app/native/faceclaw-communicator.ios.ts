@@ -1,6 +1,6 @@
 import type { RingInput } from "../g2/ring-input";
 import { File, knownFolders, path, type ImageSource } from "@nativescript/core";
-import { type FirmwareInfo } from "../g2/firmware-compat";
+import { REQUIRED_FACECLAW_FIRMWARE_VERSION, type FirmwareInfo } from "../g2/firmware-compat";
 import { type CompassEvent } from "./compass-types";
 import { fromData, toData } from "./kotlin-data";
 import { previewPixels } from "./ios-graphics";
@@ -23,6 +23,7 @@ export type CommunicatorPhase =
   | "charging"
   | "retrying"
   | "unpaired"
+  | "incompatible-firmware"
   | "disconnecting";
 
 export type CommunicatorState = {
@@ -140,7 +141,7 @@ class AncsListener extends NSObject {
 class AudioPacketListener extends NSObject {
   static ObjCProtocols = [FaceclawKitIosAudioPacketListener];
   handler!: (packet: Uint8Array, arm: string, arrivalMs: number) => void;
-  onAudioPacketDataArmArrivalMs(data: NSData, arm: string, arrivalMs: number): void {
+  onNsDataAudioPacketDataArmArrivalMs(data: NSData, arm: string, arrivalMs: number): void {
     this.handler(fromData(data), String(arm ?? ""), Number(arrivalMs));
   }
 }
@@ -177,6 +178,8 @@ export class FaceclawCommunicatorBridge {
   private ancsProxy: AncsListener | null = null;
   private nativeCallQueue: Promise<void> = Promise.resolve();
   private queuedNativeCalls = 0;
+  // Surfaces Kotlin holds, as of the queued call now running (see hasNativeSurface).
+  private readonly nativeSurfaces = new Set<string>();
   private readonly frameMetricWaiters = new Set<(metrics: FrameMetrics) => void>();
   private readonly finishedFrameOutcomes = new Map<number, string>();
   private readonly frameFinishedWaiters = new Map<number, Set<(outcome: string) => void>>();
@@ -190,6 +193,7 @@ export class FaceclawCommunicatorBridge {
   private latestPhoneLockState: boolean | null = null;
   private readonly evenAppConflictListeners = new Set<(message: string) => void>();
   private readonly frameMetricsListeners = new Set<(metrics: FrameMetrics) => void>();
+  private readonly previewAnimationListeners = new Set<() => void>();
   private readonly firmwareInfoListeners = new Set<(info: FirmwareInfo) => void>();
   private readonly ancsAuthorizationListeners = new Set<(authorized: boolean) => void>();
   private readonly ancsRelayListeners = new Set<(frame: Uint8Array) => void>();
@@ -203,9 +207,15 @@ export class FaceclawCommunicatorBridge {
       String(addresses.left ?? "").toUpperCase(),
       String(addresses.ring ?? "").toUpperCase(),
     );
+    // The shared session halts on any other firmware ("incompatible-firmware").
+    this.communicator.setRequiredFirmwareRevisionRevision(REQUIRED_FACECLAW_FIRMWARE_VERSION);
     this.listenerProxy = SessionListener.new() as SessionListener;
     this.listenerProxy.bridge = this;
     this.communicator.setListenerListener(this.listenerProxy);
+    // Kotlin calls this on the main queue.
+    this.communicator.setPreviewAnimationListenerListener(() => {
+      for (const listener of Array.from(this.previewAnimationListeners)) listener();
+    });
   }
 
   // ----- Kotlin listener entry points (main queue) -----------------------------------
@@ -354,6 +364,15 @@ export class FaceclawCommunicatorBridge {
     return () => this.frameMetricsListeners.delete(listener);
   }
 
+  /**
+   * Each step of an animation the phone preview is replaying (a menu slide
+   * reaches the glasses as one frame, so frame metrics fire only at its start).
+   */
+  onPreviewAnimationFrame(listener: () => void): () => void {
+    this.previewAnimationListeners.add(listener);
+    return () => this.previewAnimationListeners.delete(listener);
+  }
+
   onFirmwareInfo(listener: (info: FirmwareInfo) => void): () => void {
     this.firmwareInfoListeners.add(listener);
     return () => this.firmwareInfoListeners.delete(listener);
@@ -472,13 +491,13 @@ export class FaceclawCommunicatorBridge {
     });
   }
 
-  /** Phone-UI preview of the current composited screen, or null if none yet. */
-  getCompositePreview(green = false): ImageSource | null {
+  /** Phone-UI preview of the current composited screen (or of `crop`'s area of it), or null if none yet. */
+  getCompositePreview(green = false, crop: { x: number; y: number; width: number; height: number } | null = null): ImageSource | null {
     const frame = this.communicator.previewComposite();
     if (!frame) return null;
     const width = Number(this.communicator.compositeWidth()), height = Number(this.communicator.compositeHeight());
     if (width <= 0 || height <= 0) return null;
-    return previewPixels(fromData(frame.pixels), width, height, green);
+    return previewPixels(fromData(frame.pixels), width, height, green, crop);
   }
 
   /** Save the current composite as a 4-bit grayscale PNG under Documents; returns the path (empty if none). Cropping is not supported on iOS. */
@@ -501,15 +520,32 @@ export class FaceclawCommunicatorBridge {
   async configureSurface(id: string, options: SurfaceOptions): Promise<void> {
     const transparency = options.transparency === "color-key" ? 1 : 0;
     await this.enqueueNativeCall(() => {
-      this.communicator.configureSurfaceIdXYWidthHeightZOrderTransparency(
+      const configured = this.communicator.configureSurfaceIdXYWidthHeightZOrderTransparency(
         id, Math.round(options.x), Math.round(options.y), Math.round(options.width), Math.round(options.height),
         Math.round(options.zOrder), transparency,
       );
+      // Kotlin logged why; reject so callers don't treat the surface as live (as on Android,
+      // where the compositor's exception reaches JS).
+      if (configured === false) throw new Error(`Could not configure surface ${id}`);
+      this.nativeSurfaces.add(id);
     });
   }
 
   async removeSurface(id: string): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.removeSurfaceId(id); });
+    await this.enqueueNativeCall(() => {
+      this.nativeSurfaces.delete(id);
+      this.communicator.removeSurfaceId(id);
+    });
+  }
+
+  /**
+   * Checked inside each queued call: a render in flight when its window closed lands
+   * behind the removal, and Kotlin aborts on a frame for an unknown surface.
+   */
+  private hasNativeSurface(id: string, what: string): boolean {
+    if (this.nativeSurfaces.has(id)) return true;
+    console.log(`[ios-ble] ${what} for removed surface ${id} dropped`);
+    return false;
   }
 
   async submitShellScene(bytes: Uint8Array, paintMs = 0, frameId = 0): Promise<void> {
@@ -524,11 +560,15 @@ export class FaceclawCommunicatorBridge {
   }
 
   async setSurfaceVisible(id: string, visible: boolean): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.setSurfaceVisibleIdVisible(id, Boolean(visible)); });
+    await this.enqueueNativeCall(() => {
+      if (this.hasNativeSurface(id, "setSurfaceVisible")) this.communicator.setSurfaceVisibleIdVisible(id, Boolean(visible));
+    });
   }
 
   async setSurfaceDepth(id: string, depth: number): Promise<void> {
-    await this.enqueueNativeCall(() => { this.communicator.setSurfaceDepthIdDepth(id, Math.round(depth)); });
+    await this.enqueueNativeCall(() => {
+      if (this.hasNativeSurface(id, "setSurfaceDepth")) this.communicator.setSurfaceDepthIdDepth(id, Math.round(depth));
+    });
   }
 
   async setScreenBlanked(blanked: boolean): Promise<void> {
@@ -555,6 +595,7 @@ export class FaceclawCommunicatorBridge {
     const snapshot = new Uint8Array(pixels8bpp);
     const draws = glyphs ? toData(new Uint8Array(glyphs)) : null;
     await this.enqueueNativeCall(() => {
+      if (!this.hasNativeSurface(surfaceId, "frame")) return;
       this.communicator.submitSurfaceFramePixels8bppSurfaceIdRectXRectYRectWidthRectHeightContentFingerprintPaintMsFrameIdGlyphs(
         toData(snapshot), surfaceId, Math.round(rect.x), Math.round(rect.y), Math.round(rect.width), Math.round(rect.height),
         fingerprint, Math.round(nonNegativeNumber(paintMs)), Math.round(nonNegativeNumber(frameId)), draws,
@@ -600,7 +641,11 @@ export class FaceclawCommunicatorBridge {
 
   async close(): Promise<void> {
     this.setAncsListeners(false);
-    await this.enqueueNativeCall(() => this.communicator.close());
+    this.previewAnimationListeners.clear();
+    await this.enqueueNativeCall(() => {
+      this.communicator.setPreviewAnimationListenerListener(null);
+      this.communicator.close();
+    });
   }
 
   // ----- iOS extras: compass, microphone, iPhone notifications (ANCS) ----------------------

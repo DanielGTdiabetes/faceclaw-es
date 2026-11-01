@@ -7,6 +7,10 @@ import kotlin.math.round
 enum class VoiceModelKind {
     MOONSHINE,
     WHISPER,
+    WHISPER_SMALL,
+    WHISPER_MEDIUM;
+
+    val isWhisper: Boolean get() = this != MOONSHINE
 }
 
 /**

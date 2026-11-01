@@ -45,14 +45,20 @@ export class PreviewDisplayTarget implements DisplayTarget {
   private onFrameComposited: (() => void) | null = null;
   private released = false;
 
-  /** Receive a callback per applied frame, the stand-in for the connected path's frame-finished callback. */
+  /**
+   * Receive a callback per applied frame, the stand-in for the connected
+   * path's frame-finished callback, and per step of an animation the
+   * preview is replaying.
+   */
   activate(onFrameComposited: () => void): void {
     this.onFrameComposited = onFrameComposited;
+    this.compositor.setPreviewAnimationListener(() => this.composited());
   }
 
   release(): void {
     this.released = true;
     this.onFrameComposited = null;
+    this.compositor.setPreviewAnimationListener(null);
   }
 
   private composited(): void {
@@ -61,7 +67,9 @@ export class PreviewDisplayTarget implements DisplayTarget {
 
   async configureCompositorScreen(width: number, height: number): Promise<void> {
     if (Math.round(width) !== this.compositor.width || Math.round(height) !== this.compositor.height) {
+      this.compositor.setPreviewAnimationListener(null);
       this.compositor = new SurfaceCompositor(Math.round(width), Math.round(height));
+      if (this.onFrameComposited) this.compositor.setPreviewAnimationListener(() => this.composited());
     }
   }
 
@@ -77,12 +85,25 @@ export class PreviewDisplayTarget implements DisplayTarget {
     this.composited();
   }
 
+  /**
+   * As on the live bridge (FaceclawCommunicatorBridge.hasNativeSurface): a call that lands
+   * after its window closed, or on a target that replaced the one it was configured on, is
+   * dropped rather than failing the caller.
+   */
+  private hasSurface(id: string, what: string): boolean {
+    if (this.compositor.hasSurface(id)) return true;
+    console.log(`[ios-preview] ${what} for unknown surface ${id} dropped`);
+    return false;
+  }
+
   async setSurfaceVisible(id: string, visible: boolean): Promise<void> {
+    if (!this.hasSurface(id, "setSurfaceVisible")) return;
     this.compositor.setSurfaceVisible(id, Boolean(visible));
     this.composited();
   }
 
   async setSurfaceDepth(id: string, depth: number): Promise<void> {
+    if (!this.hasSurface(id, "setSurfaceDepth")) return;
     this.compositor.setSurfaceDepth(id, Math.round(depth));
   }
 
@@ -105,6 +126,7 @@ export class PreviewDisplayTarget implements DisplayTarget {
     _frameId = 0,
     glyphs: ArrayBuffer | null = null,
   ): Promise<void> {
+    if (!this.hasSurface(surfaceId, "frame")) return;
     this.compositor.submitSurfaceFrame(surfaceId, pixels8bpp,
       { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }, glyphs);
     this.composited();
@@ -130,8 +152,8 @@ export class PreviewDisplayTarget implements DisplayTarget {
     return this.compositor.composite();
   }
 
-  getCompositePreview(green = false): ImageSource | null {
-    return previewPixels(this.compositor.composite(), this.compositor.width, this.compositor.height, green);
+  getCompositePreview(green = false, crop: { x: number; y: number; width: number; height: number } | null = null): ImageSource | null {
+    return previewPixels(this.compositor.composite(), this.compositor.width, this.compositor.height, green, crop);
   }
 
   /** Save the current composite as a 4-bit grayscale PNG under Documents; cropping is not supported on iOS. */

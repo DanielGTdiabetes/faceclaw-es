@@ -20,16 +20,16 @@
        acts as star, and this component sits in a bounded (star-row) parent,
        where that would balloon the first grid to fill all remaining height. -->
   <GridLayout row="0" rows="auto" columns="*,*,*,auto,auto" class="controls-tab-bar">
-    <Button col="0" text="Settings" textWrap="false" tap="{{ onSettingsTabTap }}" class="{{ settingsTabClass }}" />
-    <Button col="1" text="Watch" textWrap="false" tap="{{ onWatchTabTap }}" class="{{ watchTabClass }}" />
-    <Button col="2" text="Ring" textWrap="false" tap="{{ onRingTabTap }}" class="{{ ringTabClass }}" />
+    <Button col="0" text="Ajustes" textWrap="false" tap="{{ onSettingsTabTap }}" class="{{ settingsTabClass }}" />
+    <Button col="1" text="Reloj" textWrap="false" tap="{{ onWatchTabTap }}" class="{{ watchTabClass }}" />
+    <Button col="2" text="Anillo" textWrap="false" tap="{{ onRingTabTap }}" class="{{ ringTabClass }}" />
     <!-- A Button can't hold an image, so these are button-styled tiles. The
          explicit star row makes the cell fill the tile's height so the icon's
          center alignment has room to work in. -->
-    <GridLayout col="3" rows="*" accessible="true" accessibilityRole="button" accessibilityLabel="Voice input" tap="{{ onSyntheticMicTap }}" class="tab-button tab-icon-button">
+    <GridLayout col="3" rows="*" accessible="true" accessibilityRole="button" accessibilityLabel="Entrada de voz" tap="{{ onSyntheticMicTap }}" class="tab-button tab-icon-button">
       <Image src="res://ic_tab_mic" class="tab-icon" verticalAlignment="center" horizontalAlignment="center" />
     </GridLayout>
-    <GridLayout col="4" rows="*" accessible="true" accessibilityRole="button" accessibilityLabel="Keyboard input" tap="{{ onKeyboardTap }}" class="tab-button tab-icon-button">
+    <GridLayout col="4" rows="*" accessible="true" accessibilityRole="button" accessibilityLabel="Entrada de teclado" tap="{{ onKeyboardTap }}" class="tab-button tab-icon-button">
       <Image src="res://ic_tab_keyboard" class="tab-icon" verticalAlignment="center" horizontalAlignment="center" />
     </GridLayout>
   </GridLayout>
@@ -38,24 +38,26 @@
     <!-- Settings tab -->
     <StackLayout visibility="{{ settingsTabVisibility }}">
       <GridLayout rows="auto" columns="auto,*" class="settings-row">
-        <Label col="0" text="Screen size" class="settings-row-label" verticalAlignment="center" />
+        <Label col="0" text="Display mode" class="settings-row-label" verticalAlignment="center" />
         <Button col="1" text="{{ displayModeLabel }}" tap="{{ onDisplayModeTap }}" class="mode-button" horizontalAlignment="left" />
       </GridLayout>
       <GridLayout rows="auto" columns="auto,*,auto" class="settings-row">
         <Label col="0" text="☀" class="brightness-icon" verticalAlignment="center" />
         <Slider col="1" width="100%" minValue="2" maxValue="100" value="{{ brightnessPercent }}" valueChange="{{ onBrightnessChange }}" isEnabled="{{ brightnessSliderEnabled }}" />
         <StackLayout col="2" orientation="horizontal" verticalAlignment="center" class="auto-toggle">
-          <Label text="Auto" verticalAlignment="center" />
+          <Label text="Automático" verticalAlignment="center" />
           <Switch checked="{{ brightnessAuto }}" checkedChange="{{ onBrightnessAutoChange }}" />
         </StackLayout>
       </GridLayout>
     </StackLayout>
 
     <!-- Watch tab: centered in the leftover height, capped at the 1.5:1 face
-         aspect (watchFaceWidth = min(available, 1.5 x face height). -->
-    <GridLayout visibility="{{ watchTabVisibility }}" width="{{ watchFaceWidth }}" height="{{ watchFaceHeight }}" horizontalAlignment="center" verticalAlignment="center" class="touchpad" android:tap="{{ onPadTap }}" android:doubleTap="{{ onPadDoubleTap }}" android:longPress="{{ onPadLongPress }}" android:swipe="{{ onPadSwipe }}" touch="{{ onPadTouch }}">
-      <Label isUserInteractionEnabled="false" text="{{ padFocusLine }}" class="pad-focus" horizontalAlignment="center" verticalAlignment="center" />
-      <Label isUserInteractionEnabled="false" text="▲▼ swipe   ● select   ●● back   ‒ menu" class="pad-legend" horizontalAlignment="center" verticalAlignment="bottom" />
+         aspect (watchFaceWidth = min(available, 1.5 x face height). The star
+         rows center the status line, plus the wake hint under it while the
+         display is off (a double-tap is the only gesture that wakes it). -->
+    <GridLayout visibility="{{ watchTabVisibility }}" width="{{ watchFaceWidth }}" height="{{ watchFaceHeight }}" rows="*,auto,auto,*" horizontalAlignment="center" verticalAlignment="center" class="touchpad" android:tap="{{ onPadTap }}" android:doubleTap="{{ onPadDoubleTap }}" android:longPress="{{ onPadLongPress }}" android:swipe="{{ onPadSwipe }}" touch="{{ onPadTouch }}">
+      <Label row="1" isUserInteractionEnabled="false" text="{{ padFocusLine }}" class="{{ padFocusClass }}" horizontalAlignment="center" />
+      <Label row="2" isUserInteractionEnabled="false" text="●● activar" visibility="{{ padWakeHintVisibility }}" class="pad-wake-hint" horizontalAlignment="center" />
     </GridLayout>
 
     <!-- Ring tab: a touchpad on the ring's own scheme. Vertical swipes only

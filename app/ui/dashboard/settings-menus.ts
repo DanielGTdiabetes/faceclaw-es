@@ -23,13 +23,21 @@ import {
   type AsrModelId,
 } from "../../native/asr-model";
 import { TextViewerLayer } from "../../apps/files/text-viewer";
+import { IOS_PRIVACY_NOTICE } from "../../analytics/privacy-disclosure";
 import type { LayerContext } from "../layers";
-import { drawRightValueMenuItem, openModalMenu, type MenuItem } from "../menu";
+import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
 import {
   anthropicApiKeySetting,
+  appSwitcherPositionSetting,
+  statusBarPositionSetting,
+  statusBarVisibilitySetting,
+  windowBorderSetting,
+  uiDepthSetting,
   assistantAllowProactiveSetting,
   assistantBackendSetting,
+  assistantHermesKeySetting,
+  assistantHermesUrlSetting,
   assistantBridgeHostSetting,
   assistantBridgePortSetting,
   assistantBridgeTokenSetting,
@@ -40,19 +48,28 @@ import {
   autoBrightnessMinSetting,
   autoBrightnessMaxSetting,
   autoBrightnessCurveSetting,
+  dataCollectionSetting,
   glassesBatteryVisibilitySetting,
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
-  displayModeSetting,
+  displayLayoutSetting,
   elevenLabsApiKeySetting,
   mapboxApiKeySetting,
   mirrorTouchSetting,
   openAiApiKeySetting,
   previewColorSetting,
+  previewScalingSetting,
   phoneRotationSetting,
   ringConnectionModeSetting,
   sonioxApiKeySetting,
+  saveTranscribeAudioSetting,
+  whisperServerApiKeySetting,
+  whisperServerLanguageSetting,
+  whisperServerModelSetting,
+  whisperServerUrlSetting,
+  evenAsrUrlSetting,
+  evenAsrKeySetting,
   screenFadeSetting,
   enumSettingMenuItem,
   firmwareDebugFlagsSetting,
@@ -65,9 +82,9 @@ import {
   timeFormatSetting,
   toggleSettingMenuItem,
   useMicControlSetting,
-  verticalPositionSetting,
   voiceProviderSetting,
   screenTimeoutSetting,
+  wakeToLastAppSetting,
   wakeWordActionSetting,
   watchCanUnlockSetting,
   watchCrownClockwiseNextSetting,
@@ -84,9 +101,10 @@ export function createSettingsPanelLayer(): SettingsPanelLayer {
 }
 
 function settingsSections(): SettingsSection[] {
+  const customizationItems = customizationRows();
   const sections: SettingsSection[] = [
     {
-      label: "Display",
+      label: "Pantalla",
       items: [
         // Auto (ambient sensor) or an exact level; pushed to the glasses by
         // the dashboard controller when changed and on each connect.
@@ -98,41 +116,42 @@ function settingsSections(): SettingsSection[] {
           },
         }),
         toggleSettingMenuItem(lockScreenEnabledSetting),
-        // Where min-height windows (and the sidebar) sit vertically on the
-        // screen; the dashboard controller repositions surfaces on change.
-        enumSettingMenuItem(verticalPositionSetting),
-        // Band / tall / full-panel; the dashboard controller reflows windows.
-        enumSettingMenuItem(displayModeSetting),
+        toggleSettingMenuItem(wakeToLastAppSetting),
+        // A band (at one of five heights) / Tall / Full Screen; the
+        // dashboard controller moves or reflows windows on change.
+        enumSettingMenuItem(displayLayoutSetting),
       ],
     },
     {
-      label: "Customization",
-      items: [
-        // Submenu: top-bar battery indicator style plus per-device visibility.
-        batteryIndicatorsMenuItem(),
-        // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
-        animationsMenuItem(),
-        // Controls the top-bar clock (24-hour vs 12-hour).
-        enumSettingMenuItem(timeFormatSetting),
-        // Opens the modal font picker (face, weight, size) for UI text.
-        uiFontPickerMenuItem(),
-      ],
+      label: "Personalización",
+      // Depth only applies (and only shows) with the app switcher at the
+      // bottom; the panel re-reads the rows each paint.
+      get items() {
+        return customizationItems();
+      },
     },
     {
-      label: "Voice",
+      label: "Voz",
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
         enumSettingMenuItem(voiceProviderSetting),
+        ...whisperServerMenuItems(),
+        textSettingMenuItem(evenAsrUrlSetting),
+        textSettingMenuItem(evenAsrKeySetting),
         asrModelMenuItem("moonshine"),
-        asrModelMenuItem("whisper-base-en"),
+        asrModelMenuItem("whisper-base-es"),
+        asrModelMenuItem("whisper-small-es"),
+        asrModelMenuItem("whisper-medium-es"),
       ],
     },
     {
-      label: "Assistant",
+      label: "Asistente",
       items: [
         // iOS offers cloud APIs; Android also supports local models and the bridge.
         enumSettingMenuItem(assistantBackendSetting),
         enumSettingMenuItem(assistantModelSetting),
+        textSettingMenuItem(assistantHermesUrlSetting),
+        textSettingMenuItem(assistantHermesKeySetting),
         ...(!global.isIOS ? [localModelMenuItem()] : []),
         toggleSettingMenuItem(assistantSkipConfirmationSetting),
         // iOS has no local LLM or agent bridge yet.
@@ -145,7 +164,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "API Keys",
+      label: "Claves API",
       items: [
         remoteInputMenuItem(),
         textSettingMenuItem(elevenLabsApiKeySetting),
@@ -156,17 +175,18 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "Phone display",
+      label: "Pantalla del móvil",
       // The phone app's mirror of the glasses screen and its controls
       // (app/phone-ui/): all read live by the main page.
       items: [
         enumSettingMenuItem(phoneRotationSetting),
         enumSettingMenuItem(previewColorSetting),
+        enumSettingMenuItem(previewScalingSetting),
         toggleSettingMenuItem(mirrorTouchSetting),
       ],
     },
     {
-      label: "Watch",
+      label: "Reloj",
       // Wear OS remote (wear/); the status line above the items says whether
       // a watch running the companion app is currently reachable.
       items: [
@@ -178,7 +198,7 @@ function settingsSections(): SettingsSection[] {
       renderDetail: renderWatchStatus,
     },
     {
-      label: "Developer",
+      label: "Desarrollador",
       items: [
         // Whether the phone opens its own BLE link to the R1 ring; the
         // glasses relay ring gestures either way. Applied at connect time.
@@ -191,23 +211,36 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "About",
+      label: "Privacidad",
+      items: [
+        // First chosen in the on-glasses onboarding (app/apps/onboarding/).
+        enumSettingMenuItem(dataCollectionSetting),
+        ...(global.isIOS ? [{
+          label: "Privacidad iOS / TestFlight",
+          description: "Los informes de beta de Apple son independientes de las estadísticas de Faceclaw. Pulsa para leerlo.",
+          onSelect: (ctx: LayerContext) => ctx.stack.push(new TextViewerLayer(IOS_PRIVACY_NOTICE, "Privacidad iOS / TestFlight")),
+        }] : []),
+        bundledDocMenuItem("PRIVACY", "Política de privacidad"),
+      ],
+    },
+    {
+      label: "Acerca de",
       // The version/license blurb (renderDetail) draws above the bundled
       // project docs, in both the preview and the focused states.
       items: [
         bundledDocMenuItem("README.md", "README"),
-        bundledDocMenuItem("LICENSE", "License"),
-        bundledDocMenuItem("PRIVACY", "Privacy policy"),
-        bundledDocMenuItem("ACKNOWLEDGEMENTS.md", "Acknowledgements"),
+        bundledDocMenuItem("LICENSE", "Licencia"),
+        bundledDocMenuItem("PRIVACY", "Política de privacidad"),
+        bundledDocMenuItem("ACKNOWLEDGEMENTS.md", "Agradecimientos"),
       ],
       renderDetail: renderAbout,
     },
     {
-      label: "Quit",
+      label: "Salir",
       items: [
         {
-          label: "Disconnect from glasses",
-          description: "Close the Bluetooth connection to the glasses and return them to standby.",
+          label: "Desconectar las gafas",
+          description: "Cierra la conexión Bluetooth y deja las gafas en espera.",
           onSelect: async (ctx) => {
             ctx.stack.clearToBase();
             await ctx.actions.disconnect();
@@ -217,35 +250,79 @@ function settingsSections(): SettingsSection[] {
     },
   ];
   if (!global.isIOS) return sections;
-  const deferred = new Set(["Watch"]);
+  const deferred = new Set(["Reloj"]);
   return sections.map(section => {
-    if (section.label === "Developer") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
-    if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting), {
-      label: "On-device dictation (Apple)", disabled: true, onSelect: () => {},
-      description: "Uses the glasses microphone and your iPhone's speech language. No transcription API key needed. Say Hey Even for hands-free input, or open Voice from the menu and click when finished.",
-    }] };
+    if (section.label === "Desarrollador") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
+      toggleSettingMenuItem(showBleBandwidthSetting)] };
+    // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
+    if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting),
+      enumSettingMenuItem(voiceProviderSetting), toggleSettingMenuItem(saveTranscribeAudioSetting), ...whisperServerMenuItems()] };
     if (deferred.has(section.label)) return { label: section.label, items: [{
       label: "Not available on iOS yet", disabled: true, onSelect: () => {},
       description: `${section.label} integration has not been ported to iOS.`,
     }] };
-    if (section.label === "Display") return { ...section, items: section.items.filter(item =>
+    if (section.label === "Pantalla") return { ...section, items: section.items.filter(item =>
       item.label !== screenTimeoutSetting.label) };
     return section;
   });
 }
 
+/**
+ * The Customization rows, as a function of the current settings: the same
+ * array while the switcher position stays put, so the panel's menu sees a
+ * stable list between paints.
+ */
+function customizationRows(): () => MenuItem[] {
+  // Opens the modal font picker (face, weight, size) for UI text.
+  const font = uiFontPickerMenuItem();
+  // Left / right / bottom edge, or popup; the dashboard controller moves or
+  // resizes windows on change.
+  const position = enumSettingMenuItem(appSwitcherPositionSetting);
+  // The whole display's stereo depth; the shell sends it with its scene.
+  const depth = enumSettingMenuItem(uiDepthSetting);
+  // Top bar, or the bottom: the right end of a bottom switcher's row, or a
+  // bar under the window with a popup switcher; the dashboard controller
+  // resizes or moves windows on change.
+  const statusBar = enumSettingMenuItem(statusBarPositionSetting);
+  // Popup switcher only: whether the status bar shows only in the switcher
+  // (windows then grow into its rows), and the foreground window's border.
+  const statusBarVisibility = enumSettingMenuItem(statusBarVisibilitySetting);
+  const windowBorder = toggleSettingMenuItem(windowBorderSetting);
+  const rest = [
+    // Submenu: top-bar battery indicator style plus per-device visibility.
+    batteryIndicatorsMenuItem(),
+    // Submenu: toggles for menu/icon-grid motion and the screen on/off fade.
+    animationsMenuItem(),
+    // Controls the top-bar clock (24-hour vs 12-hour).
+    enumSettingMenuItem(timeFormatSetting),
+  ];
+  const bottomRows = [font, position, depth, statusBar, ...rest];
+  const popupRows = [font, position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
+  const sideRows = [font, position, ...rest];
+  return () => {
+    switch (appSwitcherPositionSetting.get()) {
+      case "bottom":
+        return bottomRows;
+      case "popup":
+        return popupRows;
+      default:
+        return sideRows;
+    }
+  };
+}
+
 function autoBrightnessMenuItem(): MenuItem {
-  return {
-    label: "Auto-brightness",
-    description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness.",
-    onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Auto-brightness", [
+  return submenuItem(
+    "Brillo automático",
+    (ctx) => {
+      openSettingsSubMenu(ctx, "Brillo automático", [
         enumSettingMenuItem(autoBrightnessMinSetting),
         enumSettingMenuItem(autoBrightnessMaxSetting),
         textSettingMenuItem(autoBrightnessCurveSetting),
       ]);
     },
-  };
+    { description: "Adjust the minimum, maximum, and ambient-light curve used by Auto brightness." },
+  );
 }
 
 /**
@@ -255,11 +332,11 @@ function autoBrightnessMenuItem(): MenuItem {
  */
 function batteryIndicatorsMenuItem(): MenuItem {
   return {
-    label: "Battery indicators",
+    label: "Indicadores de batería",
     description:
       "Top-bar battery indicators for the phone, Wear OS watch, glasses, and ring: their style, and whether each shows always, only when low, or never.",
     onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Battery indicators", [
+      openSettingsSubMenu(ctx, "Indicadores de batería", [
         enumSettingMenuItem(batteryDisplayModeSetting),
         enumSettingMenuItem(phoneBatteryVisibilitySetting),
         enumSettingMenuItem(watchBatteryVisibilitySetting),
@@ -274,25 +351,25 @@ function batteryIndicatorsMenuItem(): MenuItem {
         x,
         y,
         width,
-        "Battery indicators",
+        "Indicadores de batería",
         batteryDisplayModeSetting.displayValue(),
       );
     },
   };
 }
 
-/** The Customization section's "Animations" row: opens a modal submenu of animation toggles. */
+/** The Customization section's "Animations" row: opens a modal submenu of animation speeds. */
 function animationsMenuItem(): MenuItem {
-  return {
-    label: "Animations",
-    description: "Turn off menu and icon-grid motion, or the fade when the screen turns on and off.",
-    onSelect: (ctx) => {
-      openSettingsSubMenu(ctx, "Animations", [
-        toggleSettingMenuItem(menuAnimationSetting),
-        toggleSettingMenuItem(screenFadeSetting),
+  return submenuItem(
+    "Animaciones",
+    (ctx) => {
+      openSettingsSubMenu(ctx, "Animaciones", [
+        enumSettingMenuItem(menuAnimationSetting),
+        enumSettingMenuItem(screenFadeSetting),
       ]);
     },
-  };
+    { description: "Speed up, slow down, or turn off menu and icon-grid motion and the fade when the screen turns on and off." },
+  );
 }
 
 const LOCAL_MODEL_GB = `${(LOCAL_MODEL.sizeBytes / 1e9).toFixed(1)}GB`;
@@ -314,7 +391,7 @@ function watchLocalModelDownload(ctx: LayerContext): void {
 
 function localModelStatusText(): string {
   const state = localModelState();
-  if (state.status === "ready") return "downloaded";
+  if (state.status === "ready") return "descargado";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
     return `${pct}% of ${LOCAL_MODEL_GB}`;
@@ -336,7 +413,7 @@ function localModelMenuItem(): MenuItem {
       const action: MenuItem =
         state.status === "downloading"
           ? {
-              label: "Cancel download",
+              label: "Cancelar descarga",
               onSelect: (innerCtx) => {
                 cancelLocalModelDownload();
                 innerCtx.stack.pop();
@@ -385,31 +462,43 @@ function watchAsrModelDownload(id: AsrModelId, ctx: LayerContext): void {
 
 function asrModelStatusText(id: AsrModelId): string {
   const state = asrModelState(id);
-  if (state.status === "ready") return "downloaded";
+  if (state.status === "ready") return "descargado";
   if (state.status === "downloading") {
     const pct = state.totalBytes > 0 ? Math.floor((state.bytesDownloaded / state.totalBytes) * 100) : 0;
-    return `${pct}% of ${asrModelMb(id)}`;
+    return `${pct}% de ${asrModelMb(id)}`;
   }
-  return "not downloaded";
+  return "sin descargar";
+}
+
+/**
+ * The self-hosted Whisper server's settings. Always listed: the provider
+ * option stays disabled until the URL is set.
+ */
+function whisperServerMenuItems(): MenuItem[] {
+  return [
+    textSettingMenuItem(whisperServerUrlSetting),
+    textSettingMenuItem(whisperServerModelSetting),
+    textSettingMenuItem(whisperServerLanguageSetting),
+    textSettingMenuItem(whisperServerApiKeySetting),
+  ];
 }
 
 /** Download/cancel/delete management for one on-device transcription model. */
 function asrModelMenuItem(id: AsrModelId): MenuItem {
   const def = ASR_MODELS[id];
-  const rowLabel = `On-device model: ${def.label}`;
+  const rowLabel = `Modelo local: ${def.label}`;
   return {
     label: rowLabel,
     description:
-      `${def.label} (${asrModelMb(id)} download). ` +
-      "Transcribes voice input on the phone itself, with no API key or cloud service. " +
-      "Required for its matching Transcription Provider option; the other providers work without it. " +
-      "An interrupted download resumes where it left off.",
+      `${def.label} (${asrModelMb(id)} de descarga). ` +
+      "Reconoce la voz en el móvil sin clave API. Selecciona el proveedor correspondiente arriba. " +
+      "Las descargas interrumpidas se reanudan automáticamente. Moonshine solo reconoce inglés.",
     onSelect: (ctx) => {
       const state = asrModelState(id);
       const action: MenuItem =
         state.status === "downloading"
           ? {
-              label: "Cancel download",
+              label: "Cancelar descarga",
               onSelect: (innerCtx) => {
                 cancelAsrModelDownload(id);
                 innerCtx.stack.pop();
@@ -417,14 +506,14 @@ function asrModelMenuItem(id: AsrModelId): MenuItem {
             }
           : state.status === "ready"
             ? {
-                label: "Delete model",
+                label: "Eliminar modelo",
                 onSelect: (innerCtx) => {
                   deleteAsrModel(id);
                   innerCtx.stack.pop();
                 },
               }
             : {
-                label: `Download (${asrModelMb(id)})`,
+                label: `Descargar (${asrModelMb(id)})`,
                 onSelect: (innerCtx) => {
                   startAsrModelDownload(id);
                   watchAsrModelDownload(id, innerCtx);

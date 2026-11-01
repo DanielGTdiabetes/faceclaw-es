@@ -1,0 +1,28 @@
+## 20:54:22 thermal=ThermalStatus:0
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [10]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [120]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [2]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-enc-probe/enc-block-int8.tflite]
+INFO: Signature to run: []
+INFO: #threads used for CPU inference: [4]
+INFO: Use NNAPI: [1]
+INFO: NNAPI accelerator name: [google-edgetpu]
+INFO: NNAPI accelerators available: [google-edgetpu,nnapi-reference]
+INFO: Disable NNAPI cpu: [1]
+INFO: Use xnnpack: [0]
+INFO: Loaded model /data/local/tmp/fc-enc-probe/enc-block-int8.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Created TensorFlow Lite delegate for NNAPI.
+INFO: NNAPI delegate created.
+WARNING: NNAPI SL driver did not implement SL_ANeuralNetworksDiagnostic_registerCallbacks!
+ERROR: NN API returned error ANEURALNETWORKS_BAD_DATA at line 1132 while adding operation.
+
+ERROR: Restored original execution plan after delegate application failure.
+ERROR: Failed to apply NNAPI delegate.
+ERROR: Benchmarking failed.
+## exit 1 20:54:23

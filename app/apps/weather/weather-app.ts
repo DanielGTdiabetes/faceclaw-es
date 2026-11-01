@@ -1,6 +1,9 @@
 import { ensureLocationPermission, hasLocationPermission } from "../../native/location-permissions";
 import { weatherBridge } from "../../native/weather";
+import { toggleSettingMenuItem } from "../../ui/dashboard-settings";
+import { openSettingsSubMenu } from "../../ui/dashboard/settings-panel";
 import { WeatherLayer } from "./weather";
+import { weatherShowInStatusBarSetting, weatherShowOnSystemCardSetting } from "./weather-settings";
 import {
   createInProcessWindow,
   YieldAtRootLayer,
@@ -11,7 +14,7 @@ import {
 export const WEATHER_WINDOW_ID = "weather";
 export const WEATHER_SURFACE_ID = "window:weather";
 
-/** Local current conditions and forecast from the National Weather Service. */
+/** Local current conditions and forecast from Open-Meteo. */
 export function createWeatherAppWindow(options: InProcessAppOptions): InProcessWindow {
   let closed = false;
   let requestingPermission = false;
@@ -32,19 +35,39 @@ export function createWeatherAppWindow(options: InProcessAppOptions): InProcessW
     }).catch((error) => { requestingPermission = false; console.warn(`Weather permission: ${error}`); });
   };
 
+  // An indicator switched on without location access asks for it here, since
+  // its background refreshes have no screen of their own to prompt from.
+  const indicatorSettingOptions = {
+    onChange: (_ctx: unknown, enabled: boolean) => {
+      if (enabled && !hasLocationPermission()) requestUpdate();
+    },
+  };
+
   const app = createInProcessWindow({
     appId: "weather",
     windowId: WEATHER_WINDOW_ID,
-    title: "Weather",
-    iconLetter: "W",
+    title: "Tiempo",
+    iconLetter: "T",
     icon: "cloud-sun",
     closeable: true,
     menuItems: () => [
       {
-        label: "Refresh",
+        label: "Actualizar",
         onSelect: (ctx) => {
           ctx.stack.pop();
           requestUpdate();
+        },
+      },
+      {
+        label: "Ajustes",
+        onSelect: (ctx) => {
+          // Pop the menu first so closing the settings modal lands back on
+          // the forecast, not this menu.
+          ctx.stack.pop();
+          openSettingsSubMenu(ctx, "Ajustes del tiempo", [
+            toggleSettingMenuItem(weatherShowInStatusBarSetting, indicatorSettingOptions),
+            toggleSettingMenuItem(weatherShowOnSystemCardSetting, indicatorSettingOptions),
+          ]);
         },
       },
     ],

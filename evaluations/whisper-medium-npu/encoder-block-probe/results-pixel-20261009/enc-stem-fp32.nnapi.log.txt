@@ -1,0 +1,41 @@
+## 20:55:00 thermal=ThermalStatus:0
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [10]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [120]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [2]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-enc-probe/enc-stem-fp32.tflite]
+INFO: Signature to run: []
+INFO: #threads used for CPU inference: [4]
+INFO: Use NNAPI: [1]
+INFO: NNAPI accelerator name: [google-edgetpu]
+INFO: NNAPI accelerators available: [google-edgetpu,nnapi-reference]
+INFO: Disable NNAPI cpu: [1]
+INFO: Use xnnpack: [0]
+INFO: Loaded model /data/local/tmp/fc-enc-probe/enc-stem-fp32.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Created TensorFlow Lite delegate for NNAPI.
+INFO: NNAPI delegate created.
+WARNING: NNAPI SL driver did not implement SL_ANeuralNetworksDiagnostic_registerCallbacks!
+WARNING: NNAPI SL driver did not implement SL_ANeuralNetworksDiagnostic_registerCallbacks!
+INFO: Though NNAPI delegate is explicitly applied, the model graph will not be executed by the delegate.
+INFO: The input model file size (MB): 13.5732
+INFO: Initialized session in 26.824ms.
+INFO: Running benchmark for at least 2 iterations and at least 0.5 seconds but terminate if exceeding 120 seconds.
+INFO: count=3 first=372618 curr=201764 min=121546 max=372618 avg=231976 std=104702 p5=121546 median=201764 p95=372618
+
+INFO: Running benchmark for at least 10 iterations and at least 0 seconds but terminate if exceeding 120 seconds.
+INFO: count=10 first=245227 curr=117506 min=78446 max=311732 avg=142517 std=84710 p5=78446 median=92867 p95=311732
+
+INFO: Inference timings in us: Init: 26824, First inference: 372618, Warmup (avg): 231976, Inference (avg): 142517
+INFO: Note: as the benchmark tool itself affects memory footprint, the following is only APPROXIMATE to the actual memory footprint of the model at runtime. Take the information at your discretion.
+INFO: Memory footprint delta from the start of the tool (MB): init=27.7617 overall=59.2383
+INFO: Overall peak memory footprint (MB) via periodic monitoring: 101.547
+INFO: Memory status at the end of exeution:
+INFO: - VmRSS              : 97 MB
+INFO: + RssAnnon           : 45 MB
+INFO: + RssFile + RssShmem : 52 MB
+## exit 0 20:55:02

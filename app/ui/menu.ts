@@ -1,8 +1,9 @@
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage, type UiFont } from "../graphics/image";
+import { G2_LENS_HEIGHT, GrayImage, type UiFont } from "../graphics/image";
 import { wrapText } from "../graphics/textwrap";
 import { getDefaultSmallFont } from "../graphics/ui-fonts";
-import { getBooleanSetting } from "../native/settings-store";
+import { getStringSetting } from "../native/settings-store";
 import { clamp } from "../util/numeric-util";
+import { normalizeAnimationSpeed } from "./animation-speed";
 import { Layer, LayerContext, PaintBelow } from "./layers";
 import { MENU_ANIMATION_KEY, setMenuAnimationReader } from "./menu-animation-pref";
 import { Menu, MENU_HIGHLIGHT_FILL, MENU_HIGHLIGHT_STROKE } from "./menu-core";
@@ -12,7 +13,7 @@ import { LIST_ROW_TEXT_INSET, centeredTextY, lineStep, listRowHeight, menuTitleH
 
 // Menu<T> and IconGrid consult this (through their motion classes) at each
 // paint; a SharedPreferences read, so changes apply to the next navigation.
-setMenuAnimationReader(() => getBooleanSetting(MENU_ANIMATION_KEY, true));
+setMenuAnimationReader(() => normalizeAnimationSpeed(getStringSetting(MENU_ANIMATION_KEY, "normal")));
 
 const DEFAULT_MENU_X = 8;
 const DEFAULT_MENU_Y = 8;
@@ -140,7 +141,7 @@ export function drawListScrollbar(
 }
 
 /**
- * Draw a ">" submenu indicator inset at the right edge of a row's selection
+ * Draw a "▶>" submenu indicator inset at the right edge of a row's selection
  * highlight box, vertically centered within it. Pass the same rect as the
  * row's drawSelectionHighlight call (the row need not actually be selected).
  */
@@ -153,10 +154,29 @@ export function drawSubmenuIndicator(
   highlightHeight: number,
   value: number,
 ): void {
-  const arrow = ">";
+  const arrow = "▶";
   const x = highlightX + highlightWidth - font.measureText(arrow) - 4;
   const y = centeredTextY(font, highlightY, highlightHeight);
   image.drawText(font, x, y, arrow, value);
+}
+
+/** A row that opens a nested menu: the label plus a right-edge ">". */
+export function submenuItem(
+  label: string,
+  onSelect: MenuItem["onSelect"],
+  options: Pick<MenuItem, "description" | "disabled"> = {},
+): MenuItem {
+  return {
+    ...options,
+    label,
+    onSelect,
+    render: ({ image, x, y, width, height, selected, disabled, text }) => {
+      const font = getDefaultSmallFont();
+      const value = disabled ? 70 : selected ? 255 : 200;
+      image.drawText(font, x, y + LIST_ROW_TEXT_INSET, text, value);
+      drawSubmenuIndicator(image, font, x, y, width, height, value);
+    },
+  };
 }
 
 export function drawToggleMenuItem(
@@ -363,6 +383,8 @@ export function openModalMenu(
     width: menuWidth,
     minHeight: menuHeight,
     maxHeight: menuHeight,
+    // Floats nearer than the content it opens over, like the window and system menus.
+    depth: 4,
   };
   ctx.stack.push(new MenuLayer(title, items, layout).selectItem(initialSelectedIndex));
 }
@@ -377,16 +399,20 @@ export class TextPageLayer implements Layer {
     private readonly body: string,
   ) {}
 
-  paint(_ctx: LayerContext): GrayImage {
+  paint(ctx: LayerContext): GrayImage {
     const font = getDefaultSmallFont();
-    const image = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+    // Size to the stack, not the lens: in an app window the stack is the
+    // window's viewport, and the compositor rejects a frame larger than its
+    // surface (leaving the previous frame on screen).
+    const { width, height } = ctx.stack.getBaseSize();
+    const image = new GrayImage(width, height, 0);
     image.drawText(font, 18, 14, this.title, 220);
-    image.drawRect(12, 12, G2_LENS_WIDTH - 24, G2_LENS_HEIGHT - 24, 52);
+    image.drawRect(12, 12, width - 24, height - 24, 52);
 
-    const wrapped = wrapText(font, this.body, G2_LENS_WIDTH - 60);
+    const wrapped = wrapText(font, this.body, width - 60);
     const step = lineStep(font);
     const bodyTop = 28 + font.lineHeight;
-    const footerY = G2_LENS_HEIGHT - 48;
+    const footerY = height - 48;
     const maxBodyLines = Math.max(0, Math.floor((footerY - bodyTop - 8) / step));
     for (let index = 0; index < Math.min(wrapped.length, maxBodyLines); index++) {
       image.drawText(font, 24, bodyTop + index * step, wrapped[index]!, 190);

@@ -1,0 +1,7 @@
+name: faceclaw-notifications
+label: Avisos personales
+version: 0.1.0
+description: Entrega avisos por las gafas puestas o por el Telegram personal de Hermes.
+provides_tools:
+  - notify_user
+provides_hooks: []

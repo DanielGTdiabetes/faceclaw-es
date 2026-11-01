@@ -14,10 +14,10 @@ function load(file, deps, globals = {}) {
   return exports;
 }
 
-function dialog({ autoSend = false, deferred = true, synchronousFinal, isIOS = false, handsFree = false } = {}) {
+function dialog({ autoSend = false, deferred = true, synchronousFinal, isIOS = false, handsFree = false, captureCompletion } = {}) {
   const listeners = new Set(), timers = new Map(), sent = [], refinements = [];
   let complete, timerId = 0, starts = 0, frame, speechEnd, endpointing;
-  let completion = new Promise(resolve => { complete = resolve; });
+  let completion = captureCompletion ?? new Promise(resolve => { complete = resolve; });
   const { VoiceInputLayer } = load('app/ui/shell/voice-input.ts', {
     '../../native/voice-control': { voiceControlBridge: {
       onTranscript(cb) { listeners.add(cb); return () => listeners.delete(cb); },
@@ -37,7 +37,7 @@ function dialog({ autoSend = false, deferred = true, synchronousFinal, isIOS = f
     setTimeout(cb) { const id = ++timerId; timers.set(id, cb); return id; },
     clearTimeout(id) { timers.delete(id); },
   });
-  const transcript = (text, isFinal = false) => { for (const cb of [...listeners]) cb({ text, isFinal }); };
+  const transcript = (text, isFinal = false, metadata = {}) => { for (const cb of [...listeners]) cb({ ...metadata, text, isFinal }); };
   const layer = new VoiceInputLayer({ autoSend, handsFree, onClosed() {}, dismiss: () => layer.onRemoved(),
     actions: { requestRender() {}, startVoiceCapture(value) { starts++; endpointing = value; }, stopVoiceCapture() {
       if (synchronousFinal) transcript(synchronousFinal, true);
@@ -117,7 +117,7 @@ test('Continue refines the complete late result instead of appending an editing 
 test('Send and Continue cannot consume partial text while native recognition is pending', async () => {
   const env = dialog();
   env.transcript('Set a timer'); env.layer.endCapture();
-  assert.equal(env.frame().status, 'Finishing transcription...');
+  assert.equal(env.frame().status, 'Finalizando transcripción...');
   env.input('click'); env.input('scroll-down'); env.input('click');
   assert.deepEqual(env.sent, []);
   assert.equal(env.starts(), 1);
@@ -146,7 +146,7 @@ test('failed or empty native captures return to the menu without sending', async
   const env = dialog({ autoSend: true });
   env.layer.endCapture(); await env.complete(); env.timeout();
   assert.deepEqual(env.sent, []);
-  assert.equal(env.frame().status, 'Send, continue, or discard?');
+  assert.equal(env.frame().status, '¿Enviar, continuar o descartar?');
 });
 
 test('cloud fallback and a synchronous final still send exactly once', () => {
@@ -157,13 +157,16 @@ test('cloud fallback and a synchronous final still send exactly once', () => {
   }
 });
 
-test('native completion is capture-specific, follows the final, and does not wait for shared capture', async () => {
+for (const [provider, modelKind] of [['onboard-whisper', 'whisper'], ['onboard-whisper-small', 'whisper-small'], ['onboard-whisper-medium', 'whisper-medium']]) {
+test(`${provider}: native completion follows the final and is capture-specific`, async () => {
   let controller;
   class Controller {
     constructor() { controller = this; }
     setListener(listener) { this.listener = listener; }
     setCommunicator() {} setUsePhoneMic() {} setSaveRecordings() {} setEndpointing() {}
-    setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {} setOnboardModelKind() {}
+    setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {}
+    setExperimentalRawMode() {}
+    setOnboardModelKind(kind) { this.modelKind = kind; }
     start(_mode, id) { this.captureId = id; this.active = true; }
     stop() { this.active = false; }
     isCapturing() { return this.active; }
@@ -171,15 +174,18 @@ test('native completion is capture-specific, follows the final, and does not wai
   const { FaceclawVoiceControlBridge } = load('app/native/voice-control.ts', {
     '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
     './speech-pause': { SpeechPauseDetector: class { reset() {} } },
+    './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
+    './cloud-stt-provider': { createCloudSttClient: () => null },
   }, { global: { isAndroid: true }, com: { faceclaw: { app: {
     FaceclawVoiceController: Controller,
     FaceclawVoiceControllerListener: function (listener) { return listener; },
   } } } });
   const bridge = new FaceclawVoiceControlBridge();
-  const options = { provider: 'onboard-whisper' };
+  const options = { provider };
   const events = [];
   bridge.onTranscript(event => events.push(event.text));
   bridge.startPushToTalk(options);
+  assert.equal(controller.modelKind, modelKind);
   const stopped = bridge.stopPushToTalk().then(() => events.push('stopped'));
   controller.listener.onStopped(0); // an older raw/cloud capture's callback
   await Promise.resolve(); assert.deepEqual(events, []);
@@ -191,4 +197,87 @@ test('native completion is capture-specific, follows the final, and does not wai
   assert.equal(bridge.stopPushToTalk(), undefined);
   assert.equal(controller.active, true);
   bridge.stopContinuousCapture(); controller.listener.onStopped(controller.captureId);
+});
+}
+
+test('EVO-X2: native PCM drains before commit and the bridge waits for remote/local completion', async () => {
+  let controller, remoteOptions, complete;
+  const calls = [];
+  const result = new Promise(resolve => { complete = resolve; });
+  class Controller {
+    constructor() { controller = this; }
+    setListener(listener) { this.listener = listener; }
+    setCommunicator() {} setUsePhoneMic() {} setSaveRecordings() {} setEndpointing() {}
+    setNoiseSuppression() {} setBeamFilter() {} clearSpeakerVerification() {} setExperimentalRawMode() {}
+    start(mode, id) { this.captureId = id; this.active = true; assert.equal(mode, 'cloud'); }
+    stop() { this.active = false; }
+    isCapturing() { return this.active; }
+  }
+  const { FaceclawVoiceControlBridge } = load('app/native/voice-control.ts', {
+    '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
+    './speech-pause': { SpeechPauseDetector: class { reset() {} } },
+    './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
+    '../util/array-util': { toUint8Array: bytes => bytes },
+    './cloud-stt-provider': { createCloudSttClient(_selection, options) {
+      remoteOptions = options;
+      return { start() {}, stop() {}, acceptPcm(bytes) { calls.push([...bytes]); },
+        finish() { calls.push('commit'); return result; } };
+    } },
+  }, { global: { isAndroid: true }, com: { faceclaw: { app: {
+    FaceclawVoiceController: Controller, FaceclawVoiceControllerListener: function(listener) { return listener; },
+  } } } });
+  const bridge = new FaceclawVoiceControlBridge();
+  const events = [];
+  bridge.onTranscript(e => events.push(e.text));
+  bridge.startPushToTalk({ provider: 'even' });
+  let finished = false;
+  const pending = bridge.stopPushToTalk().then(() => { finished = true; });
+  await Promise.resolve(); assert.deepEqual(calls, []);
+  controller.listener.onPcm(new Uint8Array([7, 8])); // PCM already posted by native worker.
+  controller.listener.onStopped(controller.captureId);
+  await Promise.resolve();
+  assert.deepEqual(calls, [[7, 8], 'commit']); assert.equal(finished, false);
+  remoteOptions.onTranscript({ text: 'full result', isFinal: true });
+  complete(); await pending;
+  assert.deepEqual(events, ['full result']); assert.equal(finished, true);
+});
+
+for (const outcome of ['final', 'error', 'cancel']) {
+  test(`EVO-X2: auto-send waits through remote timeout and slow local decode (${outcome})`, async () => {
+    const timers = new Map(); let timerId = 0, remote, finishLocal, rejectLocal;
+    const { FallbackSttClient } = load('app/native/fallback-stt.ts', {}, {
+      Uint8Array,
+      setTimeout(fn, delay) { const id = ++timerId; timers.set(id, { fn, delay }); return id; },
+      clearTimeout(id) { timers.delete(id); },
+    });
+    let env;
+    const client = new FallbackSttClient(options => {
+      remote = options; return { start() {}, acceptPcm() {}, finish() {}, stop() {} };
+    }, { apiKey: 'k', onStatus() {}, onError() {}, onTranscript: e => env.transcript(e.text, e.isFinal, e) },
+    () => new Promise((resolve, reject) => { finishLocal = resolve; rejectLocal = reject; }));
+    client.start(); remote.onReady(); client.acceptPcm(new Uint8Array(320));
+    const completion = client.finish();
+    env = dialog({ autoSend: true, handsFree: true, captureCompletion: completion });
+    env.transcript('partial'); env.layer.endCapture(); env.timeout();
+    assert.deepEqual(env.sent, []);
+    const deadline = [...timers.values()].find(t => t.delay === 3000);
+    deadline.fn(); await Promise.resolve(); env.timeout();
+    assert.deepEqual(env.sent, []); assert.equal(env.frame().status, 'Finalizando transcripción...');
+    if (outcome === 'cancel') { env.layer.onRemoved(); client.stop(); finishLocal('late'); }
+    else if (outcome === 'error') rejectLocal(new Error('model unavailable'));
+    else finishLocal('complete final with the missing ending');
+    await completion.catch(() => {}); await Promise.resolve(); env.timeout();
+    assert.deepEqual(env.sent, outcome === 'final' ? ['complete final with the missing ending'] : []);
+    assert.equal(env.timers(), 0);
+  });
+}
+
+test('authoritative local silence never resurrects a stale remote partial for auto-send', async () => {
+  const env = dialog({ autoSend: true });
+  env.transcript('stale remote partial');
+  env.layer.endCapture();
+  env.transcript('', true, { authoritative: true });
+  await env.complete(); env.timeout();
+  assert.deepEqual(env.sent, []);
+  assert.equal(env.frame().text.includes('stale remote partial'), false);
 });

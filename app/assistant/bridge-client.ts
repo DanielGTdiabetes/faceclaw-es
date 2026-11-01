@@ -1,6 +1,8 @@
 import { AssistantMcpServer } from "./mcp-server";
 import { toolRegistry } from "./tool-registry";
 import type { AssistantContext, AssistantTurnCallbacks, AssistantTurnHandle } from "./types";
+import { ConversationChannel, CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY } from "./conversation-channel";
+import { NotificationChannel, NOTIFICATION_CAPABILITY, type NotificationHost } from "./notification-channel";
 
 declare const com: any;
 
@@ -24,6 +26,12 @@ const RECONNECT_MIN_MS = 1_000;
 const RECONNECT_MAX_MS = 60_000;
 /** Backstop on a turn the bridge never finishes (server-side cap is 2 min). */
 const TURN_TIMEOUT_MS = 3 * 60 * 1000;
+/**
+ * App-level liveness: the bridge answers ctl ping with pong. A host that loses power leaves a half-open
+ * socket that never reports a close, so silence for LIVENESS_TIMEOUT_MS drops the socket and re-dials.
+ */
+const LIVENESS_PING_MS = 60_000;
+const LIVENESS_TIMEOUT_MS = 150_000;
 
 export type AssistantBridgePhase = "idle" | "connecting" | "connected" | "failed";
 
@@ -39,6 +47,7 @@ export type AssistantBridgeOptions = {
   deviceName: string;
   /** Reads assistant.allowProactive; consulted per proactive tool call. */
   allowProactive: () => boolean;
+  notifications?: NotificationHost;
 };
 
 type ActiveTurn = {
@@ -49,6 +58,15 @@ type ActiveTurn = {
 };
 
 export class AssistantBridgeClient {
+  readonly notifications = new NotificationChannel((frame) => this.phase === "connected" && this.send(frame));
+  readonly conversation = new ConversationChannel({
+    send: (frame) => this.phase === "connected" && this.send(frame),
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    after: (callback, ms) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    },
+  });
   private options: AssistantBridgeOptions | null = null;
   private ws: any = null;
   private listenerProxy: any = null;
@@ -57,6 +75,10 @@ export class AssistantBridgeClient {
   private stopped = true;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelayMs = RECONNECT_MIN_MS;
+  private livenessTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastFrameAtMs = 0;
+  /** Callbacks from an earlier socket (closed, replaced or stopped) are ignored. */
+  private socketGeneration = 0;
   private activeTurn: ActiveTurn | null = null;
   private turnSeq = 0;
   private mcpServer: AssistantMcpServer | null = null;
@@ -76,6 +98,16 @@ export class AssistantBridgeClient {
     return this.phase === "connected";
   }
 
+  /** Connected and still hearing from the bridge (EVO watchdog). */
+  isAlive(): boolean {
+    return this.phase === "connected" && Date.now() - this.lastFrameAtMs < LIVENESS_TIMEOUT_MS;
+  }
+
+  /** Whether a bridge is configured; while stopped there is nothing to watch. */
+  isConfigured(): boolean {
+    return !this.stopped && this.options !== null;
+  }
+
   /**
    * Set (or replace) the bridge configuration and connect. Safe to call again
    * with new settings; the old connection is torn down first.
@@ -86,7 +118,8 @@ export class AssistantBridgeClient {
     this.stopped = false;
     this.mcpServer = new AssistantMcpServer({
       send: (msg) => this.send({ chan: "mcp", msg }),
-      isTurnActive: () => this.activeTurn !== null,
+      // Continuous listening switched on by the user is a live session too: the same agent acts within it.
+      isTurnActive: () => this.activeTurn !== null || this.conversation.isEnabled(),
       allowProactive: options.allowProactive,
     });
     this.unsubscribeToolsChanged = toolRegistry.onToolsChanged(() => {
@@ -98,7 +131,12 @@ export class AssistantBridgeClient {
   /** Disconnect and stay down until the next configure(). */
   stop(): void {
     this.stopped = true;
+    this.socketGeneration++;
+    // A later configure() may name another server or token: armed conversation sessions never resume.
+    this.conversation.revoke();
+    this.notifications.reset();
     this.clearReconnectTimer();
+    this.clearLivenessTimer();
     this.failActiveTurn("Bridge connection closed");
     if (this.unsubscribeToolsChanged) {
       this.unsubscribeToolsChanged();
@@ -132,6 +170,7 @@ export class AssistantBridgeClient {
       return { cancel: () => {} };
     }
     this.failActiveTurn("Superseded by a new request");
+    this.conversation.setChatActive(true);
     const turnId = `t${++this.turnSeq}`;
     this.activeTurn = {
       turnId,
@@ -157,9 +196,11 @@ export class AssistantBridgeClient {
     const { host, port } = this.options;
     const url = `ws://${host}:${port}`;
     this.setState("connecting", `Connecting to ${host}:${port}...`);
+    const generation = ++this.socketGeneration;
+    const stale = () => this.stopped || generation !== this.socketGeneration;
     this.listenerProxy = new com.faceclaw.app.FaceclawWebSocketListener({
       onOpen: () => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.setState("connecting", "Authenticating...");
         this.send({
           chan: "ctl",
@@ -167,21 +208,21 @@ export class AssistantBridgeClient {
           version: PROTOCOL_VERSION,
           token: this.options!.token,
           deviceName: this.options!.deviceName,
-          capabilities: ["chat", "mcp"],
+          capabilities: ["chat", "mcp", CONVERSATION_CAPABILITY, CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY, NOTIFICATION_CAPABILITY],
         });
       },
       onTextMessage: (message: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleMessage(String(message));
       },
       onClosed: (code: number, reason: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleConnectionLost(
           `Connection closed (${Number(code)}${reason ? `: ${String(reason)}` : ""})`,
         );
       },
       onFailure: (message: string) => {
-        if (this.stopped) return;
+        if (stale()) return;
         this.handleConnectionLost(`Connection failed: ${String(message)}`);
       },
     });
@@ -203,6 +244,7 @@ export class AssistantBridgeClient {
       return;
     }
     if (!frame || typeof frame !== "object") return;
+    this.lastFrameAtMs = Date.now();
     switch (frame.chan) {
       case "ctl":
         this.handleCtl(frame);
@@ -213,6 +255,12 @@ export class AssistantBridgeClient {
       case "mcp":
         this.mcpServer?.handleMessage(frame.msg);
         return;
+      case "conv":
+        this.conversation.handle(frame);
+        return;
+      case "notify":
+        this.notifications.handle(frame);
+        return;
       default:
         return;
     }
@@ -221,7 +269,10 @@ export class AssistantBridgeClient {
   private handleCtl(frame: any): void {
     if (frame.type === "hello-ack") {
       this.reconnectDelayMs = RECONNECT_MIN_MS;
+      this.conversation.negotiate(frame.capabilities);
       this.setState("connected", `Connected to ${String(frame.serverName ?? "bridge")}`);
+      this.notifications.connect(frame.capabilities, this.options?.notifications);
+      this.startLivenessTimer();
       return;
     }
     if (frame.type === "ping") {
@@ -233,6 +284,9 @@ export class AssistantBridgeClient {
       // re-dial. Record the reason so the status is more useful than a bare
       // close code (especially for a bad token).
       this.status = `Bridge error: ${String(frame.message ?? "unknown")}`;
+      // Rejected auth or protocol: an armed conversation must not resume on a later handshake.
+      this.conversation.revoke();
+      this.notifications.reset();
       return;
     }
   }
@@ -251,6 +305,11 @@ export class AssistantBridgeClient {
         turn.callbacks.onToolActivity(String(frame.label ?? "tool"));
         return;
       case "turn-done": {
+        // New bridges carry the complete final here; old bridges use accumulated deltas.
+        if (typeof frame.text === "string") {
+          turn.textSoFar = frame.text;
+          turn.callbacks.onTextDelta(frame.text, frame.text);
+        }
         this.clearActiveTurn();
         turn.callbacks.onTurnDone({
           stopReason: typeof frame.stopReason === "string" ? frame.stopReason : null,
@@ -266,7 +325,39 @@ export class AssistantBridgeClient {
     }
   }
 
+  private startLivenessTimer(): void {
+    this.clearLivenessTimer();
+    this.livenessTimer = setTimeout(() => {
+      this.livenessTimer = null;
+      if (this.phase !== "connected") return;
+      if (Date.now() - this.lastFrameAtMs >= LIVENESS_TIMEOUT_MS) {
+        const ws = this.ws;
+        this.handleConnectionLost("No response from bridge");
+        try {
+          ws?.close(1001, "no response");
+        } catch {
+          // ignore: the socket may already be dead
+        }
+        return;
+      }
+      this.send({ chan: "ctl", type: "ping", ts: Date.now() });
+      this.startLivenessTimer();
+    }, LIVENESS_PING_MS);
+  }
+
+  private clearLivenessTimer(): void {
+    if (this.livenessTimer) {
+      clearTimeout(this.livenessTimer);
+      this.livenessTimer = null;
+    }
+  }
+
   private handleConnectionLost(status: string): void {
+    this.clearLivenessTimer();
+    this.socketGeneration++;
+    // Same destination: an armed conversation may resume after the next authenticated hello-ack.
+    this.conversation.reset();
+    this.notifications.reset();
     this.ws = null;
     this.listenerProxy = null;
     // Keep a ctl-error status (e.g. "invalid token") in preference to the
@@ -298,6 +389,7 @@ export class AssistantBridgeClient {
     if (!this.activeTurn) return;
     clearTimeout(this.activeTurn.timer);
     this.activeTurn = null;
+    this.conversation.setChatActive(false);
   }
 
   private failActiveTurn(message: string): void {
@@ -307,12 +399,13 @@ export class AssistantBridgeClient {
     turn.callbacks.onError(message);
   }
 
-  private send(frame: object): void {
-    if (!this.ws) return;
+  private send(frame: object): boolean {
+    if (!this.ws) return false;
     try {
-      this.ws.sendText(JSON.stringify({ v: PROTOCOL_VERSION, ...frame }));
+      return this.ws.sendText(JSON.stringify({ v: PROTOCOL_VERSION, ...frame })) === true;
     } catch {
       // A send on a dying socket; the close/failure callback handles recovery.
+      return false;
     }
   }
 

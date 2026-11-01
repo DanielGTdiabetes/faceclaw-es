@@ -1,4 +1,4 @@
-import { Application, Color, EventData, isAndroid, Observable, Page, TextField, TextView } from '@nativescript/core'
+import { Application, Color, EventData, isAndroid, Observable, Page, TextField, TextView, type AndroidActivityBackPressedEventData } from '@nativescript/core'
 import { MainViewModel } from './main-view-model'
 import { dashboardController } from '../g2/dashboard-controller'
 
@@ -16,6 +16,7 @@ type MainPageState = {
   propertyChangeHandler: (args: EventData & { propertyName?: string }) => void
   orientationHandler: () => void
   detachPreview: () => void
+  backHandler: (args: AndroidActivityBackPressedEventData) => void
 }
 
 function getPageState(page: Page): MainPageState | undefined {
@@ -35,6 +36,7 @@ function cleanupPage(page: Page): void {
   state.model.off(Observable.propertyChangeEvent, state.propertyChangeHandler)
   state.detachPreview()
   Application.off(Application.orientationChangedEvent, state.orientationHandler)
+  if (isAndroid) Application.android.off(Application.android.activityBackPressedEvent, state.backHandler)
   // navigatingTo builds a fresh model each visit; drop the old one's
   // controller/settings subscriptions or every navigation leaks a listener.
   state.model.dispose()
@@ -132,6 +134,7 @@ export function loaded(args: EventData) {
 
   const state: MainPageState = {
     model,
+    backHandler: (event) => { if (model.closeConversationPanel()) event.cancel = true },
     detachPreview: dashboardController.attachPhonePreview(() =>
       page.isLoaded && !model.displayPreviewMessage && (!isAndroid || !!page.android?.isShown())),
     orientationHandler: () => {
@@ -158,6 +161,7 @@ export function loaded(args: EventData) {
 
   model.on(Observable.propertyChangeEvent, state.propertyChangeHandler)
   Application.on(Application.orientationChangedEvent, state.orientationHandler)
+  if (isAndroid) Application.android.on(Application.android.activityBackPressedEvent, state.backHandler)
   setPageState(page, state)
   if (model.isTextSettingEditorActive) {
     focusTextEditor(page)

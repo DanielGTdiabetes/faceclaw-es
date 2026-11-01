@@ -31,9 +31,13 @@ export type LayerActions = {
   startVoiceCapture: (endpointing?: boolean) => Promise<void> | void;
   /** Stop push-to-talk; awaits native recognition, or commits a cloud provider for a final result. */
   stopVoiceCapture: () => Promise<void> | void;
-  /** Start continuous capture (Transcribe); shares the mic with push-to-talk. */
-  startContinuousVoiceCapture: () => Promise<void> | void;
-  stopContinuousVoiceCapture: () => Promise<void> | void;
+  /**
+   * Start continuous capture on behalf of `client` (one id per window); shares
+   * the mic with push-to-talk, and runs while any client wants it. recordAs
+   * names a WAV of the captured audio in Downloads (iOS, when enabled).
+   */
+  startContinuousVoiceCapture: (client: string, options?: { recordAs?: string }) => Promise<void> | void;
+  stopContinuousVoiceCapture: (client: string) => Promise<void> | void;
   /** Play a CFW tone-sequencer payload (see sound-effects.ts). */
   playBuzzerSequence: (payload: Uint8Array) => Promise<void> | void;
 };
@@ -195,6 +199,19 @@ export class LayerStack {
     for (const removed of this.layers.splice(index).reverse()) {
       notifyRemoved(removed);
     }
+    return true;
+  }
+
+  /**
+   * Remove one stacked layer wherever it sits, leaving the layers above it in
+   * place (e.g. a notification modal that closes under a menu opened over it).
+   * Returns false if the layer isn't stacked (the base layer can never be removed).
+   */
+  remove(layer: Layer): boolean {
+    const index = this.layers.indexOf(layer);
+    if (index <= 0) return false;
+    this.layers.splice(index, 1);
+    notifyRemoved(layer);
     return true;
   }
 

@@ -67,6 +67,11 @@ function canCache(): boolean {
 }
 
 export function getStringSetting(key: string, defaultValue: string): string {
+  // 0.8.2 renamed these booleans to speed enums. Read the old OFF choice
+  // without rewriting/removing it; an explicitly saved speed takes precedence.
+  const legacyKey = key === "display.menuAnimationSpeed" ? "display.menuAnimation"
+    : key === "display.screenFadeSpeed" ? "display.screenFade" : null;
+  if (legacyKey && !getBooleanSetting(legacyKey, true)) defaultValue = "disabled";
   if (!canCache()) return String(getJava().getString(key, defaultValue));
   let value = stringCache.get(key);
   if (value === undefined) {

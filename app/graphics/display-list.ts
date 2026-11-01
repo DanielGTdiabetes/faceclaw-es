@@ -11,11 +11,18 @@ export const DrawOp = { RECT_COPY: 2, IMAGE: 4, ROUNDED_RECT: 8, CLEAR: 9, DRAWS
 export const DISPLAY_LIST_RECORD = 7;
 /** Bridge opcode bit: a clip rect follows the call's depth. */
 const CLIPPED = 128;
+/** Bridge sentinel for a rounded rect without an outside color. */
+const NO_OUTSIDE = 16;
 export type ListImage = { readonly width: number; readonly height: number; readonly pixels: Uint8Array };
 /** Revision 35: a call draws only inside its clip, in list coordinates (and moves with its depth). */
 export type ListClip = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 export type ListCall = (
-  | { op: typeof DrawOp.ROUNDED_RECT; x: DrawValue; y: DrawValue; width: number; height: number; radius: number; background: number; border: number }
+  /**
+   * The background max-blends (0 leaves the interior alone); border 16 draws no
+   * outline. `outside` (revision 36) colors the box's pixels outside the
+   * rounded shape, cutting what is underneath to the corners.
+   */
+  | { op: typeof DrawOp.ROUNDED_RECT; x: DrawValue; y: DrawValue; width: number; height: number; radius: number; background: number; border: number; outside?: number }
   | { op: typeof DrawOp.IMAGE; resource: number; x: number; y: number; transparent: boolean }
   | { op: typeof DrawOp.RECT_COPY; resource: number; x: DrawValue; y: DrawValue; width: number; height: number; dx: DrawValue; dy: DrawValue }
   /** Fill with a 4-bit color: the clip rect when there is one, else the whole screen. */
@@ -88,6 +95,7 @@ export function encodeDisplayList(placed: PlacedDisplayList, now = Date.now()): 
       out.raw(encodeValue(call.x)); out.raw(encodeValue(call.y));
       out.u16(integer(call.width, 1, 640)); out.u16(integer(call.height, 1, 480)); out.u16(call.radius);
       out.u8(integer(call.background, 0, 15)); out.u8(integer(call.border, 0, 16));
+      out.u8(call.outside === undefined ? NO_OUTSIDE : integer(call.outside, 0, 15));
     } else if (call.op === DrawOp.CLEAR) {
       out.u8(integer(call.color, 0, 15));
     } else if (call.op === DrawOp.DRAWS) {
@@ -127,7 +135,11 @@ export function readDisplayList(bytes: Uint8Array, offset: number, now = Date.no
     const header = r.u8(), op = header & ~CLIPPED, callDepth = r.i16();
     const clip = header & CLIPPED ? { x: r.i16(), y: r.i16(), width: r.u16(), height: r.u16() } : undefined;
     const common = clip ? { depth: callDepth, clip } : { depth: callDepth };
-    if (op === DrawOp.ROUNDED_RECT) calls.push({ op, ...common, x: readValue(r), y: readValue(r), width: r.u16(), height: r.u16(), radius: r.u16(), background: r.u8(), border: r.u8() });
+    if (op === DrawOp.ROUNDED_RECT) {
+      const call = { op, ...common, x: readValue(r), y: readValue(r), width: r.u16(), height: r.u16(), radius: r.u16(), background: r.u8(), border: r.u8() };
+      const outside = r.u8();
+      calls.push(outside === NO_OUTSIDE ? call : { ...call, outside });
+    }
     else if (op === DrawOp.IMAGE) calls.push({ op, ...common, resource: r.u16(), x: r.i16(), y: r.i16(), transparent: (r.u8() & 16) !== 0 });
     else if (op === DrawOp.RECT_COPY) calls.push({ op, ...common, resource: r.u16(), x: readValue(r), y: readValue(r), width: r.u16(), height: r.u16(), dx: readValue(r), dy: readValue(r) });
     else if (op === DrawOp.CLEAR) calls.push({ op, ...common, color: r.u8() });
@@ -157,7 +169,8 @@ export function dimDisplayList(list: DisplayList, factor: number): DisplayList {
   if (list.calls.some(c => c.op === DrawOp.DRAWS)) return { ...list, calls: [] };
   const dim = (v: number) => v === 0 ? 0 : Math.max(1, Math.round(v * factor));
   return { ...list, resources: list.resources.map(r => ({ ...r, pixels: r.pixels.map(dim) })),
-    calls: list.calls.map(c => c.op === DrawOp.ROUNDED_RECT ? { ...c, background: Math.min(15, Math.round(c.background * factor)), border: c.border === 16 ? 16 : Math.min(15, Math.round(c.border * factor)) }
+    calls: list.calls.map(c => c.op === DrawOp.ROUNDED_RECT ? { ...c, background: Math.min(15, Math.round(c.background * factor)), border: c.border === 16 ? 16 : Math.min(15, Math.round(c.border * factor)),
+        ...(c.outside === undefined ? {} : { outside: Math.min(15, Math.round(c.outside * factor)) }) }
       : c.op === DrawOp.CLEAR ? { ...c, color: Math.min(15, Math.round(c.color * factor)) } : c) };
 }
 
@@ -191,8 +204,12 @@ export function paintDisplayList(output: Uint8Array, screen: Uint8Array, width: 
     } else if (c.op === DrawOp.ROUNDED_RECT) {
       const x = placed.x + evaluate(c.x, elapsed, presentTime).value + shift, y = placed.y + evaluate(c.y, elapsed, presentTime).value;
       for (let yy = 0; yy < c.height; yy++) for (let xx = 0; xx < c.width; xx++) {
-        if (!writable(x + xx, y + yy) || !inside(xx, yy, c.width, c.height, c.radius)) continue;
+        if (!writable(x + xx, y + yy)) continue;
         const p = (y + yy) * width + x + xx;
+        if (!inside(xx, yy, c.width, c.height, c.radius)) {
+          if (c.outside !== undefined) output[p] = c.outside * 16;
+          continue;
+        }
         output[p] = c.border !== 16 && !inside(xx - 1, yy - 1, c.width - 2, c.height - 2, Math.max(0, c.radius - 1)) ? c.border * 16 : Math.max(output[p], c.background * 16);
       }
     } else {

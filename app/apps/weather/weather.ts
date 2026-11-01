@@ -6,11 +6,18 @@ import { GESTURE_CLICK, type InputEvent } from "../../ui/gestures";
 import { type Layer, type LayerContext } from "../../ui/layers";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
 import { centeredTextY, lineStep, tightRowHeight } from "../../ui/metrics";
+import { renderWeatherIcon } from "./weather-icons";
 
 const PAGE_X = 18;
 const HEADER_Y = 8;
 const CURRENT_TOP = 34;
+/** Minimum x of the description column right of the temperature. */
 const CURRENT_TEXT_X = 112;
+/** The current-conditions icon, left of the temperature. */
+const CURRENT_ICON_SIZE = 40;
+const CURRENT_ICON_GAP = 10;
+/** Gap between the temperature and the description column. */
+const CURRENT_TEXT_GAP = 16;
 const FORECAST_HEADER_Y = 105;
 const FORECAST_TOP = 124;
 /** Forecast rows hold a 20px icon; grow with the font past that. */
@@ -48,7 +55,7 @@ export class WeatherLayer implements Layer {
     const { width, height } = ctx.stack.getBaseSize();
     const image = new GrayImage(width, height, 0);
     const weather = this.state();
-    image.drawText(font, PAGE_X, HEADER_Y, "Weather", 225);
+    image.drawText(font, PAGE_X, HEADER_Y, "Tiempo", 225);
     if (weather.locationName) {
       image.drawText(
         font,
@@ -65,17 +72,18 @@ export class WeatherLayer implements Layer {
         font,
         width,
         height,
-        "Allow approximate location on your phone to get local weather.",
-        `${GESTURE_CLICK} request`,
+        "Permite la ubicación aproximada en el móvil para consultar el tiempo local.",
+        `${GESTURE_CLICK} permitir`,
       );
       return image;
     }
-    if (weather.phase === "locating" || weather.phase === "loading") {
+    // A refresh with earlier data in hand keeps showing that data.
+    if ((weather.phase === "locating" || weather.phase === "loading") && !weather.current) {
       this.drawMessage(image, font, width, height, weather.status);
       return image;
     }
     if (weather.phase === "error") {
-      this.drawMessage(image, font, width, height, weather.status, `${GESTURE_CLICK} retry`);
+      this.drawMessage(image, font, width, height, weather.status, `${GESTURE_CLICK} reintentar`);
       return image;
     }
 
@@ -94,7 +102,7 @@ export class WeatherLayer implements Layer {
       }
       return;
     }
-    if (!weather.forecast.length || weather.phase !== "ready") return;
+    if (!weather.forecast.length || !showsForecast(weather)) return;
     if (event.type === "scroll-up" || event.type === "scroll-down") {
       this.forecastMenu.setItems(weather.forecast);
       void this.forecastMenu.handleInput(event);
@@ -107,31 +115,40 @@ export class WeatherLayer implements Layer {
     const large = getDefaultLargeFont();
     const medium = getDefaultMediumFont();
     const small = getDefaultSmallFont();
-    const temperature = current.temperatureF === null ? "--°" : `${Math.round(current.temperatureF)}°F`;
-    image.drawText(large, PAGE_X, CURRENT_TOP + 8, temperature, 245);
+    const temperature = current.temperatureC === null ? "--°" : `${Math.round(current.temperatureC)}°C`;
+    const temperatureY = CURRENT_TOP + 8;
+    let temperatureX = PAGE_X;
+    if (current.condition) {
+      const icon = renderWeatherIcon(current.condition, current.isDaytime, CURRENT_ICON_SIZE);
+      if (icon) image.drawImage(icon, PAGE_X, temperatureY + (((large.lineHeight - icon.height) / 2) | 0));
+      temperatureX += CURRENT_ICON_SIZE + CURRENT_ICON_GAP;
+    }
+    image.drawText(large, temperatureX, temperatureY, temperature, 245);
+    const textX = Math.max(CURRENT_TEXT_X, temperatureX + Math.ceil(large.measureText(temperature)) + CURRENT_TEXT_GAP);
     // Description / details / source stack compactly from just below the
     // header line, so at large font sizes they stay clear of the forecast
     // table instead of running into it.
     let cy = 30;
     image.drawText(
       medium,
-      CURRENT_TEXT_X,
+      textX,
       cy,
-      truncateText(medium, current.description || "Current conditions", width - CURRENT_TEXT_X - PAGE_X),
+      truncateText(medium, current.description || "Tiempo actual", width - textX - PAGE_X),
       220,
     );
     cy += medium.lineHeight + 2;
 
     const details: string[] = [];
-    if (current.humidityPercent !== null) details.push(`Humidity ${Math.round(current.humidityPercent)}%`);
-    if (current.windSpeedMph !== null) {
-      details.push(`Wind ${current.windDirection ? `${current.windDirection} ` : ""}${Math.round(current.windSpeedMph)} mph`);
+    if (current.humidityPercent !== null) details.push(`Humedad ${Math.round(current.humidityPercent)}%`);
+    if (current.windSpeedKmh !== null) {
+      details.push(`Viento ${current.windDirection ? `${current.windDirection} ` : ""}${Math.round(current.windSpeedKmh)} km/h`);
     }
-    image.drawText(small, CURRENT_TEXT_X, cy, details.join("   ") || "Current forecast", 170);
+    image.drawText(small, textX, cy, truncateText(small, details.join("   ") || "Pronóstico actual", width - textX - PAGE_X), 170);
     cy += lineStep(small);
-    const source = current.observed ? "Observed" : "Forecast";
+    const source = "Open-Meteo";
     const age = current.timestampMs ? formatAge(Date.now() - current.timestampMs) : "";
-    image.drawText(small, CURRENT_TEXT_X, cy, `${source}${age ? ` ${age}` : ""}`, 105);
+    const updating = weather.phase === "locating" || weather.phase === "loading" ? " · actualizando" : "";
+    image.drawText(small, textX, cy, `${source}${age ? ` ${age}` : ""}${updating}`, 105);
     image.drawLine(PAGE_X, FORECAST_HEADER_Y - 7, width - PAGE_X, FORECAST_HEADER_Y - 7, 40);
   }
 
@@ -144,7 +161,7 @@ export class WeatherLayer implements Layer {
   ): void {
     const font = getDefaultSmallFont();
     if (!forecast.length) {
-      image.drawText(font, PAGE_X, FORECAST_TOP, "No upcoming forecast periods.", 160);
+      image.drawText(font, PAGE_X, FORECAST_TOP, "No hay pronóstico disponible.", 160);
       return;
     }
     const rowH = forecastRowHeight(font);
@@ -159,16 +176,16 @@ export class WeatherLayer implements Layer {
     // Columns are sized to the widest period name so names ("Wednesday
     // Night") never truncate; the summary column absorbs what's left.
     const nameWidth = Math.max(
-      font.measureText("Upcoming"),
+      font.measureText("Próximas"),
       ...forecast.map((period) => font.measureText(period.name)),
     );
     const tempX = PAGE_X + nameWidth + FORECAST_COL_GAP;
-    const precipX = tempX + Math.max(font.measureText("Temp"), font.measureText("100°F")) + FORECAST_COL_GAP;
-    const summaryX = precipX + Math.max(font.measureText("Rain"), font.measureText("100%")) + FORECAST_COL_GAP;
+    const precipX = tempX + Math.max(font.measureText("Temp"), font.measureText("100°C")) + FORECAST_COL_GAP;
+    const summaryX = precipX + Math.max(font.measureText("Lluvia"), font.measureText("100%")) + FORECAST_COL_GAP;
 
-    image.drawText(font, PAGE_X, FORECAST_HEADER_Y, "Upcoming", 150);
+    image.drawText(font, PAGE_X, FORECAST_HEADER_Y, "Próximas", 150);
     image.drawText(font, tempX, FORECAST_HEADER_Y, "Temp", 105);
-    image.drawText(font, precipX, FORECAST_HEADER_Y, "Rain", 105);
+    image.drawText(font, precipX, FORECAST_HEADER_Y, "Lluvia", 105);
 
     this.columns = {
       name: PAGE_X - FORECAST_BOX_X,
@@ -190,7 +207,7 @@ export class WeatherLayer implements Layer {
     const shade = selected ? 245 : 190;
     const textY = centeredTextY(font, y, height);
     image.drawText(font, x + columns.name, textY, period.name, shade);
-    image.drawText(font, x + columns.temp, textY, period.temperatureF === null ? "--" : `${Math.round(period.temperatureF)}°F`, shade);
+    image.drawText(font, x + columns.temp, textY, period.temperatureC === null ? "--" : `${Math.round(period.temperatureC)}°C`, shade);
     image.drawText(font, x + columns.precip, textY, period.precipitationPercent === null ? "--" : `${Math.round(period.precipitationPercent)}%`, selected ? 220 : 155);
     // The summary stops PAGE_X short of the viewport's right edge, as the name starts PAGE_X in from the left.
     const summaryWidth = width - columns.summary - columns.name;
@@ -216,6 +233,12 @@ export class WeatherLayer implements Layer {
   }
 }
 
+/** Whether paint shows the forecast table (ready, or refreshing over earlier data). */
+function showsForecast(weather: WeatherState): boolean {
+  if (weather.phase === "ready") return true;
+  return (weather.phase === "locating" || weather.phase === "loading") && weather.current !== null;
+}
+
 /** Forecast row pitch, including the gap between selection boxes. */
 function forecastRowHeight(font: UiFont): number {
   return Math.max(FORECAST_MIN_ROW_HEIGHT, tightRowHeight(font) + 3);
@@ -223,8 +246,8 @@ function forecastRowHeight(font: UiFont): number {
 
 function formatAge(ageMs: number): string {
   const minutes = Math.max(0, Math.round(ageMs / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
+  if (minutes < 1) return "ahora";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.round(minutes / 60)} h`;
 }
 

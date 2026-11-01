@@ -63,6 +63,12 @@ const TOP = 4;
 const BOTTOM = 256;
 const LANE_X = 232;
 const PANEL_X = 310;
+/**
+ * Height the table and panel are drawn for: a min-height window's viewport
+ * under the standard top bar. A taller viewport (the status bar folded into
+ * the switcher row, a Tall or Full Screen display) centers the layout vertically.
+ */
+const LAYOUT_HEIGHT = 260;
 
 const BALL_R = 6;
 /** Ball resting spot on the plunger, and where launches start. */
@@ -405,8 +411,17 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         syncTickTimer(window);
       }
       break;
+    case "resize-window": {
+      const window = windows.get(message.windowId);
+      if (!window) break;
+      window.viewportWidth = message.viewport.width;
+      window.viewportHeight = message.viewport.height;
+      window.menu?.resize({ width: window.viewportWidth, height: window.viewportHeight });
+      window.lastSubmittedFingerprint = "";
+      if (window.foreground) renderAndSubmit(window, 0);
+      break;
+    }
     case "navigation-sensors":
-    case "resize-window":
     case "text-input":
     case "tool-call":
       break;
@@ -894,8 +909,8 @@ let staticBackground: GrayImage | null = null;
 
 /** Everything that never changes: walls, guides, slings, outlines, labels. */
 function getStaticBackground(window: PinballWindow): GrayImage {
-  if (staticBackground) return staticBackground;
-  const image = new GrayImage(window.viewportWidth, window.viewportHeight, 0);
+  if (staticBackground?.width === window.viewportWidth) return staticBackground;
+  const image = new GrayImage(window.viewportWidth, LAYOUT_HEIGHT, 0);
   for (const segment of SEGMENTS) {
     image.drawLine(segment.x0, segment.y0, segment.x1, segment.y1, segment.shade);
   }
@@ -995,6 +1010,14 @@ function paintContent(window: PinballWindow): GrayImage {
       `${GESTURE_CLICK} new game`,
     ]);
   }
+  return centeredInViewport(window, image);
+}
+
+/** Place the fixed-height layout vertically centered in the window's viewport. */
+function centeredInViewport(window: PinballWindow, layout: GrayImage): GrayImage {
+  if (layout.height === window.viewportHeight) return layout;
+  const image = new GrayImage(window.viewportWidth, window.viewportHeight, 0);
+  layout.composeInto(image, 0, Math.max(0, Math.floor((window.viewportHeight - layout.height) / 2)));
   return image;
 }
 

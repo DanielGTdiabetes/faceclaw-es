@@ -8,17 +8,24 @@ export const G2_LENS_WIDTH = 640;
 export const G2_LENS_HEIGHT = 480;
 const DEFAULT_CORNER_RADIUS = 8;
 
-export function imageFromAsciiArt(lines: readonly string[], value = 255): GrayImage {
+/**
+ * Maps ASCII-art characters to gray levels 0-255. Space and "." are 0 unless
+ * the palette overrides them; any other character must have an entry.
+ */
+export type AsciiArtPalette = Readonly<Record<string, number>>;
+
+export function imageFromAsciiArt(lines: readonly string[], palette: AsciiArtPalette): GrayImage {
   const width = Math.max(0, ...lines.map((line) => line.length));
   const image = new GrayImage(width, lines.length, 0);
-  const fill = clampByte(value);
   for (let y = 0; y < lines.length; y++) {
     const line = lines[y]!;
     for (let x = 0; x < line.length; x++) {
-      const pixel = line[x];
-      if (pixel && pixel !== " " && pixel !== ".") {
-        image.pixels[y * width + x] = fill;
+      const pixel = line[x]!;
+      const value = palette[pixel] ?? (pixel === " " || pixel === "." ? 0 : undefined);
+      if (value === undefined) {
+        throw new Error(`imageFromAsciiArt: no palette entry for ${JSON.stringify(pixel)}`);
       }
+      image.pixels[y * width + x] = clampByte(value);
     }
   }
   return image;

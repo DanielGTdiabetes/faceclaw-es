@@ -14,13 +14,14 @@ import * as frameTimings from "../native/frame-timings";
 import { startForegroundNotification, stopForegroundNotification, updateForegroundNotification } from "../native/foreground-service";
 import { mediaControllerBridge } from "../native/media-controller";
 import { nightscoutBridge } from "../native/nightscout-bridge";
-import { ALL_NOTIFICATIONS, onAndroidNotificationPosted, readActiveNotifications } from "../native/notification-icons";
+import { weatherBridge } from "../native/weather";
+import { ALL_NOTIFICATIONS, onAndroidNotificationPosted, onAndroidNotificationRemoved, readActiveNotifications } from "../native/notification-icons";
 import { shouldShowNotificationOnGlasses } from "../native/notification-sources";
 import { openEvenAppSettings, readEvenAppNotificationState } from "../native/even-app-conflict";
 import { grayImageToPreviewSource } from "../native/gray-image-preview";
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmware-compat";
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
-import { resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
+import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
 
 /** Who a synthetic (non-firmware) input stands for. */
@@ -44,34 +45,53 @@ const MIRROR_TOUCH_GESTURES: Record<Exclude<MirrorTouchKind, "tap">, WearRemoteI
   "swipe-left": "swipe-left",
   "swipe-right": "swipe-right",
 };
-import { findSoundEffect, playSoundEffect } from "../ui/sound-effects";
 import { GlanceHost } from "./glance-host";
+import { mirrorToPanelFraction, phonePreviewCrop } from "./phone-preview-crop";
 import { type GlanceEvent } from "./glance-state";
-import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
+import { isPreviewOnlyMode } from "../phone-ui/onboarding-state";
+import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from "../apps/onboarding/onboarding-progress";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
+import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
+import { ConversationHermesRuntime, HERMES_MESSAGE_MAX_MS } from "../conversation-detection/conversation-hermes";
+import { LocalTranscription } from "../native/local-transcription";
+import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
+import { LocalParticipation } from "../native/local-participation";
+import { type ParticipationMode } from "../conversation-detection/participation";
+import { bindConversationEvoEndpoint, bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { conversationModelState } from "../native/conversation-model-options";
+import { evenSttUrl } from "../native/even-stt";
+import { micModelState } from "../apps/microphones/mic-models";
+import { voiceActivity } from "../ui/shell/voice-activity";
+import { assistantAudioPriority } from "../assistant/audio-priority";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
+import { ShellResourceLimitError } from "../graphics/shell-scene";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from "./lock-screen";
 import { rawInputEventToInputEvent, shell, type ShellInputOutcome } from "../ui/shell/shell";
+import { bindHermesConversationUi, captureHermesPresentation } from "../ui/shell/conversation-hermes-ui";
+import { captureNotificationPresentation, presentHermesNotification } from "../ui/shell/notification-delivery";
+import { NotificationPopupDelay, notificationPopupDelayMs } from "../ui/shell/notification-popup-delay";
 import { type InputEvent } from "../ui/gestures";
 import { registerSystemTools } from "../assistant/system-tools";
-import { updateGlassesPresence } from "./glasses-presence";
+import { getGlassesPresence, onGlassesPresenceChanged, updateGlassesPresence } from "./glasses-presence";
 import { timerEngine } from "../apps/timer/timer-engine";
 import { registerNavigateTools } from "../assistant/navigate-tools";
 import { registerRoamTools } from "../assistant/roam-tools";
 import { assistantBridge } from "../assistant/bridge-client";
+import { EvoWatchdog } from "../assistant/evo-watchdog";
+import { postEvoAlertNotification } from "../native/evo-alert-notification";
 import { registerWindowTools } from "../assistant/window-tools";
 import { WorkerAppHost } from "../ui/shell/worker-window";
 import { ALL_APPS } from "../apps/all-apps";
 import { type AppContext, type AppDefinition, type AppLaunchParams, type TextEditorHost } from "../apps/app-definition";
 import { type InProcessAppOptions, type InProcessWindow } from "../ui/shell/in-process-window";
 import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-apps-persistence";
-import { appViewportRect, SIDEBAR_WIDTH, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
+import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -87,10 +107,11 @@ import {
   type PhoneUiButton,
 } from "../apps/evenhub/manager";
 import { openEvenHubStoreForPackage } from "../apps/evenhub";
+import { createNotificationsAppWindow, NOTIFICATIONS_SURFACE_ID, NOTIFICATIONS_WINDOW_ID } from "../apps/notifications/notifications-app";
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
 import { micSession } from "../apps/microphones/mic-session";
-import { glassesDisplayLabel } from "./glasses-display-state";
+import { glassesDisplayAsleep, glassesDisplayLabel, type GlassesDisplayState } from "./glasses-display-state";
 import { PreviewDisplayTarget, type DisplayTarget } from "../native/preview-display";
 
 type ConnectionPhase = "disconnected" | "connecting" | "connected" | "charging" | "disconnecting";
@@ -160,6 +181,9 @@ const SHELL_REFRESH_INTERVAL_MS = 60_000;
 // schedules a refresh), so this just covers anything that slips through.
 const PREVIEW_INTERVAL_MS = 1_000;
 const SCREEN_TIMEOUT_CHECK_MS = 1_000;
+// voiceActivity holder for continuous capture (Transcribe, Calculator's
+// continuous mode, the Teleprompter reader).
+const CONTINUOUS_CAPTURE_HOLDER = "continuous-capture";
 // The lock screen is a short notice, not something to read at leisure; it
 // ignores the screen-timeout setting (including "never").
 const LOCK_SCREEN_TIMEOUT_MS = 15_000;
@@ -180,6 +204,29 @@ const EVEN_APP_DETECTED_MESSAGE =
 
 // The launcher grid's app list; also fixes the app ids apps.launch accepts.
 const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
+
+/**
+ * The global settings window viewport sizes depend on: the display mode's
+ * size (a band's position only moves windows), whether the app switcher
+ * takes width beside windows, height below them or neither (a popup), and
+ * the chrome rows each window loses to it: below them, whether the status
+ * bar joins the row (dropping the top bar); with a popup, whether the
+ * status bar keeps rows of its own and the window frame (where the status
+ * bar goes only moves windows).
+ */
+function viewportSizesKey(): string {
+  const position = appSwitcherPositionSetting.get();
+  const switcher = position === "bottom" ? `row|${statusBarPositionSetting.get()}`
+    : position === "popup" ? `popup|${statusBarVisibilitySetting.get()}|${windowBorderSetting.get()}`
+    : "strip";
+  const layout = displayLayoutSetting.get();
+  return `${layout.startsWith("band-") ? "band" : layout}|${switcher}`;
+}
+
+/** The global settings that move window surfaces without resizing them. */
+function windowPlacementKey(): string {
+  return `${displayLayoutSetting.get()}|${appSwitcherPositionSetting.get()}|${statusBarPositionSetting.get()}`;
+}
 
 function createInitialDisplayPreview(): ImageSource | null {
   return grayImageToPreviewSource(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
@@ -248,6 +295,8 @@ class DashboardController {
   private extractedFontsConfirmed = false;
   private screenRecordingActive = false;
   private displayPreview: ImageSource | null = createInitialDisplayPreview();
+  /** The screen area displayPreview shows (Preview scaling), or null for the whole panel. */
+  private displayPreviewCrop: ScreenRect | null = null;
   private silentMode = false;
   // Brightness value last pushed to the glasses; see pushBrightness.
   private lastPushedBrightness: string | null = null;
@@ -255,9 +304,6 @@ class DashboardController {
   // drop-off right after a low reading can be explained as a flat battery.
   private lastHeadsetBattery: number | null = null;
   private readonly listeners = new Set<DashboardListener>();
-  // Set at connect time from the persisted flag; the one-time post-onboarding
-  // welcome sound plays on the first rendered frame (proof the session is warm).
-  private welcomeSoundArmed = false;
 
   private communicator: FaceclawCommunicatorBridge | null = null;
   // Headless stand-in for the compositor when no glasses are paired
@@ -289,6 +335,8 @@ class DashboardController {
     appendLog: (message) => this.appendLog(message),
   });
   private evenHubResumePromise: Promise<boolean> | null = null;
+  /** An in-flight unblank re-asserted for an independent overlay on an already-on shell. */
+  private screenReassertPromise: Promise<boolean> | null = null;
   /** Faceclaw's firmware at the required revision reported in; its extensions can be used. */
   private customFirmwareConfirmed = false;
   private faceclawWakeLeaseState: boolean | null = null;
@@ -309,13 +357,19 @@ class DashboardController {
   private offPhoneLockState: (() => void) | null = null;
   private offEvenAppConflict: (() => void) | null = null;
   private offFrameMetrics: (() => void) | null = null;
+  private offPreviewAnimation: (() => void) | null = null;
   private offFirmwareInfo: (() => void) | null = null;
   private offVoiceStatus: (() => void) | null = null;
   private offAndroidNotification: (() => void) | null = null;
+  private offAndroidNotificationRemoved: (() => void) | null = null;
+  /** New notifications wait here briefly before popping up (see NotificationPopupDelay). */
+  private readonly notificationPopups = new NotificationPopupDelay((notificationKey) => this.popUpAndroidNotification(notificationKey));
   private lastInput = "waiting...";
   private lastSys = "none yet";
   private shellRenderInProgress = false;
   private shellRenderQueued = false;
+  /** Aggregate shell render failures (counts only); see shellRenderDiagnostics. */
+  private readonly shellRenderFailures = { total: 0, resourceLimit: 0 };
   /** Input frame that requested the next shell render; see requestShellRender. */
   private pendingShellRenderCauseFrameId = 0;
   private nextShellRenderWantsFreshData = false;
@@ -339,13 +393,40 @@ class DashboardController {
   private openAppsRestored = false;
   private suppressOpenAppsPersist = false;
   // connect() is a long sequence of awaits against this.communicator; the
-  // incompatible-firmware disconnect must not tear that communicator down
+  // halted-session disconnect must not tear that communicator down
   // underneath it, so it waits for this to clear.
   private connectRunning = false;
-  private incompatibleDisconnectPending = false;
-  private unpairedDisconnectPending = false;
+  private haltedDisconnectPending = false;
+  /** Process-lifetime UI binding; release on a future controller teardown. */
+  readonly releaseHermesUi: () => void;
 
   constructor() {
+    bindConversationSession({
+      filterStatus: () => this.conversationHermes.filterStatus(),
+      detector: this.conversationDetector,
+      setEnabled: (enabled, text, participation, options) => this.setConversationCaptureEnabled(enabled, text, participation, options),
+      setManualEnabled: (enabled) => this.setManualConversationEnabled(enabled),
+      voiceModel: () => micModelState("speaker-embedding").status,
+      textModel: () => conversationTextEngine() === "soniox" ? (sonioxApiKeySetting.get().trim() ? "ready" : "absent")
+        : conversationModelState(conversationLocalModel()).status,
+    });
+    // Conversation through the EVO-X2 reuses the Hey Even "even" address and key; nothing is stored twice.
+    bindConversationEvoEndpoint(() => {
+      const url = evenSttUrl(evenAsrUrlSetting.get());
+      const key = evenAsrKeySetting.get().trim();
+      return url && key ? { url, key } : null;
+    });
+    if (global.isAndroid) {
+      voiceActivity.subscribe((active) => {
+        voiceControlBridge.setAudioPriority("voice-modal", active);
+        this.conversationDetector.refresh();
+      });
+      assistantAudioPriority.subscribe((active) => {
+        voiceControlBridge.setAudioPriority("assistant-turn", active);
+        this.conversationDetector.refresh();
+      });
+      onGlassesPresenceChanged(() => this.conversationDetector.refresh());
+    }
     const sharedActions = {
       disconnect: () => this.disconnect(),
       startTextSettingEdit: (setting: ConfigSettingString) => this.startTextSettingEdit(setting),
@@ -359,8 +440,8 @@ class DashboardController {
       endTextSettingEdit: () => this.endTextSettingEdit(),
       startVoiceCapture: (endpointing = false) => this.startVoiceCapture(endpointing),
       stopVoiceCapture: () => this.stopVoiceCapture(),
-      startContinuousVoiceCapture: () => this.startContinuousVoiceCapture(),
-      stopContinuousVoiceCapture: () => this.stopContinuousVoiceCapture(),
+      startContinuousVoiceCapture: (client: string) => this.startContinuousVoiceCapture(client),
+      stopContinuousVoiceCapture: (client: string) => this.stopContinuousVoiceCapture(client),
       playBuzzerSequence: (payload: Uint8Array) => this.playBuzzerSequence(payload),
     };
     this.sharedActions = sharedActions;
@@ -390,8 +471,17 @@ class DashboardController {
         this.glassesLocked ? LOCK_SCREEN_TIMEOUT_MS : screenTimeoutSettingToMs(screenTimeoutSetting.get()),
       requestShellRender: () => this.requestShellRender(),
       prepareVoiceCapture: () => this.prepareVoiceCapture(),
+      conversationControl: {
+        enabled: () => this.conversationDetector.snapshot().enabled,
+        setEnabled: (enabled) => this.setManualConversationEnabled(enabled),
+        start: (mode) => selectConversationListeningMode(mode) ? this.setManualConversationEnabled(true) : "",
+        wearerActions: () => wearerActions(this.conversationDetector),
+        wearerChoices: () => wearerChoices(this.conversationDetector),
+      },
       onKeyboardInputChanged: (session) => {
         this.keyboardInput = session;
+        if (global.isAndroid) voiceControlBridge.setAudioPriority("keyboard", session !== null);
+        this.conversationDetector.refresh();
         this.emit();
       },
       onWindowsChanged: () => {
@@ -399,6 +489,9 @@ class DashboardController {
         // The foreground title is mirrored on both remote-control faces.
         this.emit();
       },
+      openNotificationsWindow: () =>
+        this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
+      onSwitcherBarHeightChanged: () => this.applySwitcherBarHeight(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
         if (on) this.glance.dismiss();
@@ -406,6 +499,7 @@ class DashboardController {
         if (on) this.requestShellRender();
         this.emit();
       },
+      ensureScreenVisible: () => this.reassertScreenVisible(),
     });
     // Boot hooks register windows that exist from startup (the launcher,
     // pinned first in the sidebar and the boot foreground).
@@ -413,11 +507,8 @@ class DashboardController {
       app.boot?.(this.buildAppContext(app));
     }
     timerEngine.onChange(() => this.refreshAlarmReliabilityWarning());
-    this.offAndroidNotification = onAndroidNotificationPosted((notificationKey) => {
-      void this.handleAndroidNotificationPosted(notificationKey).catch((error) => {
-        this.appendLog(`notification wake failed: ${this.formatError(error)}`);
-      });
-    });
+    this.offAndroidNotification = onAndroidNotificationPosted((notificationKey) => this.handleAndroidNotificationPosted(notificationKey));
+    this.offAndroidNotificationRemoved = onAndroidNotificationRemoved((notificationKey) => this.handleAndroidNotificationRemoved(notificationKey));
     readActiveNotifications(ALL_NOTIFICATIONS);
     // Settings toggled from the glasses can change what the phone UI shows
     // (e.g. the text-setting editor), so re-emit the snapshot on any change.
@@ -427,19 +518,23 @@ class DashboardController {
       this.pushFirmwareDebugFlags();
       this.pushBrightness();
       this.syncEvenHubScreenOffSetting();
-      this.applyVerticalPositionIfChanged();
+      // Display mode size first: a reflow repositions every surface too, so
+      // the band-position check after it then has nothing left to do.
       this.applyDisplayModeIfChanged();
+      this.applyVerticalPositionIfChanged();
       this.applyAppLayoutsIfChanged();
       this.syncAssistantBridgeIfChanged();
       this.syncLockScreenSettingIfChanged();
-      // A Preview color change should show on the mirror at once, not at the
-      // next composited frame (cheap: floor-limited, dedup'd on the Java side).
+      // A Preview color or scaling change should show on the mirror at once,
+      // not at the next composited frame (cheap: floor-limited, dedup'd on
+      // the Java side).
       this.schedulePreviewUpdate();
     });
     // Connect to the external agent bridge at boot if configured; the
     // connection stays up (with re-dial) so proactive tool calls work
     // outside voice turns.
     this.syncAssistantBridge();
+    this.startEvoWatchdog();
     // The watch drives the same synthetic-input path as the phone UI's test
     // buttons, plus app/window/lock commands; it mirrors the state below.
     startRemoteInput({
@@ -469,6 +564,7 @@ class DashboardController {
       }),
       appendLog: (line) => this.appendLog(line),
     });
+    this.releaseHermesUi = bindHermesConversationUi(this);
   }
 
   // Bridge settings changes re-dial the connection; unrelated setting changes
@@ -489,6 +585,28 @@ class DashboardController {
     this.syncAssistantBridge();
   }
 
+  /**
+   * "EVO-X2 unreachable from this phone" (Hermes proactive spec 12.6): the EVO cannot report its own outage.
+   * Always a phone notification; also on the glasses when they are worn and free.
+   */
+  private startEvoWatchdog(): void {
+    const watchdog = new EvoWatchdog({
+      now: () => Date.now(),
+      enabled: () => assistantBackendSetting.get() === "external" && assistantBridge.isConfigured(),
+      reachable: () => assistantBridge.isAlive(),
+      alert: (text) => {
+        console.log(`evo watchdog: ${text}`);
+        postEvoAlertNotification(text);
+        const presence = getGlassesPresence();
+        if (presence.connected && presence.worn === true && !presence.charging && this.customFirmwareConfirmed &&
+            !this.glassesLocked) {
+          presentHermesNotification(text, () => {});
+        }
+      },
+    });
+    setInterval(() => watchdog.check(), 30_000);
+  }
+
   private syncAssistantBridge(): void {
     this.lastBridgeConfigKey = this.bridgeConfigKey();
     const host = assistantBridgeHostSetting.get().trim();
@@ -503,27 +621,42 @@ class DashboardController {
       token,
       deviceName: "faceclaw",
       allowProactive: () => assistantAllowProactiveSetting.get(),
+      notifications: {
+        allowed: () => assistantAllowProactiveSetting.get(),
+        refresh: () => this.ensureWearStateTracking(),
+        subscribe: (listener) => onGlassesPresenceChanged(listener),
+        presence: () => ({ ...getGlassesPresence(),
+          worn: Date.now() - this.glassesWearObservedAtMs < 45_000 ? getGlassesPresence().worn : null,
+          available: this.customFirmwareConfirmed && !this.isPreviewDisplayActive() && !this.glassesLocked,
+        }),
+        present: presentHermesNotification,
+      },
     });
   }
 
-  // Vertical-position changes move every window surface (and the chrome that
-  // aligns with them); the value is tracked so unrelated setting changes
-  // don't trigger a full reposition.
-  private lastVerticalPosition = verticalPositionSetting.get();
+  // Band position changes (and moving the app switcher between the left
+  // and right edges, or a popup switcher's status bar between the top and
+  // bottom) move every window surface and the chrome that aligns with them;
+  // the values are tracked so unrelated setting changes don't trigger a full
+  // reposition.
+  private lastWindowPlacement = windowPlacementKey();
 
-  private lastDisplayMode = displayModeSetting.get();
+  private lastViewportSizes = viewportSizesKey();
 
   /**
-   * Display mode changed (Settings > Display, or the phone page's picker):
-   * every window's viewport size changes. In-process windows re-measure in
-   * place; workers that support resizing receive the new viewport. Other
-   * worker windows are closed and launched again at the new size.
+   * Display mode size changed (Settings > Display, or the phone page's picker),
+   * or the app switcher or its chrome changed what windows lose to them
+   * (see viewportSizesKey): every window's viewport size changes. In-process windows re-measure in place; workers
+   * that support resizing receive the new viewport. Other worker windows are
+   * closed and launched again at the new size.
    */
   private applyDisplayModeIfChanged(): void {
-    const mode = displayModeSetting.get();
-    if (mode === this.lastDisplayMode) return;
-    this.lastDisplayMode = mode;
-    this.appendLog(`display mode: ${mode}`);
+    const sizes = viewportSizesKey();
+    if (sizes === this.lastViewportSizes) return;
+    this.lastViewportSizes = sizes;
+    // The reflow below reconfigures every surface, covering any move too.
+    this.lastWindowPlacement = windowPlacementKey();
+    this.appendLog(`display layout: ${sizes}`);
     const foregroundWindowId = shell.foregroundWindow()?.windowId;
     void (async () => {
       const relaunch: string[] = [];
@@ -553,12 +686,35 @@ class DashboardController {
     });
   }
 
+  /**
+   * The bottom switcher's layout changed its height (shell.ts
+   * onSwitcherBarHeightChanged): window bands move where the slack under
+   * them runs out, and full-height windows resize; the rest stay as they
+   * are. Windows that can't resize keep the surface they have, the switcher
+   * covering any of it that it now overlaps, rather than being relaunched
+   * for it.
+   */
+  private applySwitcherBarHeight(): void {
+    void (async () => {
+      for (const window of Array.from(shell.getWindows())) {
+        const rect = JSON.stringify(appViewportRect(window.heightMode, window.appId));
+        if (!window.relayout || this.windowSurfaceRects.get(window.surfaceId) === rect) continue;
+        window.relayout();
+        await this.configureWindowSurface(window.surfaceId, this.isForegroundWindow(window.windowId), window.heightMode);
+      }
+      shell.foregroundWindow()?.requestRender();
+      this.requestShellRender();
+    })().catch((error) => {
+      this.appendLog(`switcher height change failed: ${this.formatError(error)}`);
+    });
+  }
+
   private lastAppLayouts = this.appLayouts();
 
   private appLayouts(): Record<string, string> {
     return {
-      navigate: `${navigateDisplayModeSetting.get()}:${navigateVerticalPositionSetting.get()}`,
-      terminal: `${terminalDisplayModeSetting.get()}:${terminalVerticalPositionSetting.get()}`,
+      navigate: navigateDisplayLayoutSetting.get(),
+      terminal: terminalDisplayLayoutSetting.get(),
     };
   }
 
@@ -579,9 +735,9 @@ class DashboardController {
   }
 
   private applyVerticalPositionIfChanged(): void {
-    const position = verticalPositionSetting.get();
-    if (position === this.lastVerticalPosition) return;
-    this.lastVerticalPosition = position;
+    const placement = windowPlacementKey();
+    if (placement === this.lastWindowPlacement) return;
+    this.lastWindowPlacement = placement;
     void (async () => {
       for (const window of shell.getWindows()) {
         await this.configureWindowSurface(
@@ -597,6 +753,29 @@ class DashboardController {
     })().catch((error) => {
       this.appendLog(`vertical reposition failed: ${this.formatError(error)}`);
     });
+  }
+
+  /**
+   * The shell is already on but a Hermes answer must really be visible: re-run the wake barrier when
+   * the EvenHub session is suspended, otherwise just re-assert screen-on and unblank (idempotent).
+   */
+  private reassertScreenVisible(): void {
+    const communicator = this.communicator;
+    if (!communicator || this.phase === "charging" || this.phase === "disconnected") return;
+    this.cancelEvenHubSuspendTimer();
+    const operation = this.evenHubSessionSuspended || this.evenHubResumePromise
+      ? this.ensureEvenHubSessionActive()
+      : (async () => {
+        await communicator.setG2ScreenOn(true);
+        await communicator.setScreenBlanked(false);
+        return true;
+      })();
+    const tracked = operation.catch((error) => {
+      this.appendLog(`screen re-assert failed: ${this.formatError(error)}`);
+      return false;
+    });
+    this.screenReassertPromise = tracked;
+    void tracked.then(() => { if (this.screenReassertPromise === tracked) this.screenReassertPromise = null; });
   }
 
   private handleScreenStateChanged(on: boolean): void {
@@ -647,11 +826,14 @@ class DashboardController {
     this.ensureWearStateTracking();
   }
 
+  private glassesWearObservedAtMs = 0;
+
   private handleWearState(wearing: boolean): void {
     // Only an observed OFF_HEAD -> ON_HEAD transition counts as putting the
     // glasses on; the first snapshot of a session (null) is just the status.
     const putOn = wearing && this.glassesWorn === false;
     this.glassesWorn = wearing;
+    this.glassesWearObservedAtMs = Date.now();
     updateGlassesPresence({ worn: wearing });
     this.appendLog(wearing ? "glasses wear state: ON_HEAD" : "glasses wear state: OFF_HEAD");
     this.wearRemote?.schedulePublish();
@@ -719,7 +901,8 @@ class DashboardController {
     // only after charging mode began) needs the OFF_HEAD snapshot so that
     // putting the glasses on registers as a put-on.
     if (
-      !lockScreenEnabledSetting.get() ||
+      (!lockScreenEnabledSetting.get() && !this.conversationDetector.snapshot().enabled &&
+        !(assistantBackendSetting.get() === "external" && assistantBridge.isConnected() && assistantAllowProactiveSetting.get())) ||
       !this.customFirmwareConfirmed ||
       (this.phase !== "connected" && this.phase !== "charging") ||
       !communicator
@@ -899,7 +1082,7 @@ class DashboardController {
         return;
       }
 
-      if (voiceControlBridge.isCaptureHeld()) {
+      if (voiceControlBridge.isCaptureHeld() || this.conversationDetector.holdsSession()) {
         // Ending the plugin task ends the mic with it, so a live capture (the
         // Transcribe window, typically) outranks the screen-off power save.
         // Check before the lease refresh below, which costs a BLE message.
@@ -924,6 +1107,7 @@ class DashboardController {
           this.glance.isVisible() ||
           this.phase !== "connected" ||
           this.communicator !== communicator
+          || this.conversationDetector.holdsSession()
         ) {
           return;
         }
@@ -1112,14 +1296,23 @@ class DashboardController {
 
   /** What occupies the foreground-title line on the watch-style controls. */
   glassesDisplayLabel(): string {
-    return glassesDisplayLabel({
+    return glassesDisplayLabel(this.glassesDisplayState());
+  }
+
+  /** Whether that line reads "Display off" (the watch face adds a wake hint under it). */
+  glassesDisplayAsleep(): boolean {
+    return glassesDisplayAsleep(this.glassesDisplayState());
+  }
+
+  private glassesDisplayState(): GlassesDisplayState {
+    return {
       phase: this.phase,
       silentMode: this.silentMode,
       screenOn: shell.isScreenOn(),
       battery: this.lastHeadsetBattery,
       foregroundTitle: shell.getForegroundApp()?.title ?? null,
       previewMode: this.isPreviewDisplayActive(),
-    });
+    };
   }
 
   /**
@@ -1381,7 +1574,6 @@ class DashboardController {
     this.teardownPreviewDisplay();
     this.lastInput = "waiting...";
     this.lastSys = "none yet";
-    this.welcomeSoundArmed = isWelcomeSoundPending();
     this.firmwareWarningMessage = "";
     this.glassesWorn = null;
     this.wakeAfterChargingReconnect = false;
@@ -1425,12 +1617,12 @@ class DashboardController {
       await communicator.configureBrightness(getBrightnessPreferences());
       this.offState = communicator.onStateChange((state) => {
         if (state.phase !== "connected") resetRingInputFilter();
-        if (state.phase === "unpaired") {
-          // Java parked its retry loop: an arm's Android bond is gone, so
-          // every redial would fail the same way until the user re-pairs.
-          // Tear down into the manual-disconnected state and keep the
-          // re-pair instruction as the visible status.
-          this.scheduleUnpairedDisconnect(state.status);
+        if (isHaltedSessionPhase(state.phase)) {
+          // The shared session parked its retry loop (an arm's Android bond
+          // is gone, or the firmware can't run Faceclaw), so every redial
+          // would fail the same way. Tear down into the manual-disconnected
+          // state and keep the session's explanation as the visible status.
+          this.scheduleHaltedSessionDisconnect(state.status);
           return;
         }
         const mappedPhase =
@@ -1548,14 +1740,19 @@ class DashboardController {
           // parked by the previous session (or by an EvenHub suspend) resumes.
           this.resumeVoiceCapture();
           // A rendered frame means the session is warmed up (fixedLayoutCreated),
-          // so the buzzer won't be dropped. Play the one-time welcome sound now.
-          if (this.welcomeSoundArmed) {
-            this.welcomeSoundArmed = false;
-            setWelcomeSoundPending(false);
-            void this.playWelcomeSound();
+          // so the onboarding's welcome jingle won't be dropped. Open the
+          // on-glasses onboarding if this version hasn't been through it.
+          if (claimGlassesOnboardingAutoLaunch()) {
+            this.launchApp(ONBOARDING_APP_ID).catch((error) => {
+              this.appendLog(`onboarding launch failed: ${this.formatError(error)}`);
+            });
           }
         }
       });
+      // A menu slide reaches the glasses as one frame whose display list
+      // animates on-device; the mirror replays it in the compositor and needs
+      // a pull per step, or it keeps whichever mid-motion frame it last got.
+      this.offPreviewAnimation = communicator.onPreviewAnimationFrame(() => this.schedulePreviewUpdate());
       this.offFirmwareInfo = communicator.onFirmwareInfo((info) => {
         this.appendLog(
           `firmware: L=${info.leftVersion || "?"} R=${info.rightVersion || "?"}` +
@@ -1573,15 +1770,14 @@ class DashboardController {
           });
           this.ensureWearStateTracking();
         }
+        // The shared session halts on incompatible firmware by itself
+        // ("incompatible-firmware" phase); this only explains why.
         if (warning !== this.firmwareWarningMessage) {
           this.firmwareWarningMessage = warning;
           if (warning) {
             this.appendLog(`firmware compatibility warning: ${warning}`);
           }
           this.emit();
-        }
-        if (warning) {
-          this.scheduleIncompatibleFirmwareDisconnect();
         }
       });
       // The Music and Nightscout apps subscribe to their bridges directly and
@@ -1592,6 +1788,7 @@ class DashboardController {
 
       await mediaControllerBridge.start();
       await nightscoutBridge.start();
+      weatherBridge.setSessionActive(true);
       // Register the compositor surfaces: the shell chrome above all windows,
       // and a surface per live window (only the foreground one is composited).
       await communicator.configureSurface(SHELL_SURFACE_ID, {
@@ -1651,13 +1848,20 @@ class DashboardController {
       this.offEvenAppConflict = null;
       this.offFrameMetrics?.();
       this.offFrameMetrics = null;
+      this.offPreviewAnimation?.();
+      this.offPreviewAnimation = null;
       this.offFirmwareInfo?.();
       this.offFirmwareInfo = null;
       this.offVoiceStatus?.();
       this.offVoiceStatus = null;
       await mediaControllerBridge.stop().catch(() => {});
       await nightscoutBridge.stop().catch(() => {});
+      weatherBridge.setSessionActive(false);
       voiceControlBridge.stop();
+      // The parked continuous capture went with it; the next session starts
+      // it afresh for any window still asking.
+      this.continuousAttemptedOn = undefined;
+      this.syncContinuousClaim();
       if (communicator) {
         await communicator.setFaceclawWakeLeaseEnabled(false).catch(() => false);
         await communicator.close().catch(() => {});
@@ -1680,61 +1884,28 @@ class DashboardController {
   }
 
   /**
-   * Incompatible firmware means every message Faceclaw sends is one the
-   * glasses may misinterpret, and a live session fights the flash flow's own
-   * connection. Drop the connection (without the CFW-directed cleanup
-   * messages) and hold in the manual-disconnected state until the user
-   * connects explicitly or installs the custom firmware.
+   * The shared session parked its retry loop (an arm's Android bond is gone,
+   * or the glasses run firmware Faceclaw can't use; see isHaltedSessionPhase)
+   * and dropped both arms. Finish the teardown (without the CFW-directed
+   * cleanup messages, which incompatible firmware would misread) and hold in
+   * the manual-disconnected state until the user connects explicitly,
+   * re-pairs or installs the custom firmware, keeping [message] from the
+   * session as the status the user sees.
    */
-  private scheduleIncompatibleFirmwareDisconnect(): void {
-    if (this.incompatibleDisconnectPending) return;
-    this.incompatibleDisconnectPending = true;
+  private scheduleHaltedSessionDisconnect(message: string): void {
+    if (this.haltedDisconnectPending) return;
+    this.haltedDisconnectPending = true;
     const attempt = () => {
-      // Firmware info can arrive while connect() is still mid-flight; let it
+      // The halt can be reported while connect() is still mid-flight; let it
       // finish so the teardown doesn't race its surface setup.
       if (this.connectRunning) {
         setTimeout(attempt, 200);
         return;
       }
-      this.incompatibleDisconnectPending = false;
+      this.haltedDisconnectPending = false;
       if (this.phase === "disconnected" || this.phase === "disconnecting") {
         // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses we know can't run Faceclaw.
-        suppressAutoReconnect();
-        return;
-      }
-      this.appendLog(
-        "Disconnecting: the glasses firmware is incompatible. Auto-reconnect is disabled until you connect manually or install the custom firmware.",
-      );
-      void this.disconnect({ skipFirmwareCleanup: true })
-        .then(() => this.setStatus("Disconnected (incompatible firmware)."))
-        .catch((error) => {
-          this.appendLog(`incompatible-firmware disconnect failed: ${this.formatError(error)}`);
-        });
-    };
-    setTimeout(attempt, 0);
-  }
-
-  /**
-   * A connect attempt found an arm whose Android bond is missing, so the Java
-   * worker stopped retrying. Drop into the manual-disconnected state (no
-   * auto-reconnect: it would just fail again) and leave the re-pair
-   * instruction from Java as the status the user sees.
-   */
-  private scheduleUnpairedDisconnect(message: string): void {
-    if (this.unpairedDisconnectPending) return;
-    this.unpairedDisconnectPending = true;
-    const attempt = () => {
-      // The unpaired report can arrive while connect() is still mid-flight;
-      // let it finish so the teardown doesn't race its surface setup.
-      if (this.connectRunning) {
-        setTimeout(attempt, 200);
-        return;
-      }
-      this.unpairedDisconnectPending = false;
-      if (this.phase === "disconnected" || this.phase === "disconnecting") {
-        // The session ended some other way; still stop auto-reconnect from
-        // re-dialing glasses that are no longer paired.
+        // re-dialing glasses that would fail the same way.
         suppressAutoReconnect();
         this.setStatus(message);
         return;
@@ -1743,7 +1914,7 @@ class DashboardController {
       void this.disconnect({ skipFirmwareCleanup: true })
         .then(() => this.setStatus(message))
         .catch((error) => {
-          this.appendLog(`unpaired disconnect failed: ${this.formatError(error)}`);
+          this.appendLog(`halted-session disconnect failed: ${this.formatError(error)}`);
         });
     };
     setTimeout(attempt, 0);
@@ -1789,6 +1960,8 @@ class DashboardController {
     this.offEvenAppConflict = null;
     this.offFrameMetrics?.();
     this.offFrameMetrics = null;
+    this.offPreviewAnimation?.();
+    this.offPreviewAnimation = null;
     this.offFirmwareInfo?.();
     this.offFirmwareInfo = null;
     this.offVoiceStatus?.();
@@ -1830,6 +2003,7 @@ class DashboardController {
       // Faceclaw's final BLE message before the transport closes.
       await mediaControllerBridge.stop().catch(() => {});
       await nightscoutBridge.stop().catch(() => {});
+      weatherBridge.setSessionActive(false);
       voiceControlBridge.handleSessionEnded();
 
       const cleanupAcked = skipFirmwareCleanup
@@ -1923,11 +2097,18 @@ class DashboardController {
       await this.injectSyntheticRingInput(MIRROR_TOUCH_GESTURES[kind], "watch");
       return;
     }
-    const x = Math.round(Math.min(1, Math.max(0, nx)) * G2_LENS_WIDTH);
-    const y = Math.round(Math.min(1, Math.max(0, ny)) * G2_LENS_HEIGHT);
-    const stripShown = sidebarStripVisible(shell.getFocus(), shell.foregroundWindow()?.appId);
+    const at = mirrorToPanelFraction(this.displayPreviewCrop, nx, ny);
+    const x = Math.round(Math.min(1, Math.max(0, at.nx)) * G2_LENS_WIDTH);
+    const y = Math.round(Math.min(1, Math.max(0, at.ny)) * G2_LENS_HEIGHT);
+    const foreground = shell.foregroundWindow();
+    const stripShown = sidebarStripVisible(shell.getFocus(), foreground?.appId);
     this.appendLog(`mirror tap at ${x},${y}`);
-    if (!shell.hasOverlay() && stripShown && x < SIDEBAR_WIDTH) {
+    if (!shell.hasOverlay() && shell.focusStatusItemAt(x, y)) {
+      this.appendLog("mirror tap: status bar item");
+      this.requestShellRender();
+      return;
+    }
+    if (!shell.hasOverlay() && stripShown && isOnSwitcherEdge(x, y, foreground?.heightMode ?? "min", foreground?.appId)) {
       const target = shell.windowAtSidebarPoint(x, y);
       if (target) {
         this.appendLog(`mirror tap: sidebar -> ${target.title}`);
@@ -1996,6 +2177,179 @@ class DashboardController {
    */
   private pttCaptureGeneration = 0;
 
+  /** Session-only ON: a process restart always starts this experiment OFF. */
+  private hermesSelected = false;
+  private hermesMessage = "";
+  private hermesMessageTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly hermesListeners = new Set<() => void>();
+  private hermesUiKey = "";
+
+  conversationHermesSelected(): boolean { return this.hermesSelected; }
+  get conversationHermesMessage(): string { return this.hermesMessage; }
+  onConversationHermesChange(listener: () => void): () => void {
+    this.hermesListeners.add(listener);
+    return () => this.hermesListeners.delete(listener);
+  }
+  setConversationHermesSelected(enabled: boolean): boolean {
+    if (this.conversationDetector.snapshot().enabled || (enabled && !assistantBridge.conversation.isSupported())) return false;
+    this.hermesSelected = enabled;
+    if (!enabled) this.conversationHermes.stop();
+    this.emitConversationHermes();
+    return true;
+  }
+  dismissConversationHermesMessage(): void {
+    this.conversationHermes.dismissOutput();
+    this.setConversationHermesMessage(null);
+  }
+  private emitConversationHermes(): void {
+    const key = JSON.stringify([this.hermesSelected, this.hermesMessage, this.conversationHermes?.snapshot()]);
+    if (key === this.hermesUiKey) return;
+    this.hermesUiKey = key;
+    for (const listener of this.hermesListeners) { try { listener(); } catch { /* A UI listener cannot break capture. */ } }
+  }
+  private setConversationHermesMessage(text: string | null): void {
+    if ((text ?? "") === this.hermesMessage) return;
+    if (this.hermesMessageTimer) clearTimeout(this.hermesMessageTimer);
+    this.hermesMessageTimer = null;
+    this.hermesMessage = text ?? "";
+    // Backstop only: the runtime retires the message itself (minimum 12 s, maximum 30 s).
+    if (text) this.hermesMessageTimer = setTimeout(() => this.setConversationHermesMessage(null), HERMES_MESSAGE_MAX_MS);
+    this.emitConversationHermes();
+  }
+
+  readonly conversationDetector = new ConversationCaptureCoordinator({
+    environment: () => this.detectorEnvironment(),
+    prepare: () => this.prepareDetectorAudioSession(),
+    acquire: (pcm, revoked, failed) => voiceControlBridge.acquireExperimentalRaw(
+      this.communicator?.getNativeCommunicator(), pcm, revoked, failed,
+      (nativePcm) => this.conversationDetector.acceptNativePcm(nativePcm),
+      this.conversationDetector.nativeLimitMs(),
+    ),
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    every: (callback, ms) => {
+      const timer = setInterval(callback, ms);
+      return () => clearInterval(timer);
+    },
+    transcription: new SonioxConversationTranscription(new LocalTranscription(), {
+      apiKey: () => sonioxApiKeySetting.get(),
+      engine: () => conversationTextEngine(),
+      connect: androidSonioxSocket,
+      now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+      every: (callback, ms) => {
+        const timer = setInterval(callback, ms);
+        return () => clearInterval(timer);
+      },
+    }),
+    participation: new LocalParticipation(),
+  });
+
+  readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
+    dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
+    now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+    every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
+    onOutput: (text) => this.setConversationHermesMessage(text),
+    // No capture hook: losing Hermes (network, server, engine) never ends local listening. Only the
+    // user's OFF or the capture's own error does.
+    changed: () => this.emitConversationHermes(),
+    // silenceMs: an active episode keeps its last 12 turns through 2 min of silence, so "¿dónde he
+    // aparcado?" a minute after saying it still carries the answer (30 s dropped it in the field test).
+  }, { candidateMs: 60_000, silenceMs: 120_000, maxTurns: 12, maxChars: 6000 });
+
+  /** Session options (language, diagnostics) default to the RAM selectors, read once at ON. */
+  setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
+    options: SessionOptions = conversationSessionOptions()): void {
+    if (enabled && !this.conversationDetector.snapshot().enabled) {
+      if (this.hermesSelected && transcribe && participation !== "enrollment"
+        && (conversationTextEngine() === "soniox" || options.manualConversation && options.optionalProfile)) {
+        const wantsDailyContext = !!options.manualConversation && conversationDailyContextSelected();
+        if (!assistantBridge.conversation.setDailyContextEnabled(wantsDailyContext) && wantsDailyContext) return;
+        // Optional identity only for the manual ON that asked for it; diagnostics keep required identity.
+        // Manual Hermes stays available for the full capture session; diagnostic sessions keep their budget.
+        const armed = this.conversationHermes.begin(options.manualConversation ? null : 8,
+          options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida",
+          { singleVoiceFilter: conversationSingleVoiceFilter() });
+        if (!armed && options.manualConversation) return;
+      }
+    } else if (!enabled) this.conversationHermes.stop();
+    this.conversationDetector.setEnabled(enabled, transcribe, participation, options);
+    // Capture needs a fresh wear report even when the optional lock screen is off.
+    // Request on ON and on ready sessions, never from the 500 ms refresh loop.
+    if (enabled) this.ensureWearStateTracking();
+  }
+
+  /** One explicit ON/OFF shared by the phone and the glasses system menu. No persisted auto-start. */
+  toggleManualConversation(): string {
+    return this.setManualConversationEnabled(!this.conversationDetector.snapshot().enabled);
+  }
+
+  setManualConversationEnabled(enabled: boolean): string {
+    if (!enabled) {
+      this.setConversationCaptureEnabled(false);
+      return "";
+    }
+    if (this.conversationDetector.snapshot().enabled) return "";
+    const withHermes = conversationUsesHermes();
+    if (withHermes && conversationDailyContextSelected() && !assistantBridge.conversation.supportsDailyContext()) {
+      return "La memoria de 24 h no está disponible. Conecta el servidor preparado o desactívala para iniciar.";
+    }
+    const local = conversationTextEngine() === "local";
+    if (withHermes && !assistantBridge.conversation.isSupported()) return "Hermes no está disponible. La conversación sigue OFF.";
+    if (!local && !sonioxApiKeySetting.get().trim()) return "Configura Soniox antes de iniciar la conversación.";
+    if (local && conversationModelState(conversationLocalModel()).status !== "ready") {
+      return conversationModelState(conversationLocalModel()).error ?? "Descarga el modelo seleccionado antes de iniciar.";
+    }
+    // conv/2 bridge: recognising the wearer is optional. An old conv/1 bridge only accepts
+    // wearer+other contexts, so it keeps the previous requirement of a saved profile.
+    const optionalIdentity = !withHermes || assistantBridge.conversation.supportsOptionalIdentity();
+    if (local && withHermes && !optionalIdentity) return "El puente Hermes necesita identidad opcional para usar Whisper.";
+    const profile = !local && this.conversationDetector.hasOwnProfile();
+    if (!optionalIdentity && !profile) return "Falta tu perfil de voz guardado. Configúralo antes de iniciar.";
+    // The wear report is only requested once capture is ON (ensureWearStateTracking), so with the
+    // lock screen off `worn` stays null until then. Refusing here on that alone never lets ON start.
+    // An explicit ON waits instead: the coordinator stays «suspendido» until a fresh ON_HEAD arrives.
+    // Every other blocker (disconnected, charging, CFW, permission, audio priority) still refuses.
+    const environment = this.detectorEnvironment(true);
+    if (!environment.available) return environment.reason;
+    const snapshot = this.conversationDetector.snapshot();
+    if (snapshot.transcription?.worker || snapshot.transcription?.busy || snapshot.participation?.worker || snapshot.participation?.busy) {
+      return "Espera a que termine el cierre de la sesión anterior.";
+    }
+    if (!this.setConversationHermesSelected(withHermes)) return "No se pudo activar Hermes. La conversación sigue OFF.";
+    this.setConversationCaptureEnabled(true, true, profile ? "conversation" : "off", { ...conversationSessionOptions(),
+      diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity,
+      textEngine: local ? "local" : "soniox" });
+    if (withHermes && !this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
+    return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
+  }
+
+  /** `ignoreWear` only for the manual ON gate; capture itself always requires a fresh ON_HEAD. */
+  private detectorEnvironment(ignoreWear = false): DetectorEnvironment {
+    const presence = getGlassesPresence();
+    const session = this.communicator;
+    let reason = "";
+    if (!global.isAndroid) reason = "Este ensayo requiere Android y audio BLE de las G2.";
+    else if (this.phase !== "connected" || !session) reason = "Gafas desconectadas; sin captura.";
+    else if (!this.customFirmwareConfirmed) reason = "Esperando confirmación del firmware Faceclaw.";
+    else if (presence.charging) reason = "Gafas en carga; sin captura.";
+    else if (!ignoreWear && presence.worn !== true) reason = "Esperando un estado nuevo de gafas puestas.";
+    else if (!hasMicrophonePermission()) reason = "Falta permiso de micrófono. Concédelo desde Permisos.";
+    else if (voiceActivity.isActive() || assistantAudioPriority.isActive() || this.keyboardInput) reason = "Interacción explícita con prioridad sobre el detector.";
+    else if (!voiceControlBridge.experimentalAudioAvailable(true)) reason = "Audio reservado por otra función.";
+    return { available: !reason, reason, session };
+  }
+
+  /** Internal protocol lifecycle only: never turns on or unblanks the displays. */
+  private async prepareDetectorAudioSession(): Promise<boolean> {
+    const communicator = this.communicator;
+    if (!communicator || this.phase !== "connected") return false;
+    if (this.evenHubSessionSuspended) {
+      if (!await communicator.resumeEvenHubSession()) return false;
+      if (this.communicator !== communicator) return false;
+      this.evenHubSessionSuspended = false;
+    }
+    return communicator.awaitEvenHubSessionReady(EVENHUB_WAKE_READY_TIMEOUT_MS);
+  }
+
   private startVoiceCapture(endpointing = false): Promise<void> {
     return this.beginVoiceCapture("ptt", endpointing);
   }
@@ -2005,12 +2359,53 @@ class DashboardController {
     return voiceControlBridge.stopPushToTalk();
   }
 
-  private startContinuousVoiceCapture(): void {
-    void this.beginVoiceCapture("continuous");
+  // Windows that want continuous capture. They share one stream, which runs
+  // while any of them wants it: one window letting go must not cut off another.
+  private readonly continuousClients = new Set<string>();
+  // The connection a continuous-capture start was last tried on (undefined:
+  // none since the last teardown), so a window waiting on the glasses is
+  // retried once per new session rather than on every frame.
+  private continuousAttemptedOn: FaceclawCommunicatorBridge | null | undefined = undefined;
+
+  private startContinuousVoiceCapture(client: string): void {
+    this.continuousClients.add(client);
+    this.ensureContinuousCapture(true);
   }
 
-  private stopContinuousVoiceCapture(): void {
-    voiceControlBridge.stopContinuousCapture();
+  private stopContinuousVoiceCapture(client: string): void {
+    if (!this.continuousClients.delete(client) || this.continuousClients.size > 0) return;
+    try {
+      voiceControlBridge.stopContinuousCapture();
+    } finally {
+      this.syncContinuousClaim();
+    }
+  }
+
+  /**
+   * Start continuous capture for the windows asking for it, unless it is
+   * running or parked across a session outage. A window restored at launch
+   * asks before the glasses connect, so this is retried on each new session
+   * (from resumeVoiceCapture); `force` retries on the same one.
+   */
+  private ensureContinuousCapture(force = false): void {
+    if (this.continuousClients.size === 0 || voiceControlBridge.holdsCapture("continuous")) return;
+    if (!force && this.continuousAttemptedOn === this.communicator) return;
+    this.continuousAttemptedOn = this.communicator;
+    void this.beginVoiceCapture("continuous").finally(() => this.syncContinuousClaim());
+  }
+
+  /**
+   * Continuous capture's claim on the mic (the Microphones app and EvenHub
+   * mic apps stand down while it is held) follows whether the capture really
+   * holds the mic, not merely whether a window asked: a start that never
+   * happened (no glasses yet, permission refused) must not idle every other
+   * mic user.
+   */
+  private syncContinuousClaim(): void {
+    voiceActivity.setActive(
+      this.continuousClients.size > 0 && voiceControlBridge.holdsCapture("continuous"),
+      CONTINUOUS_CAPTURE_HOLDER,
+    );
   }
 
   /**
@@ -2026,6 +2421,12 @@ class DashboardController {
       elevenLabsApiKey: elevenLabsApiKeySetting.get(),
       openAiApiKey: openAiApiKeySetting.get(),
       sonioxApiKey: sonioxApiKeySetting.get(),
+      whisperServerUrl: whisperServerUrlSetting.get(),
+      whisperServerModel: whisperServerModelSetting.get(),
+      whisperServerLanguage: whisperServerLanguageSetting.get(),
+      whisperServerApiKey: whisperServerApiKeySetting.get(),
+      evenAsrUrl: evenAsrUrlSetting.get(),
+      evenAsrKey: evenAsrKeySetting.get(),
       saveRecording: saveVoiceRecordingsSetting.get(),
       // "My voice only" (Microphones app): verify command utterances
       // against the enrolled wearer voice-print; non-matching speakers'
@@ -2038,15 +2439,19 @@ class DashboardController {
   }
 
   /**
-   * Restart the mic for a capture that a previous session left holding. Cheap
-   * to call per frame: it does nothing unless one is actually parked.
+   * Restart the mic for a capture that a previous session left holding, and
+   * start a continuous capture asked for before this session. Cheap to call
+   * per frame: it does nothing unless one is actually waiting.
    */
   private resumeVoiceCapture(): void {
-    if (!voiceControlBridge.hasSuspendedCapture()) return;
     const communicator = this.communicator;
     if (!communicator || this.phase !== "connected") return;
-    this.appendLog("resuming voice capture on the new glasses session");
-    voiceControlBridge.resumeCapture(this.voiceCaptureOptions(communicator));
+    if (voiceControlBridge.hasSuspendedCapture()) {
+      this.appendLog("resuming voice capture on the new glasses session");
+      voiceControlBridge.resumeCapture(this.voiceCaptureOptions(communicator));
+    }
+    // A continuous capture asked for before this session existed.
+    this.ensureContinuousCapture();
   }
 
   /**
@@ -2091,6 +2496,11 @@ class DashboardController {
         if (kind === "ptt") {
           voiceControlBridge.startPushToTalk(options);
         } else {
+          // Every window may have let go while permission was pending.
+          if (this.continuousClients.size === 0) return;
+          // Claimed before the capture starts so the Microphones app and
+          // EvenHub mic apps stand down first, as they do for the voice dialog.
+          voiceActivity.setActive(true, CONTINUOUS_CAPTURE_HOLDER);
           voiceControlBridge.startContinuousCapture(options);
         }
       })
@@ -2193,6 +2603,10 @@ class DashboardController {
     try {
       const inputEvent = rawInputEventToInputEvent(event);
       if (!acceptInput(inputEvent)) return;
+      // Revoke synchronously before the existing wake/display barrier and dialog.
+      const detectorWake = event.kind === "even-ai" && event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP
+        && wakeWordActionSetting.get() !== "off";
+      if (global.isAndroid && detectorWake) voiceControlBridge.setAudioPriority("wake-event", true);
       // The gesture, plus which app is on screen and whether input goes to it,
       // the sidebar, or a shell overlay. Java only knows the raw event codes,
       // and without the target the export says what was pressed but not who
@@ -2242,12 +2656,19 @@ class DashboardController {
         event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP &&
         wakeWordActionSetting.get() !== "off";
       const displayShouldWake = event.kind === "display-wake";
+      // A retained, fully delivered layout can enable the microphone immediately.
+      // Do not make speech wait for the screen-on/unblank frame: that loses the
+      // first words of a question spoken directly after the wakeword. A cold or
+      // unfinished session still needs the complete display/session barrier.
+      const audioSessionReady = wakewordShouldWake && this.communicator
+        && !this.evenHubSessionSuspended && !this.evenHubResumePromise
+        && await this.communicator.awaitEvenHubSessionReady(0);
       let shellPreWoke = false;
       if (wakewordShouldWake || displayShouldWake) {
         if (!shell.isScreenOn()) {
-          shellPreWoke = shell.wake("sidebar");
+          shellPreWoke = shell.wake(displayShouldWake ? shell.userWakeFocus() : "sidebar");
         }
-        if (shellPreWoke || this.evenHubSessionSuspended || this.evenHubResumePromise) {
+        if (!audioSessionReady && (shellPreWoke || this.evenHubSessionSuspended || this.evenHubResumePromise)) {
           const ready = await frameTimings.spanAsync(frameId, "wake-barrier", () =>
             this.ensureEvenHubSessionActive(frameId),
           );
@@ -2276,7 +2697,6 @@ class DashboardController {
         this.lastSys = `${sourceName(event.eventSource)}/${eventName(event.eventType)}`;
         this.appendLog(`sys-event ${this.lastSys}`);
         if (
-          event.eventType === OsEventTypeList.FOREGROUND_EXIT_EVENT ||
           event.eventType === OsEventTypeList.ABNORMAL_EXIT_EVENT ||
           event.eventType === OsEventTypeList.SYSTEM_EXIT_EVENT
         ) {
@@ -2304,6 +2724,9 @@ class DashboardController {
         frameTimings.finishFrame(frameId, "handled by shell; chrome render spawned");
       }
     } finally {
+      if (global.isAndroid && event.kind === "even-ai" && event.eventType === EvenAIStatus.EVEN_AI_WAKE_UP) {
+        voiceControlBridge.setAudioPriority("wake-event", false);
+      }
       if (!frameOwned) {
         frameTimings.finishFrame(frameId, "discarded: input did not trigger a render");
       }
@@ -2335,6 +2758,42 @@ class DashboardController {
       this.requestShellRender();
       return;
     }
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
+    shell.focusWindow(windowId);
+    this.requestShellRender();
+    this.appendLog(`launched ${windowId}`);
+  }
+
+  /**
+   * An in-process singleton app's window, opened in the background (neither
+   * foregrounded nor focused) unless it is open already: for the shell to
+   * bring forward itself (the Notifications window under a notification
+   * selected in the switcher, or an app widget's window under the widget). The bridge runs calls in order, so the
+   * shell may foreground it at once: its surface's visibility is settled
+   * when the configure call is queued, ahead of any frame.
+   */
+  private openInProcessAppInBackground(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): { window: InProcessWindow; opened: boolean } {
+    const existing = this.inProcessApps.get(windowId);
+    if (existing) return { window: existing, opened: false };
+    const app = this.createInProcessApp(windowId, surfaceId, create);
+    void this.configureWindowSurface(surfaceId, this.isForegroundWindow(windowId), app.window.heightMode).catch((error) => {
+      this.appendLog(`${windowId} surface configure failed: ${this.formatError(error)}`);
+    });
+    this.appendLog(`opened ${windowId} in the background`);
+    return { window: app, opened: true };
+  }
+
+  /** Create an in-process singleton app's window and register it with the shell. */
+  private createInProcessApp(
+    windowId: string,
+    surfaceId: string,
+    create: (options: InProcessAppOptions) => InProcessWindow,
+  ): InProcessWindow {
     const app = create({
       actions: {
         ...this.sharedActions,
@@ -2355,10 +2814,7 @@ class DashboardController {
     });
     this.inProcessApps.set(windowId, app);
     shell.registerWindow(app.window);
-    await this.configureWindowSurface(surfaceId, false, app.window.heightMode);
-    shell.focusWindow(windowId);
-    this.requestShellRender();
-    this.appendLog(`launched ${windowId}`);
+    return app;
   }
 
   /** Get or spawn the worker host for an app. */
@@ -2402,6 +2858,8 @@ class DashboardController {
       launchApp: (appId, params) => this.launchApp(appId, params),
       uninstallApp: (appId) => this.uninstallApp(appId),
       launchInProcessApp: (windowId, surfaceId, create) => this.launchInProcessApp(windowId, surfaceId, create),
+      openInProcessAppInBackground: (windowId, surfaceId, create) =>
+        this.openInProcessAppInBackground(windowId, surfaceId, create),
       ensureWorkerHost: (createWorker) => this.ensureWorkerHost(app.appId, createWorker),
       submitWindowFrame: (surfaceId, planes, paintMs, frameId) =>
         this.submitWindowFrame(surfaceId, planes, paintMs, frameId),
@@ -2519,13 +2977,14 @@ class DashboardController {
     target: DisplayTarget | null = this.display,
   ): Promise<void> {
     if (!target) return;
-    await target.configureSurface(surfaceId, {
-      ...appViewportRect(heightMode, shell.getWindows().find((window) => window.surfaceId === surfaceId)?.appId),
-      zOrder: 0,
-      transparency: "opaque",
-    });
+    const rect = appViewportRect(heightMode, shell.getWindows().find((window) => window.surfaceId === surfaceId)?.appId);
+    this.windowSurfaceRects.set(surfaceId, JSON.stringify(rect));
+    await target.configureSurface(surfaceId, { ...rect, zOrder: 0, transparency: "opaque" });
     await target.setSurfaceVisible(surfaceId, typeof visible === "function" ? visible() : visible);
   }
+
+  /** Each window surface's rect as last configured (applySwitcherBarHeight skips those that stay). */
+  private readonly windowSurfaceRects = new Map<string, string>();
 
   /** A late answer to "is this window in front?", for configureWindowSurface. */
   private isForegroundWindow(windowId: string): () => boolean {
@@ -2533,6 +2992,7 @@ class DashboardController {
   }
 
   private removeWindowSurface(surfaceId: string): void {
+    this.windowSurfaceRects.delete(surfaceId);
     const display = this.display;
     if (!display) return;
     void display.removeSurface(surfaceId).catch((error) => {
@@ -2585,6 +3045,11 @@ class DashboardController {
    * overlays). Coalesces like requestRender: one render in flight, at most
    * one queued.
    */
+  /** Shell render failures since app start, as counts (for the phone metrics dialog). */
+  shellRenderDiagnostics(): { total: number; resourceLimit: number } {
+    return { ...this.shellRenderFailures };
+  }
+
   requestShellRender(causeFrameId = 0): void {
     // Remember the input frame that asked for this chrome repaint so
     // renderShell can nest its frame under it; without that link an input
@@ -2605,6 +3070,13 @@ class DashboardController {
           await this.renderShell();
         } while (this.shellRenderQueued);
       } catch (error) {
+        this.shellRenderFailures.total++;
+        const resourceLimit = error instanceof ShellResourceLimitError;
+        if (resourceLimit) this.shellRenderFailures.resourceLimit++;
+        // Always reaches logcat, unlike appendLog: a failed shell render drops every shell overlay
+        // (Hermes included) without any other trace. Only the error class or the surface size is
+        // printed, never content.
+        console.warn(`shell render failed: ${resourceLimit ? error.message : error instanceof Error ? error.name : typeof error}`);
         this.appendLog(`shell render failed: ${this.formatError(error)}`);
       } finally {
         this.shellRenderInProgress = false;
@@ -2635,6 +3107,8 @@ class DashboardController {
     if (wantFreshData) frameTimings.logFrame(frameId, "follow-up repaint that must not use cached data");
     beginRenderPass(!wantFreshData);
     const paintStartedAtMs = Date.now();
+    const confirmHermes = captureHermesPresentation();
+    const confirmNotification = captureNotificationPresentation();
     const planes = frameTimings.span(frameId, "paint", () =>
       frameTimings.runWithFrame(frameId, () => shell.paintScene()),
     );
@@ -2661,6 +3135,18 @@ class DashboardController {
     // so in the frame rather than leaving a silent stall. (The preview target
     // resolves immediately; nothing transmits.)
     const outcome = await display.waitForFrameFinished(frameId, FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS);
+    // `sent` follows the last native BLE acknowledgement; previews, failures and superseded frames
+    // cannot mark an unseen contribution as said. The captured receipt also checks current output.
+    if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) {
+      // A frame can be sent while the wake barrier is still unblanking the lenses; the Hermes reading
+      // window (and its receipt) starts only once that wake has made the frame visible.
+      const wakeBarrier = this.evenHubResumePromise ?? this.screenReassertPromise;
+      if (confirmHermes && wakeBarrier) {
+        frameTimings.logFrame(frameId, "hermes presentation waits for the wake barrier");
+        void wakeBarrier.then((ready) => { if (ready) confirmHermes(); }, () => {});
+      } else confirmHermes?.();
+      confirmNotification?.();
+    }
     if (outcome === null) {
       frameTimings.logFrame(
         frameId,
@@ -2670,21 +3156,45 @@ class DashboardController {
     this.schedulePreviewUpdate();
   }
 
-  private async handleAndroidNotificationPosted(notificationKey: string): Promise<void> {
+  private handleAndroidNotificationPosted(notificationKey: string): void {
+    // The tray shows the notification at once; its popup waits out a short
+    // delay, so one withdrawn right away (see NotificationPopupDelay) never shows.
     const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
-    if (!notification || !shouldShowNotificationOnGlasses(notification.packageName)) {
-      this.requestShellRender();
-      return;
+    if (notification && shouldShowNotificationOnGlasses(notification.packageName)) {
+      this.notificationPopups.post(notificationKey, notificationPopupDelayMs(notification));
     }
-    // New notifications open a shell modal over the app viewport; if the
-    // screen was off, wake for it and go back to sleep when it is closed.
-    // Waking while already on would steal focus, so only wake from sleep.
-    const wokeScreen = shell.isScreenOn() ? false : shell.wake("sidebar");
-    if (wokeScreen) {
-      this.appendLog("android notification woke the screen");
-    }
-    shell.openNotificationModal(notificationKey, wokeScreen);
     this.requestShellRender();
+  }
+
+  private handleAndroidNotificationRemoved(notificationKey: string): void {
+    if (this.notificationPopups.withdraw(notificationKey)) {
+      this.appendLog(`android notification ${notificationKey} withdrawn before its popup`);
+    }
+    try {
+      shell.notificationRemoved(notificationKey);
+    } catch (error) {
+      this.appendLog(`closing a removed notification's popup failed: ${this.formatError(error)}`);
+    }
+    this.requestShellRender();
+  }
+
+  /** A posted notification waited out its popup delay: show it, if it is still there. */
+  private popUpAndroidNotification(notificationKey: string): void {
+    try {
+      const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
+      if (!notification || !shouldShowNotificationOnGlasses(notification.packageName)) return;
+      // New notifications open a shell modal over the app viewport; if the
+      // screen was off, wake for it and go back to sleep when it is closed.
+      // Waking while already on would steal focus, so only wake from sleep.
+      const wokeScreen = shell.isScreenOn() ? false : shell.wake("sidebar");
+      if (wokeScreen) {
+        this.appendLog("android notification woke the screen");
+      }
+      shell.openNotificationModal(notificationKey, wokeScreen);
+      this.requestShellRender();
+    } catch (error) {
+      this.appendLog(`notification popup failed: ${this.formatError(error)}`);
+    }
   }
 
   private async playBuzzerSequence(payload: Uint8Array): Promise<void> {
@@ -2692,21 +3202,6 @@ class DashboardController {
       return;
     }
     await this.communicator.playBuzzerSequence(payload);
-  }
-
-  /** One-time celebratory jingle on the first connection after onboarding. */
-  private async playWelcomeSound(): Promise<void> {
-    const effect = findSoundEffect("questcomplete");
-    if (!effect) return;
-    try {
-      await playSoundEffect(
-        effect,
-        (payload) => this.playBuzzerSequence(payload),
-        (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      );
-    } catch (error) {
-      this.appendLog(`welcome sound failed: ${this.formatError(error)}`);
-    }
   }
 
   private clearDashboardTimer(): void {
@@ -2732,6 +3227,7 @@ class DashboardController {
   private setPhase(phase: ConnectionPhase): void {
     if (this.phase === phase) return;
     this.phase = phase;
+    this.conversationDetector.refresh();
     if (phase !== "connected" && phase !== "charging") {
       shell.setBatteryLevels({ ring: null, ringCharging: null });
     }
@@ -2812,7 +3308,10 @@ class DashboardController {
     }
     this.previewTrailingTimer = setTimeout(() => {
       this.previewTrailingTimer = null;
-      this.updateCompositePreview();
+      // Re-check rather than pull directly: a timer that fires a millisecond
+      // early would fail the floor in updateCompositePreview and drop the
+      // burst's last frame (an animation's settled frame) until the 1s poll.
+      this.schedulePreviewUpdate();
     }, wait);
   }
 
@@ -2849,8 +3348,10 @@ class DashboardController {
       const power = activity.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager;
       if (!power?.isInteractive()) return;
     }
-    const preview = display.getCompositePreview(previewColorSetting.get() === "green");
+    const crop = phonePreviewCrop(this.glassesLocked, this.glance.screenRect());
+    const preview = display.getCompositePreview(previewColorSetting.get() === "green", crop);
     if (preview) {
+      this.displayPreviewCrop = crop;
       this.setDisplayPreview(preview);
     }
   }

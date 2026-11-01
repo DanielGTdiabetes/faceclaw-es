@@ -1,0 +1,69 @@
+name: APK española
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, spanish-0.8.1]
+    paths: ['app/**', 'App_Resources/**', 'native/**', 'wear/**', 'scripts/**', 'package*.json', 'webpack.config.js', '.github/workflows/android-spanish.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-es-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          cmdline-tools-version: '13114758'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Instalar SDK y herramientas nativas
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - name: Instalar dependencias
+        run: |
+          npm ci
+          npm install --global nativescript@9.1.2
+          ns usage-reporting disable
+          ns error-reporting disable
+      - name: Pruebas TypeScript
+        run: npm test
+      - name: Pruebas Kotlin
+        run: npm run test:kotlin
+      - name: Preparar y compilar APK sin firma
+        env:
+          # NativeScript 9 comprueba el paquete obsoleto SDK tools incluso con
+          # cmdline-tools y SDK compatibles; Gradle valida el SDK al compilar.
+          NS_SKIP_ENV_CHECK: '1'
+        run: |
+          ns prepare android --release
+          cd platforms/android
+          ./gradlew assembleRelease -Prelease -PfaceclawUnsigned -Dorg.gradle.jvmargs=-Xmx4g --console=plain
+      - name: Compilar app del reloj sin firma
+        run: ./wear/gradlew -p wear :app:assembleRelease --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: faceclaw-es-unsigned-${{ github.sha }}
+          path: |
+            platforms/android/app/build/outputs/apk/release/*unsigned.apk
+            wear/app/build/outputs/apk/release/*unsigned.apk
+          if-no-files-found: error
+          retention-days: 30
+
+# La firma se realiza localmente con scripts/sign-spanish.ps1 y la misma
+# clave privada en todas las versiones. Nunca publicar el keystore ni tokens.

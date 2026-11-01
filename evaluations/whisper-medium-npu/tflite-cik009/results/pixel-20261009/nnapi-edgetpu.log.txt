@@ -1,0 +1,33 @@
+## before-nnapi-edgetpu 20:40:06 thermal=ThermalStatus:1 battery=temperature:380
+INFO: STARTING!
+INFO: Log parameter values verbosely: [0]
+INFO: Min num runs: [2]
+INFO: Min runs duration (seconds): [0]
+INFO: Max runs duration (seconds): [900]
+INFO: Num threads: [4]
+INFO: Min warmup runs: [1]
+INFO: Report the peak memory footprint: [1]
+INFO: Graph: [/data/local/tmp/fc-tflite-medium/whisper-medium.tflite]
+INFO: Signature to run: [serving_default]
+INFO: Input layers: [input_features]
+INFO: Input shapes: [1,80,3000]
+INFO: Input value files: [input_features:/data/local/tmp/fc-tflite-medium/es-fleurs-00.mel.f32]
+INFO: Enable op profiling: [1]
+INFO: File path to export outputs layer to: [/data/local/tmp/fc-tflite-medium/out/nnapi-edgetpu.tokens.bin]
+INFO: #threads used for CPU inference: [4]
+INFO: Use NNAPI: [1]
+INFO: NNAPI accelerator name: [google-edgetpu]
+INFO: NNAPI accelerators available: [google-edgetpu,nnapi-reference]
+INFO: Disable NNAPI cpu: [1]
+INFO: Use xnnpack: [0]
+INFO: Loaded model /data/local/tmp/fc-tflite-medium/whisper-medium.tflite
+INFO: Initialized TensorFlow Lite runtime.
+INFO: Using signature: serving_default
+WARN: Tensor # 0 is named serving_default_input_features:0 but flags call it input_features
+INFO: Created TensorFlow Lite delegate for NNAPI.
+INFO: NNAPI delegate created.
+WARNING: Attempting to use a delegate that only supports static-sized tensors with a graph that has dynamic-sized tensors (tensor#3814 is a dynamic-sized tensor).
+ERROR: Failed to apply NNAPI delegate.
+ERROR: Benchmarking failed.
+## exit 1 20:40:08
+## after-nnapi-edgetpu 20:40:08 thermal=ThermalStatus:1 battery=temperature:380

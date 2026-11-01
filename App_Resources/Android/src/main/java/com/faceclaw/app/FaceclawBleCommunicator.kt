@@ -126,6 +126,8 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun setListener(listener: FaceclawBleCommunicatorListener?) = core.setListener(listener)
 
+    fun setRequiredFirmwareRevision(revision: Int) = core.setRequiredFirmwareRevision(revision)
+
     fun start() {
         if (core.start()) {
             activeInstance = this
@@ -205,7 +207,7 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun removeMicStatusListener(listener: FaceclawMicStatusListener?) = core.removeMicStatusListener(listener)
 
-    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean) =
+    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean): Boolean =
         core.sendFaceclawMicControl(record, label, rightTemple, leftTemple)
 
     fun startG2AudioForwarding(listener: FaceclawAudioPacketListener?): Boolean = core.startG2AudioForwarding(listener)
@@ -239,6 +241,23 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
         return PreviewBitmapUtil.fromGray(
                 java.nio.ByteBuffer.wrap(composite.gray), composite.width, composite.height, brightenGamma, green)
     }
+
+    /** As above, cropped to a screen area (Settings > Phone display > Preview scaling); black past the screen's edges. */
+    fun getCompositePreviewBitmap(brightenGamma: Double, green: Boolean,
+                                  cropX: Int, cropY: Int, cropWidth: Int, cropHeight: Int): android.graphics.Bitmap? {
+        val composite = core.previewComposite() ?: return null
+        return PreviewBitmapUtil.fromGray(
+                java.nio.ByteBuffer.wrap(composite.gray), composite.width, composite.height, brightenGamma, green,
+                cropX, cropY, cropWidth, cropHeight)
+    }
+
+    /**
+     * Posted to the main looper after each step of an animation the preview is replaying (menu
+     * highlight slides, scrolls), so the mirror can pull the new frame; frame metrics only cover
+     * frames sent to the glasses, which carry the whole animation in one display list.
+     */
+    fun setPreviewAnimationListener(listener: Runnable?) =
+        core.setPreviewAnimationListener(listener?.let { { mainHandler.post(it); Unit } })
 
     /** Save the current composite as a 4-bit grayscale PNG; returns the path or "". */
     @Throws(java.io.IOException::class)

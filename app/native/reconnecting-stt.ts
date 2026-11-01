@@ -24,6 +24,8 @@ export class ReconnectingSttClient implements CloudSttClient {
     private readonly create: (options: CloudSttOptions) => CloudSttClient,
     private readonly options: CloudSttOptions,
     private readonly continuous: () => boolean,
+    /** How long finish() waits for the provider's final transcript. */
+    readonly finalTimeoutMs = 5000,
   ) {}
 
   start(): void {
@@ -39,7 +41,7 @@ export class ReconnectingSttClient implements CloudSttClient {
         this.pending = [];
         this.pendingBytes = 0;
         for (const chunk of chunks) this.acceptPcm(chunk);
-        if (this.finishing) this.client?.finish();
+        if (this.finishing) this.finishClient();
       },
       onTranscript: (event) => {
         if (!current()) return;
@@ -90,8 +92,23 @@ export class ReconnectingSttClient implements CloudSttClient {
       this.stop();
       return;
     }
-    this.finishTimeout = setTimeout(() => this.stop(), 5000);
-    if (this.ready) this.client?.finish();
+    this.finishTimeout = setTimeout(() => this.stop(), this.finalTimeoutMs);
+    if (this.ready) this.finishClient();
+  }
+
+  private finishClient(): void {
+    const generation = this.generation;
+    const failed = (error: unknown) => {
+      if (this.stopped || generation !== this.generation) return;
+      this.stop();
+      this.options.onError(`Transcription finalization failed: ${String(error)}`);
+    };
+    try {
+      const pending = this.client?.finish();
+      if (pending) void pending.catch(failed);
+    } catch (error) {
+      failed(error);
+    }
   }
 
   stop(): void {

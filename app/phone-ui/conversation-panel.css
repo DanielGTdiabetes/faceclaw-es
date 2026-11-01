@@ -1,0 +1,35 @@
+.conversation-panel { background-color: #f3f5f8; color: #182433; }
+.conversation-heading { padding: 20 20 12; }
+.conversation-title { font-size: 27; font-weight: bold; color: #182433; }
+.conversation-subtitle { font-size: 14; color: #536478; margin-top: 4; }
+.conversation-content { padding: 0 16 16; }
+.conversation-card { background-color: #ffffff; border-radius: 16; padding: 16; margin-bottom: 12; }
+.conversation-section-title { font-size: 16; font-weight: bold; color: #182433; margin-bottom: 8; margin-top: 8; }
+.conversation-description { font-size: 14; color: #34465a; line-height: 3; margin-bottom: 8; }
+.conversation-caption { font-size: 12; color: #536478; line-height: 2; margin-bottom: 8; }
+.conversation-primary { background-color: #2459c4; color: #ffffff; border-radius: 12; font-size: 16; padding: 12; min-height: 56; margin: 10 0 6; text-transform: none; }
+.conversation-secondary { background-color: #eaf0fb; color: #214d9a; border-radius: 12; font-size: 14; padding: 10; margin: 4 0; text-transform: none; }
+.conversation-text-action { background-color: transparent; color: #2459c4; font-size: 14; text-transform: none; margin: 2 0; }
+.conversation-settings-toggle { background-color: #ffffff; color: #34465a; border-radius: 12; font-size: 15; text-transform: none; }
+.conversation-setting { background-color: #f3f5f8; color: #34465a; border-radius: 10; font-size: 14; padding: 8; margin: 3 0; text-transform: none; }
+.conversation-setting:disabled { color: #8a94a3; }
+.conversation-stop { background-color: #a42935; color: #ffffff; font-size: 16; border-radius: 12; margin: 8 16 12; min-height: 52; text-transform: none; }
+.conversation-entry { background-color: #ffffff; border-top-width: 1; border-top-color: #d9e0e9; padding: 2 12; }
+.conversation-entry Button, .ns-dark .conversation-entry Button { background-color: #eaf0fb; color: #214d9a; font-size: 15; text-transform: none; border-radius: 12; android-elevation: 0; android-dynamic-elevation-offset: 0; }
+.conversation-panel Button, .ns-dark .conversation-panel Button { android-elevation: 0; android-dynamic-elevation-offset: 0; }
+.conversation-panel .conversation-back, .ns-dark .conversation-panel .conversation-back { background-color: transparent; color: #2459c4; font-size: 14; margin: 0 0 6; padding: 4 0; text-transform: none; }
+/* Follow the same system theme as the remote controls. */
+.ns-dark .conversation-panel { background-color: #242424; color: #f0f0f0; }
+.ns-dark .conversation-panel .conversation-card { background-color: #303030; }
+.ns-dark .conversation-panel .conversation-title, .ns-dark .conversation-panel .conversation-section-title { color: #f0f0f0; }
+.ns-dark .conversation-panel .conversation-description { color: #e1e6ed; }
+.ns-dark .conversation-panel .conversation-subtitle, .ns-dark .conversation-panel .conversation-caption { color: #b4bdc9; }
+.ns-dark .conversation-panel .conversation-primary { background-color: #426bb9; color: #ffffff; }
+.ns-dark .conversation-panel .conversation-secondary { background-color: #384353; color: #e6efff; }
+.ns-dark .conversation-panel .conversation-text-action, .ns-dark .conversation-panel .conversation-back { background-color: transparent; color: #8ab0ff; }
+.ns-dark .conversation-panel .conversation-settings-toggle { background-color: #303030; color: #e1e6ed; }
+.ns-dark .conversation-panel .conversation-setting { background-color: #3b3b3b; color: #e1e6ed; }
+.ns-dark .conversation-panel .conversation-setting:disabled { color: #9097a1; }
+.ns-dark .conversation-panel .conversation-stop { background-color: #a42935; color: #ffffff; }
+.ns-dark .conversation-entry { background-color: #303030; border-top-color: #444444; }
+.ns-dark .conversation-entry Button { background-color: #404040; color: #f0f0f0; }

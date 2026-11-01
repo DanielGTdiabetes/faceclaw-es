@@ -3,6 +3,7 @@ package com.faceclaw.app
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 
 import java.io.File
@@ -31,17 +32,6 @@ class FaceclawVoiceController(context: Context) {
             "encoder_model.ort",
             "decoder_model_merged.ort",
             "tokens.txt"
-        )
-        // Second on-device model: sherpa-onnx's offline Whisper backend (base.en,
-        // int8-quantized -- see the model-choice note in asr-model.ts). Directory
-        // shared with the TS-side download flow, same convention as ASR_MODEL_DIR.
-        // Whisper re-encodes the whole buffer on every call, so the shared session
-        // skips live partials for it; see VoiceCaptureSession.processRecognizer.
-        private const val ASR_WHISPER_MODEL_DIR = "sherpa-onnx-whisper-base-en-int8"
-        private val ASR_WHISPER_MODEL_FILES = arrayOf(
-            "base.en-encoder.int8.onnx",
-            "base.en-decoder.int8.onnx",
-            "base.en-tokens.txt"
         )
         // 50 ms chunks match the G2 packet cadence the rest of the pipeline
         // (endpointing, transcript pacing) is tuned for.
@@ -85,6 +75,29 @@ class FaceclawVoiceController(context: Context) {
     @Volatile
     private var communicator: FaceclawBleCommunicator? = null
 
+    private data class ModelFileFingerprint(
+        val path: String,
+        val exists: Boolean,
+        val bytes: Long,
+        val modifiedAt: Long,
+    )
+
+    // Hashing Whisper medium is deliberately not a per-intervention operation.
+    // A replacement changes this file fingerprint and therefore forces a new
+    // LocalWhisperModels.verified() before the recognizer can be loaded.
+    private val mediumVerification = FingerprintedVerificationCache<List<ModelFileFingerprint>>()
+
+    private val transcriberCache = VoiceTranscriberCache(load = { kind ->
+        val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
+        Log.i(TAG, "Loading voice model " + kind)
+        // Medium is intentionally the only assistant model that requests the
+        // four-thread CPU baseline. Keep the established base/small defaults
+        // unchanged until they have their own evidence.
+        AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(
+            modelDir, kind, numThreads = VoiceCaptureSession.assistantTranscriberThreads(kind),
+        ))
+    })
+
     private val host = object : VoiceCaptureHost {
         override val dispatcher = CallbackDispatcher { action -> mainHandler.post { action() } }
 
@@ -121,8 +134,7 @@ class FaceclawVoiceController(context: Context) {
         override fun hasTranscriberModel(kind: VoiceModelKind): Boolean = findAsrModelDir(kind) != null
 
         override fun loadTranscriber(kind: VoiceModelKind): OfflineTranscriber {
-            val modelDir = findAsrModelDir(kind) ?: throw IllegalStateException("voice model missing")
-            return AndroidSpeechEngines.SherpaTranscriber(AndroidSpeechEngines.recognizerConfig(modelDir, kind))
+            return transcriberCache.acquire(kind)
         }
 
         override fun speakerEmbedder(modelPath: String): SpeakerEmbedder {
@@ -139,6 +151,32 @@ class FaceclawVoiceController(context: Context) {
     }
 
     private val session = VoiceCaptureSession(host)
+    private var experimentalWakeLock: PowerManager.WakeLock? = null
+    private var experimentalSessionLimitMs = 120_000L
+
+    fun setExperimentalSessionLimitMs(durationMs: Int) {
+        // 24 h: safety bound for manual listening without a time limit; stop() releases earlier.
+        experimentalSessionLimitMs = durationMs.toLong().coerceIn(1L, 86_400_000L)
+    }
+
+    fun setExperimentalRawMode(enabled: Boolean) {
+        releaseExperimentalWakeLock()
+        session.setExperimentalRawMode(enabled)
+        if (enabled) {
+            val manager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+            experimentalWakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Faceclaw:ConversationG0").apply {
+                setReferenceCounted(false)
+                acquire(experimentalSessionLimitMs + 5_000L) // Independent bounded safety timeout.
+            }
+        }
+    }
+
+    private fun releaseExperimentalWakeLock() {
+        experimentalWakeLock?.let { if (it.isHeld) it.release() }
+        experimentalWakeLock = null
+    }
+
+    fun experimentalAudioDiagnostics(): String = session.experimentalAudioDiagnostics()
 
     fun setListener(listener: FaceclawVoiceControllerListener?) {
         session.setListener(listener)
@@ -166,6 +204,11 @@ class FaceclawVoiceController(context: Context) {
      */
     fun setOnboardModelKind(kind: String?) {
         session.setOnboardModelKind(kind)
+    }
+
+    /** Retain the model between utterances only while the Chat window is open. */
+    fun setKeepTranscriberLoaded(enabled: Boolean) {
+        transcriberCache.setRetain(enabled)
     }
 
     /**
@@ -224,10 +267,48 @@ class FaceclawVoiceController(context: Context) {
     fun isCapturing(): Boolean = session.isCapturing()
 
     fun stop() {
+        releaseExperimentalWakeLock()
         session.stop()
     }
 
+    /**
+     * Fallback for a remote recognizer (the EVO-X2 service) that failed after capture: decodes an
+     * already captured utterance with the first downloaded on-device Whisper model among
+     * [kinds] (comma-separated "whisper-small,whisper,whisper-medium"). Runs on its own thread,
+     * never touches the live capture session, and reports once on the main thread. Moonshine is
+     * never used here: it only recognizes English.
+     */
+    fun transcribeBuffer(pcm16le: ByteArray, kinds: String?, listener: FaceclawBufferTranscriptionListener) {
+        val candidates = (kinds ?: "").split(',').map { VoiceCaptureSession.parseModelKind(it.trim()) }
+            .filter { it.isWhisper }
+        Thread({
+            var text: String? = null
+            var error: String? = null
+            val kind = candidates.firstOrNull { findAsrModelDir(it) != null }
+            if (kind == null) {
+                error = "no on-device Whisper model downloaded"
+            } else {
+                var transcriber: OfflineTranscriber? = null
+                try {
+                    val leased = transcriberCache.acquire(kind)
+                    transcriber = leased
+                    val decoded = BufferedTranscription.transcribe(pcm16le, true) { samples, count -> leased.recognize(samples, count) }
+                    text = decoded
+                    Log.i(TAG, "fallback decode kind=" + kind + " sec=" +
+                        String.format(java.util.Locale.US, "%.2f", pcm16le.size / 2.0 / SAMPLE_RATE) + " textLen=" + decoded.length)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "fallback decode failed", t)
+                    error = "on-device decode failed: " + (t.message ?: t.javaClass.simpleName)
+                } finally {
+                    transcriber?.release()
+                }
+            }
+            mainHandler.post { listener.onResult(text, error) }
+        }, "FaceclawBufferTranscription").start()
+    }
+
     fun close() {
+        transcriberCache.setRetain(false)
         stop()
     }
 
@@ -262,9 +343,31 @@ class FaceclawVoiceController(context: Context) {
      * missing, i.e. the model still needs to be downloaded.
      */
     private fun findAsrModelDir(kind: VoiceModelKind): File? {
-        val whisper = kind == VoiceModelKind.WHISPER
-        val dirName = if (whisper) ASR_WHISPER_MODEL_DIR else ASR_MODEL_DIR
-        val fileNames = if (whisper) ASR_WHISPER_MODEL_FILES else ASR_MODEL_FILES
+        if (kind == VoiceModelKind.WHISPER_MEDIUM) {
+            val root = File(appContext.filesDir, ASR_ROOT)
+            // Reuse the downloaded Conversation model only when every
+            // catalogue file matches its pinned digest. There is no cloud or
+            // Moonshine fallback for a missing/corrupt selected Whisper model.
+            val model = LocalWhisperModels.MEDIUM
+            val directory = File(root, model.directoryName)
+            val fingerprint = model.files.keys.sorted().map { name ->
+                val file = File(directory, name)
+                ModelFileFingerprint(file.absolutePath, file.isFile, file.length(), file.lastModified())
+            }
+            return if (mediumVerification.verify(fingerprint) { LocalWhisperModels.verified(root, model) }) directory else null
+        }
+        val dirName = when (kind) {
+            VoiceModelKind.WHISPER -> "sherpa-onnx-whisper-base-es-int8"
+            VoiceModelKind.WHISPER_SMALL -> "sherpa-onnx-whisper-small-es-int8"
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_DIR
+            VoiceModelKind.WHISPER_MEDIUM -> return null
+        }
+        val fileNames = when (kind) {
+            VoiceModelKind.WHISPER -> arrayOf("base-encoder.int8.onnx", "base-decoder.int8.onnx", "base-tokens.txt")
+            VoiceModelKind.WHISPER_SMALL -> arrayOf("small-encoder.int8.onnx", "small-decoder.int8.onnx", "small-tokens.txt")
+            VoiceModelKind.MOONSHINE -> ASR_MODEL_FILES
+            else -> return null
+        }
         val modelDir = File(appContext.filesDir, ASR_ROOT + File.separator + dirName)
         for (fileName in fileNames) {
             val file = File(modelDir, fileName)

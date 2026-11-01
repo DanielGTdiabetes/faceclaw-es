@@ -17,9 +17,9 @@ const font={lineHeight:12,ascent:10,descent:2,measureText:text=>text.length*4,
 const menuCore=load('app/ui/menu-core.ts',{
   '../graphics/image':graphics,'./menu-highlight-motion': require('../.test-build/app/ui/menu-highlight-motion.js'), '../graphics/menu-scroll-list': require('../.test-build/app/graphics/menu-scroll-list.js'), './menu-scroll-motion': require('../.test-build/app/ui/menu-scroll-motion.js'), '../graphics/draw-expression': require('../.test-build/app/graphics/draw-expression.js'),
 });
-const {MenuLayer}=load('app/ui/menu.ts',{
-  './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), '../native/settings-store': { getBooleanSetting: (_key, fallback) => fallback },
-  '../graphics/image':graphics,'../graphics/textwrap':{},'../graphics/ui-fonts':{getDefaultSmallFont:()=>font},
+const {MenuLayer,TextPageLayer}=load('app/ui/menu.ts',{
+  './menu-animation-pref': require('../.test-build/app/ui/menu-animation-pref.js'), './animation-speed': require('../.test-build/app/ui/animation-speed.js'), '../native/settings-store': { getStringSetting: (_key, fallback) => fallback },
+  '../graphics/image':graphics,'../graphics/textwrap':{wrapText:(_font,text)=>text.split('\n')},'../graphics/ui-fonts':{getDefaultSmallFont:()=>font},
   '../util/numeric-util':{clamp:(n,a,b)=>Math.max(a,Math.min(b,n))},'./gestures':{},
   './menu-highlight-motion': require('../.test-build/app/ui/menu-highlight-motion.js'), '../graphics/menu-scroll-list': require('../.test-build/app/graphics/menu-scroll-list.js'), './menu-scroll-motion': require('../.test-build/app/ui/menu-scroll-motion.js'), '../graphics/draw-expression': require('../.test-build/app/graphics/draw-expression.js'),
     './metrics':require('../.test-build/app/ui/metrics.js'),'./menu-core':menuCore,
@@ -64,6 +64,15 @@ test('context menu surface and selected row both use +4 without changing the app
   assert.deepEqual(closed.image.pixels,base.pixels);
   assert.deepEqual(wire.presentationRecords(prepareFrameDraws(closed.draws)),[]);
 });
+test('text page paints at the stack size, not the lens size',()=>{
+  // An app window's stack is its viewport; a lens-sized plane is rejected by
+  // the compositor as larger than the window surface.
+  const stack=new LayerStack({paint:()=>new graphics.GrayImage(576,260)},noopLayerActions,{width:576,height:260});
+  stack.push(new TextPageLayer('Array status','Left: no status yet\nRight: no status yet'));
+  const painted=stack.paint();
+  assert.equal(painted.length,1);
+  assert.equal(painted[0].image.width,576);assert.equal(painted[0].image.height,260);
+});
 test('system menu bridge shifts its surface and selected row together by +4',()=>{
   const image=menu().paint(),bytes=encodeShellScene([{image,x:8,y:0,shellKey:7,depth:4}]);
   const view=new DataView(bytes.buffer),w=view.getUint16(8,true),h=view.getUint16(10,true);
@@ -73,13 +82,14 @@ test('system menu bridge shifts its surface and selected row together by +4',()=
 test('unselected sidebar icons retain -2 depth through shell cropping, including attention badges',()=>{
   const shellScene=require('../.test-build/app/graphics/shell-scene.js');
   const {ShellChromeLayer}=load('app/ui/shell/chrome-layer.ts',{
-    '../../graphics/shell-scene':shellScene,'../../graphics/image':graphics,
+    '../../graphics/shell-scene':shellScene,'../../graphics/image':graphics,'../../graphics/display-list':require('../.test-build/app/graphics/display-list.js'),
     '../../graphics/ui-fonts':{getDefaultSmallFont:()=>font,getDefaultMediumFont:()=>font},
     '../../graphics/textwrap':{},'./ambient-cards':{},'../../graphics/battery':{},
     '../../native/notification-icons':{},'../../native/phone-battery':{},'../../util/render-freshness':{},
     '../../graphics/icons':{},'../dashboard-settings':{},'../clock-format':{},'../../graphics/bdffont':{},
     '../layers':{LayerStack},'../menu':{scrollToKeepSelectionVisible:()=>0},'../metrics':{},
-    './geometry':{MIN_WINDOW_HEIGHT:280,minWindowTop:()=>0,windowTop:()=>0,SHELL_OPAQUE_BLACK:1,SIDEBAR_WIDTH:64,TOP_BAR_HEIGHT:24},
+    './geometry':{MIN_WINDOW_HEIGHT:280,minWindowTop:()=>0,windowTop:()=>0,SHELL_OPAQUE_BLACK:1,SIDEBAR_WIDTH:64,TOP_BAR_HEIGHT:24,
+      SWITCHER_ROW_HEIGHT:36,switcherPosition:()=>'left',switcherRect:()=>({x:0,y:0,width:64,height:280})},
   });
   const state={selectedIndex:0,focus:'sidebar',windows:[0,1,2].map(n=>({attention:n===1,drawIcon:(image,x,y)=>image.fillRect(x,y,4,4,240)}))};
   const chrome=new ShellChromeLayer(()=>state),image=new graphics.GrayImage(640,480);
@@ -108,4 +118,10 @@ test('shell modal carries its inner menu highlight animation instead of baking i
   const image=paint(),row=image.draws.find(d=>d.presentation);
   assert.ok(row.y>before.y);assert.ok(row.presentation.displayList.timeline,'the slide stays a timed display list');
   assert.ok(!image.withDrawsBaked(false).pixels.some(v=>v===255),'selected text is not baked into the modal surface');
+});
+test('shell crop widens a fractional rect (TTF-measured status bar) to whole pixels',()=>{
+  const {shellCrop}=require('../.test-build/app/graphics/shell-scene.js'),image=new graphics.GrayImage(576,288,7);
+  const crop=shellCrop(image,400.5,250,175.5,15,2);
+  assert.deepEqual([crop.x,crop.y,crop.image.width,crop.image.height],[400,250,176,15]);
+  assert.ok(crop.image.pixels.every(v=>v===7));
 });

@@ -21,11 +21,13 @@ const config = (model = 'terra', effort = 'low') => ({ kind: 'direct', llm: {
   provider: model === 'sonnet' ? 'anthropic' : 'openai', selection: model, model, effort, apiKey: 'secret-key',
 } });
 function sessions() {
+  const audioPriority = load('app/assistant/audio-priority.ts', {}).assistantAudioPriority;
   const turns = [];
   let synchronousError = false;
   const { AssistantSession } = load('app/assistant/session.ts', {
     '../prompts': { ASSISTANT_SYSTEM_PROMPT_BASE: '', buildAssistantSystemPrompt: () => '', describeAssistantContext: () => '' },
     './bridge-client': { assistantBridge: {} },
+    './audio-priority': { assistantAudioPriority: audioPriority },
     './direct-backend': { DirectAssistantBackend: class { runTurn(options) {
       const turn = { ...options, cancelled: false };
       turns.push(turn);
@@ -40,8 +42,23 @@ function sessions() {
     turn.callbacks.onTextDelta(text, text);
     turn.callbacks.onTurnDone({ stopReason: 'end_turn' });
   }
-  return { AssistantSession, turns, done, setError() { synchronousError = true; } };
+  return { AssistantSession, turns, done, audioPriority, setError() { synchronousError = true; } };
 }
+
+test('audio priority remains held through reply and clears on completion, error and cancellation', () => {
+  const env = sessions();
+  const session = new env.AssistantSession(config());
+  session.sendUtterance('test fixture', {}, callbacks());
+  assert.equal(env.audioPriority.isActive(), true);
+  env.turns[0].callbacks.onTextDelta('reply', 'reply');
+  assert.equal(env.audioPriority.isActive(), true);
+  env.done('done');
+  assert.equal(env.audioPriority.isActive(), false);
+  session.sendUtterance('next', {}, callbacks()); session.cancel();
+  assert.equal(env.audioPriority.isActive(), false);
+  env.setError(); session.sendUtterance('error fixture', {}, callbacks());
+  assert.equal(env.audioPriority.isActive(), false);
+});
 function conversations(saved = '') {
   const env = sessions();
   const { AssistantConversations } = load('app/assistant/conversations.ts', {
@@ -111,7 +128,7 @@ test('cancelled tools and late callbacks cannot mutate the next turn or its hist
   old.callbacks.onTextDelta('late', 'late');
   old.callbacks.onTurnDone({ stopReason: 'end_turn' });
   assert.equal(session.isTurnActive(), true);
-  assert.equal(session.transcript[1].text, 'partial');
+  assert.equal(session.transcript[1].text, ''); // Provisional text stays hidden after cancellation.
   assert.equal(JSON.stringify(env.turns[1].messages).includes('tool_result'), false);
   env.done('new answer');
   assert.equal(session.isTurnActive(), false);
@@ -125,7 +142,7 @@ test('synchronous provider errors do not leave a permanently active turn', () =>
   assert.equal(session.status, 'failed');
 });
 
-function draftEnv({ prepare = async () => true, start = async () => {}, stop = () => {}, initialStatus = 'Ready' } = {}) {
+function draftEnv({ prepare = async () => true, start = async () => {}, stop = () => {}, initialStatus = 'Ready', readyOnStart = true } = {}) {
   const transcripts = new Set(), statuses = new Set(), timers = new Map();
   const sent = [];
   let starts = 0, stops = 0, mic = false, timerId = 0;
@@ -139,10 +156,13 @@ function draftEnv({ prepare = async () => true, start = async () => {}, stop = (
     setTimeout(cb) { timers.set(++timerId, cb); return timerId; },
     clearTimeout(id) { timers.delete(id); },
   });
-  const draft = new VoiceDraft({ startVoiceCapture: async () => { starts++; await start(); }, stopVoiceCapture: () => { stops++; return stop(); } }, prepare, () => {}, (text) => sent.push(text));
+  const draft = new VoiceDraft({ startVoiceCapture: async () => {
+    starts++; await start();
+    if (readyOnStart) for (const cb of [...statuses]) cb({ status: 'Listening...', listening: true });
+  }, stopVoiceCapture: () => { stops++; return stop(); } }, prepare, () => {}, (text) => sent.push(text));
   return { draft, sent, starts: () => starts, stops: () => stops, mic: () => mic,
     transcript(text, isFinal = false) { for (const cb of [...transcripts]) cb({ text, isFinal }); },
-    status(status) { for (const cb of [...statuses]) cb({ status }); },
+    status(status) { for (const cb of [...statuses]) cb({ status, listening: status.startsWith('Listening') }); },
     timeout() { for (const cb of [...timers.values()]) cb(); },
     subscriptions: () => transcripts.size + statuses.size,
   };
@@ -207,11 +227,52 @@ test('release during async mic startup stops capture after it starts', async () 
   const env = draftEnv({ start: () => new Promise((resolve) => { started = resolve; }) });
   const pending = env.draft.start();
   await new Promise(setImmediate);
+  env.status('Listening...');
   env.transcript('quick message');
   env.draft.release(); started(); await pending;
   assert.equal(env.stops(), 1);
   env.timeout();
   assert.deepEqual(env.sent, ['quick message']);
+});
+
+test('chat shows preparation throughout native model loading until the microphone is actually listening', async () => {
+  const env = draftEnv({ readyOnStart: false, initialStatus: 'Listening...' });
+  await env.draft.start();
+  assert.equal(env.draft.phase, 'preparing');
+  assert.match(env.draft.status, /Preparando/);
+  env.status('Loading transcription model...');
+  assert.equal(env.draft.phase, 'preparing'); assert.match(env.draft.status, /Cargando modelo/);
+  env.status('Listening...');
+  assert.equal(env.draft.phase, 'listening'); assert.match(env.draft.status, /Escuchando/);
+  env.draft.release(); env.status('Loading transcription model...'); env.status('Listening...');
+  assert.equal(env.draft.phase, 'finishing'); assert.match(env.draft.status, /Transcribiendo/);
+  env.transcript('Hola, ¿me escuchas?', true);
+  assert.deepEqual(env.sent, ['Hola, ¿me escuchas?']);
+});
+
+test('release during native model loading stops the microphone and explains readiness without sending stale speech', async () => {
+  const env = draftEnv({ readyOnStart: false }); await env.draft.start();
+  env.status('Loading transcription model...'); env.draft.release();
+  assert.equal(env.stops(), 1); assert.equal(env.mic(), false); assert.equal(env.subscriptions(), 0);
+  assert.match(env.draft.status, /Espera a «Escuchando»/);
+  env.status('Listening...'); env.transcript('stale', true); env.timeout();
+  assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
+});
+
+test('release before an asynchronous start becomes ready stops the eventual capture without submitting speech', async () => {
+  let ready;
+  const env = draftEnv({ start: () => new Promise(resolve => { ready = resolve; }) });
+  const pending = env.draft.start(); await new Promise(setImmediate);
+  env.draft.release(); ready(); await pending;
+  assert.equal(env.stops(), 1); assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
+  assert.equal(env.subscriptions(), 0); assert.equal(env.mic(), false);
+});
+
+test('native startup errors remain visible instead of later becoming an empty-speech error', async () => {
+  const env = draftEnv({ readyOnStart: false }); await env.draft.start();
+  env.status('Could not start G2 microphone input.'); env.draft.release(); env.timeout();
+  assert.equal(env.draft.status, 'Could not start G2 microphone input.');
+  assert.equal(env.stops(), 1); assert.equal(env.draft.phase, 'idle'); assert.deepEqual(env.sent, []);
 });
 
 test('empty capture, rejection and closing never submit stale speech', async () => {
@@ -256,18 +317,23 @@ function shellEnv({ wakeAction = 'voice-input', skipConfirmation = false } = {})
       constructor(options) { this.options = options; voiceDialogs.push(options); }
       startCapture() {}
       onRemoved() { this.options.onClosed(); }
-    } }, './keyboard-input': {}, './voice-activity': { voiceActivity: { setActive() {} } }, './assistant': {},
+    } }, './keyboard-input': {}, './voice-activity': { voiceActivity: { setActive() {} } }, './assistant': {}, './image-layer': { ShellImageLayer: class {} },
+    '../../assistant/audio-priority': load('app/assistant/audio-priority.ts', {}),
     '../../assistant/conversations': {}, '../../assistant/models': {}, '../../native/settings-store': {},
     '../notifications': {}, '../dashboard-settings': settings, './ambient-cards': {},
     './chrome-layer': { ShellChromeLayer: class {} }, './modal-layer': {}, './tool-debug-layer': {},
-    './brightness-picker-layer': {},
-    '../../assistant/tool-registry': {}, './geometry': { sidebarWidth: () => 64, minWindowTop: () => 96, TOP_BAR_HEIGHT: 28 },
+    './brightness-picker-layer': {}, './notification-modal-queue': load('app/ui/shell/notification-modal-queue.ts', {}),
+    '../../native/notification-icons': {}, '../../native/notification-sources': {},
+    '../../assistant/tool-registry': {}, './geometry': {
+      sidebarWidth: () => 64, minWindowTop: () => 96, switcherPosition: () => 'left', uiDepth: () => 0,
+      appViewportRect: () => ({ x: 64, y: 124, width: 576, height: 260 }),
+    },
   });
   const { createInProcessWindow } = load('app/ui/shell/in-process-window.ts', {
     '../../graphics/image': images, '../../native/frame-timings': timings,
     '../../util/render-freshness': { beginRenderPass() {}, endRenderPass: () => false },
     '../layers': layers, '../window-menu': { WindowMenuLayer: Menu },
-    './chrome-layer': { windowIcon: () => () => null }, './geometry': { appViewportSize: () => ({ width: 576, height: 260 }) },
+    './chrome-layer': { windowIcon: () => () => null }, './geometry': { appViewportSize: () => ({ width: 576, height: 260 }), setAppImmersive: () => false },
     './shell': { shell },
   });
   const input = [], menus = [];
@@ -353,6 +419,7 @@ test('ordinary apps retain long-press system menu and games retain the escape ti
 
 function chatLayerEnv() {
   const env = conversations();
+  const retention = [];
   const textwrap = load('app/graphics/textwrap.ts', {});
   const { BdfFont } = load('app/graphics/bdffont.ts', { '@nativescript/core': {} });
   const graphics = require('../.test-build/app/graphics/image.js');
@@ -367,12 +434,20 @@ function chatLayerEnv() {
       windowOptions = options; return { requestRender() {} };
     } },
     '../../ui/shell/shell': { shell: { getAssistantConversations: () => env.store } },
-    './voice-draft': { VoiceDraft: class { active = false; text = ''; status = ''; cancel() {} } },
+    './voice-draft': { VoiceDraft: class { active = false; text = ''; status = ''; cancel() {} keepModelLoaded(value) { retention.push(value); } } },
   });
   createAiChatWindow({ actions: {}, setSurfaceVisible() {}, onClosed() {} });
   const layer = windowOptions.baseLayer;
-  return { ...env, layer, paint: (width = 576, height = 260) => layer.paint({ stack: { getBaseSize: () => ({ width, height }) } }) };
+  return { ...env, layer, retention, close: () => windowOptions.onClosed(),
+    paint: (width = 576, height = 260) => layer.paint({ stack: { getBaseSize: () => ({ width, height }) } }) };
 }
+
+test('Chat retains the model while open and releases it on close', () => {
+  const env = chatLayerEnv();
+  assert.deepEqual(env.retention, [true]);
+  env.close();
+  assert.deepEqual(env.retention, [true, false]);
+});
 
 test('scrollback stays anchored during streaming, follows at the bottom and resets on session switch', () => {
   const env = chatLayerEnv();

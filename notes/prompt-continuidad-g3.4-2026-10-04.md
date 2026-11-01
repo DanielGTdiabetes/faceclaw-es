@@ -1,0 +1,17 @@
+# Continuar Faceclaw desde G3.4 — 04-10-2026
+
+Proyecto `E:\projects\faceclaw-es`, rama `codex/conversation-detection-g0`. Código G3.4 `63f234b` publicado; consultar HEAD para el registro posterior de continuidad. No reiniciar evaluación ni repetir registro/baterías anteriores.
+
+Leer `AGENTS.md`, `notes/conversation-detection-g3.4-lenses.md`, `notes/continuidad-entre-pcs.md` y `C:\Users\danie\.codex\memories\faceclaw.md`. G3.3/integración0.8.2/Wear y auditoría G0–G6 conservan el historial y los requisitos previos; prevalece G3.4 donde cambia la interfaz.
+
+- Pixel `0.8.2-es.5-conversation.g3.4`, código805/firma original, instalado `adb install -r`;33ajustes idénticos antes/después, Hermes/bloqueo desactivado/GPS conservados. Después de desbloquear: conectado, conversaciónOFF/perfil guardado observados,0wakelocks experimentales activos. No asumir una nueva comprobación al retomar: verificar conexión/OFF antes de consultarUI; nunca duranteON.
+- Perfil existente único para castellano/valenciano. No reenrolar, leer/exportar/copiar el vector ni respaldar `noBackup` alNAS. Sin muestras/grabaciones/perfiles de terceros, modelos/umbrales nuevos por defecto.
+- App Conversación local (`local-conversation`) en launcher/lentes: abrir/restaurar mantieneOFF; toque dentro deapp inicia explícitamente o detiene, doble toque dentro deappOFF y foco al selector; cerrar ventanaOFF. Menú tap-then-hold para texto opcional compartido con el móvil enRAM; cambiar soloOFF. Máximo120s y prioridad Hey Even/PTT/asistente conservados.
+- Estado/plazo/perfil/texto temporal en lentes implementados. Buffer acotado G3.3, rueda para revisar, sin atribución a hablantes; se retira alOFF/cesión/discontinuidad/error. No conectar audio/texto experimental aHermes. No modificar firmware ni otros proyectos.
+- Después de instalar solo se observó UI móvilOFF/perfil; vista previa negra/pantalla de gafas apagada. No se abrió la nueva app ni se ensayó escucha. Software correcto no acredita visualización física bajo escucha, precisión de comparación/participación ni autonomía.
+- Reloj Wear0.8.2-es.1 actualizado y enlaceACK comprobado previamente. Usuario lo desconectó deliberadamente porque ya no hacía falta; no reconectar/emparejar/repetirACK por defecto. Gafas/36 actualizadas porusuario, funcionamiento general confirmado previamente; no volver a tocar firmware.
+- 67Node específicas/regresión,TS/lint/webpack/build Android/lintVital correctos. Sin cambiosKotlin; AAR/configuración runtime y siete bibliotecas nativas iguales aG3.3. No repetir240Kotlin/782Node/baterías físicas sin cambio o fallo que lo justifique.
+
+Próximo trabajo: continuar el flujo integrado con el perfil existente, resolver incidencias reales que aparezcan y mejorar claridad/uso cuando haya un defecto concreto. No dedicar otra sesión solo a subpruebas. Si un ensayo es imprescindible, único/breve/guiado/justificado y acabarOFF. Los históricos492ms/siete descartes y UI1046ms/21drops siguen abiertos; no atribuir resolución a la nuevaUI. G4 solo ante errores justificados,G5 autonomía/estabilidad prolongadas pendiente,G6 requiere decisión posterior.
+
+Actualizaciones deAPK necesarias siguen autorizadas: firma original presente, respaldo fresco deAPK/ajustes privados y `adb install -r`; nunca desinstalar/borrar datos ni reinstalar lo mismo sin motivo. NAS G3.4 APKs/fuente/reversión y ajustes privados ya verificados, carpetas700/archivos600; ver informe para hashes. Publicar código/continuidad enGitHub/NAS sin perfil/audio/secretos.
