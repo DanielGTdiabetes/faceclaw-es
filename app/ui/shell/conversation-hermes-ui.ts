@@ -76,7 +76,11 @@ export type HermesReadingClock = {
 const readingClock: HermesReadingClock = {
   now: () => Date.now(),
   after(callback, ms) { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
-  retired: (entry) => console.info("FaceclawHermesUi", JSON.stringify(entry)),
+  // Release builds strip console.*; write straight to logcat under its own tag (absent off-device).
+  retired: (entry) => {
+    try { if (typeof android !== "undefined") android.util.Log.i("FaceclawHermesUi", JSON.stringify(entry)); }
+    catch { /* Diagnostics only. */ }
+  },
 };
 const READING_MIN_MS = 12_000, READING_MAX_MS = 30_000;
 
