@@ -468,7 +468,7 @@ class Shell {
    * An overlay independent of the assistant (the Hermes conversation contribution, see
    * conversation-hermes-ui.ts) and its yield callback. Explicit interactions take priority over it.
    */
-  private independentOverlay: { layer: Layer; onYield: () => void } | null = null;
+  private independentOverlay: { layer: Layer; onYield: () => void; reading: boolean } | null = null;
   /** Retired independent overlays still buried under another layer; dropped once they surface. */
   private readonly retiredOverlays = new WeakSet<Layer>();
   // App-posted notifications that are open or queued, by key.
@@ -866,6 +866,10 @@ class Shell {
   applyScreenTimeout(nowMs = Date.now()): boolean {
     const timeoutMs = this.config.getScreenTimeoutMs();
     if (timeoutMs === null || !this.screenOn) return false;
+    if (this.independentOverlay?.reading) {
+      this.lastInputAtMs = nowMs;
+      return false;
+    }
     // An open voice dialog suspends the timeout: a long dictation or refine
     // has no button presses, but the screen must stay on for it. Sliding
     // lastInputAtMs forward also restarts the full timeout when it closes.
@@ -1886,7 +1890,8 @@ class Shell {
     if (this.independentOverlay) this.retireIndependentOverlay(this.independentOverlay.layer, false);
     if (!this.stack.isAtBase() || this.independentDisplayBlocked()) return null;
     const woke = !this.screenOn && this.wake(this.focus);
-    this.independentOverlay = { layer, onYield };
+    this.lastInputAtMs = Date.now();
+    this.independentOverlay = { layer, onYield, reading: false };
     this.stack.push(layer);
     this.config.requestShellRender();
     return { woke };
@@ -1904,6 +1909,13 @@ class Shell {
 
   repaintIndependentOverlay(layer: Layer): void {
     if (this.screenOn && this.independentOverlay?.layer === layer) this.config.requestShellRender();
+  }
+
+  /** Only the owner of the independent overlay can hold/release its reading window. */
+  holdIndependentOverlayForReading(layer: Layer, reading: boolean): void {
+    if (this.independentOverlay?.layer !== layer) return;
+    if (this.independentOverlay.reading !== reading) this.lastInputAtMs = Date.now();
+    this.independentOverlay.reading = reading;
   }
 
   /**

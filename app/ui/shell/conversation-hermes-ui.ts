@@ -20,7 +20,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string; outputVersion?: number }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -33,6 +33,7 @@ export type HermesDisplayPort = {
   retire(layer: Layer, restoreSleep: boolean): void;
   repaint(layer: Layer): void;
   isVisible?(layer: Layer): boolean;
+  holdForReading?(layer: Layer, reading: boolean): void;
 };
 
 export type HermesLayerFactory = (text: () => string, hooks: { dismiss(): void; removed(): void }) => Layer & { retire(): void };
@@ -61,7 +62,23 @@ export function sanitizeHermesText(raw: unknown): string {
  */
 export type HermesPresentationCounts = {
   presented: number; woke: number; replaced: number; refused: number; retired: number; released: number;
+  visibleMs?: number; visibleResponses?: number;
 };
+
+type RetirementReason = "min" | "max" | "replaced" | "dismiss" | "off";
+type ReadingEntry = { text: string; key: string; selectedAt: number; presentedAt: number | null;
+  confirm: (() => void) | null; valid: boolean };
+export type HermesReadingClock = {
+  now(): number;
+  after(callback: () => void, ms: number): () => void;
+  retired(entry: { visibleMs: number; reason: RetirementReason }): void;
+};
+const readingClock: HermesReadingClock = {
+  now: () => Date.now(),
+  after(callback, ms) { const timer = setTimeout(callback, ms); return () => clearTimeout(timer); },
+  retired: (entry) => console.info("FaceclawHermesUi", JSON.stringify(entry)),
+};
+const READING_MIN_MS = 12_000, READING_MAX_MS = 30_000;
 
 function emptyCounts(): HermesPresentationCounts {
   return { presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 };
@@ -78,9 +95,15 @@ export class HermesConversationPresenter {
   /** Set on the arming edge; consumed once, the first time the armed session listens. */
   private darkPending = false;
   private disposed = false;
+  private shown: ReadingEntry | null = null;
+  private pending: ReadingEntry | null = null;
+  private cancelReadingTimer: (() => void) | null = null;
+  /** Last text rendered, refused or dismissed on the lenses; "" once nothing is shown. */
+  private rendered = "";
 
   constructor(private readonly source: HermesConversationSource, private readonly display: HermesDisplayPort,
-    private readonly createLayer: HermesLayerFactory, private readonly armedChanged: () => void = () => {}) {}
+    private readonly createLayer: HermesLayerFactory, private readonly armedChanged: () => void = () => {},
+    private readonly clock: HermesReadingClock = readingClock) {}
 
   /** Called for every controller change; cheap and idempotent. */
   update(): void {
@@ -98,26 +121,50 @@ export class HermesConversationPresenter {
       this.darkPending = false;
       this.display.blankForListening();
     }
-    const message = this.message();
-    if (!message) {
-      this.handled = "";
-      this.retire(true);
-      return;
-    }
-    if (!snapshot.enabled || !snapshot.listening) {
+    const raw = this.source.conversationHermesMessage;
+    const state = this.source.conversationHermes.snapshot();
+    const key = raw ? `${state.outputVersion ?? ""}/${raw}` : "";
+    if (!snapshot.enabled || !snapshot.listening || state.link === "revocado") {
       // Suspended/OFF listening never shows a contribution, even one still pending expiry,
       // and that event is not shown later when listening resumes.
-      this.handled = message;
+      this.handled = key;
+      this.pending = null;
+      this.finishShown("off");
       this.retire(true);
       return;
     }
-    if (message === this.handled) return;
-    this.handled = message;
+    if (!raw) {
+      this.handled = "";
+      this.pending = null;
+      if (this.shown) { this.shown.valid = false; this.shown.confirm = null; }
+    } else if (key !== this.handled) {
+      this.handled = key;
+      const entry: ReadingEntry = { text: sanitizeHermesText(raw), key, selectedAt: this.clock.now(),
+        presentedAt: null, confirm: this.source.conversationHermes.capturePresentation?.() ?? null, valid: true };
+      if (entry.text) {
+        if (this.isReading()) this.pending = entry;
+        else this.select(entry);
+      }
+    }
+    this.advanceReading();
+    this.show();
+  }
+
+  /** Render the current text once; an unchanged text (also one refused or dismissed) is not shown again. */
+  private show(): void {
+    const message = this.message();
+    if (!message) { this.rendered = ""; this.retire(true); return; }
+    if (message === this.rendered) return;
+    this.rendered = message;
+    this.renderMessage(message);
+  }
+
+  private renderMessage(message: string): void {
     if (!sanitizeHermesText(message)) return;
     if (this.layer) {
-      // A newer validated contribution replaces the text in place: one overlay, one wake.
+      // The same overlay changes text in place: one overlay, one wake.
       this.display.repaint(this.layer);
-      this.counts.replaced++;
+      this.updateReadingHold();
       return;
     }
     const layer = this.createLayer(() => this.liveText(), {
@@ -126,33 +173,44 @@ export class HermesConversationPresenter {
     });
     this.layer = layer;
     const shown = this.display.present(layer, () => this.released(layer));
-    if (!shown) { this.layer = null; this.counts.refused++; return; }
+    if (!shown) {
+      // An explicit interaction owns the display: this answer is dropped, never shown later.
+      this.layer = null; this.counts.refused++;
+      if (this.shown?.text === message) { this.cancelReadingTimer?.(); this.cancelReadingTimer = null; this.shown = null; }
+      return;
+    }
     this.counts.presented++;
     if (shown.woke) this.counts.woke++;
     if (this.layer === layer) this.woke = shown.woke;
+    this.updateReadingHold();
   }
 
   /** Treat the controller's current message as already handled (restore/reconnect/bind): never shown. */
-  ignoreExisting(): void { this.handled = this.message(); }
+  ignoreExisting(): void {
+    const raw = this.source.conversationHermesMessage;
+    this.handled = raw ? `${this.source.conversationHermes.snapshot().outputVersion ?? ""}/${raw}` : "";
+  }
 
   isArmed(): boolean { return this.armed; }
   diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
   hasOverlay(): boolean { return this.layer !== null; }
 
   capturePresentation(): (() => void) | null {
-    if (this.source.conversationHermes.snapshot().working) return null;
-    const layer = this.layer, message = this.source.conversationHermesMessage;
-    if (!layer || !message || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
-    const confirm = this.source.conversationHermes.capturePresentation?.();
-    if (!confirm) return null;
+    const layer = this.layer, entry = this.shown;
+    if (!layer || !entry || !entry.valid || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
     return () => {
-      if (!this.disposed && this.layer === layer && this.source.conversationHermesMessage === message
-        && this.liveText() && this.display.isVisible?.(layer) !== false) confirm();
+      if (!this.disposed && this.layer === layer && this.shown === entry && entry.valid
+        && this.liveText() && this.display.isVisible?.(layer) !== false) {
+        if (entry.presentedAt === null) { entry.presentedAt = this.clock.now(); this.scheduleReading(); }
+        entry.confirm?.();
+      }
     };
   }
 
   dispose(): void {
     if (this.disposed) return;
+    this.pending = null;
+    this.finishShown("off");
     this.retire(false);
     this.disposed = true;
     if (this.armed) { this.armed = false; this.armedChanged(); }
@@ -168,8 +226,65 @@ export class HermesConversationPresenter {
   }
 
   private message(): string {
+    if (this.shown) return this.shown.text;
     if (this.source.conversationHermes.snapshot().working) return "…";
-    return this.source.conversationHermesMessage || this.source.conversationHermes.snapshot().notice || "";
+    return this.source.conversationHermes.snapshot().notice || "";
+  }
+
+  private isReading(): boolean {
+    return !!this.shown && (this.shown.presentedAt === null
+      || this.clock.now() - this.shown.presentedAt < READING_MIN_MS);
+  }
+
+  private select(entry: ReadingEntry): void {
+    if (this.shown) { this.finishShown("replaced"); this.counts.replaced++; }
+    this.shown = entry;
+    entry.selectedAt = this.clock.now();
+    this.scheduleReading();
+  }
+
+  private advanceReading(): void {
+    const entry = this.shown;
+    if (!entry) return;
+    const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
+    if (age >= READING_MAX_MS || (!this.isReading() && (!entry.valid || this.pending))) {
+      const next = this.pending; this.pending = null;
+      if (next) this.select(next);
+      else this.finishShown(age >= READING_MAX_MS ? "max" : "min");
+    } else if (!entry.valid && entry.presentedAt === null) this.finishShown("min");
+    this.updateReadingHold();
+  }
+
+  private updateReadingHold(): void {
+    if (this.layer) this.display.holdForReading?.(this.layer, this.isReading());
+  }
+
+  private scheduleReading(): void {
+    this.cancelReadingTimer?.(); this.cancelReadingTimer = null;
+    if (!this.shown) return;
+    const entry = this.shown;
+    const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
+    const next = entry.presentedAt === null ? READING_MAX_MS : age < READING_MIN_MS ? READING_MIN_MS : READING_MAX_MS;
+    this.cancelReadingTimer = this.clock.after(() => {
+      this.cancelReadingTimer = null;
+      if (this.disposed) return;
+      this.advanceReading();
+      this.show();
+      this.scheduleReading();
+    }, Math.max(1, next - age));
+    this.updateReadingHold();
+  }
+
+  private finishShown(reason: RetirementReason): void {
+    this.cancelReadingTimer?.(); this.cancelReadingTimer = null;
+    const entry = this.shown; this.shown = null;
+    if (entry?.presentedAt !== null && entry?.presentedAt !== undefined) {
+      const visibleMs = Math.max(0, this.clock.now() - entry.presentedAt);
+      this.counts.visibleMs = (this.counts.visibleMs ?? 0) + visibleMs;
+      this.counts.visibleResponses = (this.counts.visibleResponses ?? 0) + 1;
+      this.clock.retired({ visibleMs, reason });
+    }
+    this.updateReadingHold();
   }
 
   /** The layer never stores text: every paint re-reads the controller's current validated message. */
@@ -193,6 +308,9 @@ export class HermesConversationPresenter {
   /** Tap on the overlay: clear through the controller, which notifies back and retires it. */
   private dismissByUser(layer: Layer): void {
     if (this.layer !== layer) return;
+    const next = this.pending; this.pending = null;
+    this.finishShown("dismiss");
+    if (next) { this.select(next); this.rendered = next.text; this.renderMessage(next.text); return; }
     this.source.dismissConversationHermesMessage();
     // The controller always emits on dismiss; this covers a listener that failed to.
     if (this.layer === layer) this.retire(true);
@@ -201,6 +319,8 @@ export class HermesConversationPresenter {
   /** Removed by another path (sleep, explicit interaction): never shown again for this event. */
   private released(layer: Layer & { retire(): void }): void {
     if (this.layer !== layer) return;
+    this.pending = null;
+    this.finishShown("dismiss");
     this.layer = null;
     this.woke = false;
     this.counts.released++;
@@ -246,6 +366,7 @@ function shellDisplay(): HermesDisplayPort {
     retire: (layer, restoreSleep) => shell.retireIndependentOverlay(layer, restoreSleep),
     repaint: (layer) => shell.repaintIndependentOverlay(layer),
     isVisible: (layer) => shell.isIndependentOverlayVisible(layer),
+    holdForReading: (layer, reading) => shell.holdIndependentOverlayForReading(layer, reading),
   };
 }
 

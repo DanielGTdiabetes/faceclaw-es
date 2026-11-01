@@ -200,6 +200,103 @@ function fakeController({ supported = true } = {}) {
 
 function topLayer(shell) { return shell.stack.layers.at(-1); }
 
+function readingHarness() {
+  let now = 0, text = '', hooks, serial = 0;
+  const timers = new Map(), logs = [], painted = [], receipts = [], retirements = [];
+  const f = fakeController(), { ui } = realShell();
+  f.arm();
+  f.controller.conversationHermes.capturePresentation = () => {
+    const value = f.controller.conversationHermesMessage;
+    return () => receipts.push(value);
+  };
+  const clock = { now: () => now, after(fn, ms) { const id = ++serial; timers.set(id, { fn, at: now + ms }); return () => timers.delete(id); },
+    retired: (entry) => logs.push(entry) };
+  const presenter = new ui.HermesConversationPresenter(f.controller, {
+    blankForListening: () => true, present: () => ({ woke: true }),
+    retire(_layer, restoreSleep) { retirements.push(restoreSleep); }, repaint() {},
+    holdForReading() {}, isVisible: () => true,
+  }, (getText, callbacks) => { text = getText; hooks = callbacks; return { retire() {} }; }, () => {}, clock);
+  const update = () => presenter.update();
+  f.controller.onConversationHermesChange(update);
+  return { f, presenter, logs, receipts, painted, retirements, text: () => text(),
+    say(value) { f.say(value); },
+    sent() { const confirm = presenter.capturePresentation(); assert.equal(typeof confirm, 'function'); confirm(); painted.push(text()); },
+    tap() { hooks.dismiss(); },
+    advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); } },
+  };
+}
+
+test('reading: latest pending answer gets its own twelve seconds, from native sent', () => {
+  const h = readingHarness(); h.say('A'); h.sent();
+  h.advance(3000); h.say('B'); h.say('C');
+  assert.equal(h.text(), 'A'); assert.deepEqual(h.receipts, ['A']);
+  h.advance(8999); assert.equal(h.text(), 'A');
+  h.advance(1); assert.equal(h.text(), 'C'); h.sent();
+  h.advance(11999); assert.equal(h.text(), 'C');
+  assert.deepEqual(h.painted, ['A', 'C']); assert.deepEqual(h.receipts, ['A', 'C']);
+  assert.equal(h.logs[0].visibleMs, 12000); assert.equal(h.logs[0].reason, 'replaced');
+  h.presenter.dispose();
+});
+
+test('reading: tap advances pending; working and invalidation do not erase a presented answer early', () => {
+  const h = readingHarness(); h.say('A'); h.sent(); h.advance(3000); h.say('B'); h.tap();
+  assert.equal(h.text(), 'B'); h.sent();
+  h.f.tick({ working: true }); assert.equal(h.text(), 'B');
+  h.say(''); assert.equal(h.text(), 'B');
+  h.advance(11999); assert.equal(h.text(), 'B'); h.advance(1);
+  assert.notEqual(h.text(), 'B');
+  assert.equal(h.logs[0].reason, 'dismiss'); assert.equal(h.logs[1].visibleMs, 12000);
+  h.presenter.dispose();
+});
+
+test('reading: OFF, pause and revoked channel discard visible and pending answers immediately', () => {
+  for (const cause of ['off', 'pause', 'revoked']) {
+    const h = readingHarness(); h.say('A'); h.sent(); h.advance(1); h.say('B');
+    if (cause === 'off') h.f.off();
+    else if (cause === 'pause') h.f.listening(false);
+    else h.f.tick({ link: 'revocado' });
+    assert.equal(h.presenter.hasOverlay(), false, cause);
+    h.advance(12000); assert.equal(h.presenter.hasOverlay(), false, cause);
+    assert.equal(h.logs[0].visibleMs, 1); assert.equal(h.logs[0].reason, 'off');
+    h.presenter.dispose();
+  }
+});
+
+test('reading: actual presentation starts the minimum, and clears invalidate a captured receipt', () => {
+  const h = readingHarness(); h.say('A'); h.advance(5000); h.sent();
+  h.advance(11000); h.say('B'); assert.equal(h.text(), 'A');
+  h.advance(1000); assert.equal(h.text(), 'B');
+  const stale = h.presenter.capturePresentation(); h.say(''); stale();
+  assert.deepEqual(h.receipts, ['A']);
+  h.presenter.dispose();
+});
+
+test('reading: an ellipsis that woke the lenses never puts a presented answer to sleep early, in either order', () => {
+  for (const order of ['text-first', 'progress-first']) {
+    const h = readingHarness();
+    h.f.tick({ working: true }); assert.equal(h.text(), '…', order);
+    if (order === 'text-first') { h.say('A'); h.f.tick({ working: false }); }
+    else { h.f.tick({ working: false }); h.say('A'); }
+    assert.equal(h.text(), 'A', order); h.sent();
+    const before = h.retirements.length;
+    h.f.tick({ working: true }); assert.equal(h.text(), 'A', order);
+    h.advance(11999); assert.equal(h.text(), 'A', order);
+    assert.equal(h.retirements.length, before, `${order}: no retirement inside the reading window`);
+    h.presenter.dispose();
+  }
+});
+
+test('reading: Shell holds the reading window and restarts the normal idle timeout on release', () => {
+  const h = realShell(), f = fakeController(); h.ui.bindHermesConversationUi(f.controller); f.arm();
+  h.shell.wake('window', Date.now() - 9900); f.say('A');
+  assert.equal(h.shell.applyScreenTimeout(Date.now() + 12000), false);
+  assert.equal(h.shell.isScreenOn(), true);
+  const layer = topLayer(h.shell);
+  h.shell.holdIndependentOverlayForReading(layer, false);
+  assert.equal(h.shell.applyScreenTimeout(Date.now() + 9999), false);
+  assert.equal(h.shell.applyScreenTimeout(Date.now() + 10001), true);
+});
+
 test('lens quota notice wakes once, cannot acknowledge a Hermes message, and retires after expiry or dismissal', () => {
   const { ui }=realShell();
   let notice='Hermes en pausa. Disponible en 20 min.', shown=0, retired=0, acknowledgements=0, text, hooks;
@@ -236,7 +333,8 @@ test('presentation receipt follows a visible current overlay, never a refused, p
       if (reason === 'disposed') dispose();
       if (reason === 'covered') h.shell.stack.push({ paint: (_ctx, below) => below(), handleInput() {} });
       confirm();
-      assert.equal(receipts, reason === 'current' ? 1 : 0, reason);
+      // A newer answer waits behind the one being read, so that one is still the visible current text.
+      assert.equal(receipts, reason === 'current' || reason === 'replacement' ? 1 : 0, reason);
     }
     dispose();
   }
@@ -370,7 +468,8 @@ test('presentation counts follow the real shell path, reset on arming and never 
   f.say('Segunda aportación');
   f.say('');
   const counts = h.ui.hermesPresentationDiagnostics();
-  assert.equal(JSON.stringify(counts), JSON.stringify({ presented: 1, woke: 1, replaced: 1, refused: 0, retired: 1, released: 0 }));
+  // The second answer waits behind the first and the clear drops it before it is ever shown.
+  assert.equal(JSON.stringify(counts), JSON.stringify({ presented: 1, woke: 1, replaced: 0, refused: 0, retired: 1, released: 0 }));
   assert.doesNotMatch(JSON.stringify(counts), /aportación/);
   h.shell.wake('window'); h.shell.openEscapeMenu(); // An explicit menu has priority: refused.
   f.say('Tercera');
@@ -379,7 +478,7 @@ test('presentation counts follow the real shell path, reset on arming and never 
   assert.equal(h.ui.hermesPresentationDiagnostics().presented, 0, 'a new armed session starts from zero');
 });
 
-test('a newer contribution replaces the text in place without a second wake', () => {
+test('a newer contribution waits behind the one being read, in the same overlay and without a second wake', () => {
   const h = realShell();
   const f = fakeController();
   h.ui.bindHermesConversationUi(f.controller);
@@ -387,8 +486,8 @@ test('a newer contribution replaces the text in place without a second wake', ()
   f.say('Primera');
   f.say('Segunda');
   assert.equal(h.shell.stack.layers.length, 2);
-  assert.match(overlayText(h.shell), /Segunda/);
-  assert.doesNotMatch(overlayText(h.shell), /Primera/);
+  assert.match(overlayText(h.shell), /Primera/);
+  assert.doesNotMatch(overlayText(h.shell), /Segunda/);
   assert.deepEqual(h.screen, [false, true]);
 });
 
@@ -504,6 +603,9 @@ test('the idle sleep removes the overlay and the event is not shown again', () =
   h.ui.bindHermesConversationUi(f.controller);
   f.arm();
   f.say('Aportación');
+  // The reading window holds the idle timeout; once it is released the normal sleep applies.
+  assert.equal(h.shell.applyScreenTimeout(Date.now() + 60_000), false);
+  h.shell.holdIndependentOverlayForReading(topLayer(h.shell), false);
   h.shell.applyScreenTimeout(Date.now() + 60_000);
   assert.equal(h.shell.isScreenOn(), false);
   assert.equal(f.controller.conversationHermesMessage, '');

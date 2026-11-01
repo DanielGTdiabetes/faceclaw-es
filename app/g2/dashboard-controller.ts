@@ -3110,7 +3110,13 @@ class DashboardController {
     // `sent` follows the last native BLE acknowledgement; previews, failures and superseded frames
     // cannot mark an unseen contribution as said. The captured receipt also checks current output.
     if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) {
-      confirmHermes?.();
+      // A frame can be sent while the wake barrier is still unblanking the lenses; the Hermes reading
+      // window (and its receipt) starts only once that wake has made the frame visible.
+      const wakeBarrier = this.evenHubResumePromise;
+      if (confirmHermes && wakeBarrier) {
+        frameTimings.logFrame(frameId, "hermes presentation waits for the wake barrier");
+        void wakeBarrier.then((ready) => { if (ready) confirmHermes(); }, () => {});
+      } else confirmHermes?.();
       confirmNotification?.();
     }
     if (outcome === null) {
