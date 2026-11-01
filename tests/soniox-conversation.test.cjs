@@ -239,3 +239,16 @@ test('a new local session or local-to-cloud transition clears retained local dia
   assert.equal(h.engine.snapshot().accepted, 0);
   assert.equal(h.engine.snapshot().engine, 'soniox');
 });
+
+test('a speech pause finalizes the Soniox stream at once, without a boundary; never before open or after stop', () => {
+  const h = harness();
+  h.engine.start('es'); h.engine.finalizePause();
+  assert.equal(h.sockets[0].texts.filter(t => t === JSON.stringify({ type: 'finalize' })).length, 0, 'not before open');
+  h.sockets[0].listener.onOpen();
+  h.engine.finalizePause();
+  assert.equal(h.sockets[0].texts.filter(t => t === JSON.stringify({ type: 'finalize' })).length, 1);
+  h.engine.stop();
+  const sent = h.sockets[0].texts.length;
+  h.engine.finalizePause();
+  assert.equal(h.sockets[0].texts.length, sent, 'nothing after stop');
+});

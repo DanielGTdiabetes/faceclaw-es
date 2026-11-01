@@ -107,6 +107,23 @@ test('VAD completion timestamp measures release and is cleared at capture bounda
   h.detector.setEnabled(false);
 });
 
+test('a VAD release finalizes the transcription only in manual conversation', async () => {
+  for (const manual of [true, false]) {
+    const transcription = manualPort(); let finalized = 0;
+    transcription.finalizePause = () => { finalized++; };
+    const h = harness({ transcription });
+    await h.on(true, 'off', manual ? { manualConversation: true } : {});
+    const pcm = new Uint8Array(1600), view = new DataView(pcm.buffer);
+    for (let i = 0; i < 800; i++) view.setInt16(i * 2, Math.round(1000 * Math.sin(2 * Math.PI * 300 * i / 16000)), true);
+    const feed = (bytes, chunks) => { for (let i = 0; i < chunks; i++) { h.tick(50); h.leases.at(-1).pcm(bytes); } };
+    feed(pcm, 4); assert.equal(finalized, 0, 'not while speaking');
+    feed(new Uint8Array(1600), 12);
+    assert.equal(h.detector.snapshot().vad.completed, 1);
+    assert.equal(finalized, manual ? 1 : 0, manual ? 'manual conversation' : 'other modes keep the engine endpoint');
+    h.detector.setEnabled(false);
+  }
+});
+
 test('manual continuous listening has no time limit, also across priority suspension', async () => {
   const h = harness({ transcription: manualPort() });
   await h.on(true, 'off', { manualConversation: true, language: 'auto' });

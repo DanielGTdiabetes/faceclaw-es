@@ -411,7 +411,11 @@ export class ConversationCaptureCoordinator {
     this.metrics.bytes += pcm.length;
     const vadBefore = this.vad.snapshot();
     this.vad.accept(pcm);
-    if (this.vad.snapshot().completed > vadBefore.completed) this.lastVadStopAtMs = now;
+    if (this.vad.snapshot().completed > vadBefore.completed) {
+      this.lastVadStopAtMs = now;
+      // Hermes conversation only: close the turn at the pause, not ~2 s later at the engine endpoint.
+      if (this.manualConversation) this.host.transcription?.finalizePause?.();
+    }
     // Silence never ends continuous listening: it only saves inference (native VAD vetoes windows).
     if (this.manualConversation && this.participationMode !== "off") {
       for (const match of this.host.participation?.drainProfileMatches?.() ?? []) this.host.transcription?.acceptProfileMatch?.(match);

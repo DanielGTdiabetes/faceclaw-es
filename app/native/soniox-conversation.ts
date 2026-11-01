@@ -248,6 +248,11 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     this.sendControl(JSON.stringify({ type: "finalize" }), "envio-control");
   }
 
+  finalizePause(): void {
+    if (this.mode !== "soniox" || !this.open || this.ending || !this.sonioxLive()) return;
+    try { this.socket?.sendText(JSON.stringify({ type: "finalize" })); } catch { /* The engine endpoint still closes the turn. */ }
+  }
+
   setPhase(phase: number): void { if (this.mode === "local") this.local.setPhase?.(phase); }
 
   /**

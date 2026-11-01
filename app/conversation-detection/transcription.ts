@@ -106,6 +106,11 @@ export interface DetectorTranscription {
   acceptProfileMatch?(match: ProfileVoiceMatch): void;
   stop(): void;
   resetStream(): void;
+  /**
+   * Speech paused (the local VAD released): finalize what the engine heard now instead of waiting for
+   * its own endpoint (~2 s). Not a gap: no boundary, no identity interrupt. Best effort, never fatal.
+   */
+  finalizePause?(): void;
   /** Diagnostic mark (0..4). Applies from the next PCM chunk; ignored when unsupported. */
   setPhase?(phase: number): void;
   acceptNative(pcm: unknown, vadState: string): void;
