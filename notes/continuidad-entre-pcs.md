@@ -1,3 +1,16 @@
+## R6 + experimento ca instalados — 01/11/2026, 19:25/19:29 CET (Codex)
+
+**Prevalece sobre los estados inferiores.** Código R6 `1f7600d`, PR #7; pausa EVO
+de 1000 ms (950 no cierra, 1000 sí). APK firmada/extraída idéntica
+`e8ee67b15052261e1ccfaee0c40393780ad4cebcdc3509d4644ae504ed0eb1e7`,
+firma original/805, 48 ajustes y firstInstallTime conservados; instalación 19:25:03,
+PID10444. Kotlin367/367; Gradle/lintVital correctos; código/artefacto aprobados
+por Claude. [Detalle y retorno completo R5](ventana-pausa-evo-r6-2026-11-01.md).
+Experimento separado en EVO: drop-in ca en even-asr-parakeet, PR Hermes #11,
+corte19:29:33, PID326377, entorno ca y ready=true. Whisper-server sin reiniciar;
+las frases largas siguen en Parakeet. Deepseek prepara/publica una sola batería
+R6+ca. Validación física pendiente; no iniciar captura ni intervenir durante ON.
+
 ## R5 ventana EVO instalada — 01/11/2026, 19:04:08 CET (Codex)
 
 **Prevalece sobre los estados inferiores.** Código `4f57ae33`, PR #7 sobre PR #6;
