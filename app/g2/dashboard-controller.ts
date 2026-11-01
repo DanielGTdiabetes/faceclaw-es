@@ -2251,7 +2251,9 @@ class DashboardController {
     // No capture hook: losing Hermes (network, server, engine) never ends local listening. Only the
     // user's OFF or the capture's own error does.
     changed: () => this.emitConversationHermes(),
-  }, { candidateMs: 60_000, silenceMs: 30_000, maxTurns: 12, maxChars: 6000 });
+    // silenceMs: an active episode keeps its last 12 turns through 2 min of silence, so "¿dónde he
+    // aparcado?" a minute after saying it still carries the answer (30 s dropped it in the field test).
+  }, { candidateMs: 60_000, silenceMs: 120_000, maxTurns: 12, maxChars: 6000 });
 
   /** Session options (language, diagnostics) default to the RAM selectors, read once at ON. */
   setConversationCaptureEnabled(enabled: boolean, transcribe = false, participation: ParticipationMode = "off",
