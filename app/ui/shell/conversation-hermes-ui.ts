@@ -198,12 +198,14 @@ export class HermesConversationPresenter {
 
   capturePresentation(): (() => void) | null {
     const layer = this.layer, entry = this.shown;
-    if (!layer || !entry || !entry.valid || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
+    if (!layer || !entry || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
     return () => {
-      if (!this.disposed && this.layer === layer && this.shown === entry && entry.valid
+      if (!this.disposed && this.layer === layer && this.shown === entry
         && this.liveText() && this.display.isVisible?.(layer) !== false) {
+        // Text already on the lenses gets its reading window even if the controller cleared it
+        // meanwhile (new turn); only a still-current answer sends the bridge receipt.
         if (entry.presentedAt === null) { entry.presentedAt = this.clock.now(); this.scheduleReading(); }
-        entry.confirm?.();
+        if (entry.valid) entry.confirm?.();
       }
     };
   }
@@ -252,7 +254,7 @@ export class HermesConversationPresenter {
       const next = this.pending; this.pending = null;
       if (next) this.select(next);
       else this.finishShown(age >= READING_MAX_MS ? "max" : "min");
-    } else if (!entry.valid && entry.presentedAt === null) this.finishShown("min");
+    } else if (!entry.valid && entry.presentedAt === null && !this.layer) this.finishShown("min");
     this.updateReadingHold();
   }
 

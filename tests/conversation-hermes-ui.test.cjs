@@ -142,7 +142,10 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
     'ui/shell/brightness-picker-layer': { BrightnessPickerLayer: class extends Leaf {} },
     'assistant/tool-registry': { toolRegistry: {} },
   };
-  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+  // Shell and presenter read the same shiftable clock, so a test can let a reading window elapse.
+  let offset = 0;
+  class TestDate extends Date { static now() { return Date.now() + offset; } }
+  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, Date: TestDate });
   const { shell } = load('app/ui/shell/shell.ts');
   const ui = load('app/ui/shell/conversation-hermes-ui.ts');
   const { voiceActivity } = load('app/ui/shell/voice-activity.ts');
@@ -165,6 +168,7 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
   };
   addWindow('launcher', { closeable: false });
   return { shell, ui, voiceActivity, screen, timers, windows, addWindow, renders: () => renders, reasserts: () => reasserts,
+    elapse(ms) { offset += ms; timers.run(); },
     input: (type) => shell.receiveInput({ type, source: 'ring', timestampMs: 0 }) };
 }
 
@@ -269,6 +273,17 @@ test('reading: actual presentation starts the minimum, and clears invalidate a c
   h.advance(1000); assert.equal(h.text(), 'B');
   const stale = h.presenter.capturePresentation(); h.say(''); stale();
   assert.deepEqual(h.receipts, ['A']);
+  h.presenter.dispose();
+});
+
+test('reading: a clear between paint and the deferred receipt keeps the painted answer for its window (17:47 case)', () => {
+  const h = readingHarness(); h.say('A');
+  const confirm = h.presenter.capturePresentation(); assert.equal(typeof confirm, 'function');
+  h.say(''); assert.equal(h.text(), 'A', 'new transcript text must not blank an answer already sent');
+  confirm(); assert.deepEqual(h.receipts, [], 'a cleared answer sends no bridge receipt');
+  h.advance(11999); assert.equal(h.text(), 'A');
+  h.advance(1); assert.notEqual(h.text(), 'A');
+  assert.equal(h.logs[0].visibleMs, 12000);
   h.presenter.dispose();
 });
 
@@ -477,6 +492,8 @@ test('a final contribution wakes once, shows one overlay, then retires and re-sl
   assert.equal(h.shell.stack.layers.length, 2, 'repeated emits of the same event do not multiply overlays');
   assert.deepEqual(h.screen, [false, true]);
   f.say('');
+  assert.equal(h.shell.stack.layers.length, 2, 'text already on the lenses outlives the clear');
+  h.elapse(30_000);
   assert.ok(h.shell.stack.isAtBase());
   assert.deepEqual(h.screen, [false, true, false], 'expiry returns to dark listening');
 });
@@ -489,8 +506,10 @@ test('presentation counts follow the real shell path, reset on arming and never 
   f.say('Primera aportación');
   f.say('Segunda aportación');
   f.say('');
+  h.elapse(30_000);
   const counts = h.ui.hermesPresentationDiagnostics();
-  // The second answer waits behind the first and the clear drops it before it is ever shown.
+  // The second answer waits behind the first and the clear drops it before it is ever shown;
+  // the first, already on the lenses, retires when its window ends.
   assert.equal(JSON.stringify(counts), JSON.stringify({ presented: 1, woke: 1, replaced: 0, refused: 0, retired: 1, released: 0 }));
   assert.doesNotMatch(JSON.stringify(counts), /aportación/);
   h.shell.wake('window'); h.shell.openEscapeMenu(); // An explicit menu has priority: refused.
@@ -520,7 +539,11 @@ test('new turn/identity (message cleared), suspension and OFF retire the overlay
     h.ui.bindHermesConversationUi(f.controller);
     f.arm();
     f.say('Aportación');
-    if (end === 'clear') f.say('');
+    if (end === 'clear') {
+      f.say('');
+      assert.equal(h.shell.stack.layers.length, 2, 'clear: painted text stays for its reading window');
+      h.elapse(30_000);
+    }
     if (end === 'suspend') f.listening(false);
     if (end === 'off') f.off();
     assert.ok(h.shell.stack.isAtBase(), end);
@@ -644,10 +667,12 @@ test('a buried retired overlay is dropped once the explicit layer closes, withou
   const overlay = topLayer(h.shell);
   h.shell.showAlert('Aviso');
   assert.equal(h.shell.stack.layers.length, 3);
-  const renders = h.renders();
   f.say('');
-  assert.ok(h.renders() > renders, 'invalidated text below the alert must be recomposed immediately');
-  assert.equal(h.shell.stack.layers.length, 3, 'the alert above is untouched');
+  // Text already on the lenses keeps its reading window; it retires below the alert when it ends.
+  assert.equal(overlay.isRetired(), false);
+  const renders = h.renders();
+  h.elapse(30_000);
+  assert.ok(h.renders() > renders, 'retired text below the alert must be recomposed immediately');
   assert.equal(overlay.isRetired(), true);
   assert.equal(overlayText(h.shell).includes('Aportación'), false);
   h.timers.run();
