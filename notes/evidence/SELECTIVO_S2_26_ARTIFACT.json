@@ -1,0 +1,19 @@
+{
+  "source_commit": "a0ac233c1e312fc0cde1ba2ecf82d22c24e9b298",
+  "version": "0.8.4-es.17-conversation.s2.26-selectivo-2m-listener",
+  "versionCode": 805,
+  "candidate_path": "C:\\Users\\danie\\.buzz\\OUTBOX\\FACECLAW_SELECTIVO_20261102\\faceclaw-0.8.4-es.17-conversation.s2.26-selectivo-2m-listener.apk",
+  "candidate_sha256": "e7fa8a076bcec6c9f535e45d730f784bbe3d98aa6c75c514865b925aec90f2f9",
+  "candidate_bytes": 141813038,
+  "return_path": "C:\\Users\\danie\\.buzz\\OUTBOX\\FACECLAW_SELECTIVO_20261102\\RETORNO_R4.apk",
+  "return_sha256": "f3e5b11bbf1f7774d13ecb030631e6b86da6e1fc03d8756ee68b6a9828163e57",
+  "certificate_sha256": "57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435",
+  "native_libraries_count": 8,
+  "native_libraries_unchanged": true,
+  "dex": {
+    "classes.dex": "fef380b9b60977edc7ba9ab63b11b77f6a07404262e67ba76ba2ba4540d6fd6e",
+    "classes2.dex": "b0578e9198ce50f4d10ee83d26b588cc85a8a6e59823bd047ac2503e3b2f4526"
+  },
+  "build": "assembleRelease lintVitalRelease; unsigned build then original native libraries and signature",
+  "installed": false
+}

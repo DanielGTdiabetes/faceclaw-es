@@ -1,0 +1,9 @@
+{
+  "observation": "Passive observations during ordinary post-update startup; no intentional reconnect or injected notification",
+  "live_notification_listener_section_found": true,
+  "faceclaw_in_live_notification_listeners": true,
+  "phy_callback_count": 4,
+  "distinct_links_reporting_tx_rx_2m": 2,
+  "fatal_exception_markers_in_filtered_log": 0,
+  "rebind_gap_dedupe_recovery_tested": false
+}

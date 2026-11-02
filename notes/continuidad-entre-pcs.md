@@ -1,3 +1,13 @@
+## S2.26 selectiva instalada desde casa — 02/11/2026 (Codex)
+
+Prevalece sobre los estados inferiores. [Evidencia y retorno](SELECTIVO_R4_CASA_20261102.md).
+Rama `feat/7f26a24f`, fuente `a0ac233`; worktree `E:\projects\faceclaw-selectivo-r4-20261102`.
+APK original firmada S2.26/805, hash `e7fa8a07…f2f9`, instalada y extraída idéntica; 48 ajustes,
+8 nativas y primera instalación conservados. Conversación OFF; 2M negociado en ambos brazos,
+listener enlazado. Recuperación tras hueco y dedupe físicos pendientes. Firmware sigue /37.
+NAS verificado `apk-builds/s2.26-selectivo-20261102/`; retorno R4 `f3e5b11b…63e57` disponible.
+Imágenes evaluadas por Claude: incorporación acotada viable, a preparar en una candidata separada.
+No repetir instalación ni iniciar capturas por sincronizar. Checkout `E:\projects\faceclaw-es` permanece en su rama anterior.
 ## Telemetría instalada sobre S2.25 — 01/11/2026, 15:10:04 CET (Codex)
 
 **Prevalece sobre los estados inferiores.** APK extraída SHA256

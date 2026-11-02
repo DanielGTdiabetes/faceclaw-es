@@ -1,0 +1,36 @@
+{
+  "verified_at": "2026-11-02T16:42:26.730049+00:00",
+  "started_at": "2026-11-02T17:39:31+01:00",
+  "source_commit": "a0ac233c1e312fc0cde1ba2ecf82d22c24e9b298",
+  "candidate_sha256": "e7fa8a076bcec6c9f535e45d730f784bbe3d98aa6c75c514865b925aec90f2f9",
+  "extracted_sha256": "e7fa8a076bcec6c9f535e45d730f784bbe3d98aa6c75c514865b925aec90f2f9",
+  "install": "adb install -r; Success; installer reached post-install UI check",
+  "before": {
+    "versionCode": "805 minSdk=24 targetSdk=35",
+    "versionName": "0.8.4-es.16-conversation.s2.25-recuperacion-pcm",
+    "firstInstallTime": "2026-10-02 09:39:05",
+    "lastUpdateTime": "2026-11-01 19:52:58"
+  },
+  "after": {
+    "versionCode": "805 minSdk=24 targetSdk=35",
+    "versionName": "0.8.4-es.17-conversation.s2.26-selectivo-2m-listener",
+    "firstInstallTime": "2026-10-02 09:39:05",
+    "lastUpdateTime": "2026-11-02 17:39:31"
+  },
+  "settings_before": 48,
+  "settings_after": 48,
+  "settings_equal": true,
+  "current_capture_wakelocks": 0,
+  "off_labels": [
+    "Conversaci\u00f3n"
+  ],
+  "process_pid": "7773",
+  "process_stable_seconds": 5,
+  "signature_sha256": "57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435",
+  "native_libraries_unchanged": true,
+  "physical_tests": "No capture, Bluetooth toggle, firmware update, notification injection or permission change performed",
+  "connection_labels": [],
+  "off_ui_confirmed": true,
+  "off_ui_evidence": "UI dump and screenshot show the plain entry label; main-view-model.ts:301-302 maps this to detector.enabled=false. Panel was not opened; no capture was started.",
+  "off_ui_observed_at": "2026-11-02T16:43:30.756378+00:00"
+}
