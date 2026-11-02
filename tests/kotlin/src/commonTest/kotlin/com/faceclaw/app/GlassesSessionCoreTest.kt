@@ -299,7 +299,7 @@ class GlassesSessionCoreTest {
         try {
             s.startAndAwaitLayout()
             assertEquals(listOf(RIGHT, LEFT).sorted(), s.link.phyRequests.sorted())
-            s.core.stop()
+            s.core.disconnect()
             s.startAndAwaitLayout()
             assertEquals(2, s.link.phyRequests.count { it == RIGHT })
             assertEquals(2, s.link.phyRequests.count { it == LEFT })
