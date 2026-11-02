@@ -1,0 +1,21 @@
+{
+  "source_commit": "8e918952cdd1e9051b74b9c217eb9fa31b939c2a",
+  "version": "0.8.4-es.18-conversation.s2.27-imagenes-notificaciones",
+  "versionCode": 805,
+  "candidate_path": "C:\\Users\\danie\\.buzz\\OUTBOX\\FACECLAW_IMAGES_S2_27_20261102\\faceclaw-0.8.4-es.18-conversation.s2.27-imagenes-notificaciones.apk",
+  "candidate_sha256": "b247d4975132a6a35b4cc1f3020b756b8096e667aa40e01d465adebe6411f6f1",
+  "candidate_bytes": 141829422,
+  "return_path": "C:\\Users\\danie\\.buzz\\OUTBOX\\FACECLAW_IMAGES_S2_27_20261102\\RETORNO_R4.apk",
+  "return_sha256": "f3e5b11bbf1f7774d13ecb030631e6b86da6e1fc03d8756ee68b6a9828163e57",
+  "certificate_sha256": "57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435",
+  "native_libraries_count": 8,
+  "native_libraries_unchanged": true,
+  "dex": {
+    "classes.dex": "7fe468155b8f946023ceaf433f9c5535c211a31f1ae749d75b14b006c91f17a6",
+    "classes2.dex": "b0578e9198ce50f4d10ee83d26b588cc85a8a6e59823bd047ac2503e3b2f4526"
+  },
+  "build": "assembleRelease lintVitalRelease; unsigned build then original native libraries and signature",
+  "installed": false,
+  "immediate_return_path": "C:\\Users\\danie\\.buzz\\OUTBOX\\FACECLAW_IMAGES_S2_27_20261102\\RETORNO_S2_26.apk",
+  "immediate_return_sha256": "e7fa8a076bcec6c9f535e45d730f784bbe3d98aa6c75c514865b925aec90f2f9"
+}

@@ -1,3 +1,14 @@
+## S2.27 imágenes bajo demanda instalada — 02/11/2026 (Codex)
+
+Prevalece sobre los estados inferiores. [Evidencia y retornos](IMAGENES_S2_27_CASA_20261102.md).
+Worktree `E:\projects\faceclaw-images-s2.27-20261102`, rama `feat/e624c5e5`, fuente `8e918952`.
+APK S2.27/805 `b247d497…f6f1`, instalada/extraída idéntica; 48 ajustes, ocho nativas y primera
+instalación conservados. Código Claude y artefacto/instalación Deepseek revisados; Node 1374/1 omitida,
+Kotlin 368, tipos/lint/release/lintVital correctos. Conversación OFF; 2M ambos brazos y listener vivo.
+Firmware sigue /37. NAS `apk-builds/s2.27-imagenes-20261102/` verificado con ambos retornos S2.26/R4.
+Imágenes solo en detalle explícito, popups sin imágenes. Legibilidad/coste del primer decode y prueba
+física de recuperación/dedupe pendientes; no ejecutar capturas ni avisos de prueba automáticamente.
+No usar datos clínicos reales: patrones sintéticos preparados. No repetir instalación por sincronizar.
 ## S2.26 selectiva instalada desde casa — 02/11/2026 (Codex)
 
 Prevalece sobre los estados inferiores. [Evidencia y retorno](SELECTIVO_R4_CASA_20261102.md).

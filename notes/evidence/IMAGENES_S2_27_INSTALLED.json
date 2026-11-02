@@ -1,0 +1,32 @@
+{
+  "started_at": "2026-11-02T17:01:55.766726+00:00",
+  "finished_at": "2026-11-02T17:02:26.407180+00:00",
+  "source_commit": "8e918952cdd1e9051b74b9c217eb9fa31b939c2a",
+  "candidate_sha256": "b247d4975132a6a35b4cc1f3020b756b8096e667aa40e01d465adebe6411f6f1",
+  "extracted_sha256": "b247d4975132a6a35b4cc1f3020b756b8096e667aa40e01d465adebe6411f6f1",
+  "install": "adb install -r; Success",
+  "before": {
+    "versionCode": "805 minSdk=24 targetSdk=35",
+    "versionName": "0.8.4-es.17-conversation.s2.26-selectivo-2m-listener",
+    "firstInstallTime": "2026-10-02 09:39:05",
+    "lastUpdateTime": "2026-11-02 17:39:31"
+  },
+  "after": {
+    "versionCode": "805 minSdk=24 targetSdk=35",
+    "versionName": "0.8.4-es.18-conversation.s2.27-imagenes-notificaciones",
+    "firstInstallTime": "2026-10-02 09:39:05",
+    "lastUpdateTime": "2026-11-02 18:02:04"
+  },
+  "settings_before": 48,
+  "settings_after": 48,
+  "settings_equal": true,
+  "current_capture_wakelocks": 0,
+  "off_labels": [
+    "Conversaci\u00f3n"
+  ],
+  "process_stable_seconds": 5,
+  "off_ui_confirmed": true,
+  "signature_sha256": "57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435",
+  "native_libraries_unchanged": true,
+  "physical_tests": "No capture, Bluetooth toggle, firmware update, notification injection or permission change performed"
+}

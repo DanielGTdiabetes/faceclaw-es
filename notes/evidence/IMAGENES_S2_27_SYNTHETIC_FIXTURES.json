@@ -1,0 +1,13 @@
+{
+  "clinical_data": false,
+  "files": {
+    "SYNTHETIC_CHART.png": {
+      "bytes": 4362,
+      "sha256": "12247e8c7963ef442c307b7011b31ea83886cc790740c4d0f936c2b8d6541320"
+    },
+    "SYNTHETIC_PHOTO_PATTERN.png": {
+      "bytes": 179050,
+      "sha256": "f47a9df67171e27e7aa4518e4d9b3ef75babb78ca9ec5d9c7d97602a880fa6b0"
+    }
+  }
+}
