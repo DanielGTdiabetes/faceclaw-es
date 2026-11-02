@@ -1,3 +1,4 @@
+import { watchNotificationListenerBinding } from "../native/notification-access";
 import { startRemoteInput } from "../remote/service";
 import { acceptInput, resetRingInputFilter } from "../ui/input-monitor";
 import { Application, Dialogs, ImageSource } from "@nativescript/core";
@@ -509,6 +510,7 @@ class DashboardController {
     timerEngine.onChange(() => this.refreshAlarmReliabilityWarning());
     this.offAndroidNotification = onAndroidNotificationPosted((notificationKey) => this.handleAndroidNotificationPosted(notificationKey));
     this.offAndroidNotificationRemoved = onAndroidNotificationRemoved((notificationKey) => this.handleAndroidNotificationRemoved(notificationKey));
+    watchNotificationListenerBinding();
     readActiveNotifications(ALL_NOTIFICATIONS);
     // Settings toggled from the glasses can change what the phone UI shows
     // (e.g. the text-setting editor), so re-emit the snapshot on any change.

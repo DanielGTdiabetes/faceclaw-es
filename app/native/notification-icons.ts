@@ -25,6 +25,8 @@ const KEYED_ICON_CACHE_MAX = 128;
 let notificationListenerProxy: any = null;
 const notificationPostedListeners = new Set<(notificationKey: string) => void>();
 const notificationRemovedListeners = new Set<(notificationKey: string) => void>();
+let listenerStateObserver: any = null;
+const listenerStateListeners = new Set<() => void>();
 
 function invalidateIconCaches(): void {
   cachedAtMs = 0;
@@ -207,9 +209,36 @@ export function onAndroidNotificationRemoved(listener: (notificationKey: string)
 export function onAndroidNotificationsChanged(listener: () => void): () => void {
   const offPosted = onAndroidNotificationPosted(listener);
   const offRemoved = onAndroidNotificationRemoved(listener);
+  const offState = onListenerStateChanged(listener);
   return () => {
     offPosted();
     offRemoved();
+    offState();
+  };
+}
+
+function onListenerStateChanged(listener: () => void): () => void {
+  listenerStateListeners.add(listener);
+  if (global.isAndroid && !listenerStateObserver) {
+    listenerStateObserver = new java.lang.Runnable({
+      run: () => {
+        invalidateIconCaches();
+        const snapshot = Array.from(listenerStateListeners);
+        setTimeout(() => {
+          for (const each of snapshot) {
+            each();
+          }
+        }, 0);
+      },
+    });
+    com.faceclaw.app.FaceclawMediaNotificationListenerService.addListenerStateObserver(listenerStateObserver);
+  }
+  return () => {
+    listenerStateListeners.delete(listener);
+    if (listenerStateListeners.size === 0 && listenerStateObserver) {
+      com.faceclaw.app.FaceclawMediaNotificationListenerService.removeListenerStateObserver(listenerStateObserver);
+      listenerStateObserver = null;
+    }
   };
 }
 

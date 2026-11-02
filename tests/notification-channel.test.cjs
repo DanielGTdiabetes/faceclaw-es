@@ -50,3 +50,19 @@ test('removal, cancellation and disconnect invalidate an in-flight frame callbac
     assert.equal(h.cancelCount(), 1); h.channel.reset();
   }
 });
+
+
+test('Hermes does not present a confirmed key again after a presence gap', () => {
+  const h = harness(); let presentations = 0;
+  const present = h.host.present;
+  h.host.present = (...args) => { presentations++; return present(...args); };
+  h.channel.connect(['notify/1'], h.host);
+  try {
+    h.deliver('gap-key'); h.confirm();
+    h.presence.available = false; h.changed();
+    h.presence.available = true; h.changed();
+    h.deliver('gap-key'); h.deliver('gap-key');
+    assert.equal(presentations, 1);
+    assert.equal(h.sent.filter(f => f.type === 'receipt' && f.presented).length, 3);
+  } finally { h.channel.reset(); }
+});
