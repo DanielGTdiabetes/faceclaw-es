@@ -1,0 +1,15 @@
+{
+  "posted_at": "2026-11-02T17:17:21.9206530Z",
+  "tag": "faceclaw_s227_large",
+  "replaces": "2048x1024 synthetic pattern notification",
+  "title": "PRUEBA S2.27 SIN IMAGEN",
+  "posting_reported": true,
+  "active_record_found": true,
+  "picture_attachment_found": false,
+  "big_picture_template_found": false,
+  "capture_wakelock_before_post": false,
+  "human_visual_result": "Dani confirms no-image test correct",
+  "decode_failure_not_simulated": true,
+  "human_event": "79bc638c559fa1d4a4d797112d5b4987f2b1590ec24a3347e96e584ddb78b65c",
+  "parser_scope": "First current NotificationRecord for exact synthetic tag, bounded by indentation; excludes later history sections"
+}

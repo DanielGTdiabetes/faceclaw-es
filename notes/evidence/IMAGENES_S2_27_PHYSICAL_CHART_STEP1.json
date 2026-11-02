@@ -1,0 +1,22 @@
+{
+  "posted_at": "2026-11-02T17:11:29.2510700Z",
+  "tag": "faceclaw_s227_chart",
+  "package": "com.android.shell",
+  "fixture_sha256": "12247e8c7963ef442c307b7011b31ea83886cc790740c4d0f936c2b8d6541320",
+  "dimensions": "640x240",
+  "first_attempt": "file URI rejected: not a bitmap; command misleadingly returned 0",
+  "second_attempt": "same PNG passed via documented data:base64 icon specification",
+  "posting_reported": true,
+  "human_visual_result": "Dani confirms curve/grid in detail and initial popup text only",
+  "first_decode_latency": "NOT_MEASURED",
+  "second_pattern_posted": true,
+  "active_record_found": true,
+  "picture_extra_found": true,
+  "picture_icon_extra_found": true,
+  "template": "android.app.Notification$BigPictureStyle",
+  "glasses_delivery": "USER_GENERAL_CONFIRMATION",
+  "human_event": "f9f50025d60345bb0592e88ae8fee05847856587456fa8965b1ca7b5e1a451f0",
+  "picture_extra_is_null": true,
+  "specific_confirmation_event": "f63ebf46ffa6863fb89f5341db780d13e534297589eb7b28c12c8565e876d0a3",
+  "latency_perception": "No separate unambiguous latency report"
+}

@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-11-02T17:19:43.315340+00:00",
+  "source": "/sdcard/Android/data/com.faceclaw.app/files/frame-timings.txt",
+  "records": [
+    {
+      "root_frame_id": 252,
+      "root_wall_clock": "2026-11-02 18:15:14.563",
+      "root_duration_ms": 124,
+      "span_frame_id": 256,
+      "fetch_notification_picture_ms": 79
+    }
+  ],
+  "scope": "fetch span includes native picture load, scale, gray conversion and packet import; not display latency or isolated decode. Ring export is incomplete history. No notification key in span."
+}

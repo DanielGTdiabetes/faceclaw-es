@@ -1,0 +1,19 @@
+{
+  "posted_at": "2026-11-02T17:14:52.265618+00:00",
+  "tag": "faceclaw_s227_large",
+  "dimensions": [
+    2048,
+    1024
+  ],
+  "transport_sha256": "2b023647ded01f93b064791fd5750525d820c3ce3b5b7f50faf5259342cac80a",
+  "posting_reported": true,
+  "active_record_found": true,
+  "picture_icon_extra_found": true,
+  "clinical_data": false,
+  "human_visual_result": "Dani: green rectangle; faint checkerboard visible with little detail",
+  "first_decode_latency_ms": null,
+  "fallback_tested": false,
+  "human_event": "de6f3a1ea8685efed82a8f1828cd0052baad6e871a6c435a662cf3c37035a7d6",
+  "legibility": "LIMITED; no full image quality acceptance",
+  "interpretation": "Source checker varies only in blue; GrayPacket blue luma coefficient is 114/1000. Expected low monochrome contrast is an inference, not proof of correct physical output."
+}

@@ -83,3 +83,18 @@ carpeta 700/archivos 600. El recibo NAS se conserva localmente y en notes/eviden
 Issue: buzz://issue?id=e624c5e5e91cd57aaa35d45de23d39a39f71412e8dedf59cc7a94d35910fb8ee&owner=ab90d61db8ac4aada915d46267f0b64e06b9a4c5ee7d304f03e7d5ece5d4b584&d=faceclaw-es
 
 PR: buzz://pr?id=8a4bcdc3b70abc1674e085061419ad3f2798410725a8b7e71e63c51706d402ca&owner=ab90d61db8ac4aada915d46267f0b64e06b9a4c5ee7d304f03e7d5ece5d4b584&d=faceclaw-es
+
+
+## Actualización de prueba física — 02/11/2026, 18:17 CET
+
+Esta actualización supera los pendientes visuales de la sección anterior:
+Dani confirma gráfica/curva/cuadrícula en detalle, popup solo texto y retirada
+correcta del adjunto al actualizar a notificación sin imagen. El patrón grande
+se ve con contraste limitado; no se aprueba calidad general. Un span conservado
+de carga/conversión dura 79 ms durante esa prueba, sin key ni latencia visible.
+Detalle, eventos y límites: [prueba física](IMAGENES_S2_27_PRUEBA_FISICA_20261102.md).
+Decode aislado/primera carga absoluta, memoria y hueco/rebind S2.26 siguen pendientes.
+Recibos públicos adicionales en `notes/evidence/IMAGENES_S2_27_PHYSICAL_*.json`.
+NAS: seis archivos con hashes verificados en
+`/volume1/home/Dani/Faceclaw/apk-builds/s2.27-imagenes-20261102/prueba-fisica-20261102-1720/`.
+Sin código nuevo, reinstalación, captura, firmware ni merge.
