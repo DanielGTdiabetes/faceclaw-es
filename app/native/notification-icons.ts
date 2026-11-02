@@ -37,6 +37,7 @@ const listenerStateListeners = new Set<() => void>();
 function invalidateIconCaches(): void {
   cachedAtMs = 0;
   keyedIconCache.clear();
+  pictureCache.clear();
 }
 
 import type { AndroidNotification, AndroidNotificationAction } from "./notification-types";
@@ -183,7 +184,8 @@ export function readNotificationPicture(
 ): NotificationPictureResult {
   const width = Math.round(maxWidth);
   const height = Math.round(maxHeight);
-  if (!global.isAndroid || !notification.hasPicture || width <= 0 || height <= 0) {
+  if (!global.isAndroid || !notification.hasPicture || !Number.isFinite(width)
+    || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return { picture: null, stale: false };
   }
 
@@ -200,20 +202,26 @@ export function readNotificationPicture(
     return { picture: fits ? cached!.picture : null, stale: true };
   }
 
-  const picture = spanCurrent("fetch-notification-picture", () =>
-    grayImageFromPacket(
-      com.faceclaw.app.FaceclawMediaNotificationListenerService.getNotificationPictureGray(
-        notification.key,
-        width,
-        height,
-        PHOTO_TONE.gamma,
-        PHOTO_TONE.dither,
-        // A chart or screenshot made for a light theme would be a glaring
-        // lit panel on the glasses: show it light-on-dark.
-        true,
+  let picture: GrayImage | null = null;
+  try {
+    picture = spanCurrent("fetch-notification-picture", () =>
+      grayImageFromPacket(
+        com.faceclaw.app.FaceclawMediaNotificationListenerService.getNotificationPictureGray(
+          notification.key,
+          width,
+          height,
+          PHOTO_TONE.gamma,
+          PHOTO_TONE.dither,
+          // A chart or screenshot made for a light theme would be a glaring
+          // lit panel on the glasses: show it light-on-dark.
+          true,
+        ),
       ),
-    ),
-  );
+    );
+  } catch {
+    // Access or an attachment can disappear between listing and rendering.
+    // Cache the empty result too, so a missing image cannot block every paint.
+  }
   pictureCache.delete(notification.key);
   pictureCache.set(notification.key, { postTime: notification.postTime, maxWidth: width, maxHeight: height, picture, atMs: now });
   while (pictureCache.size > PICTURE_CACHE_MAX) {

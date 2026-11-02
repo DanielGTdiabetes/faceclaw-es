@@ -236,7 +236,8 @@ export class SingleNotificationLayer implements Layer {
     }
 
     this.detailMenu.setItems(buildDetailMenu(notification, this.options.origin));
-    drawDetailContent(image, font, notification, iconForNotification(notification.key), width, height);
+    drawDetailContent(image, font, notification, iconForNotification(notification.key), width, height,
+      this.options.origin !== "new-notification-modal");
     this.detailMenu.paint(image, notificationActionMenuBox(width, height), ctx.stack.isFocused());
     this.lastImage = image;
     return image;
@@ -434,6 +435,7 @@ function drawDetailContent(
   icon: GrayImage | null,
   width: number,
   height: number,
+  allowPictures: boolean,
 ): void {
   const contentX = NOTIFICATION_CONTENT_X;
   const contentWidth = notificationContentWidth(width);
@@ -442,7 +444,8 @@ function drawDetailContent(
   const lines: string[] = [];
   // A picture can be the whole notification (Dexcom's has no text), so it
   // stands in for the "(untitled)" placeholder.
-  const hasTitle = Boolean(notification.title) || !notification.hasPicture;
+  const hasPicture = allowPictures && notification.hasPicture;
+  const hasTitle = Boolean(notification.title) || !hasPicture;
   if (hasTitle) {
     lines.push(...wrapText(font, notification.title || "(untitled)", contentWidth));
   }
@@ -460,8 +463,9 @@ function drawDetailContent(
   const step = lineStep(font);
   const textValue = (index: number) => index === 0 && hasTitle ? 230 : 190;
   const reservedTextHeight = Math.min(lines.length, DETAIL_PICTURE_TEXT_LINES) * step;
-  const picture = pictureForNotification(notification, contentWidth,
-    height - DETAIL_PICTURE_BOTTOM_MARGIN - bodyTop - reservedTextHeight - (reservedTextHeight ? DETAIL_PICTURE_GAP : 0));
+  // Automatic popups stay text-only; images load only in explicitly opened details.
+  const picture = hasPicture ? pictureForNotification(notification, contentWidth,
+    height - DETAIL_PICTURE_BOTTOM_MARGIN - bodyTop - reservedTextHeight - (reservedTextHeight ? DETAIL_PICTURE_GAP : 0)) : null;
   if (picture) {
     // The text gets whatever the picture leaves, above it, with its last
     // shown line marked when some is cut off.
@@ -474,6 +478,10 @@ function drawDetailContent(
     }
     image.bitBlt(picture, contentX, bodyTop + shownLines * step + (shownLines ? DETAIL_PICTURE_GAP : 0));
     return;
+  }
+
+  if (!lines.length) {
+    lines.push("(untitled)");
   }
 
   const maxLines = Math.max(1, ((height - bodyTop - step) / step) | 0);
