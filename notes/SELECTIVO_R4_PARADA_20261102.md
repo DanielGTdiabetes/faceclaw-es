@@ -58,9 +58,13 @@ tests/notification-listener-binding.test.cjs
 ## Reanudar
 
 1. Fetch y recuperar `feat/7f26a24f` en worktree propio, conservando cambios ajenos. Leer AGENTS.md y `notes/continuidad-entre-pcs.md` del PC de casa. Comprobar HEAD y diff contra R4.
-2. Claude revisa listener y estado; Deepseek contrasta BLE/concurrencia/dedupe. El commit de PHY ya lo aplicó Claude: esa parte necesita contraste independiente de Deepseek/Codex. Nadie aprueba su propio código.
+2. Claude revisa listener y estado; Deepseek contrasta BLE/concurrencia/dedupe. El commit PHY registra a James Babcock como autor y a Claude como committer. Ese metadato no demuestra quién ejecutó el comando: no atribuir la ejecución sin evidencia ni reescribir identidades. Deepseek ha contrastado el port y sus pruebas (mensaje a1f9bdcdfb1777493a1a7d7308816e9a8145c8b4e43a84b62623e28c3b6ddc8f del canal Faceclaw). Claude revisará el resto al reanudar. Nadie aprueba su propio código.
 3. Compilar Android completo y sus checks requeridos. Las pruebas compartidas no validan APIs Android del listener ni el adaptador BLE. No afirmar estos checks verdes aún.
 4. Verificar flujo real: binding perdido, permiso revocado, post/remove en hueco y ausencia de duplicados; reconexión de ambos brazos y PHY real. No se han ejecutado estas pruebas ni se midió 2M.
 5. Solo después: candidata firmada con clave original, SHA-256, retorno R4 comprobado y OFF actual. Existe autorización previa de Dani para actualizar, pero no se ha consumado ninguna instalación en este cierre. No iniciar capturas automáticamente.
 
 En el shell de este PC, Bash es `C:\Program Files\Git\bin\bash.exe`; JAVA_HOME=`D:/Proyectos/Faceclaw_spanish/.tools/jdk-21.0.12.1+1`, ANDROID_HOME=`D:/Proyectos/Faceclaw_spanish/.tools/android-sdk`, GRADLE_USER_HOME=`D:/Proyectos/Faceclaw_spanish/.gradle-local`. Adaptar rutas en casa; no copiar secretos. Node_modules de esta worktree reutiliza dependencias locales: no asumir que existen en casa.
+
+## Cierre de verificación independiente, 16:58
+
+Deepseek informa suite Node completa 1364 correctas/2 omitidas y Kotlin completo correcto sobre 1d8d0717. Confirma port PHY idéntico a upstream. El fixture no configura anillo: no acredita ese caso. Su tsc de tests no incluye notification-access.ts; Codex sí ejecutó tsc --noEmit global con salida 0. Build Android y pruebas físicas siguen pendientes. La desviación onDestroy que llama onListenerDisconnected queda señalada para revisión. La parada continúa vigente; sin ejecuciones nuevas de suites ni APK.
