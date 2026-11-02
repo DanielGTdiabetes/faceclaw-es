@@ -59,6 +59,8 @@ private class FakeLink(private val platform: ProtocolPlatform) : SessionLink {
     lateinit var core: GlassesSessionCore
     private val lock = platform.createLock()
     private val writesList = ArrayList<Write>()
+    private val phyRequestsList = ArrayList<String>()
+    val phyRequests: List<String> get() = lock.withLock { phyRequestsList.toList() }
     val muted = HashSet<String>()
     val connected = HashSet<String>()
     val disconnected = ArrayList<String>()
@@ -89,6 +91,8 @@ private class FakeLink(private val platform: ProtocolPlatform) : SessionLink {
     override fun isConnected(address: String): Boolean = lock.withLock { address in connected }
 
     override fun requestHighPriority(address: String) {}
+
+    override fun requestLe2mPhy(address: String) { lock.withLock { phyRequestsList.add(address) } }
 
     override fun requestMtu(address: String, mtu: Int, timeoutMs: Int): Boolean = true
 
@@ -290,6 +294,19 @@ private class Session {
 }
 
 class GlassesSessionCoreTest {
+    @Test fun requests2mOncePerArmOnEachConnection() {
+        val s = Session()
+        try {
+            s.startAndAwaitLayout()
+            assertEquals(listOf(RIGHT, LEFT).sorted(), s.link.phyRequests.sorted())
+            s.core.stop()
+            s.startAndAwaitLayout()
+            assertEquals(2, s.link.phyRequests.count { it == RIGHT })
+            assertEquals(2, s.link.phyRequests.count { it == LEFT })
+            assertEquals(4, s.link.phyRequests.size, "no other link receives a PHY request")
+        } finally { s.core.close() }
+    }
+
     @Test fun requestedWearSnapshotWaitsForFirmwareAndForwardsUnchangedValue() {
         val s = Session()
         s.core.monitor.withLock { s.core.running = true; s.core.sessionReady = true }
