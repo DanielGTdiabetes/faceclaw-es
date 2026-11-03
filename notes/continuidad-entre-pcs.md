@@ -1,3 +1,13 @@
+## S2.28.1 instalada — 03/11/2026, 12:55:34 CET (Codex)
+
+Prevalece sobre los estados inferiores. [Recibo de instalación y siguiente paso](smart-turn-rearme-instalacion-20261103.md).
+Claude aprobó el ejecutable `06ab44dd`; instalado con `adb install -r`, APK extraída idéntica
+`d16d05e1…2575`, 48 ajustes sin diferencias y primera instalación conservada. Conectado,
+Conversación OFF por etiqueta de UI y cero wakelocks en lectura final; no se inició escucha.
+Retorno S2.28 fresco coincide con el ya archivado. Falta uso normal con ON decidido por Dani y
+observar `conv timing`; rearme físico, consumo y calidad acústica siguen sin medir.
+Las notas de candidata inferiores son históricas. No reinstalar por sincronizar desde casa.
+
 ## S2.28.1 rearme candidato — 03/11/2026 (Codex, PC del trabajo)
 
 [Arreglo, pruebas, APK y continuación](smart-turn-rearme-20261103.md). Rama `feat/7c9c58da`;
