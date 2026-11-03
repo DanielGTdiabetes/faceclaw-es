@@ -84,6 +84,13 @@ const readingClock: HermesReadingClock = {
 };
 const READING_MIN_MS = 12_000, READING_MAX_MS = 30_000;
 
+/** Scalar lifecycle evidence survives release console stripping; never include message content. */
+function tracePresentation(event: string, state: Record<string, string | number | boolean | null>): void {
+  try {
+    if (typeof android !== "undefined") android.util.Log.i("FaceclawHermesUi", JSON.stringify({ event, ...state }));
+  } catch { /* Diagnostics must never interrupt presentation. */ }
+}
+
 function emptyCounts(): HermesPresentationCounts {
   return { presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 };
 }
@@ -129,6 +136,8 @@ export class HermesConversationPresenter {
     const state = this.source.conversationHermes.snapshot();
     const key = raw;
     if (!snapshot.enabled || !snapshot.listening || state.link === "revocado") {
+      if (this.shown || this.layer) tracePresentation("withdrawn", { enabled: snapshot.enabled,
+        listening: snapshot.listening, revoked: state.link === "revocado" });
       // Suspended/OFF listening never shows a contribution, even one still pending expiry,
       // and that event is not shown later when listening resumes.
       this.handled = key;
@@ -198,15 +207,26 @@ export class HermesConversationPresenter {
 
   capturePresentation(): (() => void) | null {
     const layer = this.layer, entry = this.shown;
-    if (!layer || !entry || !this.liveText() || this.display.isVisible?.(layer) === false) return null;
+    const reason = !layer ? "no-layer" : !entry ? "no-entry" : !this.liveText() ? "no-text"
+      : this.display.isVisible?.(layer) === false ? "not-visible" : null;
+    if (reason) {
+      // Idle shell paints have neither a contribution nor its layer: keep those quiet.
+      if (layer || entry) tracePresentation("capture-skipped", { reason });
+      return null;
+    }
+    if (!layer || !entry) return null;
+    tracePresentation("captured", { confirmed: entry.presentedAt !== null });
     return () => {
-      if (!this.disposed && this.layer === layer && this.shown === entry
-        && this.liveText() && this.display.isVisible?.(layer) !== false) {
+      const blocked = this.disposed ? "disposed" : this.layer !== layer ? "layer-changed"
+        : this.shown !== entry ? "entry-changed" : !this.liveText() ? "no-text"
+        : this.display.isVisible?.(layer) === false ? "not-visible" : null;
+      if (!blocked) {
         // Text already on the lenses gets its reading window even if the controller cleared it
         // meanwhile (new turn); only a still-current answer sends the bridge receipt.
         if (entry.presentedAt === null) { entry.presentedAt = this.clock.now(); this.scheduleReading(); }
+        tracePresentation("confirmed", { valid: entry.valid, hasReceipt: entry.confirm !== null });
         if (entry.valid) entry.confirm?.();
-      }
+      } else tracePresentation("confirmation-skipped", { reason: blocked });
     };
   }
 
@@ -281,6 +301,8 @@ export class HermesConversationPresenter {
   private finishShown(reason: RetirementReason): void {
     this.cancelReadingTimer?.(); this.cancelReadingTimer = null;
     const entry = this.shown; this.shown = null;
+    if (entry) tracePresentation("retired", { reason, confirmed: entry.presentedAt !== null,
+      selectedMs: Math.max(0, this.clock.now() - entry.selectedAt) });
     if (entry?.presentedAt !== null && entry?.presentedAt !== undefined) {
       const visibleMs = Math.max(0, this.clock.now() - entry.presentedAt);
       this.counts.visibleMs = (this.counts.visibleMs ?? 0) + visibleMs;

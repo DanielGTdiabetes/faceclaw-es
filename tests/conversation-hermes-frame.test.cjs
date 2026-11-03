@@ -8,10 +8,15 @@ const ts = require('typescript');
 function harness(outcome, preview = false) {
   const file = ts.createSourceFile('controller.ts', fs.readFileSync('app/g2/dashboard-controller.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const cls = file.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'DashboardController');
-  const method = cls.members.find(n => n.name?.getText(file) === 'renderShell').getText(file);
+  const method = cls.members.filter(n => ['renderShell', 'traceScreen'].includes(n.name?.getText(file)))
+    .map(n => n.getText(file)).join('\n');
   let receipts = 0, notices = 0, paints = 0, captured = 0, submissions = 0;
+  let frameOpen = true;
+  const traces = [], frameLogs = [];
   const context = { exports: {}, Date, shell: { describeInputTarget: () => '', paintScene: () => { paints++; return []; } },
-    frameTimings: { startFrame: () => 1, annotateFrame() {}, finishFrame() {}, logFrame() {},
+    android: { util: { Log: { i: (tag, value) => traces.push({ tag, ...JSON.parse(value) }) } } },
+    frameTimings: { startFrame: () => 1, annotateFrame() {}, finishFrame() {},
+      logFrame(_id, line) { if (frameOpen) frameLogs.push(line); },
       span: (_id, _name, cb) => cb(), spanAsync: (_id, _name, cb) => cb(), runWithFrame: (_id, cb) => cb() },
     beginRenderPass() {}, endRenderPass: () => false, FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS: 1000,
     captureHermesPresentation: () => { captured++; return () => receipts++; },
@@ -22,11 +27,22 @@ function harness(outcome, preview = false) {
   }).outputText, context);
   const instance = new context.exports.Harness();
   const display = { submitShellScene: async () => { submissions++; },
-    waitForFrameFinished: async () => { if (outcome instanceof Error) throw outcome; return outcome; } };
+    waitForFrameFinished: async () => { frameOpen = false; if (outcome instanceof Error) throw outcome; return outcome; } };
   Object.assign(instance, { display, phase: 'connected', nextShellRenderWantsFreshData: false,
     isPreviewDisplayActive: () => preview, schedulePreviewUpdate() {}, requestShellRender() {} });
-  return { instance, counts: () => ({ receipts, notices, paints, captured, submissions }) };
+  return { instance, traces, frameLogs, counts: () => ({ receipts, notices, paints, captured, submissions }) };
 }
+
+test('presentation completion diagnostics survive a closed native frame and record an unsuccessful wake barrier', async () => {
+  const h = harness('sent');
+  h.instance.evenHubResumePromise = Promise.resolve(false);
+  await h.instance.renderShell();
+  assert.ok(h.traces.some(e => e.event === 'hermes-frame' && e.frameId === 1 && e.outcome === 'sent' && e.captured));
+  assert.ok(h.traces.some(e => e.event === 'hermes-wake' && e.frameId === 1 && !e.ready));
+  assert.equal(h.counts().receipts, 0);
+  assert.equal(h.frameLogs.some(line => line.includes('waits for the wake barrier')), false,
+    'the native frame has already closed, so completion evidence must use logcat');
+});
 
 test('the controller acknowledges only a completed native sent frame, never timeout/discard/preview', async () => {
   for (const outcome of ['sent', null, 'discarded: superseded', 'discarded: no change from displayed image', 'composited']) {

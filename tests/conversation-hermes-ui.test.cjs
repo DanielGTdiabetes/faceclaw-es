@@ -98,7 +98,7 @@ function graphicsMocks() {
  * Real Shell (app/ui/shell/shell.ts) with its real LayerStack, voice-activity and audio-priority.
  * Only leaf UI classes (menus, dialogs, chrome) and settings are replaced by small fakes.
  */
-function realShell({ wakeWordAction = 'voice-input', conversationControl } = {}) {
+function realShell({ wakeWordAction = 'voice-input', conversationControl, androidLog } = {}) {
   const timers = fakeTimers();
   class Leaf {
     constructor(options) { this.options = options; }
@@ -145,7 +145,8 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
   // Shell and presenter read the same shiftable clock, so a test can let a reading window elapse.
   let offset = 0;
   class TestDate extends Date { static now() { return Date.now() + offset; } }
-  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, Date: TestDate });
+  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, Date: TestDate,
+    ...(androidLog ? { android: { util: { Log: { i: androidLog } } } } : {}) });
   const { shell } = load('app/ui/shell/shell.ts');
   const ui = load('app/ui/shell/conversation-hermes-ui.ts');
   const { voiceActivity } = load('app/ui/shell/voice-activity.ts');
@@ -205,10 +206,10 @@ function fakeController({ supported = true } = {}) {
 
 function topLayer(shell) { return shell.stack.layers.at(-1); }
 
-function readingHarness() {
+function readingHarness(options = {}) {
   let now = 0, text = '', hooks, serial = 0;
   const timers = new Map(), logs = [], painted = [], receipts = [], retirements = [];
-  const f = fakeController(), { ui } = realShell();
+  const f = fakeController(), { ui } = realShell(options);
   f.arm();
   f.controller.conversationHermes.capturePresentation = () => {
     const value = f.controller.conversationHermesMessage;
@@ -230,6 +231,35 @@ function readingHarness() {
     advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); } },
   };
 }
+
+test('presentation diagnostics distinguish hidden capture, deferred rejection and unconfirmed withdrawal without content', () => {
+  const events = [];
+  const h = realShell({ androidLog: (tag, value) => events.push({ tag, ...JSON.parse(value) }) });
+  const f = fakeController();
+  h.ui.bindHermesConversationUi(f.controller); f.arm(); f.say('PRIVATE answer');
+  const confirm = h.ui.captureHermesPresentation();
+  const covering = { paint: (_ctx, below) => below(), handleInput() {} };
+  h.shell.stack.push(covering);
+  assert.equal(h.ui.captureHermesPresentation(), null);
+  confirm();
+  f.listening(false);
+  assert.ok(events.some(e => e.event === 'capture-skipped' && e.reason === 'not-visible'));
+  assert.ok(events.some(e => e.event === 'confirmation-skipped' && e.reason === 'not-visible'));
+  assert.ok(events.some(e => e.event === 'withdrawn' && e.enabled && !e.listening));
+  assert.ok(events.some(e => e.event === 'retired' && !e.confirmed && e.reason === 'off'));
+  assert.ok(events.every(e => e.tag === 'FaceclawHermesUi'));
+  assert.equal(JSON.stringify(events).includes('PRIVATE'), false);
+});
+
+test('presentation diagnostics tolerate unavailable logcat without changing receipts or the twelve-second hold', () => {
+  const h = readingHarness({ androidLog() { throw new Error('logcat unavailable'); } });
+  h.say('A'); h.sent(); h.say('');
+  h.advance(11999); assert.equal(h.text(), 'A');
+  h.advance(1); assert.notEqual(h.text(), 'A');
+  assert.deepEqual(h.receipts, ['A']);
+  assert.equal(h.logs[0].visibleMs, 12000);
+  h.presenter.dispose();
+});
 
 test('reading: latest pending answer gets its own twelve seconds, from native sent', () => {
   const h = readingHarness(); h.say('A'); h.sent();
