@@ -28,7 +28,27 @@ Validado: `npm test` completo, 1381 correctas / 2 omitidas / 0 fallos; `tsc --no
 correctos (una advertencia previa de Builder de notificaciones). Bundle Android compilado con webpack.
 Versión candidata `0.8.4-es.19-conversation.s2.28-smart-turn`/805. Pruebas cubren selector OFF,
 fallback, preguntas a 700 ms, cadencia, huecos, timestamps, congestión, callbacks antiguos y envío
-de la observación. APK firmada y flujo físico se documentan al completar su comprobación.
+de la observación. Flujo físico pendiente de revisión e instalación.
+
+## APK candidata verificada
+
+`OUTBOX/HERMES_SMART_TURN_7C9C58DA/FACECLAW_S228_SMART_TURN.apk` en Buzz Nest,
+141509934 bytes, SHA256 `ac2f8783fc48700987305c1a572f60c5d55d3a16b88edf9bc91c0cf64276dd86`.
+`apksigner verify` verifica v2/v3 y certificado original
+`57aaa8871c7953212415d72d7484bdda9a74e1bfdc8fe5a007e23e226114c435`;
+`aapt2 dump badging` verifica S2.28/código 805; `zipalign -c -P 16 4` correcto.
+Los ocho `.so` coinciden por SHA256 con la APK extraída del Pixel; bundle incluye el canal y la telemetría.
+
+Construcción: `ns prepare android --release --env.production --env.compileSnapshot=false`,
+seguido de `gradlew.bat :app:assembleRelease :app:lintVitalRelease -Prelease -PfaceclawUnsigned
+-x :app:prepareFaceclawLlama -x :app:prepareFaceclawNativeLibs -x :app:prepareFaceclawVad`.
+El SDK del PC no tiene NDK/CMake: se copiaron del retorno verificado las cinco bibliotecas de esas
+tareas a `platforms/android/app/src/main/jniLibs/arm64-v8a`, sin cambiar los nativos fuente.
+Las otras tres proceden del runtime/dependencias y también coinciden. Kotlin/Java y metadatos release
+sí se compilaron. Primer empaquetado falló por firma ausente; se usó el modo unsigned previsto
+por el repo y firma posterior con archivo de contraseña, sin exponerlo. Se corrigió la selección
+de variante de NativeScript con `-Prelease` tras un fallo de `buildMetadata`.
+Log final: `.scratch/SMART_TURN_ANDROID_ASSEMBLE_RELEASE.log`, salida 0, `lintVitalRelease` correcto.
 
 ## Pixel y retorno
 
