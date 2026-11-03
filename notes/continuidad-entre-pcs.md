@@ -1,3 +1,13 @@
+## S2.28.1 con diagnóstico de pantalla instalada — 03/11/2026, 16:06:24 CET (Codex)
+
+Prevalece sobre la APK de las 12:55. Ejecutable aprobado por Claude `714be398`;
+[construcción, instalación y continuación](HERMES_PANTALLA_INSTALACION_714BE398_20261103.md).
+Misma versión/805, APK `d9eeb000…8495a`, extraída idéntica, firma original,
+48 ajustes y primera instalación conservados. Bundle release empaquetado sobre la
+APK anterior; DEX/manifiesto/runtime/ocho nativas idénticos. UI final Conectado/OFF;
+Dani puede iniciar ON para uso normal. No se ha corregido ni reproducido de nuevo
+la retirada: recoger los tags nuevos cuando ocurra. Retorno fresco `d16d05e1…2575`.
+
 ## S2.28.1 instalada — 03/11/2026, 12:55:34 CET (Codex)
 
 Prevalece sobre los estados inferiores. [Recibo de instalación y siguiente paso](smart-turn-rearme-instalacion-20261103.md).
