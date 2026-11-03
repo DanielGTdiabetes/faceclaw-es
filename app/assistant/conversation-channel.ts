@@ -60,6 +60,8 @@ export class ConversationChannel {
   private destinationId = 0;
   private sequence = 0;
   private pending: Pending | null = null;
+  private turnObservation = false;
+  private lastMeasurement: { requestId: string; ref: EpisodeRef; connection: number; until: number } | null = null;
 
   constructor(private readonly host: ConversationChannelHost) {}
 
@@ -70,6 +72,7 @@ export class ConversationChannel {
     this.optionalIdentity = this.supported && (capabilities as unknown[]).includes(CONVERSATION_OPTIONAL_IDENTITY_CAPABILITY);
     this.memoryAck = this.supported && (capabilities as unknown[]).includes(CONVERSATION_MEMORY_ACK_CAPABILITY);
     this.dailyContextSupported = this.supported && (capabilities as unknown[]).includes(CONVERSATION_DAILY_CONTEXT_CAPABILITY);
+    this.turnObservation = this.supported && (capabilities as unknown[]).includes("conv/turn-observation/1");
   }
 
   /** Explicit RAM-only choice, refused on an old/unsupported bridge. No automatic re-enable. */
@@ -140,6 +143,7 @@ export class ConversationChannel {
 
   /** Connection loss clears this connection's consent and pending work; never replays after reconnect. */
   reset(): void {
+    this.turnObservation = false; this.lastMeasurement = null;
     this.enabled = false;
     this.supported = false;
     this.optionalIdentity = false;
@@ -184,6 +188,8 @@ export class ConversationChannel {
       return false;
     }
     this.stats.sent++;
+    this.lastMeasurement = { requestId: pending.requestId, ref: { ...pending.ref }, connection: this.connection,
+      until: this.host.now() + 5000 };
     if (this.pending === pending) {
       pending.cancelTimer = this.host.after(() => {
         if (this.pending === pending) {
@@ -192,6 +198,19 @@ export class ConversationChannel {
       }, timeoutMs);
     }
     return true;
+  }
+
+  /** One content-free follow-up, bound to the exact authenticated connection and accepted request. */
+  captureContinuation(): ((continued: boolean) => void) | null {
+    const item = this.lastMeasurement;
+    if (!item || !this.turnObservation) return null;
+    let used = false;
+    return (continued) => {
+      if (used || item.connection !== this.connection || !this.isReady() || this.host.now() > item.until) return;
+      used = true;
+      try { this.host.send({ chan: "conv", type: "turn-observation", requestId: item.requestId, ref: item.ref,
+        continuedWithin2s: continued }); } catch { /* Measurement never changes the request. */ }
+    };
   }
 
   /** A cancel belongs to this request only; stale responses can never complete another one. */

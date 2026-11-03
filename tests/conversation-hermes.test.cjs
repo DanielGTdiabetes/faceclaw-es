@@ -6,16 +6,21 @@ const { ConversationHermesRuntime } = require('../.test-build/app/conversation-d
 function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, gateOptions) {
   let now = 1000, seq = 0, ref = null;
   const state = { enabled: false, state: 'desactivado', transcription: { engine: 'soniox' } };
-  const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set();
+  const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set(), pcm = new Set();
+  let smartChanged, smartReady = false, smartStarts = 0;
+  const smart = { start(cb) { smartChanged = cb; smartStarts++; }, stop() { smartReady = false; }, acceptPcm() {},
+    verdict() { return smartReady ? { audioMs: 1000, speechMs: 900, probability: .9 } : null; } };
   const frames = [], outputs = [];
   const source = { snapshot: () => state, wearerActionRef: () => ref,
     subscribe(cb) { observers.add(cb); cb(state); return () => observers.delete(cb); },
     subscribeTurns(cb) { turns.add(cb); return () => turns.delete(cb); },
+    subscribeNativePcm(cb) { pcm.add(cb); return () => pcm.delete(cb); },
     subscribeAssociation(cb) { associations.add(cb); return () => associations.delete(cb); } };
   const timer = (cb, ms, repeat) => { const t = { cb, at: now + ms, repeat }; timers.add(t); return () => timers.delete(t); };
   const channel = new ConversationChannel({ now: () => now, send: frame => { frames.push(frame); return true; },
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
+    ...(gateOptions?.smart ? { smartTurn: smart, after: (cb, ms) => timer(cb, ms, false) } : {}),
     dailyContextEnabled: () => !!gateOptions?.memory,
     every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
     policy);
@@ -43,6 +48,13 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
   return { runtime, channel, frames, outputs, timers, source, state, ref: () => ref, association, turn, advance, reply,
+    smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
+    g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
+      channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1']);
+      runtime.begin(null, 'identidad-opcional', { smartTurn: enabled }); state.enabled = true; state.state = 'escuchando'; notify(); },
+    g2Turn(text = 'Esta frase está terminada') { turn('portador', text, { engine: 'evo-parakeet', relation: 'portador',
+      sessionId: 'local-1', associationVersion: 0, timing: 'ventana', startMs: 0, endMs: 1000 }); },
+    positivePcm() { state.vad.positiveMs += 50; for (const cb of pcm) cb('pcm', 2000); },
     begin(budget, receipts = false) { channel.negotiate(['conv/1', ...(receipts ? ['conv/memory-ack/1'] : [])]); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
@@ -51,6 +63,39 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
+
+test('smart turn accelerates only an opted-in live EVO conversation and records continuation', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.g2Turn(); h.advance(300, false); h.smartEnd();
+  assert.equal(h.sent().length, 1); assert.equal(h.sent()[0].clientTiming.smartTurnMode, 'smart');
+  assert.equal(h.sent()[0].clientTiming.turnToRequestMs, 300);
+  assert.equal(h.sent()[0].clientTiming.directPending, false);
+  h.positivePcm(); h.advance(2000);
+  assert.equal(h.frames.find(f => f.type === 'turn-observation').continuedWithin2s, true);
+  h.runtime.stop();
+});
+
+test('service absent and selector OFF keep old 2 s fallback; question keeps 700 ms', () => {
+  for (const enabled of [true, false]) {
+    const h = harness(undefined, { smart: true }); h.g2Begin(enabled); h.g2Turn();
+    assert.equal(h.smartStarts(), enabled ? 1 : 0);
+    h.advance(1999); assert.equal(h.sent().length, 0);
+    h.advance(1); // the regular 500 ms tick follows its old schedule
+    h.advance(500); assert.equal(h.sent().length, 1);
+    assert.equal(h.sent()[0].clientTiming.smartTurnMode, enabled ? 'fallback' : 'off'); h.runtime.stop();
+  }
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.g2Turn('¿Cuándo viene el tren?');
+  h.advance(699); assert.equal(h.sent().length, 0); h.advance(1); assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.turnToRequestMs, 700); h.runtime.stop();
+  assert.equal(h.sent()[0].clientTiming.directPending, true);
+});
+
+test('smart verdict never bypasses five-second spacing and OFF cancels delayed observations', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.g2Turn(); h.smartEnd();
+  assert.equal(h.sent().length, 1); h.reply('assist', { kind: 'nada', text: '' });
+  h.advance(200, false); h.g2Turn('Otra frase completa sobre el asunto'); h.smartEnd();
+  assert.equal(h.sent().length, 1); h.runtime.stop(); h.advance(3000);
+  assert.equal(h.frames.filter(f => f.type === 'turn-observation').length, 0);
+});
 
 test('wire timing follows accepted closure, request spacing and confirmed presentation', () => {
   const h = harness(); h.begin(undefined, true);

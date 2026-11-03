@@ -41,6 +41,7 @@ import {
   selectConversationListeningMode,
   conversationLocalSpeakers, setConversationLocalSpeakers, conversationSingleVoiceFilter, setConversationSingleVoiceFilter,
   conversationSpeakerProbe, setConversationSpeakerProbe,
+  conversationSmartTurn, setConversationSmartTurn,
   EVO_CONVERSATION_MODEL,
 } from "../conversation-detection/session-controls";
 import { speakerProbeSummary } from "../conversation-detection/speaker-probe-summary";
@@ -545,12 +546,14 @@ export class MainViewModel extends RemoteControlsViewModel {
       conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces",
       conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
       conversationSpeakerProbe() ? "Desactivar diagnóstico de voces (D0)" : "Activar diagnóstico de voces (D0)",
+      conversationSmartTurn() ? "Usar la espera habitual" : "Usar fin de turno inteligente",
     ];
     const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
     if (!this.localTranscriptionCanStart) return;
     if (choice === actions[0]) setConversationLocalSpeakers(!conversationLocalSpeakers());
     else if (choice === actions[1]) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
     else if (choice === actions[2]) setConversationSpeakerProbe(!conversationSpeakerProbe());
+    else if (choice === actions[3]) setConversationSmartTurn(!conversationSmartTurn());
     this.refreshConversationUi();
   }
   async onConversationMemoryTap(): Promise<void> {

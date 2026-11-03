@@ -2,6 +2,9 @@ import { type ConversationTurn } from "./conversation-turns";
 
 /** Optional wire diagnostics: only bounded durations and the turn-closing category. */
 export type ConversationClientTiming = {
+  directPending?: boolean;
+  smartTurnMode?: "smart" | "fallback" | "off";
+  smartTurnProb?: number;
   vadStopToRequestMs?: number; turnToRequestMs?: number; gapSinceLastRequestMs?: number;
   closedBy?: ConversationTurn["closedBy"];
 };
@@ -12,6 +15,10 @@ export function clientDuration(ms: unknown): number | undefined {
 export function readClientTiming(value: unknown): ConversationClientTiming | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const source = value as Record<string, unknown>, result: ConversationClientTiming = {};
+  if (typeof source.directPending === "boolean") result.directPending = source.directPending;
+  if (source.smartTurnMode === "smart" || source.smartTurnMode === "fallback" || source.smartTurnMode === "off") result.smartTurnMode = source.smartTurnMode;
+  if (typeof source.smartTurnProb === "number" && Number.isFinite(source.smartTurnProb)
+    && source.smartTurnProb >= 0 && source.smartTurnProb <= 1) result.smartTurnProb = source.smartTurnProb;
   for (const key of ["vadStopToRequestMs", "turnToRequestMs", "gapSinceLastRequestMs"] as const) {
     const ms = clientDuration(source[key]);
     if (ms !== undefined) result[key] = ms;

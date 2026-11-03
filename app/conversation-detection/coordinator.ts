@@ -185,6 +185,12 @@ export class ConversationCaptureCoordinator {
   subscribeAssociation(listener: (event: WearerAssociationEvent) => void): () => void {
     return this.host.transcription?.subscribeAssociation?.(listener) ?? (() => {});
   }
+  private readonly pcmListeners = new Set<(pcm: unknown, endMs: number) => void>();
+  /** Opt-in RAM-only tap of the original native PCM; never owns or starts capture. */
+  subscribeNativePcm(listener: (pcm: unknown, endMs: number) => void): () => void {
+    this.pcmListeners.add(listener);
+    return () => this.pcmListeners.delete(listener);
+  }
   /** Aggregate of the last Soniox session; `endedBy` is this coordinator's stopReason once OFF. */
   lastSessionSummary(): SonioxSessionSummary | null {
     const summary = this.host.transcription?.lastSessionSummary?.() ?? null;
@@ -209,6 +215,9 @@ export class ConversationCaptureCoordinator {
   /** Original native array, after accept() validated PCM/epoch/expiry; avoids a second JS copy. */
   acceptNativePcm(pcm: unknown): void {
     if (this.enabled && this.lease && this.state === "escuchando") {
+      if (this.manualConversation) for (const listener of this.pcmListeners) {
+        try { listener(pcm, this.metrics.samples / 16); } catch { /* Optional accelerator cannot stop ASR. */ }
+      }
       const state = this.vad.snapshot().state;
       const before = this.host.transcription?.snapshot().soniox?.sentMs;
       if (this.transcribing) this.host.transcription?.acceptNative(pcm, state);

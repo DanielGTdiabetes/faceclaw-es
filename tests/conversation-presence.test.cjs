@@ -26,6 +26,7 @@ function harness(lockEnabled = false, notifications = { backend: 'local', connec
     conversationUsesHermes: () => true,
     conversationFiltersEnabled: () => false,
     conversationSingleVoiceFilter: () => false,
+    conversationSmartTurn: () => false,
     conversationDailyContextSelected: () => false,
     assistantAudioPriority: { isActive: () => false }, voiceControlBridge: { experimentalAudioAvailable: () => true },
     // C1: default RAM session options read once at ON.

@@ -57,9 +57,11 @@ import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionO
 import { ConversationHermesRuntime, HERMES_MESSAGE_MAX_MS } from "../conversation-detection/conversation-hermes";
 import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
+import { SmartTurnClient } from "../conversation-detection/smart-turn";
+import { smartTurnSocket } from "../native/smart-turn-socket";
 import { LocalParticipation } from "../native/local-participation";
 import { type ParticipationMode } from "../conversation-detection/participation";
-import { bindConversationEvoEndpoint, bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
+import { bindConversationEvoEndpoint, conversationEvoEndpoint, conversationSmartTurn, bindConversationSession, conversationSessionOptions, conversationTextEngine, conversationLocalModel, conversationUsesHermes, conversationDailyContextSelected, conversationSingleVoiceFilter, selectConversationListeningMode, wearerActions, wearerChoices } from "../conversation-detection/session-controls";
 import { conversationModelState } from "../native/conversation-model-options";
 import { evenSttUrl } from "../native/even-stt";
 import { micModelState } from "../apps/microphones/mic-models";
@@ -2246,6 +2248,10 @@ class DashboardController {
   });
 
   readonly conversationHermes = new ConversationHermesRuntime(this.conversationDetector, assistantBridge.conversation, {
+    smartTurn: new SmartTurnClient({
+      now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
+      connect: (listener) => global.isAndroid ? smartTurnSocket(conversationEvoEndpoint(), listener) : null,
+    }),
     dailyContextEnabled: () => assistantBridge.conversation.isDailyContextEnabled(),
     now: () => global.isAndroid ? Number(android.os.SystemClock.elapsedRealtime()) : Date.now(),
     every: (callback, ms) => { const timer = setInterval(callback, ms); return () => clearInterval(timer); },
@@ -2270,7 +2276,8 @@ class DashboardController {
         // Manual Hermes stays available for the full capture session; diagnostic sessions keep their budget.
         const armed = this.conversationHermes.begin(options.manualConversation ? null : 8,
           options.manualConversation && options.optionalProfile ? "identidad-opcional" : "identidad-requerida",
-          { singleVoiceFilter: conversationSingleVoiceFilter() });
+          { singleVoiceFilter: conversationSingleVoiceFilter(), smartTurn: conversationSmartTurn()
+            && options.manualConversation && conversationLocalModel() === "evo-parakeet" });
         if (!armed && options.manualConversation) return;
       }
     } else if (!enabled) this.conversationHermes.stop();

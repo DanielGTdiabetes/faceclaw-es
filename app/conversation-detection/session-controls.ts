@@ -40,6 +40,14 @@ let dailyContext = false;
 let localSpeakers = true;
 /** Skip evaluating contexts heard from a single non-wearer voice (TV, radio, someone else's call). */
 let singleVoiceFilter = false;
+/** Live trial; the EVO service is the persistent kill switch. This selector never starts capture. */
+let smartTurn = true;
+export function conversationSmartTurn(): boolean { return smartTurn; }
+export function setConversationSmartTurn(value: boolean): void {
+  if (port?.detector.snapshot().enabled || smartTurn === value) return;
+  smartTurn = value;
+  for (const listener of listeners) listener();
+}
 export function conversationLocalSpeakers(): boolean { return localSpeakers; }
 export function setConversationLocalSpeakers(value: boolean): void {
   if (port?.detector.snapshot().enabled || localSpeakers === value) return;

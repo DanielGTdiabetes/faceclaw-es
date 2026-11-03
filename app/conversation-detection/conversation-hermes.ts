@@ -6,13 +6,15 @@ import { emptyConversationMetrics, LatencyMetric, LATENCY_BUCKETS_MS } from "./c
 import { type WearerAssociationEvent } from "./wearer-identity";
 import { type ConversationChannel, type ConversationResult } from "../assistant/conversation-channel";
 import { emptyPrefilterCounters, isSingleForeignVoice } from "./conversation-prefilter";
+import { type SmartTurnPort } from "./smart-turn";
 
-type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">;
+type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">
+  & Partial<Pick<ConversationCaptureCoordinator, "subscribeNativePcm">>;
 type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number;
   baseline: { chunks?: number; sentMs?: number; finalTokens?: number } };
 type Channel = Pick<ConversationChannel, "isReady" | "isEnabled" | "setEnabled" | "request" | "cancel">
   & Partial<Pick<ConversationChannel, "supportsOptionalIdentity" | "statistics" | "resetStatistics" | "isSupported"
-    | "destination" | "supportsDailyContext" | "setDailyContextEnabled">>;
+    | "destination" | "supportsDailyContext" | "setDailyContextEnabled" | "captureContinuation">>;
 /**
  * Hermes link of an armed session, independent of capture. `sin-red`: the socket dropped and the same
  * authorized destination may come back; `revocado`: server/token changed or auth failed, no resume.
@@ -84,6 +86,7 @@ const emptyUsage = () => ({ reported: 0, inputTokens: 0, cacheReadTokens: 0, out
 export type ConversationHermesHistoryEntry = { at: number; text: string };
 
 export type ConversationHermesHost = {
+  smartTurn?: SmartTurnPort;
   now(): number;
   /** Wall-clock time for the phone history; defaults to Date.now(). */
   wallClock?(): number;
@@ -148,12 +151,22 @@ export class ConversationHermesRuntime {
   private pauseRelease = false;
   private usage = emptyUsage();
   private readonly unsubscribe: (() => void)[];
+  private smartEnabled = false;
+  private smartStarted = false;
+  private lastAudioTurn: ConversationTurn | null = null;
+  private observations: { until: number; positiveMs: number; continued: boolean; report: (continued: boolean) => void }[] = [];
 
   constructor(private readonly source: Source, private readonly channel: Channel,
     private readonly host: ConversationHermesHost, policy: EpisodePolicy) {
     this.tracker = new ConversationEpisodeTracker(() => host.now(), policy);
     this.unsubscribe = [source.subscribeAssociation((event) => this.association(event)),
       source.subscribeTurns((turn) => this.turn(turn)), source.subscribe((snapshot) => this.observe(snapshot))];
+    if (source.subscribeNativePcm) this.unsubscribe.push(source.subscribeNativePcm((pcm, endMs) => {
+      if (!this.enabled) return;
+      const positive = this.source.snapshot().vad?.positiveMs ?? 0;
+      for (const item of this.observations) if (this.host.now() <= item.until && positive > item.positiveMs) item.continued = true;
+      if (this.smartStarted) this.host.smartTurn?.acceptPcm(pcm, endMs);
+    }));
   }
 
   /**
@@ -163,12 +176,14 @@ export class ConversationHermesRuntime {
    * Cadence, one pending evaluation and per-request deadlines still apply.
    */
   begin(maxRequests: number | null = 8, modality: EpisodeModality = "identidad-requerida",
-    options: { singleVoiceFilter?: boolean } = {}): boolean {
+    options: { singleVoiceFilter?: boolean; smartTurn?: boolean } = {}): boolean {
     this.stop();
     if (!EPISODE_MODALITIES.includes(modality)) return false;
     if (modality === "identidad-opcional" && !this.channel.supportsOptionalIdentity?.()) return false;
     if (!this.channel.setEnabled(true)) return false;
     this.enabled = true;
+    this.smartEnabled = options.smartTurn === true;
+    this.lastAudioTurn = null;
     this.link = "listo"; this.linkLostAt = 0; this.stopCause = "";
     this.destination = this.channel.destination?.();
     this.dailyContext = this.host.dailyContextEnabled?.() === true;
@@ -202,6 +217,8 @@ export class ConversationHermesRuntime {
     const wasEnabled = this.enabled;
     if (wasEnabled) { this.updateClock(false); this.finishFlight(); this.closeOffline(); this.stopCause = cause; }
     this.enabled = false;
+    this.stopSmart();
+    this.observations = []; this.lastAudioTurn = null;
     this.flight = null;
     this.channel.setEnabled(false);
     this.cancelTimer?.(); this.cancelTimer = null;
@@ -298,6 +315,17 @@ export class ConversationHermesRuntime {
     if (!this.enabled) return;
     this.updateClock(snapshot.enabled && snapshot.state === "escuchando");
     if (!snapshot.enabled || snapshot.state === "error") { this.stop("captura"); return; }
+    if (this.smartEnabled && snapshot.manualConversation && snapshot.transcription?.engine === "local"
+      && snapshot.state === "escuchando" && this.host.smartTurn) {
+      if (!this.smartStarted) {
+        this.smartStarted = true;
+        this.host.smartTurn.start((speech) => {
+          if (!this.enabled || !this.smartStarted) return;
+          if (speech) for (const item of this.observations) if (this.host.now() <= item.until) item.continued = true;
+          if (!speech) this.tick();
+        });
+      }
+    } else this.stopSmart();
     if (snapshot.transcription?.engine && snapshot.transcription.engine !== "soniox"
       && !(this.modality === "identidad-opcional" && snapshot.transcription.engine === "local")) {
       this.stop("motor"); return;
@@ -350,6 +378,7 @@ export class ConversationHermesRuntime {
     if (accepted) {
       if (this.host.now() - this.lastTextAt >= HERMES_QUIET_RESET_MS) this.resetQuiet("silence");
       this.lastTextAt = this.host.now();
+      this.lastAudioTurn = turn;
       this.lastClosedBy = turn.closedBy;
       if (isQuestion(turn.text) || mentionsHermes(turn.text)) {
         this.directPending = true;
@@ -372,10 +401,23 @@ export class ConversationHermesRuntime {
       if (this.outputRef) this.outputStale = true;
     }
     this.host.changed();
+    if (accepted && this.smartVerdict()) this.tick();
+  }
+
+  private stopSmart(): void {
+    if (this.smartStarted) this.host.smartTurn?.stop();
+    this.smartStarted = false;
+  }
+
+  private smartVerdict() {
+    const turn = this.lastAudioTurn;
+    return this.smartStarted && turn?.engine === "evo-parakeet"
+      ? this.host.smartTurn?.verdict(turn.startMs, turn.endMs) ?? null : null;
   }
 
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
+    this.lastAudioTurn = null;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
     this.attempted = "";
     if (this.outputRef) this.outputStale = true;
@@ -392,6 +434,9 @@ export class ConversationHermesRuntime {
 
   private tick(): void {
     if (!this.enabled) return;
+    const due = this.observations.filter((item) => this.host.now() >= item.until);
+    this.observations = this.observations.filter((item) => this.host.now() < item.until);
+    for (const item of due) item.report(item.continued);
     const snapshot = this.source.snapshot();
     this.observe(snapshot);
     if (!this.enabled) return;
@@ -410,7 +455,7 @@ export class ConversationHermesRuntime {
       this.finishFlight(); this.channel.cancel();
     }
     if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
-      || this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS : 2000)
+      || (!this.smartVerdict() && this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS : 2000))
       || (!this.directPending && this.host.now() - this.lastRequestAt < 5000)) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
@@ -523,6 +568,7 @@ export class ConversationHermesRuntime {
     if (!this.enabled || !this.channel.isReady() || this.source.snapshot().state !== "escuchando"
       || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
     const previousRequestAt = this.lastRequestAt;
+    const settledDirect = this.directPending;
     this.lastRequestAt = this.host.now();
     this.directPending = false;
     if (this.adaptive && mode === "assist") {
@@ -536,6 +582,7 @@ export class ConversationHermesRuntime {
     this.requests++;
     if (mode === "assess") this.counters.assessments++; else this.counters.assists++;
     const snapshot = this.source.snapshot();
+    const smart = this.smartVerdict();
     this.metrics.turnToRequest.add(this.host.now() - this.lastTextAt);
     if (snapshot.lastVadStopAtMs != null) this.metrics.vadStopToRequest.add(this.host.now() - snapshot.lastVadStopAtMs);
     const flight: Flight = { ref: { ...context.ref }, mode, at: this.host.now(), turnAt: this.lastTextAt,
@@ -545,9 +592,17 @@ export class ConversationHermesRuntime {
     const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result),
       (working) => { if (this.flight === flight) { this.working = working; this.host.changed(); } },
       { turnToRequestMs: flight.at - this.lastTextAt, closedBy: this.lastClosedBy,
+        ...(this.host.smartTurn ? { directPending: settledDirect,
+          smartTurnMode: !this.smartEnabled || this.host.smartTurn.available?.() === false ? "off" as const : smart ? "smart" as const : "fallback" as const,
+          ...(smart?.probability != null ? { smartTurnProb: smart.probability } : {}) } : {}),
         ...(snapshot.lastVadStopAtMs != null ? { vadStopToRequestMs: flight.at - snapshot.lastVadStopAtMs } : {}),
         ...(Number.isFinite(previousRequestAt) ? { gapSinceLastRequestMs: flight.at - previousRequestAt } : {}) });
     if (!accepted && this.flight === flight) this.finishFlight();
+    if (accepted && this.host.smartTurn) {
+      const report = this.channel.captureContinuation?.();
+      if (report) this.observations.push({ until: this.host.now() + 2000,
+        positiveMs: snapshot.vad?.positiveMs ?? 0, continued: false, report });
+    }
     this.host.changed();
   }
 

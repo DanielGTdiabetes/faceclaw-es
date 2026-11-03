@@ -653,6 +653,7 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
     conversationDailyContextSelected: () => false,
     conversationFiltersEnabled: () => gate,
     conversationSingleVoiceFilter: () => false,
+    conversationSmartTurn: () => false,
     sonioxApiKeySetting: { get: () => local ? '' : 'synthetic' }, conversationTextEngine: () => local ? 'local' : 'soniox',
     conversationUsesHermes: () => hermes, conversationLocalModel: () => 'whisper-medium-es', conversationModelState: () => ({ status: ready }),
     conversationModel: () => 'whisper-medium-es',
