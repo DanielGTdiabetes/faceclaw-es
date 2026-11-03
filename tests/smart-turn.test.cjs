@@ -4,13 +4,14 @@ const { SmartTurnClient, smartTurnUrl } = require('../.test-build/app/conversati
 
 function harness() {
   let now = 0, listener, queue = 0;
-  const sent = [], events = [], closed = [];
-  const client = new SmartTurnClient({ now: () => now, connect(cb) { listener = cb; return {
+  const sent = [], events = [], closed = [], listeners = [];
+  const client = new SmartTurnClient({ now: () => now, connect(cb) { listener = cb; listeners.push(cb); return {
     sendText(text) { sent.push(JSON.parse(text)); return true; },
     sendBinary(pcm) { sent.push(pcm); return true; }, queuedBytes: () => queue,
     close(...args) { closed.push(args); },
   }; } });
-  return { client, sent, events, closed, advance(ms) { now += ms; }, queue(value) { queue = value; },
+  return { client, sent, events, closed, connections: () => listeners.length,
+    advance(ms) { now += ms; }, queue(value) { queue = value; },
     start() { client.start(speech => events.push(speech)); listener.onTextMessage('{"type":"g2.ready","v":1}'); },
     event(value) { listener.onTextMessage(JSON.stringify(value)); }, old: () => listener,
     pcm(end = 50) { client.acceptPcm('NATIVE_PCM', end); } };
@@ -66,4 +67,55 @@ test('synchronous connection failure cannot resurrect a native socket', () => {
   } });
   client.start(() => {}); client.acceptPcm('pcm', 50);
   assert.equal(closed, 1); assert.equal(sent, 0);
+});
+
+test('closed, failed and congested streams reconnect from fresh PCM without another start', () => {
+  for (const failure of ['onClosed', 'onFailure', 'queue']) {
+    const h = harness(); h.start(); h.pcm(); const old = h.old();
+    h.event({ type: 'g2.turn_end', audioMs: 50, speechMs: 20, probability: .8 });
+    if (failure === 'queue') { h.queue(16001); h.pcm(100); h.queue(0); }
+    else old[failure]();
+    assert.equal(h.client.available(), false);
+    assert.equal(h.client.verdict(0, 100), null);
+    const count = h.sent.length;
+    h.advance(999); h.pcm(150); assert.equal(h.connections(), 1);
+    h.advance(1); h.pcm(200); assert.equal(h.connections(), 2);
+    assert.equal(h.sent.length, count, 'no replay or PCM before the new handshake');
+    old.onTextMessage('{"type":"g2.ready","v":1}'); old.onFailure(); old.onClosed();
+    assert.equal(h.client.available(), false);
+    h.event({ type: 'g2.ready', v: 1 }); h.pcm(250);
+    assert.deepEqual(h.sent.slice(count), [{ type: 'g2.reset', startMs: 200 }, 'NATIVE_PCM']);
+    h.event({ type: 'g2.turn_end', audioMs: 250, speechMs: 220, probability: .9 });
+    assert.equal(h.client.verdict(200, 250).probability, .9);
+    h.client.stop(); h.advance(2000); h.pcm(300);
+    assert.equal(h.connections(), 2, 'OFF cancels recovery');
+  }
+});
+
+test('null, thrown and synchronous connection failures retry at most once a second until OFF', () => {
+  for (const failure of ['null', 'throw', 'callback']) {
+    let now = 0, connections = 0;
+    const client = new SmartTurnClient({ now: () => now, connect(listener) {
+      connections++;
+      if (failure === 'throw') throw new Error('unavailable');
+      if (failure === 'callback') listener.onFailure();
+      return null;
+    } });
+    client.start(() => {});
+    for (now = 50; now < 1000; now += 50) client.acceptPcm('pcm', now);
+    assert.equal(connections, 1);
+    client.acceptPcm('pcm', now); assert.equal(connections, 2);
+    client.stop(); now += 2000; client.acceptPcm('pcm', now);
+    assert.equal(connections, 2);
+    client.start(() => {}); assert.equal(connections, 3, 'explicit ON starts immediately');
+  }
+});
+
+test('a connection without a ready handshake expires and cannot block subsequent recovery', () => {
+  const h = harness(); h.client.start(() => {}); const old = h.old();
+  h.advance(3000); h.pcm(); assert.equal(h.closed.length, 1);
+  h.advance(1000); h.pcm(100); assert.equal(h.connections(), 2);
+  old.onTextMessage('{"type":"g2.ready","v":1}'); assert.equal(h.client.available(), false);
+  h.event({ type: 'g2.ready', v: 1 }); h.pcm(150);
+  assert.deepEqual(h.sent, [{ type: 'g2.reset', startMs: 100 }, 'NATIVE_PCM']);
 });

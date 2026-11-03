@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
 const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
+const { SmartTurnClient } = require('../.test-build/app/conversation-detection/smart-turn.js');
 
 function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, maxChars: 6000 }, gateOptions) {
   let now = 1000, seq = 0, ref = null;
@@ -20,7 +21,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   const channel = new ConversationChannel({ now: () => now, send: frame => { frames.push(frame); return true; },
     after: (cb, ms) => timer(cb, ms, false) });
   const runtime = new ConversationHermesRuntime(source, channel, { now: () => now,
-    ...(gateOptions?.smart ? { smartTurn: smart, after: (cb, ms) => timer(cb, ms, false) } : {}),
+    ...(gateOptions?.smart ? { smartTurn: gateOptions.smartPort ?? smart, after: (cb, ms) => timer(cb, ms, false) } : {}),
     dailyContextEnabled: () => !!gateOptions?.memory,
     every: (cb, ms) => timer(cb, ms, true), wallClock: () => now, onOutput: text => outputs.push(text), changed() {} },
     policy);
@@ -47,14 +48,14 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     channel.handle({ chan: 'conv', type: 'result', mode, requestId: sent.requestId, ref: sent.ref,
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
-  return { runtime, channel, frames, outputs, timers, source, state, ref: () => ref, association, turn, advance, reply,
+  return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
     smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
       channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1']);
       runtime.begin(null, 'identidad-opcional', { smartTurn: enabled }); state.enabled = true; state.state = 'escuchando'; notify(); },
     g2Turn(text = 'Esta frase está terminada') { turn('portador', text, { engine: 'evo-parakeet', relation: 'portador',
       sessionId: 'local-1', associationVersion: 0, timing: 'ventana', startMs: 0, endMs: 1000 }); },
-    positivePcm() { state.vad.positiveMs += 50; for (const cb of pcm) cb('pcm', 2000); },
+    positivePcm(endMs = 2000) { state.vad.positiveMs += 50; for (const cb of pcm) cb('pcm', endMs); },
     begin(budget, receipts = false) { channel.negotiate(['conv/1', ...(receipts ? ['conv/memory-ack/1'] : [])]); runtime.begin(budget); state.enabled = true; state.state = 'escuchando'; notify(); association(); },
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
@@ -95,6 +96,27 @@ test('smart verdict never bypasses five-second spacing and OFF cancels delayed o
   h.advance(200, false); h.g2Turn('Otra frase completa sobre el asunto'); h.smartEnd();
   assert.equal(h.sent().length, 1); h.runtime.stop(); h.advance(3000);
   assert.equal(h.frames.filter(f => f.type === 'turn-observation').length, 0);
+});
+
+test('live runtime recovers a closed Smart Turn socket without toggling Conversation', () => {
+  let h, listener, connections = 0;
+  const client = new SmartTurnClient({ now: () => h.now(), connect(cb) {
+    listener = cb; connections++;
+    return { sendText: () => true, sendBinary: () => true, close() {} };
+  } });
+  h = harness(undefined, { smart: true, smartPort: client }); h.g2Begin();
+  listener.onTextMessage('{"type":"g2.ready","v":1}'); h.positivePcm(500); h.g2Turn();
+  const old = listener; old.onClosed();
+  h.advance(1000, false); h.positivePcm(950);
+  assert.equal(connections, 2); assert.equal(h.sent().length, 0);
+  listener.onTextMessage('{"type":"g2.ready","v":1}'); h.positivePcm(1000);
+  old.onFailure();
+  listener.onTextMessage('{"type":"g2.turn_end","audioMs":1000,"speechMs":975,"probability":0.9}');
+  assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.smartTurnMode, 'smart');
+  assert.equal(h.sent()[0].clientTiming.turnToRequestMs, 1000);
+  h.runtime.stop(); h.advance(2000); h.positivePcm(1050);
+  assert.equal(connections, 2);
 });
 
 test('wire timing follows accepted closure, request spacing and confirmed presentation', () => {

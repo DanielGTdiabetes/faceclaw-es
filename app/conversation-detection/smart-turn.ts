@@ -30,6 +30,8 @@ export class SmartTurnClient implements SmartTurnPort {
   private generation = 0;
   private started = false;
   private ready = false;
+  private retryAt = 0;
+  private connectingAt = 0;
   private baseMs: number | null = null;
   private sentMs = 0;
   private lastAt = 0;
@@ -44,6 +46,11 @@ export class SmartTurnClient implements SmartTurnPort {
     if (this.started) return;
     this.started = true;
     this.changed = changed;
+    this.connect();
+  }
+
+  private connect(): void {
+    this.connectingAt = this.host.now();
     const generation = ++this.generation;
     const live = () => generation === this.generation && this.started;
     try {
@@ -51,7 +58,10 @@ export class SmartTurnClient implements SmartTurnPort {
         onTextMessage: (text) => { if (live()) this.message(text); },
         onClosed: () => { if (live()) this.fail(); },
         onFailure: () => { if (live()) this.fail(); } });
-      if (live()) this.socket = socket;
+      if (live()) {
+        this.socket = socket;
+        if (!socket) this.fail();
+      }
       else socket?.close(1000, "stale");
     } catch { this.fail(); }
   }
@@ -59,6 +69,7 @@ export class SmartTurnClient implements SmartTurnPort {
   stop(): void {
     this.started = false;
     this.fail();
+    this.changed = () => {};
   }
 
   private fail(): void {
@@ -66,12 +77,20 @@ export class SmartTurnClient implements SmartTurnPort {
     const socket = this.socket;
     this.socket = null; this.ready = false; this.baseMs = null; this.ended = null;
     this.lastSpeechMs = -1;
+    this.retryAt = this.host.now() + 1000;
     try { socket?.close(1000, "stop"); } catch { /* Fallback needs no working socket. */ }
   }
 
   acceptPcm(pcm: unknown, endMs: number): void {
-    if (!this.ready || !this.socket || !Number.isFinite(endMs)) return;
+    if (!this.started || !Number.isFinite(endMs)) return;
     const now = this.host.now();
+    // Retry only with live capture, never buffer PCM or keep a reconnect timer alive after OFF.
+    if (!this.socket && now >= this.retryAt) this.connect();
+    if (!this.ready) {
+      if (this.socket && now - this.connectingAt >= 3000) this.fail();
+      return;
+    }
+    if (!this.socket) return;
     try {
       if ((this.socket.queuedBytes?.() ?? 0) > 16000) { this.fail(); return; }
       if (this.baseMs === null || endMs !== this.sentMs + 50 || now - this.lastAt > 250) {

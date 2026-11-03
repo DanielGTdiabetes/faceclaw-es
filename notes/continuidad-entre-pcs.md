@@ -1,3 +1,14 @@
+## S2.28.1 rearme candidato — 03/11/2026 (Codex, PC del trabajo)
+
+[Arreglo, pruebas, APK y continuación](smart-turn-rearme-20261103.md). Rama `feat/7c9c58da`;
+requiere revisión de Claude antes de instalar. La candidata recupera Smart Turn con PCM nuevo
+tras un cierre, sin exigir OFF/ON; OFF cancela el rearme. Node 1385 correctas/2 omitidas,
+Kotlin 368 correctas tras un fallo temporal documentado, tipos/lint/release/lintVital correctos.
+APK original firmada `d16d05e1…2575`, S2.28.1/805, ocho nativas idénticas a S2.28.
+Dani deja Pixel conectado/OFF. No está instalada en este punto; no activar captura por sincronizar.
+La última instalación acreditada sigue siendo S2.28. Consultar el contrato final del hilo Hermes
+para conocer la revisión, instalación y copia NAS posteriores.
+
 ## S2.28 Smart Turn instalada — 03/11/2026 (Codex)
 
 Prevalece sobre las entradas inferiores. [Despliegue, fuente y retorno](smart-turn-g2-20261103.md).
