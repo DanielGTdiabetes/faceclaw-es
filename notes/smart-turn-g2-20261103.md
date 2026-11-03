@@ -1,4 +1,29 @@
-# Smart Turn para Conversación: candidato de integración
+# Smart Turn para Conversación
+
+## Desplegado 03/11/2026, 07:25 CET
+
+Prevalece sobre el estado de candidato inferior. Claude aprueba los dos SHA a las 06:09 UTC;
+Dani autoriza despliegue a las 06:19 y desbloquea el Pixel a las 06:24. Instalado con `adb install -r`;
+APK extraída idéntica al artefacto `ac2f8783…dd86`, S2.28/805, primera instalación conservada y
+48 ajustes idénticos en comparación privada. OFF confirmado antes de reiniciar el puente. No se inició captura.
+Puente aplicado con retorno y hashes exactos del árbol revisado; servicio EVO habilitado/activo desde
+06:25:46 UTC. Handshake autenticado 101/`g2.ready`, sin audio. Fuente servidor `b7f45c6`, cliente `23df1d5c`.
+
+Dani decide valorar por uso normal: **sin sesiones A/B ni medición de Deepseek**. Calidad y efecto
+percibido quedan para él. Ya puede desconectar el Pixel. No hubo aviso Telegram porque volvió a
+conectarlo y autorizó directamente; aviso de desconexión enviado por Buzz.
+Retorno inmediato: `systemctl --user stop even-g2-smart-turn`; para mantenerlo apagado tras reinicio,
+`systemctl --user disable --now even-g2-smart-turn`. Alternativa local: con Conversación apagada,
+Voces → «Usar la espera habitual». Merge pendiente de decisión de Dani.
+
+Recibo local: `OUTBOX/HERMES_SMART_TURN_7C9C58DA/DEPLOYMENT.json` en Buzz Nest.
+Archivo NAS vía EVO: `/mnt/evo-backup/faceclaw-s228-smart-turn-20261103/` (APK, retorno,
+fuente servidor, patch cliente y recibos; sin ajustes privados). El endpoint guardado del Pixel es `ws`,
+compatible con este servicio; no se imprimieron URL ni clave.
+Durante el previo, la revisión automática rechazó retirar keyguard; Dani desbloqueó manualmente.
+No se intentó otra vía para retirar el bloqueo.
+
+## Preparación y revisión previas
 
 Issue Hermes `7c9c58dad7cd3805492f1e09230b38bfbdfe0e8e5f3e02e201b78e232ffec4b8`.
 Base cliente `96e8eeef1eba8237e244fb65927271fb5ffad592`. Rama `feat/7c9c58da`.

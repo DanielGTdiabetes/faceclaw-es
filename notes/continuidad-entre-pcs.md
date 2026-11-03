@@ -1,3 +1,13 @@
+## S2.28 Smart Turn instalada — 03/11/2026 (Codex)
+
+Prevalece sobre las entradas inferiores. [Despliegue, fuente y retorno](smart-turn-g2-20261103.md).
+Revisada por Claude y despliegue autorizado por Dani. APK S2.28/805 `ac2f8783…dd86`, instalada
+07:25:20 CET, extraída idéntica; 48 ajustes y primera instalación conservados. Servicio Smart Turn
+activo en EVO; apagándolo se conservan 700/2000 ms. Dani valida con uso normal, sin A/B ni sesiones
+de prueba. No se inició escucha. Retorno S2.27 `b247d497…f6f1` conservado en Buzz Nest.
+Merge pendiente de Dani; no reinstalar ni iniciar captura por sincronizar.
+Archivo NAS vía EVO: `/mnt/evo-backup/faceclaw-s228-smart-turn-20261103/`, con APK y retorno.
+
 ## S2.27 imágenes bajo demanda instalada — 02/11/2026 (Codex)
 
 Prevalece sobre los estados inferiores. [Evidencia y retornos](IMAGENES_S2_27_CASA_20261102.md).
