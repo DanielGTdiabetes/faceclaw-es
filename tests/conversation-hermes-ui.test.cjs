@@ -957,3 +957,40 @@ test('reading queue: visible and pending offers survive normal answers and keep 
   q.advance(4000); assert.equal(q.text(), 'Oferta pendiente');
   q.presenter.dispose();
 });
+
+test('reading queue: a wearer turn promotes an already pending answer; other updates do not', () => {
+  const h = readingHarness();
+  h.f.tick({ wearerTurnVersion: 0 }); h.say('Primera'); h.sent(); h.advance(1);
+  h.say('Segunda'); assert.equal(h.text(), 'Primera');
+  h.f.tick({ working: true }); assert.equal(h.text(), 'Primera');
+  h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Segunda'); h.sent();
+  assert.deepEqual(h.receipts, ['Primera', 'Segunda']);
+  h.advance(3999); assert.equal(h.text(), 'Segunda');
+  h.advance(1); assert.notEqual(h.text(), 'Segunda'); h.presenter.dispose();
+});
+
+test('reading queue: latest normal answer behind a pending offer is presented after its protected window', () => {
+  const h = readingHarness(); h.say('Primera'); h.sent(); h.advance(1);
+  h.f.tick({ outputCalendarOffer: true }); h.say('Oferta pendiente');
+  h.f.tick({ outputCalendarOffer: false }); h.say('Normal anterior'); h.say('Normal última');
+  h.advance(3999); assert.equal(h.text(), 'Oferta pendiente'); h.sent();
+  h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Oferta pendiente');
+  h.advance(11999); assert.equal(h.text(), 'Oferta pendiente');
+  h.advance(1); assert.equal(h.text(), 'Normal última'); h.sent();
+  assert.deepEqual(h.receipts, ['Primera', 'Oferta pendiente', 'Normal última']);
+  h.advance(4000); assert.notEqual(h.text(), 'Normal última'); h.presenter.dispose();
+});
+
+test('reading queue: clear, OFF and pause discard the normal deferred behind an offer', () => {
+  for (const cause of ['clear', 'off', 'pause']) {
+    const h = readingHarness(); h.say('Primera'); h.sent(); h.advance(1);
+    h.f.tick({ outputCalendarOffer: true }); h.say('Oferta pendiente');
+    h.f.tick({ outputCalendarOffer: false }); h.say('Normal');
+    if (cause === 'clear') h.say('');
+    else if (cause === 'off') h.f.off();
+    else h.f.listening(false);
+    h.advance(3999);
+    if (cause === 'clear') { assert.equal(h.text(), 'Oferta pendiente'); h.sent(); }
+    h.advance(30000); assert.notEqual(h.text(), 'Normal', cause); h.presenter.dispose();
+  }
+});

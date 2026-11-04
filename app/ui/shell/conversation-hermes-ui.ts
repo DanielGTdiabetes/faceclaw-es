@@ -101,6 +101,8 @@ export class HermesConversationPresenter {
   private disposed = false;
   private shown: ReadingEntry | null = null;
   private pending: ReadingEntry | null = null;
+  /** At most the latest normal answer behind a protected pending offer. */
+  private afterOffer: ReadingEntry | null = null;
   private cancelReadingTimer: (() => void) | null = null;
   /** Last text rendered, refused or dismissed on the lenses; "" once nothing is shown. */
   private rendered = "";
@@ -133,6 +135,7 @@ export class HermesConversationPresenter {
       // and that event is not shown later when listening resumes.
       this.handled = key;
       this.pending = null;
+      this.afterOffer = null;
       this.finishShown("off");
       this.retire(true);
       return;
@@ -140,6 +143,7 @@ export class HermesConversationPresenter {
     if (!raw) {
       this.handled = "";
       if (!this.pending?.calendarOffer) this.pending = null;
+      this.afterOffer = null;
       if (this.shown) { this.shown.valid = false; this.shown.confirm = null; }
     } else if (key !== this.handled) {
       this.handled = key;
@@ -147,17 +151,14 @@ export class HermesConversationPresenter {
         presentedAt: null, confirm: this.source.conversationHermes.capturePresentation?.() ?? null, valid: true,
         calendarOffer: state.outputCalendarOffer === true, wearerTurnAtAck: state.wearerTurnVersion ?? 0 };
       if (entry.text) {
-        const replace = this.shown && !this.shown.calendarOffer && this.shown.presentedAt !== null
-          && (state.wearerTurnVersion ?? 0) > this.shown.wearerTurnAtAck;
-        if (this.isReading() && !replace) {
-          if (!this.pending?.calendarOffer || entry.calendarOffer) this.pending = entry;
-        } else {
-          const next = this.pending?.calendarOffer ? this.pending : entry;
-          this.pending = null;
-          this.select(next);
-        }
+        if (this.pending?.calendarOffer && !entry.calendarOffer) this.afterOffer = entry;
+        else { this.pending = entry; this.afterOffer = null; }
       }
     }
+    // Re-evaluate on accepted wearer turns too: a reply may have arrived before that turn.
+    const replace = this.shown && !this.shown.calendarOffer && this.shown.presentedAt !== null
+      && (state.wearerTurnVersion ?? 0) > this.shown.wearerTurnAtAck;
+    if (this.pending && (!this.isReading() || replace)) this.select(this.takePending()!);
     this.advanceReading();
     this.show();
   }
@@ -228,6 +229,7 @@ export class HermesConversationPresenter {
   dispose(): void {
     if (this.disposed) return;
     this.pending = null;
+    this.afterOffer = null;
     this.finishShown("off");
     this.retire(false);
     this.disposed = true;
@@ -261,13 +263,20 @@ export class HermesConversationPresenter {
     this.scheduleReading();
   }
 
+  private takePending(): ReadingEntry | null {
+    const next = this.pending;
+    this.pending = this.afterOffer;
+    this.afterOffer = null;
+    return next;
+  }
+
   private advanceReading(): void {
     const entry = this.shown;
     if (!entry) return;
     const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
     const window = hermesReadingWindow(entry.text, entry.calendarOffer, entry.presentedAt !== null);
     if (age >= window.maxMs || (!this.isReading() && (!entry.valid || this.pending))) {
-      const next = this.pending; this.pending = null;
+      const next = this.takePending();
       if (next) this.select(next);
       else this.finishShown(age >= window.maxMs ? "max" : "min");
     } else if (!entry.valid && entry.presentedAt === null && !this.layer) this.finishShown("min");
@@ -328,7 +337,7 @@ export class HermesConversationPresenter {
   /** Tap on the overlay: clear through the controller, which notifies back and retires it. */
   private dismissByUser(layer: Layer): void {
     if (this.layer !== layer) return;
-    const next = this.pending; this.pending = null;
+    const next = this.takePending();
     this.finishShown("dismiss");
     if (next) { this.select(next); this.rendered = next.text; this.renderMessage(next.text); return; }
     this.source.dismissConversationHermesMessage();
@@ -340,6 +349,7 @@ export class HermesConversationPresenter {
   private released(layer: Layer & { retire(): void }): void {
     if (this.layer !== layer) return;
     this.pending = null;
+    this.afterOffer = null;
     this.finishShown("dismiss");
     this.layer = null;
     this.woke = false;
