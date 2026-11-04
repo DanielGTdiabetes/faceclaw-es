@@ -1,3 +1,17 @@
+## Fluidez A instalada — 04/11/2026, 16:26:50 CET (Codex)
+
+Prevalece sobre la APK de las 06:52. [Recibo, límites y retorno](FLUIDEZ_A_INSTALACION_20261104.md).
+Ejecutable app `fd079d09` y puente `bbdb518`, aprobados por Claude e instalados con
+autorización explícita de Dani. APK extraída idéntica `84922b2d…db18`; conserva etiqueta
+S2.28.2/código805, firma, 48 ajustes idénticos y primera instalación. Puente activo, teléfono
+reconectado; gateway/config/citas/parser intactos. Sin captura ni Calendar. Pixel bloqueado:
+OFF declarado por Dani, sin etiqueta visual observada, sin wakelock de captura. Dani ya puede
+pasar a ON por decisión propia; no inspeccionar UI durante uso. Verificación independiente
+y mejora percibida pendientes. Retorno APK `90f0b6d1…af94`; EVO
+`/home/dani/fluidez-retorno-0f41d278-6vyuf6a6/revert.py`. Archivo NAS
+`/mnt/evo-backup/faceclaw-fluidez-a-0f41d278-20261104/`. No reinstalar por sincronizar.
+Rama apilada `feat/0f41d278`, sin merge. Interrupción B fuera de alcance.
+
 ## S2.28.2 instalada — 04/11/2026, 06:52:16 CET (Codex)
 
 Prevalece sobre las entradas inferiores. [Cambio, comprobaciones y retorno](smart-turn-espera-20261104.md).
