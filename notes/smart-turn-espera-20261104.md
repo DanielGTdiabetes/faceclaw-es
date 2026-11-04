@@ -37,7 +37,24 @@ Sobre esa base más el delta del parche:
 
 No se añaden tests: se actualiza el existente para comprobar 1.199/1.200 ms, retorno a 2.000
 y preguntas a 700 ms. La suite existente conserva las comprobaciones de espaciado, OFF y reconexión.
-Compilación, firma e instalación: pendientes de sus recibos antes de declarar entrega.
+`assembleRelease` y `lintVitalRelease` terminan con salida 0. Se reutilizan las bibliotecas
+nativas: las ocho `.so` y los DEX coinciden por SHA256 con el retorno fresco del Pixel.
+APK S2.28.2/805, 141.509.934 bytes, firma original v2/v3 y alineación de 16 KB verificadas.
+SHA256: `90f0b6d1ef1e5c03bdcdceda6c26086b3ccac4e5ed147d374504d58bffc3af94`.
+
+Instalada mediante `adb install -r` a las **06:52:16 CET del 04/11/2026**, tras confirmación
+OFF de Dani y comprobación de UI. APK extraída idéntica al artefacto; `am start -W` termina
+con `Status: ok`, proceso 15773, UI Conectado/Conversación (OFF). No se inició captura.
+Primera instalación conservada. 48 entradas de ajustes antes/después: 47 idénticas;
+solo cambia `weather.cache`, que `app/native/weather.ts` actualiza como caché meteorológica.
+No se restaura esa caché ni se muestran sus valores. La mejora percibida y los cortes no
+se han medido: se validan por el uso normal de Dani.
+
+PR: buzz://pr?id=c4209c1c2011d87511ad803e8ac79289b3f72812645bcadb6ea687c5a838d6e0&owner=ab90d61db8ac4aada915d46267f0b64e06b9a4c5ee7d304f03e7d5ece5d4b584&d=faceclaw-es
+
+Artefactos y recibos en `OUTBOX/HERMES_SMART_ESPERA_9BF8564E/` de Buzz Nest.
+Archivo NAS previsto: `/mnt/evo-backup/faceclaw-s2282-smart-espera-20261104/`;
+`NAS_ARCHIVE_RECEIPT.json` acredita la copia y su comprobación una vez realizada.
 
 ## Retorno y datos
 

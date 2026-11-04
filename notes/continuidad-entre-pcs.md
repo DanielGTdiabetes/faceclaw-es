@@ -1,3 +1,18 @@
+## S2.28.2 instalada — 04/11/2026, 06:52:16 CET (Codex)
+
+Prevalece sobre las entradas inferiores. [Cambio, comprobaciones y retorno](smart-turn-espera-20261104.md).
+Parche directo autorizado por Dani: Smart Turn habilitado sin veredicto espera 1.200 ms en
+turnos no directos; preguntas 700 ms, opción habitual 2.000 ms y mínimo entre peticiones
+no directas 5 s. Se atiende en el siguiente tick periódico, no necesariamente a 1.200 ms exactos.
+APK `90f0b6d1…af94`/805, firma original, instalada y extraída idéntica; ocho nativas y DEX
+idénticos al retorno fresco. 48 entradas de ajustes, 47 sin cambios y solo `weather.cache`
+actualizada. Primera instalación conservada; Conectado/OFF, no se inició captura. Node
+1.385 correctas/2 omitidas, tipos/lint/release/lintVital correctos. Calidad y mejora percibida
+pendientes de uso normal; no sesiones dedicadas. Retorno fresco S2.28.1 `d9eeb000…495a`
+en `OUTBOX/HERMES_SMART_ESPERA_9BF8564E/RETORNO_S2281.apk`, distinto del artefacto histórico
+`d16d05e1…`. Retorno local: OFF → Voces → «Usar la espera habitual». Sin merge por el agente.
+Rama `feat/9bf8564e`, ejecutable `3530fe24`; notas posteriores no cambian el ejecutable.
+
 ## S2.28.1 instalada — 03/11/2026, 12:55:34 CET (Codex)
 
 Prevalece sobre los estados inferiores. [Recibo de instalación y siguiente paso](smart-turn-rearme-instalacion-20261103.md).
