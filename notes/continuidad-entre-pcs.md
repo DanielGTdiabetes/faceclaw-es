@@ -1,3 +1,13 @@
+## Continuidad 373165b7 instalada — 04/11/2026, 17:55:42 CET (Codex)
+
+Prevalece sobre el cierre siguiente. Ejecutable aprobado por Claude `2fda9720`,
+instalado con autorización de Dani y OFF observado. [Recibo y retorno](CONTINUIDAD_373165B7_INSTALACION_20261104.md).
+APK extraída idéntica `cef1313b…696c6`; firma original/código805, 48 ajustes y primera
+instalación conservados. Dos DEX, ocho SO y recursos originales intactos. Conectado,
+sin wakelocks posteriores; no se inició escucha. Puente PID716486/NRestarts0 reconectado,
+sin reinicio. Retorno fresco `84922b2d…db18`. Verificación independiente y uso normal
+pendientes; mensaje fugaz/participación siguen abiertos. Sin merge ni cambios en Sala.
+
 ## Cierre para continuar en casa — 04/11/2026 (Codex)
 
 Se conserva la versión instalada fd079d09/puente bbdb518 por decisión de Dani. Candidata
