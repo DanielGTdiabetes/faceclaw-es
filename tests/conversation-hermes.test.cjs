@@ -51,7 +51,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
     smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
-      channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1']);
+      channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1', ...(gateOptions?.receipts ? ['conv/memory-ack/1'] : [])]);
       runtime.begin(null, 'identidad-opcional', { smartTurn: enabled }); state.enabled = true; state.state = 'escuchando'; notify(); },
     g2Turn(text = 'Esta frase está terminada') { turn('portador', text, { engine: 'evo-parakeet', relation: 'portador',
       sessionId: 'local-1', associationVersion: 0, timing: 'ventana', startMs: 0, endMs: 1000 }); },
@@ -64,6 +64,29 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
 }
+
+for (const offer of [false, true]) test(`recoverable local PCM gap preserves output and receipt: offer=${offer}`, () => {
+  const h = harness(undefined, { receipts: true }); h.g2Begin(false);
+  h.g2Turn('¿Qué planes tengo mañana?'); h.advance(700);
+  h.reply('assist', { deliveryId: 'gap-receipt', calendarOffer: offer });
+  const before = h.runtime.snapshot(), receipt = h.runtime.capturePresentation(); assert.ok(receipt?.isValid());
+  h.update({ state: 'suspendido', recoveringPcm: true });
+  assert.equal(h.runtime.snapshot().presentationEpoch, before.presentationEpoch);
+  assert.equal(h.runtime.snapshot().recoveringPcm, true); assert.equal(receipt.isValid(), true);
+  receipt(); assert.equal(h.frames.filter(f => f.type === 'presented').length, 1);
+  h.advance(500); assert.equal(receipt.isValid(), true);
+  h.update({ state: 'escuchando', recoveringPcm: false });
+  assert.equal(h.runtime.snapshot().presentationEpoch, before.presentationEpoch);
+  h.update({ state: 'suspendido', recoveringPcm: false });
+  assert.equal(receipt.isValid(), false, 'real suspension still revokes'); h.runtime.dispose();
+});
+
+test('a result completing during local PCM recovery is delivered without another evaluation', () => {
+  const h = harness(); h.g2Begin(false); h.g2Turn('¿Qué planes tengo mañana?'); h.advance(700);
+  h.update({ state: 'suspendido', recoveringPcm: true });
+  h.reply('assist', { text: 'Respuesta durante el hueco' });
+  assert.equal(h.outputs.at(-1), 'Respuesta durante el hueco'); assert.equal(h.sent().length, 1); h.runtime.dispose();
+});
 
 test('smart turn accelerates only an opted-in live EVO conversation and records continuation', () => {
   const h = harness(undefined, { smart: true }); h.g2Begin(); h.g2Turn(); h.advance(300, false); h.smartEnd();

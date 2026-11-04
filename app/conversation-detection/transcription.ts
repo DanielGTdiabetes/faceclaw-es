@@ -105,7 +105,8 @@ export interface DetectorTranscription {
   start(language?: TextLanguage, profileAssociation?: boolean, maxMs?: number): boolean;
   acceptProfileMatch?(match: ProfileVoiceMatch): void;
   stop(): void;
-  resetStream(): void;
+  /** Reset acoustics; a recoverable manual PCM gap may retain the local conversation scope. */
+  resetStream(preserveConversation?: boolean): void;
   /**
    * Speech paused (the local VAD released): finalize what the engine heard now instead of waiting for
    * its own endpoint (~2 s). Not a gap: no boundary, no identity interrupt. Best effort, never fatal.

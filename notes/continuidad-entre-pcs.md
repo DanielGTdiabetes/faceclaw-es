@@ -1,3 +1,12 @@
+## Cierre para continuar en casa — 04/11/2026 (Codex)
+
+Se conserva la versión instalada fd079d09/puente bbdb518 por decisión de Dani. Candidata
+`feat/373165b7`, [cambio, límites, pruebas y continuación](CONTINUIDAD_373165B7_20261104.md),
+conserva episodio y lectura durante huecos recuperables y recupera trazas sin ACK.
+No está instalada ni aprobada; revisión de Claude pendiente. Sin APK ni cambios de Sala.
+No reinstalar ni activar escucha por sincronizar desde casa. Consultar el contrato del
+issue373165b7 para SHA, PR y control negativo finales.
+
 ## Fluidez A instalada — 04/11/2026, 16:26:50 CET (Codex)
 
 Prevalece sobre la APK de las 06:52. [Recibo, límites y retorno](FLUIDEZ_A_INSTALACION_20261104.md).

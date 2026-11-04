@@ -98,7 +98,7 @@ function graphicsMocks() {
  * Real Shell (app/ui/shell/shell.ts) with its real LayerStack, voice-activity and audio-priority.
  * Only leaf UI classes (menus, dialogs, chrome) and settings are replaced by small fakes.
  */
-function realShell({ wakeWordAction = 'voice-input', conversationControl } = {}) {
+function realShell({ wakeWordAction = 'voice-input', conversationControl, traceLogs } = {}) {
   const timers = fakeTimers();
   class Leaf {
     constructor(options) { this.options = options; }
@@ -145,7 +145,8 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl } = {})
   // Shell and presenter read the same shiftable clock, so a test can let a reading window elapse.
   let offset = 0;
   class TestDate extends Date { static now() { return Date.now() + offset; } }
-  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, Date: TestDate });
+  const load = makeLoader(mocks, { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, Date: TestDate,
+    ...(traceLogs ? { android: { util: { Log: { i: (tag, value) => traceLogs.push({ tag, ...JSON.parse(value) }) } } } } : {}) });
   const { shell } = load('app/ui/shell/shell.ts');
   const ui = load('app/ui/shell/conversation-hermes-ui.ts');
   const { voiceActivity } = load('app/ui/shell/voice-activity.ts');
@@ -236,6 +237,38 @@ function readingHarness() {
     advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); } },
   };
 }
+
+for (const confirmed of [false, true]) test(`local PCM recovery does not retire a visible or queued offer: ACK=${confirmed}`, () => {
+  const h = readingHarness(); h.f.tick({ outputCalendarOffer: true, outputVersion: 1 }); h.say('Oferta visible');
+  if (confirmed) h.sent();
+  h.f.tick({ outputVersion: 2 }); h.say('Oferta pendiente');
+  h.f.tick({ listening: false, recoveringPcm: true });
+  assert.equal(h.text(), 'Oferta visible'); assert.equal(h.retirements.length, 0);
+  h.advance(1000); h.f.tick({ listening: true, recoveringPcm: false });
+  assert.equal(h.text(), 'Oferta visible');
+  if (!confirmed) h.sent();
+  h.advance(12000); assert.equal(h.text(), 'Oferta pendiente');
+  h.f.off(); assert.equal(h.presenter.hasOverlay(), false); h.presenter.dispose();
+});
+
+test('normal text keeps its ACK clock during PCM recovery; real suspension still retires it', () => {
+  const h = readingHarness(); h.say('Mensaje visible'); h.sent(); h.advance(1000);
+  h.f.tick({ listening: false, recoveringPcm: true }); assert.equal(h.text(), 'Mensaje visible');
+  h.advance(1000); h.f.tick({ listening: true, recoveringPcm: false }); assert.equal(h.text(), 'Mensaje visible');
+  h.advance(1999); assert.equal(h.text(), 'Mensaje visible'); h.advance(1); assert.notEqual(h.text(), 'Mensaje visible');
+  h.say('Otra respuesta'); h.sent(); h.f.listening(false); assert.equal(h.presenter.hasOverlay(), false); h.presenter.dispose();
+});
+
+test('retirement diagnostics include an unACKed withdrawal cause without speech or identity', () => {
+  const logs = [], h = realShell({ traceLogs: logs }), f = fakeController();
+  h.ui.bindHermesConversationUi(f.controller); f.arm(); f.say('PRIVATE_MESSAGE_SENTINEL');
+  const captured = h.ui.captureHermesPresentation(); assert.equal(typeof captured, 'function');
+  f.listening(false); captured();
+  const retired = logs.find(e => e.event === 'retired');
+  assert.equal(retired.confirmed, false); assert.equal(retired.reason, 'off');
+  assert.ok(logs.some(e => e.event === 'withdrawn')); assert.ok(logs.some(e => e.event === 'confirmation-skipped'));
+  assert.equal(JSON.stringify(logs).includes('PRIVATE_MESSAGE_SENTINEL'), false);
+});
 
 test('reading: latest pending answer gets its own reading duration, from native sent', () => {
   const h = readingHarness(); h.say('A'); h.sent();

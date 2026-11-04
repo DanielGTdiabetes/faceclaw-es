@@ -229,8 +229,8 @@ export class SonioxConversationTranscription implements DetectorTranscription {
   }
 
   /** A transport gap or yield: ask Soniox to finalize what it heard; the socket stays open. */
-  resetStream(): void {
-    if (this.mode === "local") { this.local.resetStream(); return; }
+  resetStream(preserveConversation = false): void {
+    if (this.mode === "local") { this.local.resetStream(preserveConversation); return; }
     if (this.mode !== "soniox" || !this.open) return;
     if (this.ending) {
       // Best-effort finalization during OFF cleanup must never start a new local worker.

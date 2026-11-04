@@ -254,7 +254,7 @@ export class ConversationHermesRuntime {
     const deliveredAt = this.outputAt, turnAt = this.outputTurnAt;
     if (!ref) return null;
     const isValid = () => (this.outputRef === ref || offer) && epoch === this.presentationEpoch && this.enabled
-      && this.source.snapshot().enabled && this.source.snapshot().state === "escuchando"
+      && this.source.snapshot().enabled && (this.source.snapshot().state === "escuchando" || this.recoveringPcm())
       && (!offer || (offerEpoch === this.calendarOfferEpoch && !!confirm?.isValid()));
     return Object.assign(() => {
       const current = this.outputRef === ref;
@@ -275,6 +275,7 @@ export class ConversationHermesRuntime {
     return { enabled: this.enabled, working: this.enabled && this.working && this.source.snapshot().state === "escuchando", busy: this.flight !== null, requests: this.requests, modality: this.modality,
       outputCalendarOffer: this.outputCalendarOffer, outputVersion: this.outputVersion,
       wearerTurnVersion: this.wearerTurnVersion,
+      recoveringPcm: this.enabled && this.recoveringPcm(),
       presentationEpoch: this.presentationEpoch, calendarOfferEpoch: this.calendarOfferEpoch,
       delivered: this.counters.delivered, link: this.link, stopCause: this.stopCause,
       notice: this.enabled && this.host.now() < this.noticeUntil ? this.notice : "",
@@ -349,8 +350,13 @@ export class ConversationHermesRuntime {
       && !(this.modality === "identidad-opcional" && snapshot.transcription.engine === "local")) {
       this.stop("motor"); return;
     }
-    if (snapshot.state !== "escuchando") this.interrupt();
+    if (snapshot.state !== "escuchando" && !this.recoveringPcm(snapshot)) this.interrupt();
     this.host.changed();
+  }
+
+  private recoveringPcm(snapshot = this.source.snapshot()): boolean {
+    return snapshot.enabled && snapshot.recoveringPcm === true && !!snapshot.manualConversation
+      && this.modality === "identidad-opcional" && snapshot.transcription?.engine === "local";
   }
 
   private association(event: WearerAssociationEvent): void {
@@ -663,7 +669,7 @@ export class ConversationHermesRuntime {
     if (result?.mode === "assist" && result.text) this.resetQuiet("message");
     else if (!(result?.mode === "assess" && result.verdict === "tema")) this.quiet = Math.min(this.quiet + 1, 16);
     if (!result || !this.enabled || !this.channel.isReady() || !this.source.snapshot().enabled
-      || this.source.snapshot().state !== "escuchando") { this.host.changed(); return; }
+      || (this.source.snapshot().state !== "escuchando" && !this.recoveringPcm())) { this.host.changed(); return; }
     if (result.mode === "assess") {
       if (this.tracker.assess(result.ref, result.verdict) && result.verdict === "tema") {
         const context = this.tracker.confirmedContext();

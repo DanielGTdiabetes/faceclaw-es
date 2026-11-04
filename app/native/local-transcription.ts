@@ -83,7 +83,10 @@ export class LocalTranscription implements DetectorTranscription {
   }
   subscribeTurns(listener: (turn: ConversationTurn) => void): () => void { return this.turnLog.subscribe(listener); }
   turns(): ConversationTurn[] { return this.turnLog.list(); }
-  resetStream(): void { this.lines = []; this.turnLog.reset(); this.engine?.resetStream(); }
+  resetStream(preserveConversation = false): void {
+    if (!preserveConversation) { this.lines = []; this.turnLog.reset(); }
+    this.engine?.resetStream();
+  }
   setPhase(phase: number): void { if (this.enabled) this.engine?.setPhase(phase); }
   stop(): void { this.enabled = false; this.lines = []; this.turnLog.stop(); this.engine?.stop(); this.status = "inactivo"; }
   acceptNative(pcm: unknown, vadState: string): void {

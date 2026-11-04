@@ -24,7 +24,8 @@ function moduleUnderTest(path, mocks, globals = {}) {
 function engineHarness(speakerModel) {
   const calls = [];
   let callback;
-  const native = { setListener(value) { callback = value; }, stop() {}, resetStream() {},
+  const native = { setListener(value) { callback = value; }, stop() {}, resetStream() { calls.push(['acoustic-reset']); },
+    diagnostics: () => JSON.stringify({ status: 'listo', worker: true }),
     start(...args) { calls.push(['start', ...args]); return true; },
     startWithSpeakers(...args) { calls.push(['startWithSpeakers', ...args]); return true; } };
   const { LocalTranscription } = moduleUnderTest('app/native/local-transcription.ts', {
@@ -38,6 +39,70 @@ function engineHarness(speakerModel) {
     FaceclawLocalTranscriptListener: function (value) { return value; } } } } });
   return { engine: new LocalTranscription(), calls, callback: () => callback };
 }
+
+for (const detectedBy of ['timer', 'next-chunk']) {
+test(`manual local PCM recovery retains the wire episode, ACK and heard context: ${detectedBy}`, async () => {
+  const { ConversationCaptureCoordinator, PCM_GAP_GRACE_MS } = require('../.test-build/app/conversation-detection/coordinator.js');
+  const { SonioxConversationTranscription } = require('../.test-build/app/native/soniox-conversation.js');
+  controls.setConversationModel('whisper-small-es');
+  const local = engineHarness(true), frames = [], outputs = [], timers = new Set();
+  let now = 1000, pcm;
+  const timer = (cb, ms) => { const t = { cb, ms, at: now + ms }; timers.add(t); return () => timers.delete(t); };
+  const advance = ms => { now += ms; for (const t of [...timers]) if (t.at <= now && timers.has(t)) { t.at = now + t.ms; t.cb(); } };
+  const transcription = new SonioxConversationTranscription(local.engine, { engine: () => 'local', apiKey: () => '',
+    now: () => now, every: timer, connect() { throw Error('No network in this test'); } });
+  const session = {};
+  const detector = new ConversationCaptureCoordinator({ now: () => now, every: timer,
+    environment: () => ({ available: true, reason: '', session }), prepare: async () => true,
+    acquire(cb) { pcm = cb; return { stop() {}, diagnostics: () => '{}' }; }, transcription });
+  const channel = new ConversationChannel({ now: () => now, after: () => () => {}, send(frame) { frames.push(frame); return true; } });
+  channel.negotiate(['conv/1', 'conv/2', 'conv/memory-ack/1']);
+  const runtime = new ConversationHermesRuntime(detector, channel, { now: () => now, every: timer,
+    changed() {}, onOutput: text => outputs.push(text) }, POLICY);
+  assert.equal(runtime.begin(null, 'identidad-opcional'), true);
+  detector.setEnabled(true, true, 'off', { manualConversation: true, textEngine: 'local' });
+  await Promise.resolve(); pcm(new Uint8Array(1600)); advance(50);
+  local.callback().onSpeakerSegment('¿Qué planes tengo mañana?', 'es', 0, 1000, 'portador', 'portador');
+  advance(700);
+  const first = frames.find(f => f.type === 'assist'); assert.ok(first);
+  channel.handle({ chan: 'conv', type: 'result', mode: 'assist', requestId: first.requestId, ref: first.ref,
+    kind: 'mensaje', text: 'Tienes dos actividades.', deliveryId: 'first-ack' });
+  runtime.capturePresentation()();
+  pcm(new Uint8Array(1600)); advance(50);
+  const before = runtime.snapshot(), resets = local.calls.filter(c => c[0] === 'acoustic-reset').length;
+  if (detectedBy === 'timer') { advance(1000); assert.equal(detector.snapshot().recoveringPcm, true); }
+  else now += 1000;
+  pcm(new Uint8Array(1600)); advance(50);
+  assert.equal(local.calls.filter(c => c[0] === 'acoustic-reset').length, resets + 1);
+  assert.equal(runtime.snapshot().presentationEpoch, before.presentationEpoch);
+  local.callback().onSpeakerSegment('¿Otro día también completo?', 'es', 1000, 2000, 'portador', 'portador');
+  advance(700);
+  const next = frames.filter(f => f.type === 'assist').at(-1);
+  for (const key of ['sessionId', 'streamId', 'associationVersion', 'episodeId']) assert.equal(next.ref[key], first.ref[key], key);
+  assert.deepEqual(next.turns.map(t => t.text), ['¿Qué planes tengo mañana?', '¿Otro día también completo?']);
+  assert.equal(frames.filter(f => f.type === 'presented' && f.deliveryId === 'first-ack').length, 1);
+  assert.equal(outputs.at(-1), 'Tienes dos actividades.', 'recovery does not clear the visible answer');
+  advance(PCM_GAP_GRACE_MS + 1);
+  assert.equal(detector.snapshot().enabled, false); assert.equal(runtime.snapshot().enabled, false);
+  assert.deepEqual(local.engine.turns(), []);
+  runtime.dispose(); controls.setConversationModel('soniox');
+});
+}
+
+test('only the explicit acoustic-only reset keeps local turns; release and a new session erase them', () => {
+  controls.setConversationModel('whisper-small-es'); const h = engineHarness(true); h.engine.start();
+  h.callback().onSpeakerSegment('Contexto sintético', 'es', 0, 1000, 'portador', 'portador');
+  const first = h.engine.turns()[0]; h.engine.resetStream(true);
+  assert.equal(h.engine.turns().length, 1); assert.equal(h.engine.text(), 'Contexto sintético');
+  h.callback().onSpeakerSegment('Seguimiento sintético', 'es', 1000, 2000, 'portador', 'portador');
+  assert.equal(h.engine.turns()[1].streamId, first.streamId);
+  h.engine.resetStream(); assert.deepEqual(h.engine.turns(), []); assert.equal(h.engine.text(), '');
+  h.callback().onSpeakerSegment('Tras reconexión', 'es', 2000, 3000, 'portador', 'portador');
+  assert.notEqual(h.engine.turns()[0].streamId, first.streamId);
+  h.engine.stop(); h.engine.start();
+  h.callback().onSpeakerSegment('Sesión nueva', 'es', 0, 1000, 'portador', 'portador');
+  assert.notEqual(h.engine.turns()[0].sessionId, first.sessionId); h.engine.stop(); controls.setConversationModel('soniox');
+});
 
 test('manual Whisper conversations ask for speakers only with the speaker model and the RAM choice', () => {
   controls.bindConversationSession({ detector: { snapshot: () => ({ enabled: false }) }, setEnabled() {} });

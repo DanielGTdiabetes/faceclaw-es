@@ -329,7 +329,7 @@ class DashboardController {
     canShow: () => (this.phase === "connected" || this.isPreviewDisplayActive()) && !this.glassesLocked,
     ensureSessionActive: (frameId) => this.ensureEvenHubSessionActive(frameId),
     onHiddenWhileAsleep: () => {
-      if (!shell.isScreenOn()) this.handleScreenStateChanged(false);
+      if (!shell.isScreenOn()) this.handleScreenStateChanged(false, "glance-hidden");
     },
     onVisibilityChanged: () => {
       this.schedulePreviewUpdate();
@@ -782,7 +782,16 @@ class DashboardController {
     void tracked.then(() => { if (this.screenReassertPromise === tracked) this.screenReassertPromise = null; });
   }
 
-  private handleScreenStateChanged(on: boolean): void {
+  private traceScreen(event: string, state: Record<string, string | number | boolean | null>): void {
+    // appendLog is disabled in release; completed native frames also reject further timing lines.
+    try {
+      if (typeof android !== "undefined") android.util.Log.i("FaceclawScreen", JSON.stringify({ event, ...state }));
+    } catch { /* Diagnostics only. */ }
+  }
+
+  private handleScreenStateChanged(on: boolean, source = "shell"): void {
+    this.traceScreen("screen-state", { source, on, shellOn: shell.isScreenOn(),
+      overlay: shell.hasIndependentOverlay(), glance: this.glance.isVisible() });
     if (on) {
       this.cancelEvenHubSuspendTimer();
       void this.ensureEvenHubSessionActive().catch((error) => {
@@ -3113,6 +3122,7 @@ class DashboardController {
     beginRenderPass(!wantFreshData);
     const paintStartedAtMs = Date.now();
     const confirmHermes = captureHermesPresentation();
+    frameTimings.logFrame(frameId, `hermes receipt captured=${confirmHermes !== null}`);
     const confirmNotification = captureNotificationPresentation();
     const planes = frameTimings.span(frameId, "paint", () =>
       frameTimings.runWithFrame(frameId, () => shell.paintScene()),
@@ -3140,6 +3150,8 @@ class DashboardController {
     // so in the frame rather than leaving a silent stall. (The preview target
     // resolves immediately; nothing transmits.)
     const outcome = await display.waitForFrameFinished(frameId, FRAME_TRANSMIT_BACKPRESSURE_TIMEOUT_MS);
+    this.traceScreen("hermes-frame", { frameId, captured: confirmHermes !== null,
+      outcome, sameDisplay: this.display === display, preview: this.isPreviewDisplayActive() });
     // `sent` follows the last native BLE acknowledgement; previews, failures and superseded frames
     // cannot mark an unseen contribution as said. The captured receipt also checks current output.
     if (outcome === "sent" && this.display === display && !this.isPreviewDisplayActive()) {
@@ -3148,7 +3160,10 @@ class DashboardController {
       const wakeBarrier = this.evenHubResumePromise ?? this.screenReassertPromise;
       if (confirmHermes && wakeBarrier) {
         frameTimings.logFrame(frameId, "hermes presentation waits for the wake barrier");
-        void wakeBarrier.then((ready) => { if (ready) confirmHermes(); }, () => {});
+        void wakeBarrier.then((ready) => {
+          this.traceScreen("hermes-wake", { frameId, ready });
+          if (ready) confirmHermes();
+        }, () => { this.traceScreen("hermes-wake", { frameId, ready: false, reason: "rejected" }); });
       } else confirmHermes?.();
       confirmNotification?.();
     }

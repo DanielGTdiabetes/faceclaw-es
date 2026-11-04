@@ -203,6 +203,11 @@ export class GlanceHost {
 
   private async hide(stillAsleep: boolean): Promise<void> {
     const wasShown = this.shown;
+    try {
+      if (typeof android !== "undefined") android.util.Log.i("FaceclawScreen", JSON.stringify({
+        event: "glance-hide", stillAsleep, wasShown,
+      }));
+    } catch { /* Diagnostics only. */ }
     this.shown = false;
     const display = this.options.getDisplay();
     if (wasShown && display && this.configuredFor === display) {

@@ -24,7 +24,7 @@ function harness(outcome, preview = false) {
   const display = { submitShellScene: async () => { submissions++; },
     waitForFrameFinished: async () => { if (outcome instanceof Error) throw outcome; return outcome; } };
   Object.assign(instance, { display, phase: 'connected', nextShellRenderWantsFreshData: false,
-    isPreviewDisplayActive: () => preview, schedulePreviewUpdate() {}, requestShellRender() {} });
+    isPreviewDisplayActive: () => preview, schedulePreviewUpdate() {}, requestShellRender() {}, traceScreen() {} });
   return { instance, counts: () => ({ receipts, notices, paints, captured, submissions }) };
 }
 

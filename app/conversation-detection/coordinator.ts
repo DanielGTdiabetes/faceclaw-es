@@ -6,6 +6,8 @@ import { type SpeakerRef, type WearerActionRef, type WearerAssociationEvent } fr
 import { PhaseDiagnostics, type DiagnosticPhase, type PhaseDiagnosticsSnapshot } from "./phase-diagnostics";
 import { type DetectorParticipation, type LocalParticipationSnapshot, type ParticipationMode } from "./participation";
 
+declare const android: any;
+
 /** Local capture, optional own-profile comparison and ASR; no network or assistant actions. */
 /** Upper bound handed to native workers and the capture wakelock when listening has no time limit. */
 export const NATIVE_SESSION_SAFETY_MS = 86_400_000;
@@ -22,6 +24,8 @@ export type DetectorMetrics = {
 };
 export type DetectorSnapshot = {
   enabled: boolean; state: DetectorState; reason: string; epoch: number;
+  /** Same live capture lease awaiting PCM within the existing grace; never a reconnect or OFF. */
+  recoveringPcm?: boolean;
   metrics: DetectorMetrics; vad: LocalVadSnapshot;
   /** Monotonic completion of local VAD release, not the exact physical end of speech. */
   lastVadStopAtMs?: number | null;
@@ -113,6 +117,7 @@ export class ConversationCaptureCoordinator {
 
   snapshot(): DetectorSnapshot {
     return { enabled: this.enabled, state: this.state, reason: this.reason, epoch: this.epoch,
+      recoveringPcm: this.enabled && this.gapOpen && this.lease !== null,
       metrics: { ...this.metrics }, vad: this.vad.snapshot(), lastVadStopAtMs: this.lastVadStopAtMs,
       participationMode: this.participationMode,
       enrollmentOutcome: this.enrollmentOutcome,
@@ -522,7 +527,7 @@ export class ConversationCaptureCoordinator {
     if (this.gapOpen) return;
     this.gapOpen = true;
     this.countGap();
-    this.resetAcousticStream();
+    this.resetAcousticStream(this.manualConversation);
   }
 
   /** One gap counts once, whether the 500 ms tick or the next PCM chunk notices it first. */
@@ -532,10 +537,16 @@ export class ConversationCaptureCoordinator {
     this.phases?.gapReset();
   }
 
-  private resetAcousticStream(): void {
+  private resetAcousticStream(preserveConversation = false): void {
+    try {
+      if (typeof android !== "undefined") android.util.Log.i("FaceclawConversation", JSON.stringify({
+        event: "acoustic-reset", cause: this.gapOpen ? "pcm-gap" : "release", preserveConversation,
+        gapMs: this.lastPcm ? Math.max(0, this.host.now() - this.lastPcm) : null, epoch: this.epoch,
+      }));
+    } catch { /* Scalar diagnostics cannot interrupt capture cleanup. */ }
     this.lastVadStopAtMs = null;
     this.vad.resetStream();
-    this.host.transcription?.resetStream();
+    this.host.transcription?.resetStream(preserveConversation);
     this.host.participation?.resetStream();
   }
 

@@ -59,6 +59,14 @@ test('actual native model is read from analysis during capture and retained afte
   assert.equal(h.engine.snapshot().model, 'whisper-small', 'OFF cannot acquire another decoder identity');
 });
 
+for (const preserve of [false, true]) test(`Soniox still finalizes acoustic gaps without preserving identity: ${preserve}`, () => {
+  const h = harness(); h.engine.start('auto', true); h.sockets[0].listener.onOpen();
+  const socket = h.sockets[0], before = socket.texts.length;
+  h.engine.resetStream(preserve);
+  assert.equal(socket.texts.length, before + 1); assert.equal(JSON.parse(socket.texts.at(-1)).type, 'finalize');
+  assert.equal(h.engine.snapshot().identity.speaker, undefined); assert.equal(h.sockets.length, 1); h.engine.stop();
+});
+
 test('saved-profile matches automatically associate finalized labels without a phrase or manual choice', () => {
   const h = harness(); h.engine.start('auto', true); h.sockets[0].listener.onOpen();
   const events = []; h.engine.subscribeAssociation(e => events.push(e));
