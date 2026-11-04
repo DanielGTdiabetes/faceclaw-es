@@ -17,11 +17,12 @@ import { shell } from "./shell";
  */
 
 /** Subset of DashboardController the presentation reads. */
+type PresentationReceipt = (() => void) & { isValid?(): boolean; validForMs?(): number };
 export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string; outputCalendarOffer?: boolean; outputVersion?: number; wearerTurnVersion?: number }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string; outputCalendarOffer?: boolean; outputVersion?: number; wearerTurnVersion?: number; presentationEpoch?: number }; capturePresentation?(): PresentationReceipt | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -68,7 +69,7 @@ export type HermesPresentationCounts = {
 
 type RetirementReason = "min" | "max" | "replaced" | "dismiss" | "off";
 type ReadingEntry = { text: string; key: string; selectedAt: number; presentedAt: number | null;
-  confirm: (() => void) | null; valid: boolean; calendarOffer: boolean; wearerTurnAtAck: number };
+  confirm: PresentationReceipt | null; valid: boolean; calendarOffer: boolean; wearerTurnAtAck: number; presentationEpoch: number };
 export type HermesReadingClock = {
   now(): number;
   after(callback: () => void, ms: number): () => void;
@@ -103,6 +104,7 @@ export class HermesConversationPresenter {
   private pending: ReadingEntry | null = null;
   /** At most the latest normal answer behind a protected pending offer. */
   private afterOffer: ReadingEntry | null = null;
+  private presentationEpoch = 0;
   private cancelReadingTimer: (() => void) | null = null;
   /** Last text rendered, refused or dismissed on the lenses; "" once nothing is shown. */
   private rendered = "";
@@ -129,6 +131,10 @@ export class HermesConversationPresenter {
     }
     const raw = this.source.conversationHermesMessage;
     const state = this.source.conversationHermes.snapshot();
+    if (this.presentationEpoch !== (state.presentationEpoch ?? 0)) {
+      this.presentationEpoch = state.presentationEpoch ?? 0;
+      this.pending = null; this.afterOffer = null;
+    }
     const key = state.outputVersion === undefined ? raw : `${state.outputVersion}:${raw}`;
     if (!snapshot.enabled || !snapshot.listening || state.link === "revocado") {
       // Suspended/OFF listening never shows a contribution, even one still pending expiry,
@@ -144,21 +150,23 @@ export class HermesConversationPresenter {
       this.handled = "";
       if (!this.pending?.calendarOffer) this.pending = null;
       this.afterOffer = null;
-      if (this.shown) { this.shown.valid = false; this.shown.confirm = null; }
+      if (this.shown && !this.shown.calendarOffer) { this.shown.valid = false; this.shown.confirm = null; }
     } else if (key !== this.handled) {
       this.handled = key;
       const entry: ReadingEntry = { text: sanitizeHermesText(raw), key, selectedAt: this.clock.now(),
         presentedAt: null, confirm: this.source.conversationHermes.capturePresentation?.() ?? null, valid: true,
-        calendarOffer: state.outputCalendarOffer === true, wearerTurnAtAck: state.wearerTurnVersion ?? 0 };
+        calendarOffer: state.outputCalendarOffer === true, wearerTurnAtAck: state.wearerTurnVersion ?? 0,
+        presentationEpoch: this.presentationEpoch };
       if (entry.text) {
         if (this.pending?.calendarOffer && !entry.calendarOffer) this.afterOffer = entry;
         else { this.pending = entry; this.afterOffer = null; }
       }
     }
+    this.pruneOffers();
     // Re-evaluate on accepted wearer turns too: a reply may have arrived before that turn.
     const replace = this.shown && !this.shown.calendarOffer && this.shown.presentedAt !== null
       && (state.wearerTurnVersion ?? 0) > this.shown.wearerTurnAtAck;
-    if (this.pending && (!this.isReading() || (replace && !this.pending.calendarOffer))) this.select(this.takePending()!);
+    if (this.pending && (!this.isReading() || replace)) this.select(this.takePending()!);
     this.advanceReading();
     this.show();
   }
@@ -270,7 +278,16 @@ export class HermesConversationPresenter {
     return next;
   }
 
+  private pruneOffers(): void {
+    const usable = (entry: ReadingEntry) => !entry.calendarOffer
+      || (entry.presentationEpoch === this.presentationEpoch && entry.confirm?.isValid?.() === true);
+    if (this.pending && !usable(this.pending)) this.takePending();
+    if (this.shown && !usable(this.shown)) this.finishShown("off");
+  }
+
   private advanceReading(): void {
+    this.pruneOffers();
+    if (!this.shown && this.pending) this.select(this.takePending()!);
     const entry = this.shown;
     if (!entry) return;
     const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
@@ -294,13 +311,14 @@ export class HermesConversationPresenter {
     const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
     const window = hermesReadingWindow(entry.text, entry.calendarOffer, entry.presentedAt !== null);
     const next = entry.presentedAt === null ? window.maxMs : age < window.minMs ? window.minMs : window.maxMs;
+    const receiptMs = entry.calendarOffer ? entry.confirm?.validForMs?.() ?? 0 : Infinity;
     this.cancelReadingTimer = this.clock.after(() => {
       this.cancelReadingTimer = null;
       if (this.disposed) return;
       this.advanceReading();
       this.show();
       this.scheduleReading();
-    }, Math.max(1, next - age));
+    }, Math.max(1, Math.min(next - age, receiptMs)));
     this.updateReadingHold();
   }
 
@@ -319,6 +337,7 @@ export class HermesConversationPresenter {
   /** The layer never stores text: every paint re-reads the controller's current validated message. */
   private liveText(): string {
     if (this.disposed) return "";
+    if (this.shown?.calendarOffer && this.shown.confirm?.isValid?.() !== true) return "";
     const snapshot = this.snapshot();
     return snapshot.listening ? sanitizeHermesText(this.message()) : "";
   }

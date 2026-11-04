@@ -25,9 +25,10 @@ export type ConversationTiming = {
   /** Provider usage of this request (all attempts), numbers only. Absent from older bridges. */
   inputTokens?: number; cacheReadTokens?: number; outputTokens?: number; reasoningTokens?: number; promptChars?: number;
 };
+export type ConversationReceipt = (() => boolean) & { isValid(): boolean; validForMs(): number };
 export type ConversationResult = (
   | { ref: EpisodeRef; mode: "assess"; verdict: EpisodeAssessment }
-  | { ref: EpisodeRef; mode: "assist"; text: string | null; calendarOffer?: boolean; confirmPresented?: () => boolean }) & { timing?: ConversationTiming; memoryUpdated?: boolean };
+  | { ref: EpisodeRef; mode: "assist"; text: string | null; calendarOffer?: boolean; confirmPresented?: ConversationReceipt }) & { timing?: ConversationTiming; memoryUpdated?: boolean };
 export type ConversationChannelHost = {
   send(frame: object): boolean;
   now(): number;
@@ -281,17 +282,18 @@ export class ConversationChannel {
       const ref = { ...pending.ref }, requestId = pending.requestId, expiresAt = this.host.now() + 30_000;
       let confirmed = false;
       let presentedMs: number | undefined;
+      const isValid = () => connection === this.connection && receiptEpoch === this.receiptEpoch
+        && this.isReady() && (confirmed || this.host.now() < expiresAt);
       const confirmPresented = this.memoryAck && typeof deliveryId === "string" && deliveryId.length > 0 && deliveryId.length <= 128
-        ? () => {
-          if (confirmed || connection !== this.connection || receiptEpoch !== this.receiptEpoch
-            || !this.isReady() || this.host.now() >= expiresAt) return false;
+        ? Object.assign(() => {
+          if (confirmed || !isValid()) return false;
           try {
             presentedMs ??= clientDuration(this.host.now() - pending.requestedAt);
             confirmed = this.host.send({ chan: "conv", type: "presented", deliveryId, requestId, ref,
               ...(presentedMs !== undefined ? { requestToPresentedMs: presentedMs } : {}) });
           } catch { /* A failed receipt cannot break display or normal chat; the next frame may retry. */ }
           return confirmed;
-        } : undefined;
+        }, { isValid, validForMs: () => !isValid() ? 0 : confirmed ? Infinity : Math.max(0, expiresAt - this.host.now()) }) : undefined;
       this.finish({ mode: "assist", ref, text: frame.text.trim(), timing: readTiming(frame.timing),
         ...memory,
         ...(frame.calendarOffer === true ? { calendarOffer: true } : {}),

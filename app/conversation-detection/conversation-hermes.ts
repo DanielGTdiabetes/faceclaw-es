@@ -5,7 +5,7 @@ import { ConversationEpisodeTracker, EPISODE_MODALITIES, type EpisodeContext, ty
 import { type ConversationTurn } from "./conversation-turns";
 import { emptyConversationMetrics, LatencyMetric, LATENCY_BUCKETS_MS } from "./conversation-metrics";
 import { type WearerAssociationEvent } from "./wearer-identity";
-import { type ConversationChannel, type ConversationResult } from "../assistant/conversation-channel";
+import { type ConversationChannel, type ConversationResult, type ConversationReceipt } from "../assistant/conversation-channel";
 import { emptyPrefilterCounters, isSingleForeignVoice } from "./conversation-prefilter";
 import { type SmartTurnPort } from "./smart-turn";
 
@@ -112,8 +112,9 @@ export class ConversationHermesRuntime {
   private outputVersion = 0;
   private wearerTurnVersion = 0;
   private presentationEpoch = 0;
+  private calendarOfferEpoch = 0;
   private outputReceipt = { presented: false };
-  private outputConfirmation: (() => boolean) | null = null;
+  private outputConfirmation: ConversationReceipt | null = null;
   /** The conversation moved on: offers and unconfirmed outputs retain their legacy minimum. */
   private outputStale = false;
   private messageHistory: ConversationHermesHistoryEntry[] = [];
@@ -245,18 +246,20 @@ export class ConversationHermesRuntime {
   /** Last delivered messages of the current session, newest first. Empty after OFF. */
   history(): readonly ConversationHermesHistoryEntry[] { return this.messageHistory; }
 
-  /** Capture before paint. Queued offers keep their receipt across normal answers; OFF/pause revoke it. */
-  capturePresentation(): (() => void) | null {
+  /** Capture before paint. Offers require a live receipt, scope and server offer generation. */
+  capturePresentation(): ((() => void) & { isValid(): boolean; validForMs(): number }) | null {
     const ref = this.outputRef, confirm = this.outputConfirmation;
-    const offer = this.outputCalendarOffer, epoch = this.presentationEpoch;
+    const offer = this.outputCalendarOffer, epoch = this.presentationEpoch, offerEpoch = this.calendarOfferEpoch;
     const receipt = this.outputReceipt;
     const deliveredAt = this.outputAt, turnAt = this.outputTurnAt;
     if (!ref) return null;
-    return () => {
+    const isValid = () => (this.outputRef === ref || offer) && epoch === this.presentationEpoch && this.enabled
+      && this.source.snapshot().enabled && this.source.snapshot().state === "escuchando"
+      && (!offer || (offerEpoch === this.calendarOfferEpoch && !!confirm?.isValid()));
+    return Object.assign(() => {
       const current = this.outputRef === ref;
-      // A queued offer keeps its own receipt across normal answers, never across privacy/session changes.
-      if ((!current && !offer) || epoch !== this.presentationEpoch || !this.enabled
-        || !this.source.snapshot().enabled || this.source.snapshot().state !== "escuchando") return;
+      // Queueing does not extend the receipt's connection, identity or server-side lifetime.
+      if (!isValid()) return;
       if (!receipt.presented) {
         receipt.presented = true;
         if (current) { this.outputPresented = true; this.outputPresentedAt = this.host.now(); }
@@ -265,13 +268,14 @@ export class ConversationHermesRuntime {
         this.metrics.turnToNativeSent.add(this.host.now() - turnAt);
       }
       if (confirm?.() && current) this.outputConfirmation = null;
-    };
+    }, { isValid, validForMs: () => !isValid() ? 0 : offer ? confirm!.validForMs() : Infinity });
   }
 
   snapshot() {
     return { enabled: this.enabled, working: this.enabled && this.working && this.source.snapshot().state === "escuchando", busy: this.flight !== null, requests: this.requests, modality: this.modality,
       outputCalendarOffer: this.outputCalendarOffer, outputVersion: this.outputVersion,
       wearerTurnVersion: this.wearerTurnVersion,
+      presentationEpoch: this.presentationEpoch, calendarOfferEpoch: this.calendarOfferEpoch,
       delivered: this.counters.delivered, link: this.link, stopCause: this.stopCause,
       notice: this.enabled && this.host.now() < this.noticeUntil ? this.notice : "",
       filterStatus: this.filterStatus(),
@@ -613,6 +617,8 @@ export class ConversationHermesRuntime {
       baseline: { chunks: snapshot.metrics?.chunks, sentMs: snapshot.transcription?.soniox?.sentMs,
         finalTokens: snapshot.transcription?.soniox?.finalTokens } };
     this.flight = flight;
+    // The bridge consumes its previous offer on every new assist, even before the offer's ACK.
+    if (mode === "assist") this.calendarOfferEpoch++;
     const accepted = this.channel.request(context, mode, HERMES_REQUEST_TIMEOUT_MS, (result) => this.result(flight, result),
       (working) => { if (this.flight === flight) { this.working = working; this.host.changed(); } },
       { turnToRequestMs: flight.at - this.lastTextAt, closedBy: this.lastClosedBy,

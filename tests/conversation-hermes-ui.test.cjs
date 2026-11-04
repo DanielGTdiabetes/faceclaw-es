@@ -207,12 +207,16 @@ function topLayer(shell) { return shell.stack.layers.at(-1); }
 
 function readingHarness() {
   let now = 0, text = '', hooks, serial = 0;
+  let receiptValid = true, receiptDeadline = Infinity;
   const timers = new Map(), logs = [], painted = [], receipts = [], retirements = [];
   const f = fakeController(), { ui } = realShell();
   f.arm();
   f.controller.conversationHermes.capturePresentation = () => {
     const value = f.controller.conversationHermesMessage;
-    return () => receipts.push(value);
+    return Object.assign(() => receipts.push(value), {
+      isValid: () => receiptValid && now < receiptDeadline,
+      validForMs: () => receiptValid ? Math.max(0, receiptDeadline - now) : 0,
+    });
   };
   const clock = { now: () => now, after(fn, ms) { const id = ++serial; timers.set(id, { fn, at: now + ms }); return () => timers.delete(id); },
     retired: (entry) => logs.push(entry) };
@@ -223,10 +227,12 @@ function readingHarness() {
   }, (getText, callbacks) => { text = getText; hooks = callbacks; return { retire() {} }; }, () => {}, clock);
   const update = () => presenter.update();
   f.controller.onConversationHermesChange(update);
-  return { f, presenter, logs, receipts, painted, retirements, text: () => text(),
+  return { f, presenter, logs, receipts, painted, retirements, now: () => now, text: () => text(),
     say(value) { f.say(value); },
     sent() { const confirm = presenter.capturePresentation(); assert.equal(typeof confirm, 'function'); confirm(); painted.push(text()); },
     tap() { hooks.dismiss(); },
+    invalidateReceipt() { receiptValid = false; f.emit(); },
+    expireReceiptAfter(ms) { receiptDeadline = now + ms; },
     advance(ms) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.fn(); } },
   };
 }
@@ -973,7 +979,7 @@ test('reading queue: latest normal answer behind a pending offer is presented af
   const h = readingHarness(); h.say('Primera'); h.sent(); h.advance(1);
   h.f.tick({ outputCalendarOffer: true }); h.say('Oferta pendiente');
   h.f.tick({ outputCalendarOffer: false }); h.say('Normal anterior'); h.say('Normal última');
-  h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Primera', 'a pending offer is not promoted early');
+  h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Oferta pendiente', 'a pending offer also follows the wearer immediately');
   h.advance(3999); assert.equal(h.text(), 'Oferta pendiente'); h.sent();
   h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Oferta pendiente');
   h.advance(11999); assert.equal(h.text(), 'Oferta pendiente');
@@ -1008,3 +1014,65 @@ test('reading queue: dismissing an offer releases its deferred normal without a 
   h.advance(3999); assert.equal(h.text(), 'Normal posterior');
   h.advance(1); assert.notEqual(h.text(), 'Normal posterior'); h.presenter.dispose();
 });
+
+test('offer eligibility: an unusable pending or visible offer is never painted, including receipt timeout', () => {
+  for (const visible of [false, true]) {
+    const h = readingHarness();
+    if (!visible) { h.say('Primera'); h.sent(); h.advance(1); }
+    h.f.tick({ outputCalendarOffer: true }); h.say('Oferta revocada');
+    h.invalidateReceipt(); h.advance(4000);
+    assert.notEqual(h.text(), 'Oferta revocada');
+    assert.ok(!h.painted.includes('Oferta revocada')); h.presenter.dispose();
+  }
+  const h = readingHarness(); h.expireReceiptAfter(1000);
+  h.f.tick({ outputCalendarOffer: true }); h.say('Sin ACK');
+  h.advance(999); assert.equal(h.text(), 'Sin ACK');
+  h.advance(1); assert.notEqual(h.text(), 'Sin ACK'); h.presenter.dispose();
+});
+
+for (const cause of ['association', 'stream', 'reconnect', 'expiry', 'valid']) {
+test(`real runtime and presenter gate queued offers: ${cause}`, () => {
+  const { ConversationChannel } = require('../.test-build/app/assistant/conversation-channel.js');
+  const { ConversationHermesRuntime } = require('../.test-build/app/conversation-detection/conversation-hermes.js');
+    const h = readingHarness(), frames = [], ticks = new Set(), turns = new Set(), associations = new Set();
+    let ref = null, seq = 0;
+    const state = { enabled: true, state: 'escuchando', transcription: { engine: 'soniox' } };
+    const source = { snapshot: () => state, wearerActionRef: () => ref,
+      subscribe: () => () => {}, subscribeTurns(cb) { turns.add(cb); return () => turns.delete(cb); },
+      subscribeAssociation(cb) { associations.add(cb); return () => associations.delete(cb); } };
+    const channel = new ConversationChannel({ now: h.now, send(frame) { frames.push(frame); return true; }, after: () => () => {} });
+    const runtime = new ConversationHermesRuntime(source, channel, { now: h.now,
+      every(cb) { ticks.add(cb); return () => ticks.delete(cb); },
+      onOutput(text) { h.say(text ?? ''); }, changed() { h.f.emit(); } },
+      { candidateMs: 15000, silenceMs: 120000, maxTurns: 12, maxChars: 6000 });
+    h.f.controller.conversationHermes = runtime;
+    const association = (patch = {}) => {
+      const event = { sessionId: 's1', streamId: 1, version: 1, kind: 'manual', speaker: '1', knownOthers: ['2'], ...patch };
+      ref = { sessionId: event.sessionId, streamId: event.streamId, version: event.version, attemptSeq: 1 };
+      for (const cb of associations) cb(event);
+    };
+    const turn = (speaker) => { for (const cb of turns) cb({ v: 1, sessionId: 's1', streamId: 1, seq: ++seq,
+      engine: 'soniox', speaker, relation: speaker === '1' ? 'portador' : 'otro', associationVersion: 1,
+      text: 'Una conversación completa', timing: 'valido', startMs: seq * 1000, endMs: seq * 1000 + 500, closedBy: 'endpoint' }); };
+    const step = (ms) => { h.advance(ms); for (const cb of [...ticks]) cb(); };
+    const reply = (mode, patch = {}) => {
+      const sent = frames.findLast(f => f.type === mode);
+      channel.handle({ chan: 'conv', type: 'result', requestId: sent.requestId, ref: sent.ref, mode,
+        verdict: 'tema', kind: 'mensaje', text: Array(120).fill('palabra').join(' '), deliveryId: 'normal', ...patch });
+    };
+    channel.negotiate(['conv/1', 'conv/memory-ack/1']); runtime.begin(); association();
+    turn('1'); turn('2'); step(2000); reply('assess'); reply('assist');
+    // The wearer's next turn precedes the first normal ACK, so the offer legitimately queues.
+    turn('1'); turn('2'); step(5000); h.sent(); step(500);
+    reply('assist', { text: 'Oferta pendiente real', calendarOffer: true, deliveryId: 'offer' });
+    assert.notEqual(h.text(), 'Oferta pendiente real', cause);
+    if (cause === 'association') association({ version: 2, speaker: '2' });
+    if (cause === 'stream') association({ streamId: 2 });
+    if (cause === 'reconnect') { channel.reset(); step(500); channel.negotiate(['conv/1', 'conv/memory-ack/1']); step(500); }
+    step(cause === 'valid' ? 29500 : 30000);
+    assert.equal(h.text() === 'Oferta pendiente real', cause === 'valid', cause);
+    if (cause === 'valid') h.sent();
+    assert.equal(frames.filter(f => f.type === 'presented' && f.deliveryId === 'offer').length, cause === 'valid' ? 1 : 0, cause);
+    runtime.dispose(); h.presenter.dispose();
+});
+}

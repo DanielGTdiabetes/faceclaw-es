@@ -507,7 +507,7 @@ test('calendar offers keep 12/30 seconds and only accepted wearer turns advance 
   h.runtime.dispose();
 });
 
-test('a queued offer retains its ACK after a normal replacement, but never after OFF', () => {
+test('the next assist invalidates a queued offer just as the bridge consumes it, including after OFF', () => {
   for (const off of [false, true]) {
     const h = harness(); h.begin(undefined, true); h.candidate(); h.reply('assess');
     h.reply('assist', { calendarOffer: true, deliveryId: 'offer', text: '¿La apunto?' });
@@ -515,7 +515,7 @@ test('a queued offer retains its ACK after a normal replacement, but never after
     h.turn('1'); h.turn('2'); h.advance(5000); h.reply('assist', { text: 'Respuesta nueva' });
     if (off) h.runtime.stop();
     ack(); ack();
-    assert.equal(h.frames.filter(f => f.type === 'presented').length, off ? 0 : 1);
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, 0);
     h.runtime.dispose();
   }
 });
@@ -533,4 +533,20 @@ test('two paints captured before the first ACK count one delivery; dismiss revok
   const late = q.runtime.capturePresentation(); q.runtime.dismissOutput(); late();
   assert.equal(q.frames.filter(f => f.type === 'presented').length, 0);
   q.runtime.dispose();
+});
+
+test('offer receipt eligibility tracks association, stream, connection, expiry and missing receipt', () => {
+  for (const cause of ['association', 'stream', 'connection', 'expiry', 'missing', 'valid']) {
+    const h = harness(); h.begin(undefined, true); h.candidate(); h.reply('assess');
+    h.reply('assist', { calendarOffer: true, deliveryId: cause === 'missing' ? undefined : 'offer' });
+    const receipt = h.runtime.capturePresentation();
+    if (cause === 'association') h.association({ version: 2, speaker: '2' });
+    if (cause === 'stream') h.association({ streamId: 2 });
+    if (cause === 'connection') h.channel.reset();
+    if (cause === 'expiry') h.advance(30000, false);
+    assert.equal(receipt.isValid(), cause === 'valid', cause);
+    receipt();
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, cause === 'valid' ? 1 : 0, cause);
+    h.runtime.dispose();
+  }
 });
