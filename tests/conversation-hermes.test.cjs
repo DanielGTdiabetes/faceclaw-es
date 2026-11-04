@@ -478,3 +478,59 @@ test('phone history: last five of this session with time, only while ON', () => 
   assert.equal(hermesHistoryText(true, h.runtime.history()), '');
   h.runtime.dispose();
 });
+
+test('reading expires by words from native ACK, including idle conversation and a delayed ACK', () => {
+  for (const [words, ms] of [[1, 4000], [10, 5000], [30, 11000], [60, 20000], [120, 30000]]) {
+    const h = harness({ candidateMs: 15000, silenceMs: 120000, maxTurns: 12, maxChars: 6000 });
+    h.begin(undefined, true); h.candidate(); h.reply('assess');
+    const text = Array(words).fill('palabra').join(' ');
+    h.reply('assist', { text, deliveryId: 'receipt' });
+    h.advance(2000); h.runtime.capturePresentation()();
+    h.advance(ms - 1, false); assert.equal(h.outputs.at(-1), text, words);
+    h.advance(1); assert.equal(h.outputs.at(-1), null, words);
+    h.runtime.dispose();
+  }
+});
+
+test('calendar offers keep 12/30 seconds and only accepted wearer turns advance replacement evidence', () => {
+  const h = harness({ candidateMs: 15000, silenceMs: 120000, maxTurns: 12, maxChars: 6000 });
+  h.begin(undefined, true); h.candidate(); h.reply('assess');
+  h.reply('assist', { calendarOffer: true, deliveryId: 'offer', text: '¿La apunto?' });
+  h.runtime.capturePresentation()(); h.advance(4000);
+  assert.equal(h.outputs.at(-1), '¿La apunto?'); assert.equal(h.runtime.snapshot().outputCalendarOffer, true);
+  const before = h.runtime.snapshot().wearerTurnVersion;
+  h.turn('2'); assert.equal(h.runtime.snapshot().wearerTurnVersion, before);
+  h.turn('1', '   '); assert.equal(h.runtime.snapshot().wearerTurnVersion, before);
+  h.turn('1'); assert.equal(h.runtime.snapshot().wearerTurnVersion, before + 1);
+  h.advance(7999, false); assert.equal(h.outputs.at(-1), '¿La apunto?');
+  h.advance(1); assert.equal(h.outputs.at(-1), null);
+  h.runtime.dispose();
+});
+
+test('a queued offer retains its ACK after a normal replacement, but never after OFF', () => {
+  for (const off of [false, true]) {
+    const h = harness(); h.begin(undefined, true); h.candidate(); h.reply('assess');
+    h.reply('assist', { calendarOffer: true, deliveryId: 'offer', text: '¿La apunto?' });
+    const ack = h.runtime.capturePresentation();
+    h.turn('1'); h.turn('2'); h.advance(5000); h.reply('assist', { text: 'Respuesta nueva' });
+    if (off) h.runtime.stop();
+    ack(); ack();
+    assert.equal(h.frames.filter(f => f.type === 'presented').length, off ? 0 : 1);
+    h.runtime.dispose();
+  }
+});
+
+test('two paints captured before the first ACK count one delivery; dismiss revokes an offer receipt', () => {
+  const h = harness(); h.begin(undefined, true); h.candidate(); h.reply('assess');
+  h.reply('assist', { calendarOffer: true, deliveryId: 'offer' });
+  const first = h.runtime.capturePresentation(), second = h.runtime.capturePresentation();
+  first(); second();
+  assert.equal(h.runtime.diagnostics().metrics.nativeSent, 1);
+  assert.equal(h.frames.filter(f => f.type === 'presented').length, 1);
+  h.runtime.dispose();
+  const q = harness(); q.begin(undefined, true); q.candidate(); q.reply('assess');
+  q.reply('assist', { calendarOffer: true, deliveryId: 'other-offer' });
+  const late = q.runtime.capturePresentation(); q.runtime.dismissOutput(); late();
+  assert.equal(q.frames.filter(f => f.type === 'presented').length, 0);
+  q.runtime.dispose();
+});

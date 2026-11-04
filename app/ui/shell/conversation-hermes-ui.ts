@@ -1,3 +1,4 @@
+import { hermesReadingWindow } from "../../conversation-detection/hermes-reading";
 import type { Layer } from "../layers";
 import { HermesContributionLayer } from "./conversation-hermes-layer";
 import { shell } from "./shell";
@@ -20,7 +21,7 @@ export type HermesConversationSource = {
   readonly conversationHermesMessage: string;
   dismissConversationHermesMessage(): void;
   onConversationHermesChange(listener: () => void): () => void;
-  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string }; capturePresentation?(): (() => void) | null };
+  readonly conversationHermes: { snapshot(): { enabled: boolean; listening: boolean; notice?: string; working?: boolean; link?: string; outputCalendarOffer?: boolean; outputVersion?: number; wearerTurnVersion?: number }; capturePresentation?(): (() => void) | null };
 };
 
 /** Shell display operations; the default port wraps the real Shell methods. */
@@ -67,7 +68,7 @@ export type HermesPresentationCounts = {
 
 type RetirementReason = "min" | "max" | "replaced" | "dismiss" | "off";
 type ReadingEntry = { text: string; key: string; selectedAt: number; presentedAt: number | null;
-  confirm: (() => void) | null; valid: boolean };
+  confirm: (() => void) | null; valid: boolean; calendarOffer: boolean; wearerTurnAtAck: number };
 export type HermesReadingClock = {
   now(): number;
   after(callback: () => void, ms: number): () => void;
@@ -82,7 +83,6 @@ const readingClock: HermesReadingClock = {
     catch { /* Diagnostics only. */ }
   },
 };
-const READING_MIN_MS = 12_000, READING_MAX_MS = 30_000;
 
 function emptyCounts(): HermesPresentationCounts {
   return { presented: 0, woke: 0, replaced: 0, refused: 0, retired: 0, released: 0 };
@@ -127,7 +127,7 @@ export class HermesConversationPresenter {
     }
     const raw = this.source.conversationHermesMessage;
     const state = this.source.conversationHermes.snapshot();
-    const key = raw;
+    const key = state.outputVersion === undefined ? raw : `${state.outputVersion}:${raw}`;
     if (!snapshot.enabled || !snapshot.listening || state.link === "revocado") {
       // Suspended/OFF listening never shows a contribution, even one still pending expiry,
       // and that event is not shown later when listening resumes.
@@ -139,15 +139,23 @@ export class HermesConversationPresenter {
     }
     if (!raw) {
       this.handled = "";
-      this.pending = null;
+      if (!this.pending?.calendarOffer) this.pending = null;
       if (this.shown) { this.shown.valid = false; this.shown.confirm = null; }
     } else if (key !== this.handled) {
       this.handled = key;
       const entry: ReadingEntry = { text: sanitizeHermesText(raw), key, selectedAt: this.clock.now(),
-        presentedAt: null, confirm: this.source.conversationHermes.capturePresentation?.() ?? null, valid: true };
+        presentedAt: null, confirm: this.source.conversationHermes.capturePresentation?.() ?? null, valid: true,
+        calendarOffer: state.outputCalendarOffer === true, wearerTurnAtAck: state.wearerTurnVersion ?? 0 };
       if (entry.text) {
-        if (this.isReading()) this.pending = entry;
-        else this.select(entry);
+        const replace = this.shown && !this.shown.calendarOffer && this.shown.presentedAt !== null
+          && (state.wearerTurnVersion ?? 0) > this.shown.wearerTurnAtAck;
+        if (this.isReading() && !replace) {
+          if (!this.pending?.calendarOffer || entry.calendarOffer) this.pending = entry;
+        } else {
+          const next = this.pending?.calendarOffer ? this.pending : entry;
+          this.pending = null;
+          this.select(next);
+        }
       }
     }
     this.advanceReading();
@@ -190,7 +198,10 @@ export class HermesConversationPresenter {
   }
 
   /** Treat the controller's current message as already handled (restore/reconnect/bind): never shown. */
-  ignoreExisting(): void { this.handled = this.source.conversationHermesMessage; }
+  ignoreExisting(): void {
+    const raw = this.source.conversationHermesMessage, state = this.source.conversationHermes.snapshot();
+    this.handled = state.outputVersion === undefined ? raw : `${state.outputVersion}:${raw}`;
+  }
 
   isArmed(): boolean { return this.armed; }
   diagnostics(): HermesPresentationCounts { return { ...this.counts }; }
@@ -204,7 +215,11 @@ export class HermesConversationPresenter {
         && this.liveText() && this.display.isVisible?.(layer) !== false) {
         // Text already on the lenses gets its reading window even if the controller cleared it
         // meanwhile (new turn); only a still-current answer sends the bridge receipt.
-        if (entry.presentedAt === null) { entry.presentedAt = this.clock.now(); this.scheduleReading(); }
+        if (entry.presentedAt === null) {
+          entry.presentedAt = this.clock.now();
+          entry.wearerTurnAtAck = this.source.conversationHermes.snapshot().wearerTurnVersion ?? 0;
+          this.scheduleReading();
+        }
         if (entry.valid) entry.confirm?.();
       }
     };
@@ -236,7 +251,7 @@ export class HermesConversationPresenter {
 
   private isReading(): boolean {
     return !!this.shown && (this.shown.presentedAt === null
-      || this.clock.now() - this.shown.presentedAt < READING_MIN_MS);
+      || this.clock.now() - this.shown.presentedAt < hermesReadingWindow(this.shown.text, this.shown.calendarOffer).minMs);
   }
 
   private select(entry: ReadingEntry): void {
@@ -250,10 +265,11 @@ export class HermesConversationPresenter {
     const entry = this.shown;
     if (!entry) return;
     const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
-    if (age >= READING_MAX_MS || (!this.isReading() && (!entry.valid || this.pending))) {
+    const window = hermesReadingWindow(entry.text, entry.calendarOffer, entry.presentedAt !== null);
+    if (age >= window.maxMs || (!this.isReading() && (!entry.valid || this.pending))) {
       const next = this.pending; this.pending = null;
       if (next) this.select(next);
-      else this.finishShown(age >= READING_MAX_MS ? "max" : "min");
+      else this.finishShown(age >= window.maxMs ? "max" : "min");
     } else if (!entry.valid && entry.presentedAt === null && !this.layer) this.finishShown("min");
     this.updateReadingHold();
   }
@@ -267,7 +283,8 @@ export class HermesConversationPresenter {
     if (!this.shown) return;
     const entry = this.shown;
     const age = this.clock.now() - (entry.presentedAt ?? entry.selectedAt);
-    const next = entry.presentedAt === null ? READING_MAX_MS : age < READING_MIN_MS ? READING_MIN_MS : READING_MAX_MS;
+    const window = hermesReadingWindow(entry.text, entry.calendarOffer, entry.presentedAt !== null);
+    const next = entry.presentedAt === null ? window.maxMs : age < window.minMs ? window.minMs : window.maxMs;
     this.cancelReadingTimer = this.clock.after(() => {
       this.cancelReadingTimer = null;
       if (this.disposed) return;

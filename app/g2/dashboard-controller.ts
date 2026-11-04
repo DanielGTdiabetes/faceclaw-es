@@ -54,7 +54,7 @@ import { claimGlassesOnboardingAutoLaunch, ONBOARDING_APP_ID } from "../apps/onb
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
 import { ConversationCaptureCoordinator, type DetectorEnvironment, type SessionOptions } from "../conversation-detection/coordinator";
-import { ConversationHermesRuntime, HERMES_MESSAGE_MAX_MS } from "../conversation-detection/conversation-hermes";
+import { ConversationHermesRuntime } from "../conversation-detection/conversation-hermes";
 import { LocalTranscription } from "../native/local-transcription";
 import { SonioxConversationTranscription, androidSonioxSocket } from "../native/soniox-conversation";
 import { SmartTurnClient } from "../conversation-detection/smart-turn";
@@ -2184,7 +2184,6 @@ class DashboardController {
   /** Session-only ON: a process restart always starts this experiment OFF. */
   private hermesSelected = false;
   private hermesMessage = "";
-  private hermesMessageTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly hermesListeners = new Set<() => void>();
   private hermesUiKey = "";
 
@@ -2212,12 +2211,8 @@ class DashboardController {
     for (const listener of this.hermesListeners) { try { listener(); } catch { /* A UI listener cannot break capture. */ } }
   }
   private setConversationHermesMessage(text: string | null): void {
-    if ((text ?? "") === this.hermesMessage) return;
-    if (this.hermesMessageTimer) clearTimeout(this.hermesMessageTimer);
-    this.hermesMessageTimer = null;
+    // Runtime and presenter expire from the native ACK, including identical successive replies.
     this.hermesMessage = text ?? "";
-    // Backstop only: the runtime retires the message itself (minimum 12 s, maximum 30 s).
-    if (text) this.hermesMessageTimer = setTimeout(() => this.setConversationHermesMessage(null), HERMES_MESSAGE_MAX_MS);
     this.emitConversationHermes();
   }
 

@@ -231,15 +231,15 @@ function readingHarness() {
   };
 }
 
-test('reading: latest pending answer gets its own twelve seconds, from native sent', () => {
+test('reading: latest pending answer gets its own reading duration, from native sent', () => {
   const h = readingHarness(); h.say('A'); h.sent();
   h.advance(3000); h.say('B'); h.say('C');
   assert.equal(h.text(), 'A'); assert.deepEqual(h.receipts, ['A']);
-  h.advance(8999); assert.equal(h.text(), 'A');
+  h.advance(999); assert.equal(h.text(), 'A');
   h.advance(1); assert.equal(h.text(), 'C'); h.sent();
-  h.advance(11999); assert.equal(h.text(), 'C');
+  h.advance(3999); assert.equal(h.text(), 'C');
   assert.deepEqual(h.painted, ['A', 'C']); assert.deepEqual(h.receipts, ['A', 'C']);
-  assert.equal(h.logs[0].visibleMs, 12000); assert.equal(h.logs[0].reason, 'replaced');
+  assert.equal(h.logs[0].visibleMs, 4000); assert.equal(h.logs[0].reason, 'replaced');
   h.presenter.dispose();
 });
 
@@ -248,9 +248,9 @@ test('reading: tap advances pending; working and invalidation do not erase a pre
   assert.equal(h.text(), 'B'); h.sent();
   h.f.tick({ working: true }); assert.equal(h.text(), 'B');
   h.say(''); assert.equal(h.text(), 'B');
-  h.advance(11999); assert.equal(h.text(), 'B'); h.advance(1);
+  h.advance(3999); assert.equal(h.text(), 'B'); h.advance(1);
   assert.notEqual(h.text(), 'B');
-  assert.equal(h.logs[0].reason, 'dismiss'); assert.equal(h.logs[1].visibleMs, 12000);
+  assert.equal(h.logs[0].reason, 'dismiss'); assert.equal(h.logs[1].visibleMs, 4000);
   h.presenter.dispose();
 });
 
@@ -269,7 +269,7 @@ test('reading: OFF, pause and revoked channel discard visible and pending answer
 
 test('reading: actual presentation starts the minimum, and clears invalidate a captured receipt', () => {
   const h = readingHarness(); h.say('A'); h.advance(5000); h.sent();
-  h.advance(11000); h.say('B'); assert.equal(h.text(), 'A');
+  h.advance(3000); h.say('B'); assert.equal(h.text(), 'A');
   h.advance(1000); assert.equal(h.text(), 'B');
   const stale = h.presenter.capturePresentation(); h.say(''); stale();
   assert.deepEqual(h.receipts, ['A']);
@@ -281,9 +281,9 @@ test('reading: a clear between paint and the deferred receipt keeps the painted 
   const confirm = h.presenter.capturePresentation(); assert.equal(typeof confirm, 'function');
   h.say(''); assert.equal(h.text(), 'A', 'new transcript text must not blank an answer already sent');
   confirm(); assert.deepEqual(h.receipts, [], 'a cleared answer sends no bridge receipt');
-  h.advance(11999); assert.equal(h.text(), 'A');
+  h.advance(3999); assert.equal(h.text(), 'A');
   h.advance(1); assert.notEqual(h.text(), 'A');
-  assert.equal(h.logs[0].visibleMs, 12000);
+  assert.equal(h.logs[0].visibleMs, 4000);
   h.presenter.dispose();
 });
 
@@ -296,7 +296,7 @@ test('reading: an ellipsis that woke the lenses never puts a presented answer to
     assert.equal(h.text(), 'A', order); h.sent();
     const before = h.retirements.length;
     h.f.tick({ working: true }); assert.equal(h.text(), 'A', order);
-    h.advance(11999); assert.equal(h.text(), 'A', order);
+    h.advance(3999); assert.equal(h.text(), 'A', order);
     assert.equal(h.retirements.length, before, `${order}: no retirement inside the reading window`);
     h.presenter.dispose();
   }
@@ -917,4 +917,43 @@ test('phone manual control: unavailable Hermes cannot start; an active session c
   assert.equal(r.view.conversationHermesButton, 'Hermes en conversación: OFF · iniciar');
   assert.equal(r.captureCalls.at(-1)[0], false);
   assert.equal(g.counts().captureStarts, 0);
+});
+
+test('reading policy: proportional text expires from native ACK, not arrival; absent ACK keeps fallback', () => {
+  for (const [words, duration] of [[1, 4000], [10, 5000], [30, 11000], [60, 20000], [120, 30000]]) {
+    const h = readingHarness(), text = Array(words).fill('palabra').join(' ');
+    h.say(text); h.advance(2000); assert.equal(h.text(), text); h.sent();
+    h.advance(duration - 1); assert.equal(h.text(), text);
+    h.advance(1); assert.notEqual(h.text(), text); assert.equal(h.logs[0].visibleMs, duration);
+    h.presenter.dispose();
+  }
+  const h = readingHarness(); h.say('Sin ACK'); h.advance(29999); assert.equal(h.text(), 'Sin ACK');
+  h.advance(1); assert.notEqual(h.text(), 'Sin ACK'); h.presenter.dispose();
+});
+
+test('reading queue: only a wearer turn after native ACK permits an immediate normal replacement', () => {
+  for (const when of ['after', 'before', 'other']) {
+    const h = readingHarness();
+    h.f.tick({ wearerTurnVersion: when === 'before' ? 1 : 0 });
+    h.say('Primera'); h.sent(); h.advance(1);
+    if (when === 'after') h.f.tick({ wearerTurnVersion: 1 });
+    h.say('Segunda'); assert.equal(h.text(), when === 'after' ? 'Segunda' : 'Primera', when);
+    if (when !== 'after') { h.advance(3999); assert.equal(h.text(), 'Segunda'); }
+    h.presenter.dispose();
+  }
+});
+
+test('reading queue: visible and pending offers survive normal answers and keep their ACK', () => {
+  const h = readingHarness();
+  h.f.tick({ outputCalendarOffer: true }); h.say('¿La apunto?'); h.sent(); h.advance(1);
+  h.f.tick({ wearerTurnVersion: 1, outputCalendarOffer: false }); h.say('Respuesta');
+  assert.equal(h.text(), '¿La apunto?'); h.advance(11998); assert.equal(h.text(), '¿La apunto?');
+  h.advance(1); assert.equal(h.text(), 'Respuesta'); h.presenter.dispose();
+  const q = readingHarness(); q.say('Primera'); q.sent(); q.advance(1);
+  q.f.tick({ outputCalendarOffer: true }); q.say('Oferta pendiente');
+  q.f.tick({ outputCalendarOffer: false }); q.say('Normal posterior');
+  q.advance(3999); assert.equal(q.text(), 'Oferta pendiente'); q.sent();
+  assert.deepEqual(q.receipts, ['Primera', 'Oferta pendiente']);
+  q.advance(4000); assert.equal(q.text(), 'Oferta pendiente');
+  q.presenter.dispose();
 });

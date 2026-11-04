@@ -1,3 +1,4 @@
+import { hermesReadingWindow } from "./hermes-reading";
 import { type ConversationCaptureCoordinator, type DetectorSnapshot } from "./coordinator";
 import { ConversationEpisodeTracker, EPISODE_MODALITIES, type EpisodeContext, type EpisodeModality, type EpisodePolicy,
   type EpisodeRef } from "./conversation-episodes";
@@ -32,10 +33,6 @@ export type ConversationHermesCounters = {
 const emptyCounters = (): ConversationHermesCounters => ({ turnsAccepted: 0, turnsIgnored: 0, candidates: 0,
   assessments: 0, assists: 0, topics: 0, abstentions: 0, messages: 0, delivered: 0, failures: 0,
   turnsOffline: 0, linkLosses: 0, linkResumes: 0, offlineMs: 0 });
-/** A delivered message is kept at least this long even while the conversation goes on. */
-export const HERMES_MESSAGE_MIN_MS = 12_000;
-/** Upper bound for a delivered message on the lenses. */
-export const HERMES_MESSAGE_MAX_MS = 30_000;
 /** Phone-only RAM list of the current session; cleared on OFF and never persisted. */
 export const HERMES_HISTORY_MAX = 5;
 /**
@@ -109,8 +106,15 @@ export class ConversationHermesRuntime {
   private flight: Flight | null = null;
   private outputRef: EpisodeRef | null = null;
   private outputAt = 0;
+  private outputPresentedAt: number | null = null;
+  private outputText = "";
+  private outputCalendarOffer = false;
+  private outputVersion = 0;
+  private wearerTurnVersion = 0;
+  private presentationEpoch = 0;
+  private outputReceipt = { presented: false };
   private outputConfirmation: (() => boolean) | null = null;
-  /** The conversation moved on after delivery: retire once HERMES_MESSAGE_MIN_MS has elapsed. */
+  /** The conversation moved on: offers and unconfirmed outputs retain their legacy minimum. */
   private outputStale = false;
   private messageHistory: ConversationHermesHistoryEntry[] = [];
   private cancelTimer: (() => void) | null = null;
@@ -219,6 +223,7 @@ export class ConversationHermesRuntime {
     const wasEnabled = this.enabled;
     if (wasEnabled) { this.updateClock(false); this.finishFlight(); this.closeOffline(); this.stopCause = cause; }
     this.enabled = false;
+    this.presentationEpoch++;
     this.stopSmart();
     this.observations = []; this.lastAudioTurn = null;
     this.flight = null;
@@ -235,30 +240,38 @@ export class ConversationHermesRuntime {
   dispose(): void { this.stop(); for (const unsubscribe of this.unsubscribe) unsubscribe(); }
 
   /** Explicit dismissal (tap on the lens overlay). */
-  dismissOutput(): void { if (this.outputRef) this.clearOutput(); }
+  dismissOutput(): void { this.presentationEpoch++; if (this.outputRef) this.clearOutput(); }
 
   /** Last delivered messages of the current session, newest first. Empty after OFF. */
   history(): readonly ConversationHermesHistoryEntry[] { return this.messageHistory; }
 
-  /** Capture the exact output before paint; a later replacement, OFF or pause invalidates this receipt. */
+  /** Capture before paint. Queued offers keep their receipt across normal answers; OFF/pause revoke it. */
   capturePresentation(): (() => void) | null {
     const ref = this.outputRef, confirm = this.outputConfirmation;
-    if (!ref || !confirm) return null;
+    const offer = this.outputCalendarOffer, epoch = this.presentationEpoch;
+    const receipt = this.outputReceipt;
+    const deliveredAt = this.outputAt, turnAt = this.outputTurnAt;
+    if (!ref) return null;
     return () => {
-      if (this.outputRef !== ref || this.outputConfirmation !== confirm || !this.enabled
+      const current = this.outputRef === ref;
+      // A queued offer keeps its own receipt across normal answers, never across privacy/session changes.
+      if ((!current && !offer) || epoch !== this.presentationEpoch || !this.enabled
         || !this.source.snapshot().enabled || this.source.snapshot().state !== "escuchando") return;
-      if (!this.outputPresented) {
-        this.outputPresented = true;
+      if (!receipt.presented) {
+        receipt.presented = true;
+        if (current) { this.outputPresented = true; this.outputPresentedAt = this.host.now(); }
         this.metrics.nativeSent++;
-        this.metrics.resultToNativeSent.add(this.host.now() - this.outputAt);
-        this.metrics.turnToNativeSent.add(this.host.now() - this.outputTurnAt);
+        this.metrics.resultToNativeSent.add(this.host.now() - deliveredAt);
+        this.metrics.turnToNativeSent.add(this.host.now() - turnAt);
       }
-      if (confirm()) this.outputConfirmation = null;
+      if (confirm?.() && current) this.outputConfirmation = null;
     };
   }
 
   snapshot() {
     return { enabled: this.enabled, working: this.enabled && this.working && this.source.snapshot().state === "escuchando", busy: this.flight !== null, requests: this.requests, modality: this.modality,
+      outputCalendarOffer: this.outputCalendarOffer, outputVersion: this.outputVersion,
+      wearerTurnVersion: this.wearerTurnVersion,
       delivered: this.counters.delivered, link: this.link, stopCause: this.stopCause,
       notice: this.enabled && this.host.now() < this.noticeUntil ? this.notice : "",
       filterStatus: this.filterStatus(),
@@ -354,6 +367,7 @@ export class ConversationHermesRuntime {
     }
     const before = this.tracker.snapshot();
     if (!this.tracker.association(event)) return;
+    if (event.version !== this.associationVersion) this.presentationEpoch++;
     this.associationVersion = event.version;
     if (this.tracker.snapshot().chars !== before.chars || event.kind === "borrado") {
       this.finishFlight(); this.channel.cancel(); this.attempted = ""; this.clearOutput();
@@ -388,6 +402,7 @@ export class ConversationHermesRuntime {
         this.cancelDirectTimer = this.host.after?.(() => { this.cancelDirectTimer = null; this.tick(); },
           HERMES_DIRECT_SETTLE_MS) ?? null;
       }
+      if (turn.relation === "portador") this.wearerTurnVersion++;
       this.counters.turnsAccepted++;
       if (this.flight) this.metrics.turnsDuringInference++;
       if (before.state === "esperando" && after.state === "candidata") this.counters.candidates++;
@@ -420,18 +435,24 @@ export class ConversationHermesRuntime {
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
     this.lastAudioTurn = null;
+    this.presentationEpoch++;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
     this.attempted = "";
     if (this.outputRef) this.outputStale = true;
   }
 
-  private clearOutput(): void { this.outputRef = null; this.outputConfirmation = null; this.outputStale = false; this.host.onOutput(null); }
+  private clearOutput(): void {
+    this.outputRef = null; this.outputConfirmation = null; this.outputStale = false;
+    this.outputCalendarOffer = false; this.outputPresentedAt = null; this.outputText = "";
+    this.host.onOutput(null);
+  }
 
   private expireOutput(): void {
     if (!this.outputRef) return;
-    const age = this.host.now() - this.outputAt;
-    if (age >= HERMES_MESSAGE_MAX_MS
-      || (age >= HERMES_MESSAGE_MIN_MS && (this.outputStale || !this.tracker.acceptsOutput(this.outputRef)))) this.clearOutput();
+    const age = this.host.now() - (this.outputPresentedAt ?? this.outputAt);
+    const window = hermesReadingWindow(this.outputText, this.outputCalendarOffer, this.outputPresentedAt !== null);
+    if (age >= window.maxMs
+      || (age >= window.minMs && (this.outputStale || !this.tracker.acceptsOutput(this.outputRef)))) this.clearOutput();
   }
 
   private tick(): void {
@@ -646,6 +667,11 @@ export class ConversationHermesRuntime {
     } else if (this.tracker.acceptsOutput(result.ref) && result.text) {
       this.counters.delivered++;
       this.outputRef = { ...result.ref };
+      this.outputVersion++;
+      this.outputReceipt = { presented: false };
+      this.outputCalendarOffer = result.calendarOffer === true;
+      this.outputText = result.text;
+      this.outputPresentedAt = null;
       this.outputConfirmation = result.confirmPresented ?? null;
       this.outputAt = this.host.now();
       this.outputTurnAt = flight.turnAt;

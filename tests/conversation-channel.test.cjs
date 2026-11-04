@@ -225,3 +225,12 @@ test('invalid context, timing, attribution, excessive text or deadlines never re
     assert.equal(h.frames.length, 0);
   }
 });
+
+test('calendar offer presentation marker is additive, explicit and strictly boolean', () => {
+  for (const calendarOffer of [true, false, undefined, 'true', 1, { private: 'data' }]) {
+    const h = harness(); h.ready(); h.request('assist');
+    h.reply({ kind: 'mensaje', text: 'Una oferta o respuesta', calendarOffer });
+    assert.equal(h.results[0].calendarOffer, calendarOffer === true ? true : undefined);
+    assert.equal(h.results[0].text, 'Una oferta o respuesta');
+  }
+});

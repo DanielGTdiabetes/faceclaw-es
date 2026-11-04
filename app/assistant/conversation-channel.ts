@@ -27,7 +27,7 @@ export type ConversationTiming = {
 };
 export type ConversationResult = (
   | { ref: EpisodeRef; mode: "assess"; verdict: EpisodeAssessment }
-  | { ref: EpisodeRef; mode: "assist"; text: string | null; confirmPresented?: () => boolean }) & { timing?: ConversationTiming; memoryUpdated?: boolean };
+  | { ref: EpisodeRef; mode: "assist"; text: string | null; calendarOffer?: boolean; confirmPresented?: () => boolean }) & { timing?: ConversationTiming; memoryUpdated?: boolean };
 export type ConversationChannelHost = {
   send(frame: object): boolean;
   now(): number;
@@ -294,6 +294,7 @@ export class ConversationChannel {
         } : undefined;
       this.finish({ mode: "assist", ref, text: frame.text.trim(), timing: readTiming(frame.timing),
         ...memory,
+        ...(frame.calendarOffer === true ? { calendarOffer: true } : {}),
         ...(confirmPresented ? { confirmPresented } : {}) });
     }
   }
