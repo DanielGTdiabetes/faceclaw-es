@@ -158,7 +158,7 @@ export class HermesConversationPresenter {
     // Re-evaluate on accepted wearer turns too: a reply may have arrived before that turn.
     const replace = this.shown && !this.shown.calendarOffer && this.shown.presentedAt !== null
       && (state.wearerTurnVersion ?? 0) > this.shown.wearerTurnAtAck;
-    if (this.pending && (!this.isReading() || replace)) this.select(this.takePending()!);
+    if (this.pending && (!this.isReading() || (replace && !this.pending.calendarOffer))) this.select(this.takePending()!);
     this.advanceReading();
     this.show();
   }

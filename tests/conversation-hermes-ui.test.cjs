@@ -973,6 +973,7 @@ test('reading queue: latest normal answer behind a pending offer is presented af
   const h = readingHarness(); h.say('Primera'); h.sent(); h.advance(1);
   h.f.tick({ outputCalendarOffer: true }); h.say('Oferta pendiente');
   h.f.tick({ outputCalendarOffer: false }); h.say('Normal anterior'); h.say('Normal última');
+  h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Primera', 'a pending offer is not promoted early');
   h.advance(3999); assert.equal(h.text(), 'Oferta pendiente'); h.sent();
   h.f.tick({ wearerTurnVersion: 1 }); assert.equal(h.text(), 'Oferta pendiente');
   h.advance(11999); assert.equal(h.text(), 'Oferta pendiente');
@@ -993,4 +994,17 @@ test('reading queue: clear, OFF and pause discard the normal deferred behind an 
     if (cause === 'clear') { assert.equal(h.text(), 'Oferta pendiente'); h.sent(); }
     h.advance(30000); assert.notEqual(h.text(), 'Normal', cause); h.presenter.dispose();
   }
+});
+
+test('reading queue: dismissing an offer releases its deferred normal without a blank or second wake', () => {
+  const h = readingHarness(); h.say('Primera'); h.sent(); h.advance(1);
+  h.f.tick({ outputCalendarOffer: true }); h.say('Oferta pendiente');
+  h.f.tick({ outputCalendarOffer: false }); h.say('Normal posterior');
+  h.advance(3999); assert.equal(h.text(), 'Oferta pendiente'); h.sent();
+  const retirements = h.retirements.length;
+  h.tap(); assert.equal(h.text(), 'Normal posterior'); h.sent();
+  assert.equal(h.retirements.length, retirements, 'same overlay, no sleep between the offer and normal answer');
+  assert.deepEqual(h.receipts, ['Primera', 'Oferta pendiente', 'Normal posterior']);
+  h.advance(3999); assert.equal(h.text(), 'Normal posterior');
+  h.advance(1); assert.notEqual(h.text(), 'Normal posterior'); h.presenter.dispose();
 });
