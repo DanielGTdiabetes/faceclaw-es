@@ -75,13 +75,15 @@ test('smart turn accelerates only an opted-in live EVO conversation and records 
   h.runtime.stop();
 });
 
-test('service absent and selector OFF keep old 2 s fallback; question keeps 700 ms', () => {
+test('missing verdict waits 1.2 s; selector OFF keeps 2 s and question keeps 700 ms', () => {
   for (const enabled of [true, false]) {
     const h = harness(undefined, { smart: true }); h.g2Begin(enabled); h.g2Turn();
     assert.equal(h.smartStarts(), enabled ? 1 : 0);
-    h.advance(1999); assert.equal(h.sent().length, 0);
-    h.advance(1); // the regular 500 ms tick follows its old schedule
-    h.advance(500); assert.equal(h.sent().length, 1);
+    const settleMs = enabled ? 1200 : 2000;
+    h.advance(settleMs - 500); assert.equal(h.sent().length, 0);
+    h.advance(499); assert.equal(h.sent().length, 0);
+    h.advance(1); assert.equal(h.sent().length, 1);
+    assert.equal(h.sent()[0].clientTiming.turnToRequestMs, settleMs);
     assert.equal(h.sent()[0].clientTiming.smartTurnMode, enabled ? 'fallback' : 'off'); h.runtime.stop();
   }
   const h = harness(undefined, { smart: true }); h.g2Begin(); h.g2Turn('¿Cuándo viene el tren?');

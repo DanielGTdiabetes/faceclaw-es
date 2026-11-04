@@ -67,6 +67,8 @@ export const HERMES_PAUSE_RELEASE_MS = 5_000;
  * text instead of 2 s, and skip the 5 s floor and the back-off between requests.
  */
 export const HERMES_DIRECT_SETTLE_MS = 700;
+/** Trial fallback with Smart Turn enabled; the usual-wait selector keeps the original 2 s. */
+export const HERMES_SMART_FALLBACK_SETTLE_MS = 1_200;
 export type HermesSavings = { short: number; backoff: number; directAssist: number };
 /** Why the back-off went back to 5 s; counted only when the gap was above 5 s. */
 export type HermesResetReason = "question" | "hermes" | "wearer" | "message" | "silence";
@@ -455,7 +457,8 @@ export class ConversationHermesRuntime {
       this.finishFlight(); this.channel.cancel();
     }
     if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
-      || (!this.smartVerdict() && this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS : 2000))
+      || (!this.smartVerdict() && this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS
+        : this.smartEnabled ? HERMES_SMART_FALLBACK_SETTLE_MS : 2000))
       || (!this.directPending && this.host.now() - this.lastRequestAt < 5000)) return;
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
