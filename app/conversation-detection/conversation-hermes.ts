@@ -125,6 +125,11 @@ export class ConversationHermesRuntime {
   private cancelSendTimer: (() => void) | null = null;
   private sendTimerGeneration = 0;
   private lastClosedBy: ConversationTurn["closedBy"] | undefined;
+  /** Measurement only: when Smart Turn would have closed the open window. Never changes a decision. */
+  private smartEndAt: number | null = null;
+  private smartResumes = 0;
+  private smartEndToTextMs: number | undefined;
+  private smartResumesBeforeText = 0;
   private lastRequestAt = -Infinity;
   private attempted = "";
   private requests = 0;
@@ -208,6 +213,7 @@ export class ConversationHermesRuntime {
       : Number.isFinite(maxRequests) ? Math.max(1, Math.min(80, Math.floor(maxRequests))) : 8;
     this.lastRequestAt = -Infinity; this.directPending = false;
     this.lastClosedBy = undefined;
+    this.resetSmartShadow();
     this.adaptive = this.maxRequests === null;
     this.quiet = 0; this.sentEpisode = ""; this.sentThroughSeq = 0; this.savingCounted = "";
     this.savings = { short: 0, backoff: 0, directAssist: 0 };
@@ -343,6 +349,7 @@ export class ConversationHermesRuntime {
         this.smartStarted = true;
         this.host.smartTurn.start((speech) => {
           if (!this.enabled || !this.smartStarted) return;
+          this.observeSmartShadow(speech);
           if (speech) for (const item of this.observations) if (this.host.now() <= item.until) item.continued = true;
           if (!speech) this.tick();
         });
@@ -409,6 +416,7 @@ export class ConversationHermesRuntime {
       this.lastTextAt = this.host.now();
       this.lastAudioTurn = turn;
       this.lastClosedBy = turn.closedBy;
+      this.closeSmartShadow();
       if (isQuestion(turn.text) || mentionsHermes(turn.text)) {
         this.directPending = true;
       }
@@ -429,6 +437,23 @@ export class ConversationHermesRuntime {
     }
     this.host.changed();
     if (accepted) this.tick();
+  }
+
+  private observeSmartShadow(speech: boolean): void {
+    if (!speech) this.smartEndAt ??= this.host.now();
+    else if (this.smartEndAt !== null) { this.smartEndAt = null; this.smartResumes++; }
+  }
+
+  /** Text arrived: how late it is after Smart's end, and how many Smart ends speech then overran. */
+  private closeSmartShadow(): void {
+    if (this.smartEndAt !== null && this.smartVerdict()) this.smartEndToTextMs = this.host.now() - this.smartEndAt;
+    this.smartResumesBeforeText += this.smartResumes;
+    this.smartEndAt = null; this.smartResumes = 0;
+  }
+
+  private resetSmartShadow(): void {
+    this.smartEndAt = null; this.smartResumes = 0;
+    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0;
   }
 
   private stopSmart(): void {
@@ -653,10 +678,13 @@ export class ConversationHermesRuntime {
       { turnToRequestMs: flight.at - this.lastTextAt, closedBy: this.lastClosedBy,
         ...(this.host.smartTurn ? { directPending: settledDirect,
           smartTurnMode: !this.smartEnabled || this.host.smartTurn.available?.() === false ? "off" as const : smart ? "smart" as const : "fallback" as const,
-          ...(smart?.probability != null ? { smartTurnProb: smart.probability } : {}) } : {}),
+          ...(smart?.probability != null ? { smartTurnProb: smart.probability } : {}),
+          ...(this.smartEndToTextMs !== undefined ? { smartEndToTextMs: this.smartEndToTextMs } : {}),
+          smartResumesBeforeText: this.smartResumesBeforeText } : {}),
         ...(snapshot.lastVadStopAtMs != null ? { vadStopToRequestMs: flight.at - snapshot.lastVadStopAtMs } : {}),
         ...(Number.isFinite(previousRequestAt) ? { gapSinceLastRequestMs: flight.at - previousRequestAt } : {}) });
     if (!accepted && this.flight === flight) this.finishFlight();
+    if (accepted) { this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0; }
     if (accepted && this.host.smartTurn) {
       const report = this.channel.captureContinuation?.();
       if (report) this.observations.push({ until: this.host.now() + 2000,

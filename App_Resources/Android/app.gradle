@@ -312,7 +312,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.19-conversation.s2.28.2-smart-turn-espera"
+    versionName "${faceclawVersionName}-es.19-conversation.s2.28.3-envio-plazos-medida"
     
     generatedDensities = []
   }

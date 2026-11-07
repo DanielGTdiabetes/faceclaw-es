@@ -50,6 +50,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   }
   return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
     smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
+    smartSpeech() { smartChanged?.(true); },
     smartSpeech() { smartReady = false; smartChanged?.(true); },
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
       channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1', ...(gateOptions?.receipts ? ['conv/memory-ack/1'] : [])]);
@@ -669,4 +670,25 @@ test('a callback canceled by a newer turn cannot send it early', () => {
   h.elapse(600); h.g2Turn('Y sigo completando esta frase'); old();
   h.elapse(1199); assert.equal(h.sent().length, 0);
   h.elapse(1); assert.equal(h.sent().length, 1); h.runtime.dispose();
+});
+
+test('Smart shadow reports text delay and overrun ends, once, without changing the send', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137);
+  h.smartEnd(); h.smartSpeech(); h.elapse(100); h.smartEnd(); h.elapse(800); h.g2Turn();
+  assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.smartEndToTextMs, 800);
+  assert.equal(h.sent()[0].clientTiming.smartResumesBeforeText, 1);
+  h.reply('assist', { verdict: 'incierto' }); h.elapse(5000); h.g2Turn('Otra frase distinta sobre el tren'); h.elapse(1200);
+  const next = h.sent().at(-1).clientTiming;
+  assert.equal(next.smartEndToTextMs, undefined);
+  assert.equal(next.smartResumesBeforeText, 0);
+  h.runtime.dispose();
+});
+
+test('Smart shadow omits the delay when Smart gave no end for the text', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn(); h.elapse(1200);
+  assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.smartEndToTextMs, undefined);
+  assert.equal(h.sent()[0].clientTiming.turnToRequestMs, 1200);
+  h.runtime.dispose();
 });
