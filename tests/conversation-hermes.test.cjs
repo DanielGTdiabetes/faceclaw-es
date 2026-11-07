@@ -50,6 +50,7 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   }
   return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
     smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
+    smartSpeech() { smartReady = false; smartChanged?.(true); },
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
       channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1', ...(gateOptions?.receipts ? ['conv/memory-ack/1'] : [])]);
       runtime.begin(null, 'identidad-opcional', { smartTurn: enabled }); state.enabled = true; state.state = 'escuchando'; notify(); },
@@ -60,6 +61,20 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
     update(patch) { Object.assign(state, patch); notify(); },
     candidate() { turn('1'); turn('2'); advance(2000); },
     deliver() { this.begin(); this.candidate(); this.reply('assess'); this.reply('assist'); },
+    // Run timers at their actual deadlines, independent of the test's sampling interval.
+    elapse(ms) {
+      const target = now + ms;
+      let count = 0;
+      while (true) {
+        const t = [...timers].filter(t => t.at <= target).sort((a, b) => a.at - b.at)[0];
+        if (!t) break;
+        assert.ok(++count < 1000, 'timer must not spin at an expired deadline');
+        now = t.at;
+        if (t.repeat) t.at += 500; else timers.delete(t);
+        t.cb();
+      }
+      now = target;
+    },
     /** Advance in 500 ms runtime ticks. */
     ticks(ms) { for (let t = 0; t < ms; t += 500) advance(500); },
     sent: () => frames.filter(f => f.type === 'assess' || f.type === 'assist') };
@@ -572,4 +587,86 @@ test('offer receipt eligibility tracks association, stream, connection, expiry a
     assert.equal(h.frames.filter(f => f.type === 'presented').length, cause === 'valid' ? 1 : 0, cause);
     h.runtime.dispose();
   }
+});
+
+
+for (const enabled of [true, false]) test(`deadline wakes fallback between maintenance ticks: smart=${enabled}`, () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(enabled); h.elapse(137); h.g2Turn();
+  const wait = enabled ? 1200 : 2000;
+  h.elapse(wait - 1); assert.equal(h.sent().length, 0);
+  h.elapse(1); assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.turnToRequestMs, wait);
+  h.elapse(1000); assert.equal(h.sent().length, 1); h.runtime.dispose();
+});
+
+test('deadline follows newer text, including a continuation after a direct question', () => {
+  for (const direct of [false, true]) {
+    const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137);
+    h.g2Turn(direct ? '¿Cuándo salimos?' : 'Esta frase está terminada');
+    h.elapse(600); h.g2Turn('Todavía estoy completando la frase');
+    const wait = direct ? 700 : 1200;
+    h.elapse(wait - 1); assert.equal(h.sent().length, 0);
+    h.elapse(1); assert.equal(h.sent().length, 1);
+    assert.equal(h.sent()[0].clientTiming.turnToRequestMs, wait); h.runtime.dispose();
+  }
+});
+
+test('deadline respects the five second floor exactly rather than the next maintenance tick', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn(); h.smartEnd();
+  h.reply('assist'); h.elapse(100); h.g2Turn('Otra frase completa sobre el asunto'); h.smartEnd();
+  h.elapse(4899); assert.equal(h.sent().length, 1);
+  h.elapse(1); assert.equal(h.sent().length, 2);
+  assert.equal(h.sent()[1].clientTiming.gapSinceLastRequestMs, 5000); h.runtime.dispose();
+});
+
+test('a completed inference immediately rechecks newer eligible speech without overlap', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn(); h.smartEnd();
+  h.elapse(100); h.g2Turn('¿Y a qué hora acaba?'); h.smartSpeech();
+  h.elapse(900); assert.equal(h.sent().length, 1);
+  h.reply('assist'); assert.equal(h.sent().length, 2);
+  h.runtime.dispose();
+});
+
+test('OFF and disconnect revoke deadline callbacks even if a canceled callback is delivered', () => {
+  for (const stop of [true, false]) {
+    const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn();
+    const callbacks = [...h.timers].filter(t => !t.repeat).map(t => t.cb);
+    assert.ok(callbacks.length > 0);
+    if (stop) h.runtime.stop(); else { h.channel.reset(); h.update({}); }
+    for (const cb of callbacks) cb();
+    h.elapse(2000); assert.equal(h.sent().length, 0); h.runtime.dispose();
+  }
+});
+
+test('adaptive backoff wakes at pause release after the fixed floor, with no zero-delay retry', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn(); h.smartEnd();
+  h.reply('assist', { kind: 'nada', text: '' });
+  const other = text => h.turn('voz-1', text, { engine: 'evo-parakeet', relation: 'otro',
+    sessionId: 'local-1', associationVersion: 0, timing: 'ventana', startMs: 0, endMs: 1000 });
+  h.elapse(100); other('Otra persona sigue hablando'); h.smartEnd();
+  h.elapse(4900); assert.equal(h.sent().length, 2); h.reply('assist', { kind: 'nada', text: '' });
+  assert.equal(h.runtime.diagnostics().savings.gapMs, 10000);
+  h.elapse(100); other('La otra persona completa el tema'); h.smartEnd();
+  h.elapse(4900); assert.equal(h.sent().length, 2, 'fixed floor alone is not enough');
+  h.elapse(99); assert.equal(h.sent().length, 2);
+  h.elapse(1); assert.equal(h.sent().length, 3);
+  assert.equal(h.sent()[2].clientTiming.gapSinceLastRequestMs, 5100);
+  h.runtime.dispose();
+});
+
+test('speech invalidating Smart before the floor expires restores the text settle deadline', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn(); h.smartEnd();
+  h.reply('assist'); h.elapse(4900); h.g2Turn('Un detalle nuevo sobre el tema'); h.smartEnd();
+  h.smartSpeech(); h.elapse(100); assert.equal(h.sent().length, 1, 'old Smart cannot bypass settle');
+  h.elapse(1099); assert.equal(h.sent().length, 1);
+  h.elapse(1); assert.equal(h.sent().length, 2);
+  assert.equal(h.sent()[1].clientTiming.turnToRequestMs, 1200); h.runtime.dispose();
+});
+
+test('a callback canceled by a newer turn cannot send it early', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137); h.g2Turn();
+  const old = [...h.timers].find(t => !t.repeat).cb;
+  h.elapse(600); h.g2Turn('Y sigo completando esta frase'); old();
+  h.elapse(1199); assert.equal(h.sent().length, 0);
+  h.elapse(1); assert.equal(h.sent().length, 1); h.runtime.dispose();
 });

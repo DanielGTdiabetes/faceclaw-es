@@ -90,7 +90,7 @@ export type ConversationHermesHost = {
   /** Wall-clock time for the phone history; defaults to Date.now(). */
   wallClock?(): number;
   every(callback: () => void, ms: number): () => void;
-  /** One-shot timer; when present a direct question is evaluated right at its settle, not on the next tick. */
+  /** One-shot timer for the next eligible send; the periodic timer remains for maintenance. */
   after?(callback: () => void, ms: number): () => void;
   onOutput(text: string | null): void;
   changed(): void;
@@ -122,7 +122,8 @@ export class ConversationHermesRuntime {
   private lastTextAt = 0;
   /** An accepted turn since the last request asked a question or named Hermes. */
   private directPending = false;
-  private cancelDirectTimer: (() => void) | null = null;
+  private cancelSendTimer: (() => void) | null = null;
+  private sendTimerGeneration = 0;
   private lastClosedBy: ConversationTurn["closedBy"] | undefined;
   private lastRequestAt = -Infinity;
   private attempted = "";
@@ -230,7 +231,7 @@ export class ConversationHermesRuntime {
     this.flight = null;
     this.channel.setEnabled(false);
     this.cancelTimer?.(); this.cancelTimer = null;
-    this.cancelDirectTimer?.(); this.cancelDirectTimer = null;
+    this.cancelSendWake();
     this.tracker.stop(); this.current = null; this.attempted = "";
     this.associationVersion = 0;
     this.clearOutput();
@@ -333,6 +334,7 @@ export class ConversationHermesRuntime {
 
   private observe(snapshot: DetectorSnapshot): void {
     if (!this.enabled) return;
+    if (!this.channel.isReady() || snapshot.state !== "escuchando") this.cancelSendWake();
     this.updateClock(snapshot.enabled && snapshot.state === "escuchando");
     if (!snapshot.enabled || snapshot.state === "error") { this.stop("captura"); return; }
     if (this.smartEnabled && snapshot.manualConversation && snapshot.transcription?.engine === "local"
@@ -380,6 +382,7 @@ export class ConversationHermesRuntime {
     if (event.version !== this.associationVersion) this.presentationEpoch++;
     this.associationVersion = event.version;
     if (this.tracker.snapshot().chars !== before.chars || event.kind === "borrado") {
+      this.cancelSendWake();
       this.finishFlight(); this.channel.cancel(); this.attempted = ""; this.clearOutput();
     }
     this.host.changed();
@@ -408,9 +411,6 @@ export class ConversationHermesRuntime {
       this.lastClosedBy = turn.closedBy;
       if (isQuestion(turn.text) || mentionsHermes(turn.text)) {
         this.directPending = true;
-        this.cancelDirectTimer?.();
-        this.cancelDirectTimer = this.host.after?.(() => { this.cancelDirectTimer = null; this.tick(); },
-          HERMES_DIRECT_SETTLE_MS) ?? null;
       }
       if (turn.relation === "portador") this.wearerTurnVersion++;
       this.counters.turnsAccepted++;
@@ -428,7 +428,7 @@ export class ConversationHermesRuntime {
       if (this.outputRef) this.outputStale = true;
     }
     this.host.changed();
-    if (accepted && this.smartVerdict()) this.tick();
+    if (accepted) this.tick();
   }
 
   private stopSmart(): void {
@@ -444,6 +444,7 @@ export class ConversationHermesRuntime {
 
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
+    this.cancelSendWake();
     this.lastAudioTurn = null;
     this.presentationEpoch++;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
@@ -465,7 +466,26 @@ export class ConversationHermesRuntime {
       || (age >= window.minMs && (this.outputStale || !this.tracker.acceptsOutput(this.outputRef)))) this.clearOutput();
   }
 
+  /** A stale native callback must not revive a canceled or replaced deadline. */
+  private cancelSendWake(): void {
+    this.sendTimerGeneration++;
+    this.cancelSendTimer?.(); this.cancelSendTimer = null;
+  }
+
+  private wakeAt(deadline: number): void {
+    this.cancelSendWake();
+    const delay = deadline - this.host.now();
+    if (!this.enabled || !this.host.after || !Number.isFinite(delay) || delay <= 0) return;
+    const generation = this.sendTimerGeneration;
+    this.cancelSendTimer = this.host.after(() => {
+      if (generation !== this.sendTimerGeneration) return;
+      this.cancelSendTimer = null;
+      this.tick(); // Recheck capture, socket, fresh text, Smart validity and both cadence gates.
+    }, delay);
+  }
+
   private tick(): void {
+    this.cancelSendWake();
     if (!this.enabled) return;
     const due = this.observations.filter((item) => this.host.now() >= item.until);
     this.observations = this.observations.filter((item) => this.host.now() < item.until);
@@ -487,10 +507,11 @@ export class ConversationHermesRuntime {
     if (this.flight && state !== (this.flight.mode === "assess" ? "candidata" : "activa")) {
       this.finishFlight(); this.channel.cancel();
     }
-    if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)
-      || (!this.smartVerdict() && this.host.now() - this.lastTextAt < (this.directPending ? HERMES_DIRECT_SETTLE_MS
-        : this.smartEnabled ? HERMES_SMART_FALLBACK_SETTLE_MS : 2000))
-      || (!this.directPending && this.host.now() - this.lastRequestAt < 5000)) return;
+    if (snapshot.state !== "escuchando" || this.flight || (this.maxRequests !== null && this.requests >= this.maxRequests)) return;
+    const settleAt = this.smartVerdict() ? this.host.now() : this.lastTextAt + (this.directPending
+      ? HERMES_DIRECT_SETTLE_MS : this.smartEnabled ? HERMES_SMART_FALLBACK_SETTLE_MS : 2000);
+    const eligibleAt = Math.max(settleAt, this.directPending ? -Infinity : this.lastRequestAt + HERMES_BASE_GAP_MS);
+    if (this.host.now() < eligibleAt) { this.wakeAt(eligibleAt); return; }
     const context = state === "candidata" ? this.tracker.assessmentContext()
       : state === "activa" ? this.tracker.confirmedContext() : null;
     if (context) this.request(context, state === "candidata" ? "assess" : "assist");
@@ -551,6 +572,8 @@ export class ConversationHermesRuntime {
       if (held) {
         const counted = `${key}/${held}`;
         if (counted !== this.savingCounted) { this.savingCounted = counted; this.savings[held]++; this.host.changed(); }
+        if (held === "backoff") this.wakeAt(Math.min(this.lastRequestAt + this.gapMs(),
+          this.lastTextAt + HERMES_PAUSE_RELEASE_MS));
         return;
       }
     }
@@ -644,6 +667,11 @@ export class ConversationHermesRuntime {
 
   private result(flight: Flight, result: ConversationResult | null): void {
     if (this.flight !== flight) return;
+    try { this.acceptResult(flight, result); }
+    finally { if (this.directPending) this.tick(); } // A newer direct question may already be waiting.
+  }
+
+  private acceptResult(flight: Flight, result: ConversationResult | null): void {
     this.metrics[flight.mode === "assess" ? "assessRoundTrip" : "assistRoundTrip"].add(this.host.now() - flight.at);
     this.finishFlight();
     if (result?.timing) {
