@@ -684,6 +684,18 @@ test('Smart shadow reports text delay and overrun ends, once, without changing t
   h.runtime.dispose();
 });
 
+test('Smart shadow reports the longest pause speech overran, once', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137);
+  h.smartEnd(); h.elapse(300); h.smartSpeech(); h.elapse(100); h.smartEnd(); h.elapse(900); h.smartSpeech();
+  h.elapse(100); h.smartEnd(); h.elapse(200); h.g2Turn();
+  assert.equal(h.sent().length, 1);
+  assert.equal(h.sent()[0].clientTiming.smartLongestResumeGapMs, 900);
+  assert.equal(h.sent()[0].clientTiming.smartResumesBeforeText, 2);
+  h.reply('assist', { verdict: 'incierto' }); h.elapse(5000); h.g2Turn('Otra frase distinta sobre el tren'); h.elapse(1200);
+  assert.equal(h.sent().at(-1).clientTiming.smartLongestResumeGapMs, undefined);
+  h.runtime.dispose();
+});
+
 test('Smart shadow does not carry a delay from a turn that requested nothing', () => {
   const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137);
   h.smartEnd(); h.elapse(800); h.g2Turn('Hola');

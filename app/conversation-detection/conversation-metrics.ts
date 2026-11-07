@@ -6,7 +6,7 @@ export type ConversationClientTiming = {
   smartTurnMode?: "smart" | "fallback" | "off";
   smartTurnProb?: number;
   /** Measurement of a possible Smart close: text delay after Smart's end, and Smart ends overrun by speech. */
-  smartEndToTextMs?: number; smartResumesBeforeText?: number;
+  smartEndToTextMs?: number; smartResumesBeforeText?: number; smartLongestResumeGapMs?: number;
   vadStopToRequestMs?: number; turnToRequestMs?: number; gapSinceLastRequestMs?: number;
   closedBy?: ConversationTurn["closedBy"];
 };
@@ -23,7 +23,7 @@ export function readClientTiming(value: unknown): ConversationClientTiming | und
     && source.smartTurnProb >= 0 && source.smartTurnProb <= 1) result.smartTurnProb = source.smartTurnProb;
   if (Number.isSafeInteger(source.smartResumesBeforeText) && (source.smartResumesBeforeText as number) >= 0
     && (source.smartResumesBeforeText as number) <= 1000) result.smartResumesBeforeText = source.smartResumesBeforeText as number;
-  for (const key of ["vadStopToRequestMs", "turnToRequestMs", "gapSinceLastRequestMs", "smartEndToTextMs"] as const) {
+  for (const key of ["vadStopToRequestMs", "turnToRequestMs", "gapSinceLastRequestMs", "smartEndToTextMs", "smartLongestResumeGapMs"] as const) {
     const ms = clientDuration(source[key]);
     if (ms !== undefined) result[key] = ms;
   }

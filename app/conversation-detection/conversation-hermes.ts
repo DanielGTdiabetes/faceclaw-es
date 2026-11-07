@@ -128,8 +128,10 @@ export class ConversationHermesRuntime {
   /** Measurement only: when Smart Turn would have closed the open window. Never changes a decision. */
   private smartEndAt: number | null = null;
   private smartResumes = 0;
+  private smartResumeGapMs = 0;
   private smartEndToTextMs: number | undefined;
   private smartResumesBeforeText = 0;
+  private smartLongestResumeGapMs: number | undefined;
   private lastRequestAt = -Infinity;
   private attempted = "";
   private requests = 0;
@@ -441,7 +443,10 @@ export class ConversationHermesRuntime {
 
   private observeSmartShadow(speech: boolean): void {
     if (!speech) this.smartEndAt ??= this.host.now();
-    else if (this.smartEndAt !== null) { this.smartEndAt = null; this.smartResumes++; }
+    else if (this.smartEndAt !== null) {
+      this.smartResumeGapMs = Math.max(this.smartResumeGapMs, this.host.now() - this.smartEndAt);
+      this.smartEndAt = null; this.smartResumes++;
+    }
   }
 
   /** Text arrived: how late it is after Smart's end, and how many Smart ends speech then overran. */
@@ -449,12 +454,13 @@ export class ConversationHermesRuntime {
     // Describes the newest text only: an older turn that requested nothing must not lend its delay.
     this.smartEndToTextMs = this.smartEndAt !== null && this.smartVerdict() ? this.host.now() - this.smartEndAt : undefined;
     this.smartResumesBeforeText += this.smartResumes;
-    this.smartEndAt = null; this.smartResumes = 0;
+    if (this.smartResumes) this.smartLongestResumeGapMs = Math.max(this.smartLongestResumeGapMs ?? 0, this.smartResumeGapMs);
+    this.smartEndAt = null; this.smartResumes = 0; this.smartResumeGapMs = 0;
   }
 
   private resetSmartShadow(): void {
-    this.smartEndAt = null; this.smartResumes = 0;
-    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0;
+    this.smartEndAt = null; this.smartResumes = 0; this.smartResumeGapMs = 0;
+    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0; this.smartLongestResumeGapMs = undefined;
   }
 
   private stopSmart(): void {
@@ -472,7 +478,7 @@ export class ConversationHermesRuntime {
   private interrupt(): void {
     this.cancelSendWake();
     // Only what was measured: the speech being observed may be the first of a new stream.
-    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0;
+    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0; this.smartLongestResumeGapMs = undefined;
     this.lastAudioTurn = null;
     this.presentationEpoch++;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
@@ -683,11 +689,12 @@ export class ConversationHermesRuntime {
           smartTurnMode: !this.smartEnabled || this.host.smartTurn.available?.() === false ? "off" as const : smart ? "smart" as const : "fallback" as const,
           ...(smart?.probability != null ? { smartTurnProb: smart.probability } : {}),
           ...(this.smartEndToTextMs !== undefined ? { smartEndToTextMs: this.smartEndToTextMs } : {}),
+          ...(this.smartLongestResumeGapMs !== undefined ? { smartLongestResumeGapMs: this.smartLongestResumeGapMs } : {}),
           smartResumesBeforeText: this.smartResumesBeforeText } : {}),
         ...(snapshot.lastVadStopAtMs != null ? { vadStopToRequestMs: flight.at - snapshot.lastVadStopAtMs } : {}),
         ...(Number.isFinite(previousRequestAt) ? { gapSinceLastRequestMs: flight.at - previousRequestAt } : {}) });
     if (!accepted && this.flight === flight) this.finishFlight();
-    if (accepted) { this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0; }
+    if (accepted) { this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0; this.smartLongestResumeGapMs = undefined; }
     if (accepted && this.host.smartTurn) {
       const report = this.channel.captureContinuation?.();
       if (report) this.observations.push({ until: this.host.now() + 2000,
