@@ -50,7 +50,6 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   }
   return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
     smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
-    smartSpeech() { smartChanged?.(true); },
     smartSpeech() { smartReady = false; smartChanged?.(true); },
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
       channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1', ...(gateOptions?.receipts ? ['conv/memory-ack/1'] : [])]);
@@ -682,6 +681,17 @@ test('Smart shadow reports text delay and overrun ends, once, without changing t
   const next = h.sent().at(-1).clientTiming;
   assert.equal(next.smartEndToTextMs, undefined);
   assert.equal(next.smartResumesBeforeText, 0);
+  h.runtime.dispose();
+});
+
+test('Smart shadow does not carry a delay from a turn that requested nothing', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin(); h.elapse(137);
+  h.smartEnd(); h.elapse(800); h.g2Turn('Hola');
+  const before = h.sent().length;
+  h.elapse(5000); h.smartSpeech();
+  h.g2Turn('Una frase bastante más larga que ya merece una evaluación completa'); h.elapse(1200);
+  assert.ok(h.sent().length > before);
+  assert.equal(h.sent().at(-1).clientTiming.smartEndToTextMs, undefined);
   h.runtime.dispose();
 });
 

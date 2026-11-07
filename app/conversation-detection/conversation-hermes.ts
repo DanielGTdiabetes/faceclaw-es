@@ -446,7 +446,8 @@ export class ConversationHermesRuntime {
 
   /** Text arrived: how late it is after Smart's end, and how many Smart ends speech then overran. */
   private closeSmartShadow(): void {
-    if (this.smartEndAt !== null && this.smartVerdict()) this.smartEndToTextMs = this.host.now() - this.smartEndAt;
+    // Describes the newest text only: an older turn that requested nothing must not lend its delay.
+    this.smartEndToTextMs = this.smartEndAt !== null && this.smartVerdict() ? this.host.now() - this.smartEndAt : undefined;
     this.smartResumesBeforeText += this.smartResumes;
     this.smartEndAt = null; this.smartResumes = 0;
   }
@@ -470,6 +471,8 @@ export class ConversationHermesRuntime {
   /** Pending work only; the lens presenter already hides a delivered message while not listening. */
   private interrupt(): void {
     this.cancelSendWake();
+    // Only what was measured: the speech being observed may be the first of a new stream.
+    this.smartEndToTextMs = undefined; this.smartResumesBeforeText = 0;
     this.lastAudioTurn = null;
     this.presentationEpoch++;
     this.finishFlight(); this.channel.cancel(); this.tracker.interrupt();
