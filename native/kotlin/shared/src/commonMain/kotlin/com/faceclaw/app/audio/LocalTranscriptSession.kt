@@ -360,8 +360,9 @@ class LocalTranscriptBuffer(
      * Smart Turn ended the turn while this window is still open: close it now instead of waiting for the
      * pause floor. No overlap is kept: the verdict says the turn is over, so there is no resume to protect,
      * and keeping it would re-deliver the tail of this turn inside the next window. Refused while a decoder
-     * is busy or when only the overlap is buffered; those windows still close at the pause floor or the
-     * 12 s cap. The caller has already checked the verdict's probability and freshness.
+     * is busy or when the window holds no more than the policy overlap (1 s) of audio; those windows still
+     * close at the pause floor or the 12 s cap. The caller has already checked the verdict's probability
+     * and freshness.
      */
     fun requestSmartClose(): Boolean {
         if (!policy.closesOnPause || count <= policy.overlapSamples || windowVoicedChunks == 0 || !canSubmit()) return false

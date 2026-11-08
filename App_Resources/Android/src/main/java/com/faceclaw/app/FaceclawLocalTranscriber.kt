@@ -110,7 +110,7 @@ class FaceclawLocalTranscriber internal constructor(context: Context, private va
     fun stop() = session.stop()
     fun resetStream() = session.resetStream()
     fun acceptPcm(pcm: ByteArray?, vadState: String) = session.acceptPcm(pcm, vadState)
-    /** Smart Turn ended the turn: submit the open pause window now (1 s overlap). Best effort. */
+    /** Smart Turn ended the turn: submit the open pause window now (no overlap). Best effort. */
     fun requestSmartClose(): Boolean = session.requestSmartClose()
     fun diagnostics(): String = session.diagnostics()
     /** Benchmark detail: recent window capture bounds and decode times (scalars only). */
