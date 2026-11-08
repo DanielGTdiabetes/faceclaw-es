@@ -10,7 +10,7 @@ import { emptyPrefilterCounters, isSingleForeignVoice } from "./conversation-pre
 import { type SmartTurnPort } from "./smart-turn";
 
 type Source = Pick<ConversationCaptureCoordinator, "snapshot" | "subscribe" | "subscribeTurns" | "subscribeAssociation" | "wearerActionRef">
-  & Partial<Pick<ConversationCaptureCoordinator, "subscribeNativePcm">>;
+  & Partial<Pick<ConversationCaptureCoordinator, "subscribeNativePcm" | "requestSmartClose">>;
 type Flight = { ref: EpisodeRef; mode: "assess" | "assist"; at: number; turnAt: number;
   baseline: { chunks?: number; sentMs?: number; finalTokens?: number } };
 type Channel = Pick<ConversationChannel, "isReady" | "isEnabled" | "setEnabled" | "request" | "cancel">
@@ -66,6 +66,11 @@ export const HERMES_PAUSE_RELEASE_MS = 5_000;
 export const HERMES_DIRECT_SETTLE_MS = 700;
 /** Trial fallback with Smart Turn enabled; the usual-wait selector keeps the original 2 s. */
 export const HERMES_SMART_FALLBACK_SETTLE_MS = 1_200;
+/**
+ * Smart Turn closes the local ASR window at this end-of-turn probability, before its pause floor.
+ * Lower values are only used to settle the Hermes request; they never cut the window.
+ */
+export const SMART_TURN_CLOSE_PROBABILITY = 0.8;
 export type HermesSavings = { short: number; backoff: number; directAssist: number };
 /** Why the back-off went back to 5 s; counted only when the gap was above 5 s. */
 export type HermesResetReason = "question" | "hermes" | "wearer" | "message" | "silence";
@@ -354,6 +359,12 @@ export class ConversationHermesRuntime {
           this.observeSmartShadow(speech);
           if (speech) for (const item of this.observations) if (this.host.now() <= item.until) item.continued = true;
           if (!speech) this.tick();
+        }, (verdict) => {
+          if (!this.enabled || !this.smartStarted) return;
+          // Smart Turn only reports a fresh end (<=250 ms) inside the sent audio; a low-probability
+          // end still settles Hermes but must not cut the window the ASR is still filling.
+          if (verdict.probability === null || verdict.probability < SMART_TURN_CLOSE_PROBABILITY) return;
+          this.source.requestSmartClose?.();
         });
       }
     } else this.stopSmart();

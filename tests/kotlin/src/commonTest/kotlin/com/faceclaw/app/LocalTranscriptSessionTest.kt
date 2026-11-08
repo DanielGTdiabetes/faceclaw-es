@@ -31,6 +31,62 @@ class LocalTranscriptSessionTest {
         assertEquals(123.toShort(), segments.single().first())
         assertEquals(0, buffer.bufferedBytes())
     }
+    @Test fun pauseClosesBeforeTheFourSecondFloorOnceTwoSecondsAreVoiced() {
+        val lengths = mutableListOf<Int>()
+        val buffer = LocalTranscriptBuffer({}, {}, { true }) { lengths.add(it.size) }
+        buffer.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(40) { buffer.accept(pcm(), "posible voz") }
+        repeat(9) { buffer.accept(pcm(0), "pausa") }
+        assertEquals(1, lengths.size)
+        assertEquals(49 * LocalTranscriptBuffer.CHUNK_SAMPLES - LocalTranscriptBuffer.CHUNK_SAMPLES, lengths.single())
+        assertTrue(buffer.diagnostics().contains("\"voiceFloorClosures\":1"))
+    }
+    @Test fun pauseWithoutEnoughVoiceStillWaitsForTheFourSecondFloor() {
+        val lengths = mutableListOf<Int>()
+        val buffer = LocalTranscriptBuffer({}, {}, { true }) { lengths.add(it.size) }
+        buffer.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(20) { buffer.accept(pcm(), "posible voz") }
+        repeat(9) { buffer.accept(pcm(0), "pausa") }
+        assertTrue(lengths.isEmpty())
+        assertTrue(buffer.diagnostics().contains("\"voiceFloorClosures\":0"))
+    }
+    @Test fun smartEndClosesBeforeTheFloorWithoutKeepingOverlap() {
+        val lengths = mutableListOf<Int>()
+        val buffer = LocalTranscriptBuffer({}, {}, { true }) { lengths.add(it.size) }
+        buffer.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(40) { buffer.accept(pcm(2000 + it), "posible voz") }
+        assertTrue(buffer.requestSmartClose())
+        assertEquals(listOf(40 * LocalTranscriptBuffer.CHUNK_SAMPLES), lengths)
+        assertEquals(0, buffer.bufferedBytes())
+        assertTrue(buffer.diagnostics().contains("\"smartClosures\":1"))
+        assertFalse(buffer.requestSmartClose())
+        assertEquals(1, lengths.size)
+    }
+    @Test fun smartEndDoesNotResubmitTheTurnTailWhenOnlySilenceFollows() {
+        val lengths = mutableListOf<Int>()
+        val buffer = LocalTranscriptBuffer({}, {}, { true }) { lengths.add(it.size) }
+        buffer.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(40) { buffer.accept(pcm(2000 + it), "posible voz") }
+        assertTrue(buffer.requestSmartClose())
+        assertEquals(1, lengths.size)
+        repeat(60) { buffer.accept(pcm(0), "pausa") }
+        assertEquals(1, lengths.size)
+    }
+    @Test fun smartEndNeverCutsWhileBusyOrWithOnlyTheOverlapBuffered() {
+        val busyLengths = mutableListOf<Int>()
+        val busy = LocalTranscriptBuffer({}, {}, { false }) { busyLengths.add(it.size) }
+        busy.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(40) { busy.accept(pcm(2000 + it), "posible voz") }
+        assertFalse(busy.requestSmartClose())
+        assertTrue(busyLengths.isEmpty())
+
+        val shortLengths = mutableListOf<Int>()
+        val short = LocalTranscriptBuffer({}, {}, { true }) { shortLengths.add(it.size) }
+        short.resetMetrics(LocalTranscriptSegmentation.WINDOWS, LocalTranscriptWindowPolicy.EVO_IDENTITY)
+        repeat(10) { short.accept(pcm(2000 + it), "posible voz") }
+        assertFalse(short.requestSmartClose())
+        assertTrue(shortLengths.isEmpty())
+    }
     @Test fun shortActivityInvalidChunksAndInterruptionNeverFlushAudio() {
         val segments = mutableListOf<ShortArray>()
         val buffer = LocalTranscriptBuffer { segments.add(it) }

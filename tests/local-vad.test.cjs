@@ -126,3 +126,20 @@ test('invalid framing is rejected without updating VAD', () => {
   for (const length of [0, 1599, 1602]) assert.throws(() => vad.accept(new Uint8Array(length)), /800 samples/);
   assert.deepEqual(vad.snapshot(), before);
 });
+
+test('episodeMs counts the open episode including pauses and is 0 outside one', () => {
+  const vad = new LocalEnergyVad();
+  assert.equal(vad.episodeMs(), 0);
+  feed(vad, wave(), 2);
+  assert.equal(vad.episodeMs(), 0, 'a candidate is not an episode yet');
+  feed(vad, wave(), 2);
+  assert.equal(vad.episodeMs(), 200, 'onset plus voice since the episode opened');
+  feed(vad, quiet, 1);
+  assert.equal(vad.episodeMs(), 250, 'a pause inside the episode still counts');
+  feed(vad, quiet, 20);
+  assert.equal(vad.episodeMs(), 0, 'a completed episode is not open');
+  feed(vad, wave(), 6);
+  assert.ok(vad.episodeMs() > 0);
+  vad.resetStream();
+  assert.equal(vad.episodeMs(), 0);
+});

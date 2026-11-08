@@ -11,9 +11,11 @@ export type SmartTurnHost = {
   connect(listener: SmartTurnListener): SmartTurnTransport | null;
 };
 export type SmartTurnVerdict = { audioMs: number; speechMs: number; probability: number | null };
+/** Called when a validated `g2.turn_end` arrives, while the ASR window may still be open. */
+export type SmartTurnEnd = (verdict: SmartTurnVerdict) => void;
 export interface SmartTurnPort {
   available?(): boolean;
-  start(changed: (speech: boolean) => void): void;
+  start(changed: (speech: boolean) => void, ended?: SmartTurnEnd): void;
   stop(): void;
   acceptPcm(pcm: unknown, endMs: number): void;
   verdict(startMs: number | null, endMs: number | null): SmartTurnVerdict | null;
@@ -38,14 +40,16 @@ export class SmartTurnClient implements SmartTurnPort {
   private lastSpeechMs = -1;
   private ended: SmartTurnVerdict | null = null;
   private changed: (speech: boolean) => void = () => {};
+  private endedCallback: SmartTurnEnd | null = null;
 
   constructor(private readonly host: SmartTurnHost) {}
   available(): boolean { return this.ready; }
 
-  start(changed: (speech: boolean) => void): void {
+  start(changed: (speech: boolean) => void, ended?: SmartTurnEnd): void {
     if (this.started) return;
     this.started = true;
     this.changed = changed;
+    this.endedCallback = ended ?? null;
     this.connect();
   }
 
@@ -70,6 +74,7 @@ export class SmartTurnClient implements SmartTurnPort {
     this.started = false;
     this.fail();
     this.changed = () => {};
+    this.endedCallback = null;
   }
 
   private fail(): void {
@@ -120,6 +125,7 @@ export class SmartTurnClient implements SmartTurnPort {
           && event.probability >= 0 && event.probability <= 1)) {
       this.ended = { audioMs: event.audioMs, speechMs: event.speechMs, probability: event.probability };
       this.changed(false);
+      this.endedCallback?.({ ...this.ended });
     }
   }
 

@@ -42,6 +42,7 @@ export class LocalEnergyVad {
   private threshold = INITIAL_NOISE * 3;
   private onsetMs = 0;
   private quietMs = 0;
+  private openMs = 0;
   private active = false;
   private observer: VadObserver | null = null;
 
@@ -54,6 +55,9 @@ export class LocalEnergyVad {
       frameRms: this.frameRms, noiseFloor: this.noiseFloor, threshold: this.threshold };
   }
 
+  /** Audio of the open episode (onset, voice and pauses) in ms; 0 outside an episode. Diagnostics only. */
+  episodeMs(): number { return this.active ? this.openMs : 0; }
+
   /** End a stream without interpreting OFF/preemption/lost packets as silence. */
   resetStream(): void {
     if (this.active) this.interrupted++;
@@ -61,6 +65,7 @@ export class LocalEnergyVad {
     this.active = false;
     this.onsetMs = 0;
     this.quietMs = 0;
+    this.openMs = 0;
     this.frameRms = 0;
     this.noiseFloor = INITIAL_NOISE;
     this.threshold = INITIAL_NOISE * 3;
@@ -86,12 +91,13 @@ export class LocalEnergyVad {
       const positive = clipped < 2 && this.frameRms >= this.threshold;
       let event: VadFrame["event"] = null;
       this.frames++;
+      if (this.active) this.openMs += 10;
       if (positive) {
         this.positiveMs += 10;
         this.quietMs = 0;
         if (!this.active) {
           this.onsetMs += 10;
-          if (this.onsetMs >= ONSET_MS) { this.active = true; this.episodes++; event = "open"; }
+          if (this.onsetMs >= ONSET_MS) { this.active = true; this.openMs = this.onsetMs; this.episodes++; event = "open"; }
         }
         this.state = this.active ? "posible voz" : "candidato";
       } else {

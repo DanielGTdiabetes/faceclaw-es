@@ -253,6 +253,11 @@ export class SonioxConversationTranscription implements DetectorTranscription {
     try { this.socket?.sendText(JSON.stringify({ type: "finalize" })); } catch { /* The engine endpoint still closes the turn. */ }
   }
 
+  /** Smart Turn: only the local pause policy has a window that can close early. */
+  requestSmartClose(): boolean {
+    return this.mode === "local" && this.local.requestSmartClose?.() === true;
+  }
+
   setPhase(phase: number): void { if (this.mode === "local") this.local.setPhase?.(phase); }
 
   /**

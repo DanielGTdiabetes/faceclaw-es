@@ -8,14 +8,15 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
   let now = 1000, seq = 0, ref = null;
   const state = { enabled: false, state: 'desactivado', transcription: { engine: 'soniox' } };
   const observers = new Set(), turns = new Set(), associations = new Set(), timers = new Set(), pcm = new Set();
-  let smartChanged, smartReady = false, smartStarts = 0;
-  const smart = { start(cb) { smartChanged = cb; smartStarts++; }, stop() { smartReady = false; }, acceptPcm() {},
+  let smartChanged, smartEnded, smartReady = false, smartStarts = 0, smartCloses = 0;
+  const smart = { start(cb, ended) { smartChanged = cb; smartEnded = ended; smartStarts++; }, stop() { smartReady = false; }, acceptPcm() {},
     verdict() { return smartReady ? { audioMs: 1000, speechMs: 900, probability: .9 } : null; } };
   const frames = [], outputs = [];
   const source = { snapshot: () => state, wearerActionRef: () => ref,
     subscribe(cb) { observers.add(cb); cb(state); return () => observers.delete(cb); },
     subscribeTurns(cb) { turns.add(cb); return () => turns.delete(cb); },
     subscribeNativePcm(cb) { pcm.add(cb); return () => pcm.delete(cb); },
+    requestSmartClose() { smartCloses++; return true; },
     subscribeAssociation(cb) { associations.add(cb); return () => associations.delete(cb); } };
   const timer = (cb, ms, repeat) => { const t = { cb, at: now + ms, repeat }; timers.add(t); return () => timers.delete(t); };
   const channel = new ConversationChannel({ now: () => now, send: frame => { frames.push(frame); return true; },
@@ -49,7 +50,8 @@ function harness(policy = { candidateMs: 15000, silenceMs: 30000, maxTurns: 12, 
       verdict: 'tema', kind: 'mensaje', text: 'Una aportación útil', ...patch });
   }
   return { runtime, channel, frames, outputs, timers, source, state, now: () => now, ref: () => ref, association, turn, advance, reply,
-    smartEnd() { smartReady = true; smartChanged?.(false); }, smartStarts: () => smartStarts,
+    smartEnd(probability = .9) { smartReady = true; smartChanged?.(false); smartEnded?.({ audioMs: 1000, speechMs: 900, probability }); },
+    smartStarts: () => smartStarts, smartCloses: () => smartCloses,
     smartSpeech() { smartReady = false; smartChanged?.(true); },
     g2Begin(enabled = true) { state.manualConversation = true; state.transcription.engine = 'local'; state.vad = { positiveMs: 0 };
       channel.negotiate(['conv/1', 'conv/2', 'conv/turn-observation/1', ...(gateOptions?.receipts ? ['conv/memory-ack/1'] : [])]);
@@ -111,6 +113,13 @@ test('smart turn accelerates only an opted-in live EVO conversation and records 
   h.positivePcm(); h.advance(2000);
   assert.equal(h.frames.find(f => f.type === 'turn-observation').continuedWithin2s, true);
   h.runtime.stop();
+});
+
+test('smart end closes the local ASR window only above 0.8 and never after OFF', () => {
+  const h = harness(undefined, { smart: true }); h.g2Begin();
+  h.smartEnd(.79); assert.equal(h.smartCloses(), 0);
+  h.smartEnd(.8); assert.equal(h.smartCloses(), 1);
+  h.runtime.stop(); h.smartEnd(.99); assert.equal(h.smartCloses(), 1);
 });
 
 test('missing verdict waits 1.2 s; selector OFF keeps 2 s and question keeps 700 ms', () => {

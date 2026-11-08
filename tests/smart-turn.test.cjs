@@ -4,15 +4,15 @@ const { SmartTurnClient, smartTurnUrl } = require('../.test-build/app/conversati
 
 function harness() {
   let now = 0, listener, queue = 0;
-  const sent = [], events = [], closed = [], listeners = [];
+  const sent = [], events = [], ends = [], closed = [], listeners = [];
   const client = new SmartTurnClient({ now: () => now, connect(cb) { listener = cb; listeners.push(cb); return {
     sendText(text) { sent.push(JSON.parse(text)); return true; },
     sendBinary(pcm) { sent.push(pcm); return true; }, queuedBytes: () => queue,
     close(...args) { closed.push(args); },
   }; } });
-  return { client, sent, events, closed, connections: () => listeners.length,
+  return { client, sent, events, ends, closed, connections: () => listeners.length,
     advance(ms) { now += ms; }, queue(value) { queue = value; },
-    start() { client.start(speech => events.push(speech)); listener.onTextMessage('{"type":"g2.ready","v":1}'); },
+    start() { client.start(speech => events.push(speech), verdict => ends.push(verdict)); listener.onTextMessage('{"type":"g2.ready","v":1}'); },
     event(value) { listener.onTextMessage(JSON.stringify(value)); }, old: () => listener,
     pcm(end = 50) { client.acceptPcm('NATIVE_PCM', end); } };
 }
@@ -57,6 +57,16 @@ test('malformed/future/out-of-range verdicts cannot accelerate a request', () =>
     assert.equal(h.client.verdict(0, 50), null);
   }
   assert.deepEqual(h.events, []);
+  assert.deepEqual(h.ends, []);
+});
+
+test('a validated end notifies the close hook and OFF cancels it', () => {
+  const h = harness(); h.start(); h.pcm();
+  h.event({ type: 'g2.turn_end', audioMs: 50, speechMs: 20, probability: .87 });
+  assert.deepEqual(h.ends, [{ audioMs: 50, speechMs: 20, probability: .87 }]);
+  h.client.stop();
+  h.event({ type: 'g2.turn_end', audioMs: 50, speechMs: 20, probability: .9 });
+  assert.equal(h.ends.length, 1);
 });
 
 test('synchronous connection failure cannot resurrect a native socket', () => {

@@ -92,6 +92,14 @@ export class LocalTranscription implements DetectorTranscription {
   acceptNative(pcm: unknown, vadState: string): void {
     if (this.enabled) this.engine?.acceptPcm(pcm, vadState);
   }
+  /**
+   * Smart Turn says the turn ended: ask the native pause window to close now (no overlap) instead of
+   * waiting for the floor. Best effort; an older native engine simply keeps its normal close.
+   */
+  requestSmartClose(): boolean {
+    if (!this.enabled || typeof this.engine?.requestSmartClose !== "function") return false;
+    try { return Boolean(this.engine.requestSmartClose()); } catch { return false; }
+  }
   /** Continuous text: 3 s windows deliver short fragments that read as one paragraph. */
   text(): string { return this.lines.join(" "); }
   snapshot(): LocalTranscriptionSnapshot {

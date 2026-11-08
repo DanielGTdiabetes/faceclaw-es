@@ -70,6 +70,8 @@ export type LocalTranscriptionSnapshot = {
     languageMode?: TextLanguage; mixedAudioMsByPhase?: number[]; phases?: TranscriptPhaseAnalysis[];
     /** A3: model in use, ASR-copy level conditioning and aggregate window-level histograms (dBFS). */
     engine?: string; conditioned?: boolean; rejectedHallucination?: number; rejectedNoVoice?: number; vadStatus?: string;
+    /** Pause windows closed before the floor by enough voice and by Smart Turn (scalars only). */
+    voiceFloorClosures?: number; smartClosures?: number;
     levels?: { windows: number; bucketsDbfs: string; loudWindows: number[]; quietActiveWindows: number[];
       avgNoiseDb: number; avgGainDb: number; maxGainDb: number };
   };
@@ -112,6 +114,11 @@ export interface DetectorTranscription {
    * its own endpoint (~2 s). Not a gap: no boundary, no identity interrupt. Best effort, never fatal.
    */
   finalizePause?(): void;
+  /**
+   * Smart Turn ended the turn: close the local pause window now, without keeping its overlap, instead
+   * of waiting for the pause floor. Best effort; ignored by engines without a local window.
+   */
+  requestSmartClose?(): boolean;
   /** Diagnostic mark (0..4). Applies from the next PCM chunk; ignored when unsupported. */
   setPhase?(phase: number): void;
   acceptNative(pcm: unknown, vadState: string): void;

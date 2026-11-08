@@ -732,3 +732,48 @@ test('profile restoration requires OFF and fully drained workers without stoppin
   assert.equal(h.detector.restorePreviousOwnProfile(), true);
   assert.equal(restores, 2);
 });
+
+function withLogcat(run) {
+  const lines = [];
+  const previous = globalThis.android;
+  globalThis.android = { util: { Log: { i: (tag, message) => lines.push({ tag, ...JSON.parse(message) }) } } };
+  return Promise.resolve(run(lines)).finally(() => {
+    if (previous === undefined) delete globalThis.android; else globalThis.android = previous;
+  });
+}
+
+test('a PCM-gap reset reports whether it cut an open voice episode', () => withLogcat(async lines => {
+  const h = harness(); await h.on();
+  for (let i = 0; i < 6; i++) { h.tick(50); h.leases[0].pcm(energyChunk()); }
+  h.tick(300); h.leases[0].pcm(energyChunk());
+  const inVoice = lines.filter(line => line.event === 'acoustic-reset' && line.cause === 'pcm-gap');
+  assert.equal(inVoice.length, 1);
+  assert.equal(inVoice[0].inSegment, true);
+  assert.ok(inVoice[0].segmentAudioMs > 0);
+  for (let i = 0; i < 40; i++) { h.tick(50); h.leases[0].pcm(new Uint8Array(1600)); }
+  h.tick(300); h.leases[0].pcm(new Uint8Array(1600));
+  const gaps = lines.filter(line => line.event === 'acoustic-reset' && line.cause === 'pcm-gap');
+  assert.equal(gaps.length, 2);
+  assert.equal(gaps[1].inSegment, false);
+  assert.equal(gaps[1].segmentAudioMs, 0);
+  h.detector.setEnabled(false);
+}));
+
+test('OFF writes one scalar release summary with native drops and ASR closures', () => withLogcat(async lines => {
+  const transcription = transcriptPort();
+  const snapshot = transcription.snapshot;
+  transcription.snapshot = () => ({ ...snapshot(), analysis: { interruptedSegments: 2, smartClosures: 5,
+    voiceFloorClosures: 1, silenceClosures: 7 } });
+  const h = harness({ transcription }); await h.on(true);
+  h.leases[0].diagnostics = () => '{"packets":9,"pcmDeliveryDrops":4}';
+  h.leases[0].pcm(new Uint8Array(1600)); h.tick(300); h.leases[0].pcm(new Uint8Array(1600));
+  h.detector.setEnabled(false);
+  const summaries = lines.filter(line => line.event === 'release-summary');
+  assert.equal(summaries.length, 1);
+  assert.deepEqual({ ...summaries[0], epoch: undefined }, { tag: 'FaceclawConversation', event: 'release-summary',
+    epoch: undefined, chunks: 2, maxGapMs: 300, pcmDeliveryDrops: 4, interruptedSegments: 2, smartClosures: 5,
+    voiceFloorClosures: 1, silenceClosures: 7, draining: false });
+  assert.ok(!JSON.stringify(summaries[0]).includes('texto'), 'no transcript in logcat');
+  h.detector.setEnabled(false);
+  assert.equal(lines.filter(line => line.event === 'release-summary').length, 1, 'no summary without a lease');
+}));

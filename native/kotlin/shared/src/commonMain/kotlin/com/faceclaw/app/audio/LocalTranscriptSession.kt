@@ -150,6 +150,11 @@ class LocalTranscriptBuffer(
         const val PAUSE_PRE_SAMPLES = 16000 / 2
         /** Pause policy: consecutive quiet chunks (no VAD voice, level below PAUSE_VOICE_RMS) that close a window (400 ms). */
         const val PAUSE_CLOSE_CHUNKS = 8
+        /**
+         * Pause policy: voiced audio that makes a pause close the window before the 4 s floor. The floor
+         * stays as a backstop for short or noisy windows; a window with this much voice has enough context.
+         */
+        const val PAUSE_MIN_VOICED_SAMPLES = 16000 * 2
         /** Pause policy: chunk RMS (~-52 dBFS) that counts as voiced even when the energy VAD stays quiet. */
         const val PAUSE_VOICE_RMS = 0.0025
     }
@@ -179,6 +184,10 @@ class LocalTranscriptBuffer(
     private var windowVoicedChunks = 0
     private var quietChunks = 0
     private var quietSkippedSamples = 0L
+    /** Windows closed by a pause after enough voice, before the 4 s floor (diagnostics only). */
+    private var voiceFloorClosures = 0
+    /** Windows closed by Smart Turn's end-of-turn verdict before they reached the floor (diagnostics only). */
+    private var smartClosures = 0
     private val phaseSilence = LongArray(LocalTranscriptPhases.COUNT)
     private val phaseLimit = LongArray(LocalTranscriptPhases.COUNT)
     private val phaseShort = LongArray(LocalTranscriptPhases.COUNT)
@@ -208,6 +217,7 @@ class LocalTranscriptBuffer(
         deferredWindows = 0; coalescedWindows = 0; maxWindowSamples = 0
         silenceClosures = 0; limitClosures = 0; shortSegments = 0
         interruptedSegments = 0; interruptedSamples = 0; submittedSamples = 0; quietSkippedSamples = 0
+        voiceFloorClosures = 0; smartClosures = 0
         for (array in listOf(phaseSilence, phaseLimit, phaseShort, phaseInterrupted,
             phaseInterruptedSamples, phaseSubmittedSamples, mixedSamplesByPhase)) array.fill(0)
     }
@@ -218,7 +228,8 @@ class LocalTranscriptBuffer(
         "\"interruptedAudioMs\":${interruptedSamples / 16},\"submittedAudioMs\":${submittedSamples / 16}," +
         "\"segmentation\":\"${segmentation.wire}\",\"constantWindows\":$constantWindows," +
         "\"windowPolicy\":\"${policy.id}\",\"deferredWindows\":$deferredWindows,\"coalescedWindows\":$coalescedWindows," +
-        "\"maxWindowMs\":${maxWindowSamples / 16},\"quietSkippedAudioMs\":${quietSkippedSamples / 16}"
+        "\"maxWindowMs\":${maxWindowSamples / 16},\"quietSkippedAudioMs\":${quietSkippedSamples / 16}," +
+        "\"voiceFloorClosures\":$voiceFloorClosures,\"smartClosures\":$smartClosures"
 
     /** Same segment counters attributed to the origin phase of each segment. */
     fun phaseDiagnostics(phase: Int): String = "\"silenceClosures\":${phaseSilence[phase]}," +
@@ -338,7 +349,24 @@ class LocalTranscriptBuffer(
             return
         }
         if (count >= policy.maxWindowSamples) closeWindow(policy.overlapSamples, bySilence = false)
-        else if (count >= policy.windowSamples && quietChunks >= PAUSE_CLOSE_CHUNKS && canSubmit()) closeWindow(0, bySilence = true)
+        else if ((count >= policy.windowSamples || windowVoicedChunks * CHUNK_SAMPLES >= PAUSE_MIN_VOICED_SAMPLES)
+            && quietChunks >= PAUSE_CLOSE_CHUNKS && canSubmit()) {
+            if (count < policy.windowSamples) voiceFloorClosures++
+            closeWindow(0, bySilence = true)
+        }
+    }
+
+    /**
+     * Smart Turn ended the turn while this window is still open: close it now instead of waiting for the
+     * pause floor. No overlap is kept: the verdict says the turn is over, so there is no resume to protect,
+     * and keeping it would re-deliver the tail of this turn inside the next window. Refused while a decoder
+     * is busy or when only the overlap is buffered; those windows still close at the pause floor or the
+     * 12 s cap. The caller has already checked the verdict's probability and freshness.
+     */
+    fun requestSmartClose(): Boolean {
+        if (!policy.closesOnPause || count <= policy.overlapSamples || windowVoicedChunks == 0 || !canSubmit()) return false
+        closeWindow(0, bySilence = true, byRequest = true)
+        return true
     }
 
     private fun dropLeadingChunks(chunksToDrop: Int) {
@@ -353,9 +381,12 @@ class LocalTranscriptBuffer(
         quietSkippedSamples += drop
     }
 
-    private fun closeWindow(overlap: Int = policy.overlapSamples, bySilence: Boolean = false) {
+    private fun closeWindow(overlap: Int = policy.overlapSamples, bySilence: Boolean = false,
+        byRequest: Boolean = false) {
         val phase = closePhase()
-        if (bySilence) { silenceClosures++; phaseSilence[phase]++ } else { limitClosures++; phaseLimit[phase]++ }
+        if (byRequest) { smartClosures++; phaseSilence[phase]++ }
+        else if (bySilence) { silenceClosures++; phaseSilence[phase]++ }
+        else { limitClosures++; phaseLimit[phase]++ }
         val varying = (1 until count).any { samples[it] != samples[0] }
         val audio = if (varying) samples.copyOf(count) else null
         if (audio == null) constantWindows++
@@ -584,6 +615,13 @@ class LocalTranscriptSession(
             }
         }
     }
+
+    /**
+     * Smart Turn ended the turn: close the open pause window now, without overlap, instead of waiting
+     * for the pause floor. Called from the UI thread; the decoder must be idle or the window keeps its
+     * normal close. Returns true only when a window was submitted.
+     */
+    fun requestSmartClose(): Boolean = condition.withLock { buffer.requestSmartClose() }
 
     /** Single exit for a pending result that will not be delivered. Must run under condition. */
     private fun discardPendingResult() {
