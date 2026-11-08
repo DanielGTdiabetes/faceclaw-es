@@ -506,7 +506,28 @@ export class ConversationCaptureCoordinator {
     if (lease) {
       lease.stop();
       try { this.lastDiagnostics = lease.diagnostics(); } catch { this.lastDiagnostics = "Diagnóstico no disponible."; }
+      this.logReleaseSummary();
     }
+  }
+
+  /** Same scalars as «Métricas locales», in logcat, so a test battery does not depend on the dialog. */
+  private logReleaseSummary(): void {
+    try {
+      if (typeof android === "undefined") return;
+      let pcmDeliveryDrops: number | null = null;
+      try {
+        const native = JSON.parse(this.lastDiagnostics) as { pcmDeliveryDrops?: unknown };
+        if (typeof native.pcmDeliveryDrops === "number") pcmDeliveryDrops = native.pcmDeliveryDrops;
+      } catch { /* Non-JSON native diagnostics leave the drop count unknown. */ }
+      const transcription = this.host.transcription?.snapshot();
+      const analysis = transcription?.analysis;
+      android.util.Log.i("FaceclawConversation", JSON.stringify({
+        event: "release-summary", epoch: this.epoch, chunks: this.metrics.chunks, maxGapMs: this.metrics.maxGapMs,
+        pcmDeliveryDrops, interruptedSegments: analysis?.interruptedSegments ?? null,
+        smartClosures: analysis?.smartClosures ?? null, voiceFloorClosures: analysis?.voiceFloorClosures ?? null,
+        silenceClosures: analysis?.silenceClosures ?? null, draining: !!(transcription?.worker || transcription?.busy),
+      }));
+    } catch { /* Scalar diagnostics cannot interrupt capture cleanup. */ }
   }
 
   private cleanup(): void {
@@ -539,9 +560,12 @@ export class ConversationCaptureCoordinator {
 
   private resetAcousticStream(preserveConversation = false): void {
     try {
+      // Read before vad.resetStream(): whether the reset cut an open voice episode, and how much of it.
+      const segmentAudioMs = this.vad.episodeMs();
       if (typeof android !== "undefined") android.util.Log.i("FaceclawConversation", JSON.stringify({
         event: "acoustic-reset", cause: this.gapOpen ? "pcm-gap" : "release", preserveConversation,
         gapMs: this.lastPcm ? Math.max(0, this.host.now() - this.lastPcm) : null, epoch: this.epoch,
+        inSegment: segmentAudioMs > 0, segmentAudioMs,
       }));
     } catch { /* Scalar diagnostics cannot interrupt capture cleanup. */ }
     this.lastVadStopAtMs = null;
