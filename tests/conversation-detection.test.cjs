@@ -771,9 +771,42 @@ test('OFF writes one scalar release summary with native drops and ASR closures',
   const summaries = lines.filter(line => line.event === 'release-summary');
   assert.equal(summaries.length, 1);
   assert.deepEqual({ ...summaries[0], epoch: undefined }, { tag: 'FaceclawConversation', event: 'release-summary',
-    epoch: undefined, chunks: 2, maxGapMs: 300, pcmDeliveryDrops: 4, interruptedSegments: 2, smartClosures: 5,
+    epoch: undefined, chunks: 2, maxGapMs: 300, maxDeliveryLagMs: 0, pcmDeliveryDrops: 4, interruptedSegments: 2, smartClosures: 5,
     voiceFloorClosures: 1, silenceClosures: 7, draining: false });
   assert.ok(!JSON.stringify(summaries[0]).includes('texto'), 'no transcript in logcat');
   h.detector.setEnabled(false);
   assert.equal(lines.filter(line => line.event === 'release-summary').length, 1, 'no summary without a lease');
 }));
+
+test('a late but complete delivery on the capture clock is not a PCM gap', async () => {
+  const transcription = transcriptPort();
+  const h = harness({ transcription }); await h.on(true);
+  const resets = () => transcription.events.filter(event => event === 'reset').length;
+  let capture = 1000;
+  for (let i = 0; i < 6; i++) { h.tick(50); capture += 50; h.leases[0].pcm(energyChunk(), capture); }
+  const base = resets();
+  // Main thread blocked ~300 ms by a frame send: the watchdog may run before the queued chunks.
+  h.tick(300);
+  for (let i = 0; i < 6; i++) { capture += 50; h.leases[0].pcm(energyChunk(), capture); }
+  assert.equal(resets(), base, 'no acoustic reset for audio that only arrived late');
+  assert.equal(h.detector.snapshot().state, 'escuchando');
+  assert.equal(h.detector.snapshot().metrics.maxGapMs, 50);
+  h.detector.setEnabled(false);
+});
+
+test('a real capture gap still resets at 250 ms, and the watchdog at 1 s without delivery', async () => {
+  const transcription = transcriptPort();
+  const h = harness({ transcription }); await h.on(true);
+  const resets = () => transcription.events.filter(event => event === 'reset').length;
+  let capture = 1000;
+  for (let i = 0; i < 4; i++) { h.tick(50); capture += 50; h.leases[0].pcm(energyChunk(), capture); }
+  let base = resets();
+  h.tick(300); capture += 300; h.leases[0].pcm(energyChunk(), capture);
+  assert.equal(resets(), base + 1, 'missing captured audio is a gap even when delivered on time');
+  base = resets();
+  h.tick(600);
+  assert.equal(resets(), base, 'below the delivery grace the watchdog waits for queued audio');
+  h.tick(500);
+  assert.equal(resets(), base + 1, 'beyond 1 s without any chunk the watchdog resets');
+  h.detector.setEnabled(false);
+});

@@ -20,8 +20,11 @@ interface FaceclawVoiceControllerListener {
      */
     fun onPcm(pcm16le: ByteArray?): Unit
 
-    /** Separate, bounded decode-only tap; never carries assistant/STT samples. */
-    fun onExperimentalPcm(pcm16le: ByteArray?) {}
+    /**
+     * Separate, bounded decode-only tap; never carries assistant/STT samples. `captureMs` is the
+     * native elapsedRealtime when the chunk was decoded, so a late delivery is not mistaken for a gap.
+     */
+    fun onExperimentalPcm(pcm16le: ByteArray?, captureMs: Long) {}
 
     /** Separate status channel so a late assistant error cannot fail a new raw lease. */
     fun onExperimentalStatus(status: String?) {}

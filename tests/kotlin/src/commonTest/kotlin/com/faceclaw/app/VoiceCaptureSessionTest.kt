@@ -27,7 +27,7 @@ class VoiceCaptureSessionTest {
         override fun onTranscript(text: String?, isFinal: Boolean) { transcripts.add(text to isFinal) }
         override fun onStopped(captureId: Int) { stopped.add(captureId); stoppedLatch.countDown() }
         override fun onPcm(pcm16le: ByteArray?) { pcmChunks.add(pcm16le!!) }
-        override fun onExperimentalPcm(pcm16le: ByteArray?) { experimentalPcmChunks.add(pcm16le!!.copyOf()) }
+        override fun onExperimentalPcm(pcm16le: ByteArray?, captureMs: Long) { experimentalPcmChunks.add(pcm16le!!.copyOf()) }
         override fun onFrameMeta(angleDegrees: Int, ssr: Int) { frameMeta.add(angleDegrees to ssr) }
         override fun onSpeechEnd() { speechEnds++ }
         override fun onSpeakerVerified(isWearer: Boolean, similarity: Float) { verified = isWearer to similarity }

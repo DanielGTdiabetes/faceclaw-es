@@ -17,6 +17,12 @@ export const PCM_GAP_RESET_MS = 250;
 export const PCM_START_GRACE_MS = 10_000;
 /** Transient delivery gap kept alive before failing closed; recovering it is the point of S2.24. */
 export const PCM_GAP_GRACE_MS = 30_000;
+/**
+ * With native capture times, chunks delayed by a busy main thread arrive late but complete (the native
+ * queue holds 1 s). The watchdog only treats silence beyond this as missing delivery; a real capture
+ * gap is still detected at 250 ms from the capture times when audio resumes.
+ */
+export const PCM_DELIVERY_GRACE_MS = 1_000;
 export type DetectorState = "desactivado" | "escuchando" | "suspendido" | "error";
 export type DetectorMetrics = {
   chunks: number; samples: number; bytes: number; maxGapMs: number;
@@ -68,7 +74,8 @@ export type DetectorEnvironment = { available: boolean; reason: string; session:
 export type DetectorHost = {
   environment(): DetectorEnvironment;
   prepare(): Promise<boolean>;
-  acquire(pcm: (bytes: Uint8Array) => void, revoked: () => void, failed: () => void): DetectorLease | null;
+  /** `captureMs` (same clock as `now()`) lets a late but complete delivery not count as a gap. */
+  acquire(pcm: (bytes: Uint8Array, captureMs?: number) => void, revoked: () => void, failed: () => void): DetectorLease | null;
   now(): number;
   every(callback: () => void, ms: number): () => void;
   transcription?: DetectorTranscription;
@@ -108,6 +115,10 @@ export class ConversationCaptureCoordinator {
   private gapCounted = false;
   /** The current PCM gap already reset the acoustic window; do not reset it on every 500 ms tick. */
   private gapOpen = false;
+  /** The last chunk carried its native capture time: `lastPcm` is capture time, not arrival time. */
+  private captureClock = false;
+  /** Largest arrival minus capture time this session (main-thread delivery lag), for the release summary. */
+  private maxDeliveryLagMs = 0;
   private participationMode: ParticipationMode = "off";
   private enrollmentOutcome: DetectorSnapshot["enrollmentOutcome"] = "none";
   private stopReason: DetectorSnapshot["stopReason"] = "none";
@@ -267,6 +278,8 @@ export class ConversationCaptureCoordinator {
       return;
     }
     this.metrics = emptyMetrics();
+    this.captureClock = false;
+    this.maxDeliveryLagMs = 0;
     this.engineReady = false;
     this.enabledAt = this.host.now();
     this.vad = new LocalEnergyVad();
@@ -361,12 +374,13 @@ export class ConversationCaptureCoordinator {
     }
     if (this.session !== null && this.session !== env.session) this.release();
     if (this.lease) {
-      if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
+      const resetMs = this.captureClock ? PCM_DELIVERY_GRACE_MS : PCM_GAP_RESET_MS;
+      if (this.lastPcm && now - this.lastPcm > resetMs) this.openGap();
       const silentMs = now - (this.lastPcm || this.startedAt);
       const graceMs = this.lastPcm ? PCM_GAP_GRACE_MS : PCM_START_GRACE_MS;
       if (silentMs > graceMs) {
         this.fail(`No llega PCM válido desde hace más de ${Math.round(graceMs / 1000)} s. Captura OFF; puedes reintentar cuando termine el cierre.`);
-      } else if (silentMs > PCM_GAP_RESET_MS) {
+      } else if (silentMs > resetMs) {
         this.state = "suspendido";
         this.reason = `Sin PCM válido desde hace ${(silentMs / 1000).toFixed(1)} s. Mantengo la sesión ${Math.ceil((graceMs - silentMs) / 1000)} s por si el audio vuelve.`;
         this.emit();
@@ -391,8 +405,9 @@ export class ConversationCaptureCoordinator {
       if (!ready) { this.fail("La sesión BLE no está lista. Captura OFF; puedes reintentar."); return; }
       this.startedAt = this.host.now();
       this.lastPcm = 0;
+      this.captureClock = false;
       const lease = this.host.acquire(
-        (pcm) => this.accept(pcm, epoch),
+        (pcm, captureMs) => this.accept(pcm, epoch, captureMs),
         () => this.preempt(epoch),
         () => { if (this.epoch === epoch) this.fail("La captura nativa falló. Captura OFF; puedes reintentar."); },
       );
@@ -407,16 +422,21 @@ export class ConversationCaptureCoordinator {
     });
   }
 
-  private accept(pcm: Uint8Array, epoch: number): void {
+  private accept(pcm: Uint8Array, epoch: number, captureMs?: number): void {
     if (epoch !== this.epoch || !this.enabled || this.state === "error") return;
     // Existing LC3 decoder: 5 x 10 ms, 800 samples, mono 16 kHz signed PCM16 LE.
     if (pcm.length !== 1600) { this.fail("Formato PCM inesperado: se requieren 800 muestras / 1600 B por chunk."); return; }
     const now = this.host.now();
     if (this.timedOut(now)) { this.expire(); return; }
-    if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, now - this.lastPcm);
+    // Gaps are measured on the capture clock when native provides it: a late delivery is not missing audio.
+    const native = captureMs !== undefined && Number.isFinite(captureMs) && captureMs <= now;
+    const at = native ? captureMs : now;
+    if (native) this.maxDeliveryLagMs = Math.max(this.maxDeliveryLagMs, now - at);
+    if (this.lastPcm) this.metrics.maxGapMs = Math.max(this.metrics.maxGapMs, at - this.lastPcm);
     // Never join acoustic candidates across missing delivery or an old stream.
-    if (this.lastPcm && now - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
-    this.lastPcm = now;
+    if (this.lastPcm && at - this.lastPcm > PCM_GAP_RESET_MS) this.openGap();
+    this.lastPcm = at;
+    this.captureClock = native;
     this.gapOpen = false;
     this.gapCounted = false;
     this.phases?.chunk();
@@ -506,6 +526,7 @@ export class ConversationCaptureCoordinator {
     this.preparing = false;
     this.session = null;
     this.lastPcm = 0;
+    this.captureClock = false;
     this.gapOpen = false;
     this.gapCounted = false;
     this.resetAcousticStream();
@@ -531,6 +552,7 @@ export class ConversationCaptureCoordinator {
       const analysis = transcription?.analysis;
       android.util.Log.i("FaceclawConversation", JSON.stringify({
         event: "release-summary", epoch: this.epoch, chunks: this.metrics.chunks, maxGapMs: this.metrics.maxGapMs,
+        maxDeliveryLagMs: this.maxDeliveryLagMs,
         pcmDeliveryDrops, interruptedSegments: analysis?.interruptedSegments ?? null,
         smartClosures: analysis?.smartClosures ?? null, voiceFloorClosures: analysis?.voiceFloorClosures ?? null,
         silenceClosures: analysis?.silenceClosures ?? null, draining: !!(transcription?.worker || transcription?.busy),

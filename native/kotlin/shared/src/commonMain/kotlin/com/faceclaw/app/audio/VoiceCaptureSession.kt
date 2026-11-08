@@ -146,8 +146,8 @@ class VoiceCaptureSession(
     private var malformedPackets = 0L
     private var minObservedPacketBytes = 0
     private var maxObservedPacketBytes = 0
-    private val experimentalDelivery = BoundedPcmDelivery(host.dispatcher, platform) { bytes ->
-        listener?.onExperimentalPcm(bytes)
+    private val experimentalDelivery = BoundedPcmDelivery(host.dispatcher, platform) { bytes, captureMs ->
+        listener?.onExperimentalPcm(bytes, captureMs)
     }
 
     fun setExperimentalRawMode(enabled: Boolean) {

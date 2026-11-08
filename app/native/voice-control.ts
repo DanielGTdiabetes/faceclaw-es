@@ -91,7 +91,8 @@ export type PushToTalkOptions = {
 /** Who currently wants the mic running. */
 type CaptureHolder = "ptt" | "continuous";
 
-export type RawPcmListener = (pcm: Uint8Array) => void;
+/** `captureMs`: native elapsedRealtime of the chunk (experimental tap only), absent elsewhere. */
+export type RawPcmListener = (pcm: Uint8Array, captureMs?: number) => void;
 
 /**
  * Per-packet DSP metadata the glasses firmware appends to each 50 ms audio
@@ -644,10 +645,11 @@ export class FaceclawVoiceControlBridge {
           this.rawPcmListeners.forEach((listener) => listener(bytes));
         }
       },
-      onExperimentalPcm: (pcm: any) => {
+      onExperimentalPcm: (pcm: any, captureMs: any) => {
         const lease = this.experimentalLeaseId;
         if (lease !== null) {
-          this.experimentalPcm?.(toUint8Array(pcm));
+          const at = Number(captureMs);
+          this.experimentalPcm?.(toUint8Array(pcm), Number.isFinite(at) && at > 0 ? at : undefined);
           if (this.experimentalLeaseId === lease) this.experimentalNativePcm?.(pcm);
         }
       },
