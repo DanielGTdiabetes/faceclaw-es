@@ -46,6 +46,19 @@ const MIRROR_TOUCH_GESTURES: Record<Exclude<MirrorTouchKind, "tap">, WearRemoteI
   "swipe-left": "swipe-left",
   "swipe-right": "swipe-right",
 };
+/**
+ * Recuerda que el usuario dejó encendida la Conversación manual. Sirve para rearmarla cuando las
+ * gafas vuelven a estar disponibles tras un corte (reinicio nocturno del EVO-X2, carga, desconexión).
+ * Un OFF explícito del usuario borra la marca; un corte de red nunca la toca.
+ */
+const manualConversationResumeSetting = new ConfigSettingBoolean({
+  id: "conversation.manual.resume",
+  label: "Reanudar Conversación manual",
+  description: "Vuelve a activar la Conversación de Hermes al ponerte las gafas si la dejaste encendida.",
+  storageKey: "conversation.manual.resume",
+  defaultValue: false,
+  reportInAnalytics: false,
+});
 import { GlanceHost } from "./glance-host";
 import { mirrorToPanelFraction, phonePreviewCrop } from "./phone-preview-crop";
 import { type GlanceEvent } from "./glance-state";
@@ -94,7 +107,7 @@ import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-a
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, ConfigSettingBoolean, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -428,7 +441,11 @@ class DashboardController {
         voiceControlBridge.setAudioPriority("assistant-turn", active);
         this.conversationDetector.refresh();
       });
-      onGlassesPresenceChanged(() => this.conversationDetector.refresh());
+      onGlassesPresenceChanged(() => { this.conversationDetector.refresh(); this.resumeManualConversation(); });
+      // El rearme también necesita el hello-ack del puente (conversation.isSupported()).
+      assistantBridge.onStateChange((state) => { if (state.phase === "connected") this.resumeManualConversation(); });
+      // Arranque de la app con el puente ya conectado: un intento, sin bucles.
+      setTimeout(() => this.resumeManualConversation(), 2000);
     }
     const sharedActions = {
       disconnect: () => this.disconnect(),
@@ -2298,6 +2315,8 @@ class DashboardController {
 
   setManualConversationEnabled(enabled: boolean): string {
     if (!enabled) {
+      // OFF explícito del usuario: no se reanuda sola en el próximo arranque.
+      manualConversationResumeSetting.set(false);
       this.setConversationCaptureEnabled(false);
       return "";
     }
@@ -2333,7 +2352,22 @@ class DashboardController {
       diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity,
       textEngine: local ? "local" : "soniox" });
     if (withHermes && !this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
+    if (this.conversationDetector.snapshot().enabled) manualConversationResumeSetting.set(true);
     return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
+  }
+
+  /**
+   * Rearma la Conversación manual recordada cuando vuelven a estar disponibles las gafas o el puente
+   * (reinicio nocturno del EVO-X2, carga, corte de red). Solo actúa si el usuario la dejó encendida;
+   * un OFF explícito borra la marca. Los errores de entorno se reintentan en el siguiente evento.
+   */
+  private resumeManualConversation(): void {
+    if (!manualConversationResumeSetting.get()) return;
+    if (this.conversationDetector.snapshot().enabled) return;
+    if (this.phase !== "connected" || !this.customFirmwareConfirmed) return;
+    if (!assistantBridge.conversation.isSupported()) return;
+    if (getGlassesPresence().charging) return;
+    this.setManualConversationEnabled(true);
   }
 
   /** `ignoreWear` only for the manual ON gate; capture itself always requires a fresh ON_HEAD. */
