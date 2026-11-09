@@ -441,11 +441,11 @@ class DashboardController {
         voiceControlBridge.setAudioPriority("assistant-turn", active);
         this.conversationDetector.refresh();
       });
-      onGlassesPresenceChanged(() => { this.conversationDetector.refresh(); this.resumeManualConversation(); });
+      onGlassesPresenceChanged(() => { this.conversationDetector.refresh(); this.ensureManualConversationResume(); });
       // El rearme también necesita el hello-ack del puente (conversation.isSupported()).
-      assistantBridge.onStateChange((state) => { if (state.phase === "connected") this.resumeManualConversation(); });
+      assistantBridge.onStateChange((state) => { if (state.phase === "connected") this.ensureManualConversationResume(); });
       // Arranque de la app con el puente ya conectado: un intento, sin bucles.
-      setTimeout(() => this.resumeManualConversation(), 2000);
+      setTimeout(() => this.ensureManualConversationResume(), 2000);
     }
     const sharedActions = {
       disconnect: () => this.disconnect(),
@@ -2209,6 +2209,8 @@ class DashboardController {
 
   /** Session-only ON: a process restart always starts this experiment OFF. */
   private hermesSelected = false;
+  /** Reintentos acotados del rearme recordado; se libera al encender u OFF explícito. */
+  private manualConversationResumeTimer: ReturnType<typeof setInterval> | null = null;
   private hermesMessage = "";
   private readonly hermesListeners = new Set<() => void>();
   private hermesUiKey = "";
@@ -2316,6 +2318,7 @@ class DashboardController {
   setManualConversationEnabled(enabled: boolean): string {
     if (!enabled) {
       // OFF explícito del usuario: no se reanuda sola en el próximo arranque.
+      this.stopManualConversationResume();
       manualConversationResumeSetting.set(false);
       this.setConversationCaptureEnabled(false);
       return "";
@@ -2352,22 +2355,49 @@ class DashboardController {
       diagnostics: false, manualConversation: true, optionalProfile: optionalIdentity,
       textEngine: local ? "local" : "soniox" });
     if (withHermes && !this.conversationHermes.snapshot().enabled) return "Hermes no está preparado. La conversación sigue OFF.";
-    if (this.conversationDetector.snapshot().enabled) manualConversationResumeSetting.set(true);
+    if (this.conversationDetector.snapshot().enabled) {
+      manualConversationResumeSetting.set(true);
+      this.stopManualConversationResume();
+    }
     return this.conversationDetector.snapshot().enabled ? "" : this.conversationDetector.snapshot().reason;
   }
 
   /**
    * Rearma la Conversación manual recordada cuando vuelven a estar disponibles las gafas o el puente
    * (reinicio nocturno del EVO-X2, carga, corte de red). Solo actúa si el usuario la dejó encendida;
-   * un OFF explícito borra la marca. Los errores de entorno se reintentan en el siguiente evento.
+   * un OFF explícito borra la marca. Reintenta cada 3 s hasta dos minutos porque tras reiniciar la app
+   * el Bluetooth de las gafas puede tardar más que el puente en volver.
    */
-  private resumeManualConversation(): void {
+  private ensureManualConversationResume(): void {
     if (!manualConversationResumeSetting.get()) return;
     if (this.conversationDetector.snapshot().enabled) return;
-    if (this.phase !== "connected" || !this.customFirmwareConfirmed) return;
-    if (!assistantBridge.conversation.isSupported()) return;
-    if (getGlassesPresence().charging) return;
-    this.setManualConversationEnabled(true);
+    if (this.manualConversationResumeTimer) return;
+    let intentos = 0;
+    const intento = (): void => {
+      intentos++;
+      if (!manualConversationResumeSetting.get() || this.conversationDetector.snapshot().enabled) {
+        this.stopManualConversationResume();
+        return;
+      }
+      if (this.phase !== "connected" || !this.customFirmwareConfirmed
+          || !assistantBridge.conversation.isSupported() || getGlassesPresence().charging) {
+        if (intentos >= 40) this.stopManualConversationResume();
+        return;
+      }
+      this.setManualConversationEnabled(true);
+      if (this.conversationDetector.snapshot().enabled) this.stopManualConversationResume();
+      else if (intentos >= 40) this.stopManualConversationResume();
+    };
+    intento();
+    if (!this.conversationDetector.snapshot().enabled && !this.manualConversationResumeTimer) {
+      this.manualConversationResumeTimer = setInterval(intento, 3000);
+    }
+  }
+
+  private stopManualConversationResume(): void {
+    if (!this.manualConversationResumeTimer) return;
+    clearInterval(this.manualConversationResumeTimer);
+    this.manualConversationResumeTimer = null;
   }
 
   /** `ignoreWear` only for the manual ON gate; capture itself always requires a fresh ON_HEAD. */
