@@ -143,3 +143,35 @@ test('episodeMs counts the open episode including pauses and is 0 outside one', 
   vad.resetStream();
   assert.equal(vad.episodeMs(), 0);
 });
+
+test('a step up in steady background releases after 15 s and is learned, so speech still ends', () => {
+  const vad = new LocalEnergyVad();
+  feed(vad, quiet, 100);
+  const noise = wave(600);
+  feed(vad, noise, 299);
+  assert.equal(vad.snapshot().episodes, 1);
+  assert.equal(vad.snapshot().completed, 0, 'still inside the 15 s cap');
+  feed(vad, noise, 2);
+  assert.equal(vad.snapshot().completed, 1, 'the cap releases the endless episode');
+  const learned = vad.snapshot().noiseFloor;
+  assert.ok(learned > 0.008, `floor learned the background (${learned})`);
+  feed(vad, noise, 600);
+  assert.equal(vad.snapshot().episodes, 1, 'the same background does not reopen');
+  assert.equal(vad.snapshot().state, 'sin actividad');
+  feed(vad, wave(4000), 20);
+  assert.equal(vad.snapshot().episodes, 2, 'louder speech over the noise opens');
+  feed(vad, noise, 13);
+  assert.equal(vad.snapshot().completed, 2, 'and releases on the background after 600 ms');
+});
+
+test('the cap keeps the background under a long turn, not the voice level', () => {
+  const vad = new LocalEnergyVad();
+  feed(vad, quiet, 100);
+  for (let i = 0; i < 40; i++) { feed(vad, wave(3000), 7); feed(vad, wave(300), 1); }
+  assert.equal(vad.snapshot().completed, 1);
+  assert.ok(vad.snapshot().noiseFloor < 0.03, `floor stays near the pauses (${vad.snapshot().noiseFloor})`);
+  feed(vad, quiet, 200);
+  const before = vad.snapshot().episodes;
+  feed(vad, wave(3000), 20);
+  assert.equal(vad.snapshot().episodes, before + 1, 'the next turn still opens');
+});

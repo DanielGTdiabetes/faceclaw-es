@@ -29,6 +29,16 @@ const MIN_NOISE = 0.001;
 const INITIAL_NOISE = 0.0015;
 const ONSET_MS = 150;
 const RELEASE_MS = 600;
+/**
+ * The background floor only learns outside an episode, so a step up in steady noise (street, car,
+ * fan) kept the episode open forever: no release, a frozen lastVadStopAtMs and every Hermes turn
+ * dropped as stale (09/11/2026). An episode this long is released and the floor jumps to the
+ * episode's low-percentile level, which is the background under it.
+ */
+const MAX_EPISODE_MS = 15_000;
+// Multiplicative low-percentile tracker: equilibrium near the 10th percentile of frame RMS.
+const LOW_DOWN = 0.95;
+const LOW_UP = 1.0055;
 
 export class LocalEnergyVad {
   private state: LocalVadSnapshot["state"] = "inactivo";
@@ -43,6 +53,7 @@ export class LocalEnergyVad {
   private onsetMs = 0;
   private quietMs = 0;
   private openMs = 0;
+  private episodeLow = INITIAL_NOISE;
   private active = false;
   private observer: VadObserver | null = null;
 
@@ -66,6 +77,7 @@ export class LocalEnergyVad {
     this.onsetMs = 0;
     this.quietMs = 0;
     this.openMs = 0;
+    this.episodeLow = INITIAL_NOISE;
     this.frameRms = 0;
     this.noiseFloor = INITIAL_NOISE;
     this.threshold = INITIAL_NOISE * 3;
@@ -97,7 +109,10 @@ export class LocalEnergyVad {
         this.quietMs = 0;
         if (!this.active) {
           this.onsetMs += 10;
-          if (this.onsetMs >= ONSET_MS) { this.active = true; this.openMs = this.onsetMs; this.episodes++; event = "open"; }
+          if (this.onsetMs >= ONSET_MS) {
+            this.active = true; this.openMs = this.onsetMs; this.episodes++; event = "open";
+            this.episodeLow = this.noiseFloor;
+          }
         }
         this.state = this.active ? "posible voz" : "candidato";
       } else {
@@ -115,6 +130,17 @@ export class LocalEnergyVad {
           this.noiseFloor = Math.max(MIN_NOISE, this.noiseFloor * 0.99 + this.frameRms * 0.01);
         }
         this.state = this.active ? "pausa" : "sin actividad";
+      }
+      if (this.active && clipped < 2) {
+        this.episodeLow = Math.max(MIN_NOISE, this.episodeLow * (this.frameRms < this.episodeLow ? LOW_DOWN : LOW_UP));
+      }
+      if (this.active && this.openMs >= MAX_EPISODE_MS) {
+        // Steady background, not a turn: close it and learn its level so it does not reopen.
+        this.active = false;
+        this.quietMs = 0;
+        this.completed++;
+        this.noiseFloor = Math.max(this.noiseFloor, this.episodeLow);
+        this.state = "sin actividad";
       }
       this.observer?.frame({ rms: this.frameRms, onsetThreshold, clipped: clipped >= 2, positive,
         state: this.state, event });

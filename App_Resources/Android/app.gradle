@@ -312,7 +312,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.19-conversation.s2.31-drops-instrument"
+    versionName "${faceclawVersionName}-es.19-conversation.s2.34-vad-ruido"
     
     generatedDensities = []
   }
