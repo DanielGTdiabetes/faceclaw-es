@@ -31,7 +31,7 @@ import { formatErrorMessage } from "../util/format-error";
 import { screenHeight, screenWidth } from "../ui/shell/geometry";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
-import { conversationModelOption, conversationModelState } from "../native/conversation-model-options";
+import { conversationModelLabel, conversationModelOption, conversationModelState } from "../native/conversation-model-options";
 import { micModelState, onMicModelStateChanged } from "../apps/microphones/mic-models";
 import { profileGuide } from "../conversation-detection/profile-guide";
 import { conversationDetail, conversationStartPlan, hermesHistoryText, manualHermesStatus, textLanguageLabel, wearerLine } from "../conversation-detection/conversation-ui";
@@ -173,6 +173,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.hermesNotice = ""; this.refreshHermesUi();
       this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
       this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+      this.notifyPropertyChange("conversationMemoryVisibility", this.conversationMemoryVisibility);
     }));
     this.hermesShown = { button: "", status: "", history: "", summary: "", vad: "" };
     this.refreshHermesUi();
@@ -212,9 +213,10 @@ export class MainViewModel extends RemoteControlsViewModel {
     this.notifyPropertyChange("conversationModeButton", this.conversationModeButton);
     this.notifyPropertyChange("conversationMemoryButton", this.conversationMemoryButton);
     this.notifyPropertyChange("conversationMemoryStatus", this.conversationMemoryStatus);
+    this.notifyPropertyChange("conversationMemoryVisibility", this.conversationMemoryVisibility);
     this.notifyPropertyChange("conversationVadStatus", this.conversationVadStatus);
     for (const name of ["conversationStartVisibility", "conversationStopVisibility", "conversationModeSummary", "conversationEntryLabel",
-      "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus",
+      "conversationSettingsHint", "conversationSpeakersButton", "conversationSpeakersStatus", "conversationSpeakersVisibility",
       "conversationStartNotice", "conversationStartNoticeVisibility"]) {
       this.notifyPropertyChange(name, this[name as keyof MainViewModel]);
     }
@@ -319,7 +321,7 @@ export class MainViewModel extends RemoteControlsViewModel {
     return !conversationUsesHermes() ? "Escucha activa · solo transcripción" : "Escucha activa · Hermes";
   }
   get conversationSettingsHint(): string {
-    return this.localTranscriptionCanStart ? "Elige cómo reconocer la voz y qué recordar."
+    return this.localTranscriptionCanStart ? "Elige cómo se transcribe la conversación."
       : this.conversationClosing ? "Terminando reconocimiento; los ajustes se activan al terminar."
       : "Detén la escucha para cambiar los ajustes.";
   }
@@ -498,8 +500,10 @@ export class MainViewModel extends RemoteControlsViewModel {
       || snapshot.participation?.worker || snapshot.participation?.busy;
     const note = draining ? "Drenando motores locales: cifras todavía no finales. Vuelve a abrir en unos segundos.\n" : "";
     const summary = detector.lastSessionSummary();
+    const probe = speakerProbeSummary(snapshot.transcription?.speakerProbe, snapshot.transcription?.speakers);
     void Dialogs.alert({ title: "Métricas locales", message: note + JSON.stringify(snapshot, null, 2)
       + (summary ? "\nÚltima sesión Soniox (sin texto): " + JSON.stringify(summary, null, 2) : "")
+      + (probe ? "\n" + probe : "")
       + "\nHermes (métricas, sin texto): " + JSON.stringify(dashboardController.conversationHermes?.diagnostics?.() ?? null)
       + "\nLentes Hermes (recuentos, sin texto): " + JSON.stringify({ ...hermesPresentationDiagnostics(),
         shellRenderFailures: dashboardController.shellRenderDiagnostics() })
@@ -515,100 +519,103 @@ export class MainViewModel extends RemoteControlsViewModel {
   get conversationEngineButton(): string {
     const snapshot = dashboardController.conversationDetector.snapshot();
     const active = snapshot.enabled && snapshot.state === "escuchando" && snapshot.transcription?.model ? " · en uso" : "";
-    const model = conversationModel();
-    const name = model === "soniox" ? "Soniox (nube)" : model === EVO_CONVERSATION_MODEL ? "Parakeet (EVO-X2)"
-      : `Whisper ${model.split("-")[1]} (local)`;
-    return `Motor: ${name}${active}`;
+    return "Transcripción · " + conversationModelLabel() + active;
   }
-  get conversationModeButton(): string { return `Modo: ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}`; }
+  get conversationModeButton(): string { return "Modo · " + (conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"); }
+  get conversationMemoryVisibility(): "visible" | "collapse" {
+    return assistantBridge.conversation.supportsDailyContext() || conversationDailyContextSelected() ? "visible" : "collapse";
+  }
   get conversationMemoryButton(): string {
-    return "Memoria del día: " + (conversationDailyContextSelected() ? "24 h" : "desactivada");
+    if (!assistantBridge.conversation.supportsDailyContext()) return "Desactivar resúmenes de Hermes";
+    return conversationDailyContextSelected() ? "Resúmenes de Hermes · 24 h" : "Resúmenes de Hermes · Desactivados";
   }
   get conversationMemoryStatus(): string {
-    if (!assistantBridge.conversation.supportsDailyContext()) return "Memoria de 24 h no disponible en el servidor conectado.";
-    if (!conversationDailyContextSelected()) return "No se consulta ni añade memoria. Los resúmenes anteriores caducan; puedes borrarlos desde este menú.";
-    return conversationUsesHermes()
-      ? "Resúmenes en tu servidor durante 24 h. Se borran automáticamente; consultarlos no renueva el plazo."
-      : "La memoria del día requiere Texto y Hermes. Solo texto no guarda resúmenes.";
+    if (!assistantBridge.conversation.supportsDailyContext()) return "El puente actual no ofrece resúmenes de Hermes.";
+    return "Solo al escuchar con Hermes. Los resúmenes caducan a las 24 h.";
+  }
+  private get conversationVoiceControlsAvailable(): boolean {
+    const model = conversationModel();
+    if (model === "soniox") return Boolean(sonioxApiKeySetting.get().trim());
+    if (model === EVO_CONVERSATION_MODEL) return conversationModelState(model).status === "ready";
+    return micModelState("speaker-embedding").status === "ready";
+  }
+  get conversationSpeakersVisibility(): "visible" | "collapse" {
+    return this.conversationVoiceControlsAvailable ? "visible" : "collapse";
   }
   get conversationSpeakersButton(): string {
-    // Where voices are told apart depends on the transcription source (EVO or this phone), not on this switch.
-    return "Voces: " + (conversationLocalSpeakers() ? "distinguir" : "sin distinguir")
-      + (conversationSingleVoiceFilter() ? " · ignorar voz única" : "")
-      + (conversationSpeakerProbe() ? " · diagnóstico D0" : "");
+    if (conversationModel() === "soniox") return "Filtro de voces ajenas";
+    return conversationLocalSpeakers() ? "Distinguir voces · Sí" : "Distinguir voces · No";
   }
   get conversationSpeakersStatus(): string {
-    const speakers = conversationLocalSpeakers()
-      ? "Cada frase se corta en las pausas y se asocia a tu voz o a otra voz de la conversación. Con el EVO-X2, la identificación se hace allí y conserva las voces durante toda la sesión; con Whisper en el móvil necesita el modelo de voz descargado."
-      : "Whisper o Parakeet entregan el texto sin saber quién habla.";
-    const filtered = conversationSingleVoiceFilter()
-      ? `${speakers} No se consulta a Hermes mientras solo se oye una misma voz ajena (televisión, radio).`
-      : speakers;
-    const transcription = dashboardController.conversationDetector.snapshot().transcription;
-    const probe = speakerProbeSummary(transcription?.speakerProbe, transcription?.speakers);
-    const probeHint = conversationSpeakerProbe() && !probe
-      ? " Diagnóstico D0 activo para la próxima sesión con voces: compara copias de cada ventana sin cambiar quién habla." : "";
-    return `${filtered}${probeHint}${probe ? `\n${probe}` : ""}`;
+    const model = conversationModel();
+    if (!this.conversationVoiceControlsAvailable) {
+      return model === "soniox" || model === EVO_CONVERSATION_MODEL
+        ? "" : "Para distinguir voces con Whisper, descarga el modelo de voz en «Mi perfil».";
+    }
+    if (model !== "soniox" && !conversationLocalSpeakers()) return "La transcripción se muestra sin etiquetas de voz.";
+    const location = model === "soniox" ? "Soniox distingue las voces automáticamente."
+      : model === EVO_CONVERSATION_MODEL ? "El EVO-X2 distingue las voces." : "El móvil distingue las voces.";
+    return conversationSingleVoiceFilter()
+      ? location + " Hermes omite los tramos con una sola voz que no esté identificada como la tuya."
+      : location;
   }
   async onConversationSpeakersTap(): Promise<void> {
-    if (!this.localTranscriptionCanStart) return;
-    const actions = [
-      conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces",
-      conversationSingleVoiceFilter() ? "Consultar aunque solo hable una voz ajena" : "Ignorar una sola voz ajena (TV, radio)",
-      conversationSpeakerProbe() ? "Desactivar diagnóstico de voces (D0)" : "Activar diagnóstico de voces (D0)",
-      conversationSmartTurn() ? "Usar la espera habitual" : "Usar fin de turno inteligente",
-    ];
+    if (!this.localTranscriptionCanStart || !this.conversationVoiceControlsAvailable) return;
+    const model = conversationModel();
+    const local = model !== "soniox";
+    const distinguish = conversationLocalSpeakers() ? "No distinguir voces" : "Distinguir voces";
+    const filter = conversationSingleVoiceFilter() ? "Desactivar filtro de voces ajenas" : "Activar filtro de voces ajenas";
+    const actions = [...(local ? [distinguish] : []), ...(!local || conversationLocalSpeakers() ? [filter] : [])];
     const choice = await Dialogs.action({ title: "Voces en la conversación", cancelButtonText: "Cerrar", actions });
-    if (!this.localTranscriptionCanStart) return;
-    if (choice === actions[0]) setConversationLocalSpeakers(!conversationLocalSpeakers());
-    else if (choice === actions[1]) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
-    else if (choice === actions[2]) setConversationSpeakerProbe(!conversationSpeakerProbe());
-    else if (choice === actions[3]) setConversationSmartTurn(!conversationSmartTurn());
+    if (!this.localTranscriptionCanStart || conversationModel() !== model || !this.conversationVoiceControlsAvailable) return;
+    if (choice === distinguish && local) setConversationLocalSpeakers(!conversationLocalSpeakers());
+    else if (choice === filter && actions.includes(filter)) setConversationSingleVoiceFilter(!conversationSingleVoiceFilter());
     this.refreshConversationUi();
   }
   async onConversationMemoryTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
-    const actions = ["Usar resúmenes durante 24 h", "No usar memoria del día", "Borrar memoria del día"];
-    const choice = await Dialogs.action({ title: "Continuidad durante el día", cancelButtonText: "Cerrar", actions });
-    if (!this.localTranscriptionCanStart) return;
-    if (choice === actions[1]) {
+    const channel = assistantBridge.conversation;
+    if (!channel.supportsDailyContext()) {
       setConversationDailyContextSelected(false);
-    } else if (choice === actions[0]) {
-      if (!assistantBridge.conversation.supportsDailyContext()) {
-        this.hermesNotice = "El servidor conectado todavía no ofrece memoria de 24 h.";
-      } else {
-        const accepted = await Dialogs.confirm({ title: "Memoria de 24 horas",
-          message: "Hermes conservará resúmenes breves por tema en tu servidor para retomar conversaciones durante el día. Caducan 24 h después de actualizarse. No se guarda audio ni la transcripción completa.",
-          okButtonText: "Activar 24 h", cancelButtonText: "Cancelar" });
-        if (accepted && this.localTranscriptionCanStart && assistantBridge.conversation.supportsDailyContext()) {
-          setConversationDailyContextSelected(true);
+      this.refreshConversationUi();
+      return;
+    }
+    const selected = conversationDailyContextSelected();
+    const toggle = selected ? "Desactivar resúmenes" : "Activar resúmenes durante 24 h";
+    const clear = "Borrar resúmenes guardados";
+    const choice = await Dialogs.action({ title: "Resúmenes de Hermes", cancelButtonText: "Cerrar", actions: [toggle, clear] });
+    if (!this.localTranscriptionCanStart) return;
+    if (choice === toggle && selected) {
+      setConversationDailyContextSelected(false);
+    } else if (choice === toggle && channel.supportsDailyContext()) {
+      const accepted = await Dialogs.confirm({ title: "Activar resúmenes",
+        message: "Hermes guardará resúmenes breves en tu servidor. Cada resumen caduca 24 h después de actualizarse.",
+        okButtonText: "Activar", cancelButtonText: "Cancelar" });
+      if (accepted && this.localTranscriptionCanStart && channel.supportsDailyContext()) setConversationDailyContextSelected(true);
+    } else if (choice === clear && channel.supportsDailyContext()) {
+      const accepted = await Dialogs.confirm({ title: clear,
+        message: "Se eliminarán los resúmenes de Conversación almacenados en el servidor.",
+        okButtonText: "Borrar", cancelButtonText: "Cancelar" });
+      if (accepted && this.localTranscriptionCanStart && channel.supportsDailyContext()) {
+        const showResult = (message: string) => void Dialogs.alert({ title: "Resúmenes de Hermes", message, okButtonText: "Cerrar" });
+        if (!channel.forgetDailyContext(ok => showResult(ok ? "Resúmenes borrados." : "El servidor no confirmó el borrado."))) {
+          showResult("El borrado no está disponible en este momento.");
         }
       }
-    } else if (choice === actions[2]) {
-      const accepted = await Dialogs.confirm({ title: "Borrar memoria del día",
-        message: "Se eliminarán todos los resúmenes temporales del servidor. No afecta al perfil de voz ni al historial del asistente.",
-        okButtonText: "Borrar", cancelButtonText: "Cancelar" });
-      if (accepted && this.localTranscriptionCanStart) {
-        const sent = assistantBridge.conversation.forgetDailyContext((ok) => {
-          this.hermesNotice = ok ? "Memoria del día borrada." : "No se pudo confirmar el borrado de la memoria del día.";
-          this.refreshHermesUi();
-        });
-        if (!sent) this.hermesNotice = "Memoria del día no disponible o borrado en curso.";
-      }
     }
-    this.refreshConversationUi(); this.refreshHermesUi();
+    this.refreshConversationUi();
   }
   get conversationModelStatus(): string {
     const model = conversationModel();
     if (model === "soniox") return sonioxApiKeySetting.get().trim() ? "Reconoce y separa voces en la nube." : "Falta la clave de Soniox en Ajustes.";
     if (model === EVO_CONVERSATION_MODEL) {
       return conversationModelState(model).error
-        ?? "Transcribe en tu EVO-X2 con Parakeet (misma dirección y clave que Hey Even). Las voces se distinguen en el móvil.";
+        ?? "El EVO-X2 transcribe el audio y elige el reconocedor. Usa la dirección y la clave configuradas en Ajustes > Voz.";
     }
     const state = asrModelState(model);
     if (state.error) return state.error;
-    const ready = state.status === "ready" ? "Descargado. Puedes iniciar." : "Pulsa Descargar; al terminar, pulsa Iniciar.";
-    return `${ready} Reconocimiento en el móvil, sin separar voces.${model === "whisper-medium-es" ? " Medium es experimental y puede tardar más." : ""}`;
+    const ready = state.status === "ready" ? "Descargado en el móvil." : "Descarga el modelo para usarlo en el móvil.";
+    return `${ready} Funciona sin enviar el audio al servidor de transcripción.${model === "whisper-medium-es" ? " Medium es experimental y puede tardar más." : ""}`;
   }
   get conversationDownloadVisibility(): string {
     const model = conversationModel();
@@ -643,8 +650,8 @@ export class MainViewModel extends RemoteControlsViewModel {
   async onConversationEngineTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
     const labels = CONVERSATION_MODELS.map(conversationModelOption);
-    const choice = await Dialogs.action({ title: "Motor de conversación", cancelButtonText: "Cerrar",
-      message: "Parakeet transcribe en tu EVO-X2; Whisper funciona en el móvil. Hermes sigue usando el puente y su proveedor. Medium puede tardar más y consumir más memoria.", actions: labels });
+    const choice = await Dialogs.action({ title: "Transcripción", cancelButtonText: "Cerrar",
+      message: "Elige dónde transcribir el audio. EVO-X2 usa tu servidor, Whisper funciona en el móvil y Soniox usa su servicio en la nube.", actions: labels });
     if (!this.localTranscriptionCanStart) return;
     const index = labels.indexOf(choice);
     if (index < 0) return;
@@ -692,10 +699,20 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   async onConversationOptionsTap(): Promise<void> {
     if (!this.localTranscriptionCanStart) return;
-    const choice = await Dialogs.action({ title: "Diagnóstico de conversación", cancelButtonText: "Cerrar",
-      actions: ["Métricas de la última sesión"] });
-    if (!this.localTranscriptionCanStart) return;
-    if (choice === "Métricas de la última sesión") this.onConversationDetectorMetricsTap();
+    const model = conversationModel();
+    const metrics = "Métricas de la última sesión";
+    const smartTurn = conversationSmartTurn() ? "Desactivar fin de turno inteligente" : "Activar fin de turno inteligente";
+    const probe = conversationSpeakerProbe() ? "Desactivar diagnóstico de voces (D0)" : "Activar diagnóstico de voces (D0)";
+    const actions = [metrics];
+    if (model === EVO_CONVERSATION_MODEL && conversationModelState(model).status === "ready") actions.push(smartTurn);
+    if (model !== "soniox" && model !== EVO_CONVERSATION_MODEL && conversationLocalSpeakers()
+      && this.conversationVoiceControlsAvailable) actions.push(probe);
+    const choice = await Dialogs.action({ title: "Diagnóstico de conversación", cancelButtonText: "Cerrar", actions });
+    if (!this.localTranscriptionCanStart || conversationModel() !== model || !actions.includes(choice)) return;
+    if (choice === metrics) this.onConversationDetectorMetricsTap();
+    else if (choice === smartTurn) setConversationSmartTurn(!conversationSmartTurn());
+    else if (choice === probe && this.conversationVoiceControlsAvailable) setConversationSpeakerProbe(!conversationSpeakerProbe());
+    this.refreshConversationUi();
   }
 
   /** Only the voice-filter warning remains here; call spacing is reported in the session metrics. */

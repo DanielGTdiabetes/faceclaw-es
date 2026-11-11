@@ -199,3 +199,77 @@ test('phone makes selecting and downloading separate actions, keeps auto languag
   enabled = false; controls.setConversationModel('soniox');
   assert.equal(view.conversationDownloadVisibility, 'collapse');
 });
+
+test('the phone menu only offers memory and voice actions supported by the current mode', async () => {
+  let supported = false, voiceModelReady = false;
+  let choose = () => undefined, confirm = async () => true;
+  const dialogs = [];
+  const detector = { snapshot: () => ({ enabled: false }) };
+  controls.bindConversationSession({ detector, setEnabled: () => assert.fail('menu started capture') });
+  controls.setConversationModel('evo-parakeet');
+  controls.setConversationDailyContextSelected(false);
+  controls.setConversationLocalSpeakers(true);
+  const asr = { asrModelState: () => ({ status: 'ready' }) };
+  const modelOptions = moduleUnderTest('app/native/conversation-model-options.ts', {
+    './asr-model': asr, '../conversation-detection/session-controls': controls,
+  });
+  const { MainViewModel } = moduleUnderTest('app/phone-ui/main-view-model.ts', new Proxy({
+    './remote-controls-view-model': { RemoteControlsViewModel: class {} },
+    '@nativescript/core': { Dialogs: {
+      action: async ({ actions }) => { dialogs.push(Array.from(actions)); return choose(actions); },
+      confirm: (options) => confirm(options),
+    } },
+    '../g2/dashboard-controller': { dashboardController: { conversationDetector: detector } },
+    '../assistant/bridge-client': { assistantBridge: { conversation: {
+      supportsDailyContext: () => supported,
+      forgetDailyContext: () => assert.fail('no summaries selected for deletion'),
+    } } },
+    '../ui/dashboard-settings': { sonioxApiKeySetting: { get: () => 'fixture' } },
+    '../apps/microphones/mic-models': { micModelState: () => ({ status: voiceModelReady ? 'ready' : 'absent' }) },
+    '../conversation-detection/session-controls': controls,
+    '../native/conversation-model-options': modelOptions,
+  }, { has: () => true, get: (target, name) => target[name] ?? {} }));
+  const view = Object.create(MainViewModel.prototype);
+  view.refreshConversationUi = () => {};
+
+  assert.equal(view.conversationMemoryVisibility, 'collapse');
+  await view.onConversationMemoryTap();
+  assert.equal(dialogs.length, 0);
+  supported = true;
+  choose = actions => actions[0];
+  await view.onConversationMemoryTap();
+  assert.equal(view.conversationMemoryButton, 'Resúmenes de Hermes · 24 h');
+  supported = false;
+  assert.equal(view.conversationMemoryVisibility, 'visible', 'allows clearing a selected option after disconnect');
+  await view.onConversationMemoryTap();
+  assert.equal(view.conversationMemoryVisibility, 'collapse');
+  supported = true;
+  confirm = async () => { supported = false; return true; };
+  await view.onConversationMemoryTap();
+  assert.equal(controls.conversationDailyContextSelected(), false, 'never enables summaries after capability is lost');
+
+  choose = () => undefined;
+  controls.bindConversationEvoEndpoint(() => ({ url: 'ws://fixture', key: 'fixture' }));
+  try {
+    assert.equal(view.conversationEngineButton, 'Transcripción · EVO-X2');
+    await view.onConversationSpeakersTap();
+    assert.deepEqual(dialogs.at(-1), ['No distinguir voces', 'Activar filtro de voces ajenas']);
+    await view.onConversationOptionsTap();
+    assert.ok(dialogs.at(-1).some(label => label.includes('fin de turno inteligente')));
+    assert.ok(dialogs.at(-1).every(label => !label.includes('D0')));
+
+    controls.setConversationModel('whisper-small-es');
+    assert.equal(view.conversationSpeakersVisibility, 'collapse');
+    voiceModelReady = true;
+    assert.equal(view.conversationSpeakersVisibility, 'visible');
+    await view.onConversationOptionsTap();
+    assert.ok(dialogs.at(-1).some(label => label.includes('D0')));
+    assert.ok(dialogs.at(-1).every(label => !label.includes('fin de turno inteligente')));
+
+    controls.setConversationModel('soniox');
+    await view.onConversationSpeakersTap();
+    assert.deepEqual(dialogs.at(-1), ['Activar filtro de voces ajenas'], 'Soniox already separates voices');
+  } finally {
+    controls.bindConversationEvoEndpoint(() => null);
+  }
+});

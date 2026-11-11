@@ -13,10 +13,10 @@ export function conversationModelState(model: Exclude<ConversationModel, "soniox
 }
 
 export function conversationModelLabel(model: ConversationModel = conversationModel()): string {
-  if (model === "soniox") return "Soniox · nube · separa voces";
-  if (model === EVO_CONVERSATION_MODEL) return "Parakeet · EVO-X2 · voces opcionales";
+  if (model === "soniox") return "Soniox · nube";
+  if (model === EVO_CONVERSATION_MODEL) return "EVO-X2";
   const name = model === "whisper-base-es" ? "Whisper base" : model === "whisper-small-es" ? "Whisper small" : "Whisper medium";
-  return `${name} · local · voces opcionales${model === "whisper-medium-es" ? " · experimental" : ""}`;
+  return `${name} · móvil${model === "whisper-medium-es" ? " · experimental" : ""}`;
 }
 export function conversationModelOption(model: ConversationModel): string {
   const selected = conversationModel() === model ? "✓ " : "";

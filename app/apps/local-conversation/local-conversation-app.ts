@@ -49,7 +49,7 @@ export class LocalConversationLayer implements Layer {
       const detail = snapshot.enabled ? conversationUsesHermes() ? this.session.filterStatus?.() || HERMES_LISTENING_LINE
         : snapshot.state === "escuchando" ? this.session.detector.transcriptText() || "Escuchando todas las voces…"
         : snapshot.reason
-        : this.notice || `${conversationModelLabel()} · ${conversationUsesHermes() ? "Texto y Hermes" : "Solo texto"}. Elige motor y modo en el menú. Escucha continua: el silencio no la detiene.`;
+        : this.notice || `Transcripción · ${conversationModelLabel()}. Escucha continua. El silencio no la detiene.`;
       let y = inset + lineStep(titleFont) + 4;
       const lines = wrapText(font, detail, available);
       const count = Math.max(1, Math.floor((height - y - 2 * step - inset) / step));
@@ -187,10 +187,10 @@ export function createLocalConversationWindow(options: InProcessAppOptions): InP
             const notice = start(mode);
             if (notice) openModalMenu(ctx, "Conversación", [{ label: notice, onSelect: inner => { inner.stack.pop(); } }]);
           },
-        }))), ...(stopping ? [] : [{ label: `Motor: ${conversationModelLabel()}`, onSelect: (ctx: LayerContext) => {
+        }))), ...(stopping ? [] : [{ label: `Transcripción · ${conversationModelLabel()}`, onSelect: (ctx: LayerContext) => {
           ctx.stack.pop();
           if (session.detector.snapshot().enabled) return;
-          openModalMenu(ctx, "Motor de conversación", CONVERSATION_MODELS.map((id) => ({
+          openModalMenu(ctx, "Transcripción", CONVERSATION_MODELS.map((id) => ({
             label: conversationModelOption(id), onSelect: (inner) => { inner.stack.pop(); setConversationModel(id); },
           })));
         } }, { label: `Idioma: ${conversationTextLanguage() === "auto" ? "Automático" : "Solo español"}`, onSelect: (ctx: LayerContext) => {

@@ -827,7 +827,7 @@ test('glasses product conversation uses the shared manual owner with model/mode 
   assert.equal(h.options.menuItems().length, 4);
   assert.equal(h.options.menuItems()[0].label, 'Escuchar con Hermes');
   assert.equal(h.options.menuItems()[1].label, 'Solo transcribir');
-  assert.match(h.options.menuItems()[2].label, /Motor/);
+  assert.match(h.options.menuItems()[2].label, /^Transcripción · /);
   assert.match(h.options.menuItems()[3].label, /Idioma/);
   h.options.menuItems()[0].onSelect({ stack: { pop() {} } });
   assert.deepEqual(h.starts, [['manual', true]], 'the Hermes entry starts the shared owner');
