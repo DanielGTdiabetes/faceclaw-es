@@ -1,11 +1,10 @@
-## Faceclaw 0.9.0 + S2.34 RC2 preparada — 11/11/2026
+## Faceclaw 0.9.0 + S2.34 RC2 instalada — 11/11/2026
 
-Candidata Android firmada con la clave original y comprobada en compilación. La instalación y la validación física siguen pendientes.
-La misma APK conserva G2 y permite alternar con un par G1 guardado desde **Cambiar entre G1 y G2**.
-G2 admite firmware Faceclaw/37. G1 requiere firmware Faceclaw específico y una validación separada.
-Fuente de la APK en aead5613a7db0c02c01f45696a57b3b5179e2d4d, rama codex/faceclaw-090-g1-s234.
-El informe incluye hashes de RC2 y del retorno S2.34, pruebas, firma, compatibilidad con páginas de 16 KiB y procedimiento de instalación conservando datos.
-[Informe de RC2](faceclaw-090-g1-s234-2026-11-11.md)
+Actualizada a las 05:15:10 en el Pixel con `adb install -r`. Paquete `com.faceclaw.app`, código 805, versión `0.9.0-es.1-s2.34-g1-rc2` y firma original. SHA-256 de la APK instalada `9d31b5924cea502f222c6421650085948af16cdcbc622b734581d3d3b27c64cd`. La primera instalación y los directorios de datos se conservaron.
+
+Conversación OFF antes y después. El indicador «Mi perfil · guardado» sigue visible. Se conservaron 48 de las 49 entradas comparadas y la caché meteorológica se refrescó. El exportador de RC2 también lee 13 entradas que el de S2.34 no incluía. Validación física de G1 y G2 pendiente.
+
+Fuente exacta en `aead5613a7db0c02c01f45696a57b3b5179e2d4d`. Retorno a S2.34 verificado contra la APK anterior. [Informe y retorno](faceclaw-090-g1-s234-2026-11-11.md)
 
 ## Continuidad 373165b7 instalada — 04/11/2026, 17:55:42 CET (Codex)
 
