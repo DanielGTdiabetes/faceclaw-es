@@ -1,3 +1,4 @@
+import type { GlassesType } from "../ui/dashboard-settings";
 import type { RingInput } from "../g2/ring-input";
 import { ImageSource, Utils } from "@nativescript/core";
 import * as frameTimings from "./frame-timings";
@@ -28,6 +29,13 @@ export type HeadsetBatteryState = {
   ringBattery?: number;
   ringChargingStatus?: number;
 };
+
+/**
+ * A charging-case reading, as the glasses relay it. battery is 0..100, or null when the reading
+ * has none (the glasses are out of the case). charging (the case is on USB) is only known while
+ * docked.
+ */
+export type CaseBatteryState = { battery: number | null; charging: boolean; docked: boolean };
 
 export type FrameMetrics = {
   paintMs: number;
@@ -151,6 +159,7 @@ export class FaceclawCommunicatorBridge {
   private readonly stateListeners = new Set<(state: CommunicatorState) => void>();
   private readonly ringListeners = new Set<(event: RawInputEvent) => void>();
   private readonly batteryListeners = new Set<(state: HeadsetBatteryState) => void>();
+  private readonly caseListeners = new Set<(state: CaseBatteryState) => void>();
   private readonly silentModeListeners = new Set<(silent: boolean) => void>();
   private readonly wearStateListeners = new Set<(wearing: boolean) => void>();
   private readonly phoneLockStateListeners = new Set<(locked: boolean) => void>();
@@ -161,7 +170,7 @@ export class FaceclawCommunicatorBridge {
   private readonly firmwareInfoListeners = new Set<(info: FirmwareInfo) => void>();
   private readonly previewAnimationListeners = new Set<() => void>();
 
-  constructor(addresses: { right: string; left: string; ring?: string }) {
+  constructor(addresses: { right: string; left: string; ring?: string; ringRole?: string; glassesType?: GlassesType }) {
     const context = Utils.android.getApplicationContext();
     if (!context) throw new Error("Android application context unavailable");
 
@@ -173,6 +182,12 @@ export class FaceclawCommunicatorBridge {
     );
     // The shared session halts on any other firmware ("incompatible-firmware").
     this.communicator.setRequiredFirmwareRevision(REQUIRED_FACECLAW_FIRMWARE_VERSION);
+    // RayNeo iO: one link (its address in both arm slots), its own handshake and page lease.
+    if (addresses.glassesType === "rayneo-io") this.communicator.useRayNeoIo();
+    // Even G1 on g1v0: two links, like a G2's arms, but frames composed here and sent to each arm.
+    if (addresses.glassesType === "g1") this.communicator.useG1();
+    // Which R1 role the direct ring link claims; only matters with a ring address.
+    if (addresses.ringRole) this.communicator.setDirectRingRole(addresses.ringRole);
     this.listenerProxy = new com.faceclaw.app.FaceclawBleCommunicatorListener({
       onStateChange: (phase: string, status: string) => {
         const state = {
@@ -211,6 +226,14 @@ export class FaceclawCommunicatorBridge {
           ringChargingStatus: Number(ringCharging),
         };
         this.emitAsync(this.batteryListeners, state);
+      },
+      onCaseState: (caseBattery: number, caseCharging: number, caseDocked: boolean) => {
+        const battery = Number(caseBattery);
+        this.emitAsync(this.caseListeners, {
+          battery: Number.isInteger(battery) && battery >= 0 && battery <= 100 ? battery : null,
+          charging: Number(caseCharging) > 0,
+          docked: Boolean(caseDocked),
+        });
       },
       onSilentMode: (silent: boolean) => {
         this.emitAsync(this.silentModeListeners, Boolean(silent));
@@ -330,6 +353,15 @@ export class FaceclawCommunicatorBridge {
   onBatteryState(listener: (state: HeadsetBatteryState) => void): () => void {
     this.batteryListeners.add(listener);
     return () => this.batteryListeners.delete(listener);
+  }
+
+  /**
+   * Charging-case readings: read at session start and on docking, then pushed by the glasses
+   * on every change, including leaving the case.
+   */
+  onCaseState(listener: (state: CaseBatteryState) => void): () => void {
+    this.caseListeners.add(listener);
+    return () => this.caseListeners.delete(listener);
   }
 
   /**
@@ -727,6 +759,14 @@ export class FaceclawCommunicatorBridge {
     return this.enqueueJavaCall(() =>
       Boolean(this.communicator.setFaceclawWakeLeaseEnabled(enabled)),
     );
+  }
+
+  /**
+   * Whether the glasses' own wake word reaches Faceclaw: on a RayNeo iO, its
+   * "Hey RayNeo" switch (G2 glasses use the wake lease above instead).
+   */
+  async setVoiceWakeEnabled(enabled: boolean): Promise<void> {
+    await this.enqueueJavaCall(() => this.communicator.setVoiceWakeEnabled(enabled));
   }
 
   /**

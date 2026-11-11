@@ -1,3 +1,9 @@
+# Check text out with LF everywhere, so Windows checkouts keep runnable bash
+# scripts and the LF-anchored source regexes in tests. Batch files are the
+# exception: cmd.exe can miss goto/call labels in LF-only batch files.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
 # Bridge source is hashed before generation/deployment. Keep identical bytes across PCs.
 integrations/hermes/*.py text eol=lf
 scripts/deploy-hermes-conv2.py text eol=lf

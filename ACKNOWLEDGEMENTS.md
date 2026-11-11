@@ -18,6 +18,26 @@ https://github.com/wiseman/py-webrtcvad (e283ca41df3a84b0e87fb1f5cb9b21580a286b0
 Copyright 2011 The WebRTC project authors. BSD license: bundled in
 about/webrtc-vad-LICENSE.txt and App_Resources/Android/src/main/native/vad/LICENSE.
 
+Even G1 support builds on ScouterKit (MIT License), by the ScouterKit authors:
+https://github.com/mafik/scouter_kit. The firmware Faceclaw installs on a G1 is a
+modified build of its g1v0, using the Zephyr RTOS and Nordic's nRF Connect SDK; the
+parts of it that are Even Realities' own are downloaded from Even, not shipped here.
+
+RayNeo iO support builds on the Glassly SDK and custom firmware by Tetramo, Inc.
+and Mentra Labs, Inc. (MIT License): https://github.com/tetramo-labs/glassly and
+https://github.com/tetramo-labs/glassly-rayneo-cfw. The iO wire codecs in
+native/kotlin/shared/.../rayneo/RayNeoIoProtocol.kt follow their protocol work.
+
+iPhone notification icons are Pebble's notification and timeline icons, from
+https://github.com/pebble-dev/iconography: the original Pebble Technology icons
+and Rebble community additions. They are licensed under the Apache License 2.0;
+see app/graphics/pebble-icons.LICENSE. Faceclaw's table of the iPhone apps they
+stand for builds on the one in the PebbleOS firmware,
+https://github.com/coredevices/PebbleOS (also Apache License 2.0).
+
+Weather data outside the US is by Open-Meteo.com: https://open-meteo.com/. It is
+licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+
 The Terminus font is by Dimitar Zhekov's Terminus: https://framagit.org/ohnonot/terv-terc
 and is distributed under the SIL Open Font License; see app/fonts/terminus/LICENSE.
 

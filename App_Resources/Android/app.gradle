@@ -19,6 +19,9 @@ dependencies {
   // app's captions (translation models download on demand, per language).
   implementation 'com.google.mlkit:language-id:17.0.6'
   implementation 'com.google.mlkit:translate:17.0.3'
+  // Pure-Java Opus decoder for the RayNeo iO's microphone (16 kHz mono Opus over
+  // BLE); the same one Glassly uses. See AndroidSpeechEngines.OpusDecoderAdapter.
+  implementation 'io.github.jaredmdobson:concentus:1.0.1'
 }
 
 def faceclawSherpaOnnxVersion = "1.13.0"
@@ -44,6 +47,17 @@ def faceclawNdkHostTag = {
   if (Os.isFamily(Os.FAMILY_MAC)) return "darwin-x86_64"
   if (Os.isFamily(Os.FAMILY_WINDOWS)) return "windows-x86_64"
   return "linux-x86_64"
+}
+
+// Host tools carry .exe on Windows. Call the binaries themselves: the NDK's
+// target-prefixed clang wrappers are bash scripts (or .cmd files) that only add
+// --target.
+def faceclawHostExecutable = { File dir, String name ->
+  return file("$dir/$name${Os.isFamily(Os.FAMILY_WINDOWS) ? ".exe" : ""}")
+}
+
+def faceclawNdkTool = { File ndkRoot, String name ->
+  return faceclawHostExecutable(file("$ndkRoot/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin"), name)
 }
 
 def faceclawFindNdkRoot = {
@@ -111,11 +125,7 @@ tasks.register("prepareFaceclawNativeLibs") {
     if (ndkRoot == null || !ndkRoot.exists()) {
       throw new GradleException("Android NDK is required to build libfaceclaw_lc3.so")
     }
-    // The extensionless target wrapper is a shell script on Windows; execute
-    // clang.exe directly with the equivalent target instead of CreateProcess on it.
-    def windowsClang = Os.isFamily(Os.FAMILY_WINDOWS)
-    def clangName = windowsClang ? "clang.exe" : "aarch64-linux-android24-clang"
-    def clang = file("$ndkRoot/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin/$clangName")
+    def clang = faceclawNdkTool(ndkRoot, "clang")
     if (!clang.exists()) {
       throw new GradleException("Could not find Android clang at $clang")
     }
@@ -128,8 +138,8 @@ tasks.register("prepareFaceclawNativeLibs") {
 
     exec {
       commandLine([
-        clang.absolutePath
-      ] + (windowsClang ? ["--target=aarch64-linux-android24"] : []) + [
+        clang.absolutePath,
+        "--target=aarch64-linux-android24",
         "-shared",
         "-fPIC",
         "-O3",
@@ -197,8 +207,8 @@ tasks.register("prepareFaceclawLlama") {
     if (cmakeDir == null) {
       throw new GradleException("Android SDK cmake package is required to build libfaceclaw_llama.so")
     }
-    def cmake = file("$cmakeDir/bin/cmake")
-    def ninja = file("$cmakeDir/bin/ninja")
+    def cmake = faceclawHostExecutable(file("$cmakeDir/bin"), "cmake")
+    def ninja = faceclawHostExecutable(file("$cmakeDir/bin"), "ninja")
     def march = "-march=armv8.2-a+dotprod+fp16"
 
     // Configure once; afterwards the ninja no-op build keeps this cheap while
@@ -232,14 +242,13 @@ tasks.register("prepareFaceclawLlama") {
     }
     // The static-linked lib carries llama.cpp's full debug info (~50MB);
     // strip it so the APK only pays for the code (~8MB).
-    def ndkRootForStrip = faceclawFindNdkRoot()
-    if (ndkRootForStrip != null) {
-      def llvmStrip = file("$ndkRootForStrip/toolchains/llvm/prebuilt/${faceclawNdkHostTag()}/bin/llvm-strip")
-      if (llvmStrip.exists()) {
-        exec {
-          commandLine([llvmStrip.absolutePath, "--strip-unneeded", llamaSo.absolutePath])
-        }
+    def llvmStrip = faceclawNdkTool(ndkRoot, "llvm-strip")
+    if (llvmStrip.exists()) {
+      exec {
+        commandLine([llvmStrip.absolutePath, "--strip-unneeded", llamaSo.absolutePath])
       }
+    } else {
+      logger.warn("Could not find llvm-strip at $llvmStrip; packaging an unstripped libfaceclaw_llama.so (~50MB)")
     }
   }
 }
@@ -281,12 +290,6 @@ if (faceclawVersionFile.exists()) {
     faceclawVersionName = faceclawVersionMatch.group(1)
   }
 }
-def faceclawVersionCode = {
-  // Prerelease labels belong in versionName, not the numeric versionCode.
-  def parts = (faceclawVersionName.split('-')[0].tokenize('.') + ["0", "0"]).take(3)*.toInteger()
-  return parts[0] * 10000 + parts[1] * 100 + parts[2]
-}()
-
 android {
   compileSdkVersion 35
   buildToolsVersion "35"
@@ -312,7 +315,7 @@ android {
     // Version Information (derived from app/version.ts above)
     versionCode 805
     // Keep code 805 so the original same-signature APK can be restored with install -r.
-    versionName "${faceclawVersionName}-es.19-conversation.s2.34-vad-ruido"
+    versionName faceclawVersionName
     
     generatedDensities = []
   }

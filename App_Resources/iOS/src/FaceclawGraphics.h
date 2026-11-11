@@ -7,4 +7,17 @@
 + (NSData *)renderSVG:(NSString *)svg size:(NSInteger)size;
 + (NSData *)decodeImage:(NSData *)data width:(NSInteger)width height:(NSInteger)height;
 + (NSData *)decodeImageFile:(NSString *)path maxWidth:(NSInteger)maxWidth maxHeight:(NSInteger)maxHeight;
+/**
+ * [widthLo, widthHi, heightLo, heightHi, BGRA...] fitted within maxSize (never upscaled),
+ * composited over black; the input of the shared Kotlin gray tone curve and dither.
+ */
++ (NSData *)bgraPacket:(CGImageRef)image maxSize:(NSInteger)maxSize;
+/** bgraPacket of encoded image bytes (JPEG, PNG, ...); nil when undecodable. */
++ (NSData *)bgraPacketFromImageData:(NSData *)data maxSize:(NSInteger)maxSize;
+/**
+ * [widthLo, widthHi, heightLo, heightHi, RGBA...] of encoded image bytes at native size
+ * (at most 4096 px a side), first frame only; nil when undecodable. CoreGraphics
+ * premultiplies, so transparent pixels come out black. For the EvenHub image pipeline.
+ */
++ (NSData *)rgbaPacketFromImageData:(NSData *)data;
 @end

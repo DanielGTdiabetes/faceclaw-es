@@ -1,13 +1,29 @@
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
+import { GrayImage } from "../graphics/image";
+import { screenHeight, screenWidth } from "../graphics/screen-size";
 import { dimPlanes, type Plane } from "../graphics/plane";
 import { spanCurrent } from "../native/frame-timings";
-import { type ConfigSettingBoolean, type ConfigSettingString } from "./dashboard-settings";
+import { type ConfigSettingBoolean, type ConfigSettingString, type VoiceProvider } from "./dashboard-settings";
 import { directionalFallback, isDirectionalInput, type InputEvent } from "./gestures";
 
 export type TextSettingsEditToggle = {
   setting: ConfigSettingBoolean;
   label: string;
 };
+
+/** A continuous-capture client's needs (see LayerActions.startContinuousVoiceCapture). */
+export type ContinuousCaptureOptions = {
+  /** Names a WAV of the captured audio in Downloads (iOS, when Save Transcribe audio is on). */
+  recordAs?: string;
+  /**
+   * Transcribe with this provider, expecting this spoken language (ISO 639-1,
+   * or "" for the provider to detect it), instead of the Transcription
+   * Provider setting (Translate). While any client asks for one, every
+   * capture uses it, and a shared capture running another restarts on it.
+   */
+  transcription?: TranscriptionChoice;
+};
+
+export type TranscriptionChoice = { provider: VoiceProvider; language: string };
 
 export type LayerActions = {
   /** Ask for a dashboard repaint+transmit, e.g. when async data arrives. */
@@ -33,10 +49,10 @@ export type LayerActions = {
   stopVoiceCapture: () => Promise<void> | void;
   /**
    * Start continuous capture on behalf of `client` (one id per window); shares
-   * the mic with push-to-talk, and runs while any client wants it. recordAs
-   * names a WAV of the captured audio in Downloads (iOS, when enabled).
+   * the mic with push-to-talk, and runs while any client wants it. Calling it
+   * again for the same client replaces its options.
    */
-  startContinuousVoiceCapture: (client: string, options?: { recordAs?: string }) => Promise<void> | void;
+  startContinuousVoiceCapture: (client: string, options?: ContinuousCaptureOptions) => Promise<void> | void;
   stopContinuousVoiceCapture: (client: string) => Promise<void> | void;
   /** Play a CFW tone-sequencer payload (see sound-effects.ts). */
   playBuzzerSequence: (payload: Uint8Array) => Promise<void> | void;
@@ -88,6 +104,15 @@ export interface Layer {
   paintParts?(): Plane[];
   readonly paintOverBase?: boolean;
   /**
+   * True when this layer stands in for `below`, a stacked layer directly
+   * beneath it (or beneath another layer it stands in for): when this layer
+   * calls paintBelow, the stack skips `below` and paints what is under it
+   * instead. A submenu replacing the menu it opened from uses this, so the
+   * hidden menu costs no plane and its dimUnderneath doesn't dim the content
+   * a second time; popping the submenu still returns to it.
+   */
+  replacesLayerBelow?(below: Layer): boolean;
+  /**
    * Dim everything painted beneath this layer: a 0..1 brightness factor
    * applied to the pixels and glyphs of every plane below it in the stack
    * (only meaningful for layers that call paintBelow). false, the default,
@@ -129,8 +154,12 @@ export class LayerStack {
   }
   private readonly shellKeys = new WeakMap<Layer, number>();
   private readonly ctx: LayerContext;
-  private baseWidth: number;
-  private baseHeight: number;
+  /**
+   * The base viewport's size, or null to follow the paired glasses' screen
+   * as it is now: the shell's own stack lives for the whole process, and
+   * re-pairing with the other glasses type changes the screen under it.
+   */
+  private baseSize: { width: number; height: number } | null;
   private readonly focusedFn: () => boolean;
   private lastBaseDim: number | false = 1;
 
@@ -148,8 +177,7 @@ export class LayerStack {
       stack: this,
       actions,
     };
-    this.baseWidth = baseSize?.width ?? G2_LENS_WIDTH;
-    this.baseHeight = baseSize?.height ?? G2_LENS_HEIGHT;
+    this.baseSize = baseSize ? { width: baseSize.width, height: baseSize.height } : null;
     this.focusedFn = isFocused;
   }
 
@@ -220,13 +248,12 @@ export class LayerStack {
   }
 
   getBaseSize(): { width: number; height: number } {
-    return { width: this.baseWidth, height: this.baseHeight };
+    return this.baseSize ? { ...this.baseSize } : { width: screenWidth(), height: screenHeight() };
   }
 
   /** Resize the base viewport (e.g. an EvenHub window switching to the tall canvas). */
   setBaseSize(size: { width: number; height: number }): void {
-    this.baseWidth = size.width;
-    this.baseHeight = size.height;
+    this.baseSize = { width: size.width, height: size.height };
   }
 
   setActions(actions: Partial<LayerActions>): void {
@@ -297,7 +324,8 @@ export class LayerStack {
       layer.paint(this.ctx, () => {
         belowRequested = true;
         if (!canvas) {
-          canvas = new GrayImage(this.baseWidth, this.baseHeight, 0);
+          const { width, height } = this.getBaseSize();
+          canvas = new GrayImage(width, height, 0);
         }
         return canvas;
       }),
@@ -311,7 +339,9 @@ export class LayerStack {
       return [ownPlane];
     }
     const dim = layer.dimUnderneath || 1;
-    const below = this.paintLayer(layer.paintOverBase ? 0 : index - 1, dimSoFar * dim, raw);
+    let belowIndex = layer.paintOverBase ? 0 : index - 1;
+    while (belowIndex > 0 && layer.replacesLayerBelow?.(this.layers[belowIndex]!)) belowIndex--;
+    const below = this.paintLayer(belowIndex, dimSoFar * dim, raw);
     return [...(!raw && dim < 1 ? dimPlanes(below, dim) : below), ownPlane];
   }
 }

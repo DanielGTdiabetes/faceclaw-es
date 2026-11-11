@@ -1,7 +1,6 @@
 /** Native services still outside the current iOS app-screen milestone. */
 const unavailable: Record<string, string> = {
-  music: 'Media-player integration is not available on iOS yet.',
-  "local-conversation": 'La conversación local requiere Android y audio BLE de las G2.',
+  "local-conversation": "Conversación local requiere Android y un micrófono de las gafas compatible.",
   microphones: 'Glasses microphone capture is not available on iOS yet.',
 }
 export function iosAppUnavailableReason(appId: string): string | null {

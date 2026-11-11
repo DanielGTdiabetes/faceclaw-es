@@ -1,6 +1,6 @@
 import { normalizeNightscoutThreshold, type NightscoutThresholds } from "../apps/nightscout/nightscout-alerts";
 import { GESTURE_DOUBLE_CLICK, InputEvent } from "./gestures";
-import { DEFAULT_BRIGHTNESS_CURVE, normalizeBrightnessCurve, brightnessCurveError } from "../g2/brightness-curve";
+import { DEFAULT_BRIGHTNESS_CURVE, G1_BRIGHTNESS_CURVE, RAYNEO_IO_BRIGHTNESS_CURVE, normalizeBrightnessCurve, brightnessCurveError } from "../g2/brightness-curve";
 import {
   getBooleanSetting,
   getStringSetting,
@@ -16,8 +16,11 @@ import {
   assistantModelProvider,
   type AssistantModel,
 } from "~/assistant/models";
-import { isLocalModelReady } from "../native/llama";
+import { isLocalModelReady } from "../native/local-llm";
+import { shouldShowNotificationOnGlasses } from "../native/notification-sources";
 import { normalizeWhisperServerUrl } from "../native/whisper-server-stt";
+import { normalizeOpenAiCompatibleUrl } from "../native/openai-chat";
+import { isValidSpotifyClientId, SPOTIFY_CLIENT_ID_KEY } from "../native/spotify-auth";
 import { drawRightValueMenuItem, drawToggleMenuItem, MenuItem, openModalMenu } from "./menu";
 import { ANIMATION_SPEEDS, animationSpeedLabel, scaleAnimationDuration, type AnimationSpeed } from "./animation-speed";
 import { MENU_ANIMATION_KEY } from "./menu-animation-pref";
@@ -35,7 +38,10 @@ export type BatteryDisplayMode = "icon" | "percentage" | "stacked" | "stacked-pe
 /** When a top-bar battery indicator is shown: always, only below 50%, or never. */
 export type BatteryIndicatorVisibility = "always" | "low" | "never";
 export type TimeFormat = "24h" | "12h";
+export type DistanceUnit = "miles" | "kilometers";
 export type ScreenTimeoutSetting = "15s" | "30s" | "1m" | "3m" | "never";
+/** Whether new phone notifications pop up on the glasses, and for how long without interaction. */
+export type NewNotificationDisplay = "off" | "until-dismissed" | "5s" | "15s" | "1m";
 // Auto runs Faceclaw's light curve. Numeric values use the calibrated firmware
 // scale, clamped to 2–100; 2 is also the endpoint for screen fades.
 export const BRIGHTNESS_VALUES = ["auto", "2", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"] as const;
@@ -149,31 +155,40 @@ type ConfigSettingEnumOptions<TValue extends string, TId extends string> = Confi
   normalize?: (value: string | null | undefined) => TValue;
   /** Dynamic availability check used by enum picker rows. */
   isDisabled?: (value: TValue) => boolean;
+  /** The default while nothing is stored, when it depends on context (else `defaultValue`). */
+  dynamicDefault?: () => TValue | undefined;
 };
 
 export class ConfigSettingEnum<TValue extends string, TId extends string = string> extends ConfigSetting<TValue, TId> {
   readonly values: readonly TValue[];
   private readonly normalizer: (value: string | null | undefined) => TValue;
   private readonly disabledPredicate: (value: TValue) => boolean;
+  private readonly dynamicDefault: (() => TValue | undefined) | undefined;
 
   constructor(options: ConfigSettingEnumOptions<TValue, TId>) {
     super(options);
+    this.dynamicDefault = options.dynamicDefault;
     if (options.reportInAnalytics !== false) fixedChoiceSettings.set(options.storageKey, this);
     this.values = options.values;
     this.disabledPredicate = options.isDisabled ?? (() => false);
     if (options.normalize) {
       this.normalizer = (value: string | null | undefined) => {
         const normalized = options.normalize(value) as TValue|undefined;
-        if (normalized === undefined) return this.defaultValue;
+        if (normalized === undefined) return this.currentDefault();
         return normalized;
       }
     } else {
-      this.normalizer = (value) => this.values.includes(value as TValue) ? value as TValue : this.defaultValue;
+      this.normalizer = (value) => this.values.includes(value as TValue) ? value as TValue : this.currentDefault();
     }
   }
 
+  /** What an unset (or invalid) value reads as now. */
+  protected currentDefault(): TValue {
+    return this.dynamicDefault?.() ?? this.defaultValue;
+  }
+
   get(): TValue {
-    return this.normalizer(getStringSetting(this.storageKey, this.defaultValue));
+    return this.normalizer(getStringSetting(this.storageKey, this.currentDefault()));
   }
 
   set(value: TValue): TValue {
@@ -202,6 +217,8 @@ type ConfigSettingStringOptions<TId extends string> = ConfigSettingOptions<strin
   inputKind?: "text" | "email" | "password";
   normalize?: (value: string | null | undefined) => string;
   validate?: (value: string) => string | null;
+  /** The default while nothing is stored, when it depends on context (else `defaultValue`). */
+  dynamicDefault?: () => string | undefined;
 };
 
 // Every string setting by id, so isolates that can only pass an id over a
@@ -219,6 +236,7 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
   readonly inputKind: "text" | "email" | "password";
   private readonly normalizer: (value: string | null | undefined) => string;
   private readonly validator?: (value: string) => string | null;
+  private readonly dynamicDefault: (() => string | undefined) | undefined;
 
   constructor(options: ConfigSettingStringOptions<TId>) {
     super(options);
@@ -227,11 +245,16 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
     this.inputKind = options.inputKind ?? "text";
     this.normalizer = options.normalize ?? ((value) => value ?? "");
     this.validator = options.validate;
+    this.dynamicDefault = options.dynamicDefault;
     stringSettingsById.set(this.id, this);
   }
 
+  private currentDefault(): string {
+    return this.dynamicDefault?.() ?? this.defaultValue;
+  }
+
   get(): string {
-    return this.normalizer(getStringSetting(this.storageKey, this.defaultValue));
+    return this.normalizer(getStringSetting(this.storageKey, this.currentDefault()));
   }
 
   set(value: string): string {
@@ -250,8 +273,8 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
   getValidValue(): string {
     const value = this.get();
     if (!this.validationError(value)) return value;
-    const saved = this.normalizer(getStringSetting(this.storageKey + ".valid", this.defaultValue));
-    return this.validationError(saved) ? this.defaultValue : saved;
+    const saved = this.normalizer(getStringSetting(this.storageKey + ".valid", this.currentDefault()));
+    return this.validationError(saved) ? this.currentDefault() : saved;
   }
 }
 
@@ -289,12 +312,12 @@ export const phoneBatteryVisibilitySetting = batteryVisibilitySetting(
   "phoneBatteryVisibility", "Phone", "display.battery.phoneVisibility",
 );
 export const glassesBatteryVisibilitySetting = batteryVisibilitySetting(
-  "glassesBatteryVisibility", "G2", "display.battery.glassesVisibility",
+  "glassesBatteryVisibility", "Glasses", "display.battery.glassesVisibility",
 );
 export const ringBatteryVisibilitySetting = batteryVisibilitySetting(
   "ringBatteryVisibility", "R1", "display.battery.ringVisibility",
 );
-/** The Wear OS watch; the indicator only exists while a watch is reachable. */
+/** The watch; the indicator only exists while a watch is reachable. */
 export const watchBatteryVisibilitySetting = batteryVisibilitySetting(
   "watchBatteryVisibility", "Reloj", "display.battery.watchVisibility",
 );
@@ -320,14 +343,30 @@ export function batteryIndicatorSettingsKey(): string {
   ].join("|");
 }
 
+/** Exported so the Navigate worker can repaint when it changes. */
+export const TIME_FORMAT_SETTING_KEY = "display.timeFormat";
+
 export const timeFormatSetting = new ConfigSettingEnum<TimeFormat>({
   id: "timeFormat",
   label: "Formato de hora",
-  storageKey: "display.timeFormat",
+  storageKey: TIME_FORMAT_SETTING_KEY,
   defaultValue: "24h",
   values: ["24h", "12h"],
   formatValue: timeFormatLabel,
-  description: "Whether the top-bar clock shows 24-hour or 12-hour time.",
+  description: "Whether the top-bar clock and other times of day, such as Navigate's arrival time, show 24-hour or 12-hour time.",
+});
+
+/** Exported so the Navigate worker can repaint when it changes. */
+export const DISTANCE_UNIT_SETTING_KEY = "display.distanceUnit";
+
+export const distanceUnitSetting = new ConfigSettingEnum<DistanceUnit>({
+  id: "distanceUnit",
+  label: "Distance unit",
+  storageKey: DISTANCE_UNIT_SETTING_KEY,
+  defaultValue: "miles",
+  values: ["miles", "kilometers"],
+  formatValue: (value) => value === "kilometers" ? "Kilometers" : "Miles",
+  description: "Whether the Weather app shows wind speed in mph or km/h, and the Navigate app shows distances in miles and feet or kilometers and meters.",
 });
 
 /**
@@ -336,6 +375,34 @@ export const timeFormatSetting = new ConfigSettingEnum<TimeFormat>({
  * over the middle of the window that shows only while it has focus.
  */
 export type AppSwitcherPosition = "left" | "right" | "bottom" | "popup";
+
+/** Which glasses the saved addresses belong to (set by pairing; see g2/device-addresses.ts). */
+export type GlassesType = "g2" | "rayneo-io" | "g1";
+
+export const glassesTypeSetting = new ConfigSettingEnum<GlassesType>({
+  id: "glasses-type",
+  label: "Glasses",
+  storageKey: "deviceType", // graphics/screen-size.ts GLASSES_TYPE_KEY reads it directly
+  defaultValue: "g2",
+  values: ["g2", "rayneo-io", "g1"],
+  reportInAnalytics: false,
+});
+
+/**
+ * Whether the paired glasses can report a heading. A G1 has an accelerometer
+ * and a gyroscope but no magnetometer; the RayNeo iO's firmware has no compass
+ * messages.
+ */
+export function glassesHaveCompass(): boolean {
+  return glassesTypeSetting.get() === "g2";
+}
+
+const GLASSES_MODEL_NAMES: Record<GlassesType, string> = { g2: "G2", g1: "G1", "rayneo-io": "iO" };
+
+/** The paired glasses' model without the brand, short enough for battery labels and a watch's one-line charging status. */
+export function glassesModelName(): string {
+  return GLASSES_MODEL_NAMES[glassesTypeSetting.get()];
+}
 
 const APP_SWITCHER_POSITION_LABELS: Record<AppSwitcherPosition, string> = {
   left: "Izquierda",
@@ -350,6 +417,8 @@ export const appSwitcherPositionSetting = new ConfigSettingEnum<AppSwitcherPosit
   storageKey: "display.appSwitcherPosition",
   defaultValue: "bottom",
   values: ["left", "right", "bottom", "popup"],
+  // The RayNeo iO's 220 rows can't spare a bottom row: a side strip by default there.
+  dynamicDefault: () => (glassesTypeSetting.get() === "rayneo-io" ? "left" : undefined),
   formatValue: (value) => APP_SWITCHER_POSITION_LABELS[value] ?? value,
   description:
     "Where the open-app icons go. Left and right take a column beside windows; bottom puts a row beneath the window, which makes full-height windows a little shorter; popup shows them only while you're in the app switcher, in a box over the dimmed window. Bottom and popup leave room at the sides to set the display's depth. Open apps reopen at their new size when a change resizes windows.",
@@ -539,6 +608,10 @@ export const autoBrightnessMaxSetting = new ConfigSettingEnum({
 export const autoBrightnessCurveSetting = new ConfigSettingString({
   id: "autoBrightnessCurve", label: "Curva de luz automática", storageKey: "display.autoBrightnessCurve",
   defaultValue: DEFAULT_BRIGHTNESS_CURVE, normalize: normalizeBrightnessCurve, validate: brightnessCurveError,
+  dynamicDefault: () => {
+    const glasses = glassesTypeSetting.get();
+    return glasses === "rayneo-io" ? RAYNEO_IO_BRIGHTNESS_CURVE : glasses === "g1" ? G1_BRIGHTNESS_CURVE : undefined;
+  },
   description: "2–16 lux:percent pairs, separated by commas. Percent is within your minimum–maximum range. Start at 0:0, end at 100%, and increase lux without decreasing percent. Incomplete edits stay in the preview; brightness keeps using the last valid curve.",
 });
 /** The screen on/off fade at Normal speed. */
@@ -588,6 +661,23 @@ export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>(
   formatValue: screenTimeoutLabel,
   description: "How long the display stays on after the last input before turning itself off. \"Never\" keeps it on until turned off manually.",
 });
+
+export const newNotificationDisplaySetting = new ConfigSettingEnum<NewNotificationDisplay>({
+  id: "new-notification-display",
+  label: "Display new notifications",
+  storageKey: "notifications.newNotificationDisplay",
+  defaultValue: "15s",
+  values: ["off", "until-dismissed", "5s", "15s", "1m"],
+  formatValue: newNotificationDisplayLabel,
+  description:
+    "Pop up new phone notifications on the glasses. A timed popup closes once left untouched that long; " +
+    "the notification stays on the phone and in the status bar.",
+});
+
+/** Whether a newly posted phone notification from this app pops up on the glasses (the global setting, then the app's filter toggle). */
+export function shouldPopUpNewNotification(packageName: string): boolean {
+  return newNotificationDisplaySetting.get() !== "off" && shouldShowNotificationOnGlasses(packageName);
+}
 
 export const lockScreenEnabledSetting = new ConfigSettingBoolean({
   id: "lock-screen-enabled",
@@ -649,7 +739,7 @@ export const mirrorTouchSetting = new ConfigSettingBoolean({
     "Let touches on the phone's mirror act on the glasses UI: tap selects what it lands on, double-tap goes back, a hold opens the menu, swipes navigate.",
 });
 
-// Wear OS watch remote (app/g2/wear-remote.ts, wear/). All three are read on
+// Watch remote (app/g2/wear-remote.ts, wear/, apple-watch/). All three are read on
 // every watch message, so a change applies immediately.
 export const watchRemoteEnabledSetting = new ConfigSettingBoolean({
   id: "watch-remote-enabled",
@@ -657,7 +747,7 @@ export const watchRemoteEnabledSetting = new ConfigSettingBoolean({
   storageKey: "watch.remoteEnabled",
   defaultValue: true,
   description:
-    "Accept input from the Faceclaw Wear OS app: spatial swipes, taps, holds, crown, voice queries and app commands. The ring's scheme is unaffected. Turn off to ignore the watch.",
+    "Accept input from the Faceclaw watch app: spatial swipes, taps, holds, crown, voice queries and app commands. The ring's scheme is unaffected. Turn off to ignore the watch.",
 });
 
 export const watchCanUnlockSetting = new ConfigSettingBoolean({
@@ -669,6 +759,7 @@ export const watchCanUnlockSetting = new ConfigSettingBoolean({
     "Let the watch unlock the glasses' lock screen (which otherwise waits for the phone to be unlocked). Your watch is on your wrist; turn this off if you would rather it stay a phone-only unlock.",
 });
 
+// Wear OS only: the Apple Watch's crown doesn't reach the app, so iOS doesn't offer this.
 export const watchCrownClockwiseNextSetting = new ConfigSettingBoolean({
   id: "watch-crown-clockwise-next",
   label: "Corona en sentido horario = siguiente",
@@ -676,6 +767,26 @@ export const watchCrownClockwiseNextSetting = new ConfigSettingBoolean({
   defaultValue: false,
   description:
     "Choose which crown direction moves to the next item. Off: clockwise moves to the previous item. On: clockwise moves to the next item.",
+});
+
+// Apple Watch only: Wear OS has no sounds, and keeps its vibration setting on the watch.
+// The watch reads these from the mirrored state (apple-watch/Faceclaw/WatchPrefs.swift).
+export const watchVibrateOnInputSetting = new ConfigSettingBoolean({
+  id: "watch-vibrate-on-input",
+  label: "Vibrate on input",
+  storageKey: "watch.vibrateOnInput",
+  defaultValue: true,
+  description:
+    "Adds a slight vibration with each watch input",
+});
+
+export const watchSoundEffectsSetting = new ConfigSettingBoolean({
+  id: "watch-sound-effects",
+  label: "Sound effects",
+  storageKey: "watch.soundEffects",
+  defaultValue: false,
+  description:
+    "On: each input gets its own watchOS feedback, a sound with a vibration (watchOS can't play one alone, so this vibrates even with Vibrate on input off). Off: a light tap for every input. Only Silent Mode on the watch guarantees no sound.",
 });
 
 export const watchMirrorAssistantSetting = new ConfigSettingBoolean({
@@ -805,18 +916,34 @@ export const showBleBandwidthSetting = new ConfigSettingBoolean({
     "Show Bluetooth messages and bytes sent, throughput, acknowledged display fps, and bytes per frame at the bottom of the phone screen. Rates use a five-second window; bytes include control traffic and protocol framing.",
 });
 
-export type RingConnectionMode = "glasses" | "direct";
+/**
+ * How the phone talks to the R1. The ring has one phone role (health sync) and
+ * one glasses role (gestures, battery pushes), so "health" and "direct" are
+ * the two ways a phone link can be useful; see
+ * GlassesSessionCore.setDirectRingRole and notes/ring-link-control.md.
+ */
+export type RingConnectionMode = "glasses" | "health" | "direct";
 
 export const ringConnectionModeSetting = new ConfigSettingEnum<RingConnectionMode>({
   id: "ring-connection-mode",
   label: "Conexión del anillo",
   storageKey: "developer.ringConnectionMode",
   defaultValue: "glasses",
-  values: ["glasses", "direct"],
-  formatValue: (value) => (value === "direct" ? "Directa" : "Solo a través de las gafas"),
+  values: ["glasses", "health", "direct"],
+  formatValue: (value) =>
+    value === "direct" ? "Directa al móvil" : value === "health" ? "Por las gafas y con sincronización de salud" : "Solo a través de las gafas",
   description:
-    "How R1 ring input reaches the phone. Only via glasses: the ring's own link to the glasses carries its gestures, and the phone never opens a Bluetooth connection to the ring. Direct: also connect to the ring from the phone (currently unreliable). Takes effect on the next connection to the glasses.",
+    "How the R1 ring reaches the phone. Only via glasses: the glasses relay the ring's gestures and the phone never connects to it. Via glasses + health sync: the same, plus the phone connects to the ring to sync health data. Direct to phone (experimental): the phone takes the ring over from the glasses and gets its gestures and battery itself; the glasses lose ring input. Health still syncs, but each sync (on opening Health, and at :01 and :31) pauses ring gestures for up to a minute while the phone briefly reconnects to the ring in its health role. Leaving Direct hands the ring back to the glasses. A RayNeo iO has no ring link of its own, so with one the phone always connects to the ring directly. Takes effect on the next connection to the glasses.",
 });
+
+/**
+ * The ring connection in effect: the setting with G2 glasses; Direct with a
+ * RayNeo iO or Even G1, which cannot relay a ring, so the phone holds the ring's
+ * glasses role itself (gestures, battery; health in brief phone-role windows).
+ */
+export function effectiveRingConnectionMode(): RingConnectionMode {
+  return glassesTypeSetting.get() !== "g2" ? "direct" : ringConnectionModeSetting.get();
+}
 
 // "whisper" (no "onboard-" prefix) is OpenAI's CLOUD realtime model
 // (gpt-realtime-whisper); "onboard-whisper" is the on-device sherpa-onnx
@@ -907,7 +1034,7 @@ export type AssistantBackendKind = "direct" | "external";
 
 const assistantBackendLabels: Record<AssistantBackendKind, string> = {
   direct: global.isIOS ? "API en la nube" : "Desde el móvil",
-  external: "OpenClaw (agente externo)",
+  external: "Agente externo (puente)",
 };
 
 export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKind>({
@@ -918,7 +1045,7 @@ export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKin
   values: global.isIOS ? ["direct"] : ["direct", "external"],
   formatValue: (value) => assistantBackendLabels[value] ?? value,
   description:
-    global.isIOS ? "Cloud models called with your OpenAI or Anthropic API key. Add your key in Settings > API Keys." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
+    global.isIOS ? "An LLM called from the phone: a cloud model with your OpenAI or Anthropic API key (Settings > API Keys) or your configured OpenAI-compatible API, or Apple Intelligence's on-device model." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
 });
 
 export const assistantHermesUrlSetting = new ConfigSettingString({
@@ -982,6 +1109,48 @@ export const assistantAllowProactiveSetting = new ConfigSettingBoolean({
   defaultValue: true,
   description:
     "Let the external agent use glasses tools outside of a conversation, e.g. showing an alert when a long-running job finishes. Rate-limited; only tools marked proactive-safe are allowed.",
+});
+
+export const assistantOpenAiCompatibleUrlSetting = new ConfigSettingString({
+  id: "assistant-openai-compatible-url",
+  label: "Compatible API URL",
+  storageKey: "assistant.openAiCompatibleUrl",
+  defaultValue: "",
+  editorTitle: "OpenAI-compatible API root",
+  glassesEditTitle: "Edit compatible API URL",
+  formatValue: (value) => value || "(not set)",
+  validate: (value) => (!value.trim() || normalizeOpenAiCompatibleUrl(value) ? null : "Enter an http:// or https:// API root."),
+  description: "Explicit API root for the OpenAI-compatible Chat Completions assistant. Venice: https://api.venice.ai/api/v1. Open WebUI: https://your-host/api. The provider's path is not guessed.",
+});
+
+export const assistantOpenAiCompatibleKeySetting = new ConfigSettingString({
+  id: "assistant-openai-compatible-key",
+  label: "Compatible API key",
+  storageKey: "assistant.openAiCompatibleKey",
+  defaultValue: "",
+  editorTitle: "OpenAI-compatible API key (optional)",
+  glassesEditTitle: "Edit compatible API key",
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(none)"),
+  description: "Bearer key sent only to the compatible assistant URL above. Optional for private servers that do not require authentication.",
+});
+
+export const assistantOpenAiCompatibleModelSetting = new ConfigSettingString({
+  id: "assistant-openai-compatible-model",
+  label: "Compatible model ID",
+  storageKey: "assistant.openAiCompatibleModel",
+  defaultValue: "",
+  editorTitle: "OpenAI-compatible model ID",
+  glassesEditTitle: "Edit compatible model ID",
+  formatValue: (value) => value || "(not set)",
+  description: "Exact model ID sent to the compatible provider. For glasses tools, choose a model that supports function calling.",
+});
+
+export const veniceWebSearchSetting = new ConfigSettingBoolean({
+  id: "venice-web-search",
+  label: "Venice web search",
+  storageKey: "assistant.veniceWebSearch",
+  defaultValue: false,
+  description: "Allow supported Venice models to search the web for current information. Shown only when OpenAI-compatible is the assistant model and its URL is the official Venice API. Search queries are processed by Venice's search service and may incur additional charges.",
 });
 
 export const elevenLabsApiKeySetting = new ConfigSettingString({
@@ -1109,11 +1278,12 @@ export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
     if (provider === "anthropic") return anthropicApiKeySetting.get().trim().length === 0;
     if (provider === "openai") return openAiApiKeySetting.get().trim().length === 0;
     if (provider === "local") return !isLocalModelReady();
-    if (provider === "hermes") return assistantHermesUrlSetting.get().trim().length === 0;
+    // Hermes and OpenAI-compatible stay selectable before they're configured:
+    // their rows only appear in Settings once one is the selected model.
     return false;
   },
   description:
-    global.isIOS ? "Model used by the voice assistant. Auto prefers Terra with an OpenAI key, then Sonnet with an Anthropic key." : "Model used by the voice assistant. Auto prefers Terra when an OpenAI key is set, then Sonnet when an Anthropic key is set, then the downloaded on-phone model.",
+    global.isIOS ? "Model used by the assistant. Auto prefers Terra with an OpenAI key, then Sonnet with an Anthropic key, then Apple Intelligence's on-device model; it never picks OpenAI-compatible or Hermes agent. Choosing either of those shows its settings below." : "Model used by the assistant. Auto prefers Terra when an OpenAI key is set, then Sonnet when an Anthropic key is set, then the downloaded on-phone model; it never picks OpenAI-compatible or Hermes agent. Choosing either of those shows its settings below.",
 });
 
 export const mapboxApiKeySetting = new ConfigSettingString({
@@ -1125,6 +1295,21 @@ export const mapboxApiKeySetting = new ConfigSettingString({
   glassesEditTitle: "Edit Mapbox token",
   formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(sin configurar)"),
   description: "Mapbox public token (pk. prefix), used by the Navigate app for maps, geocoding, and directions.",
+});
+
+/** Edited from the Music app's Spotify menu; a sign-in is tied to the client ID it was made with. */
+export const spotifyClientIdSetting = new ConfigSettingString({
+  id: "spotify-client-id",
+  label: "Client ID",
+  storageKey: SPOTIFY_CLIENT_ID_KEY,
+  defaultValue: "",
+  editorTitle: "Spotify client ID (from your app in the Spotify Developer Dashboard)",
+  glassesEditTitle: "Edit Spotify client ID",
+  normalize: (value) => (value ?? "").trim(),
+  validate: (value) => (!value || isValidSpotifyClientId(value) ? null
+    : "A Spotify client ID is 32 letters and digits, shown on your app's page in the Spotify Developer Dashboard."),
+  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  description: "The client ID of your own Spotify developer app, which Faceclaw signs in with.",
 });
 
 /**
@@ -1428,6 +1613,34 @@ export function screenTimeoutSettingToMs(value: ScreenTimeoutSetting): number | 
   }
 }
 
+/** How long an untouched new-notification popup stays up; null keeps it until dismissed (and for "off", which never opens one). */
+export function newNotificationDisplayTimeoutMs(value: NewNotificationDisplay): number | null {
+  switch (value) {
+    case "5s":
+      return 5_000;
+    case "15s":
+      return 15_000;
+    case "1m":
+      return 60_000;
+    case "off":
+    case "until-dismissed":
+      return null;
+  }
+}
+
+export function newNotificationDisplayLabel(value: NewNotificationDisplay): string {
+  switch (value) {
+    case "off":
+      return "Off";
+    case "until-dismissed":
+      return "Until dismissed";
+    case "1m":
+      return "1min";
+    default:
+      return value;
+  }
+}
+
 export function brightnessLabel(value: BrightnessSetting): string {
   return value === "auto" ? "Automático" : value;
 }
@@ -1590,11 +1803,17 @@ export class EditTextSettingLayer implements Layer {
     for (let index = 0; index < message.length; index++) {
       image.drawText(font, 22, messageTop + index * step, message[index]!, 200);
     }
-    image.drawText(font, 22, messageTop + (message.length + 2) * step, truncateSetting(this.setting.get(), 52), 220);
+    const valueY = messageTop + (message.length + 2) * step;
+    image.drawText(font, 22, valueY, truncateSetting(this.setting.get(), 52), 220);
     const error = this.setting.validationError();
-    if (error) wrapText(font, error, width - 48).forEach((line, index) =>
+    const errorLines = error ? wrapText(font, error, width - 48) : [];
+    errorLines.forEach((line, index) =>
       image.drawText(font, 22, messageTop + (message.length + 4 + index) * step, line, 180));
-    image.drawText(font, 22, height - 24 - font.lineHeight, `${GESTURE_DOUBLE_CLICK} back`, 110);
+    // The back hint at the bottom, unless a short window (the RayNeo iO's)
+    // leaves it no room under the value and error.
+    const contentBottom = errorLines.length ? messageTop + (message.length + 4 + errorLines.length) * step : valueY + step;
+    const hintY = height - 24 - font.lineHeight;
+    if (hintY >= contentBottom) image.drawText(font, 22, hintY, `${GESTURE_DOUBLE_CLICK} back`, 110);
     return image;
   }
 

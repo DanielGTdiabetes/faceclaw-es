@@ -3,6 +3,7 @@ import { hasCalendarPermission } from "../native/calendar-permissions";
 import { getCurrentLocation } from "../native/location";
 import { hasLocationPermission } from "../native/location-permissions";
 import { mediaControllerBridge } from "../native/media-controller";
+import { spotifyService } from "../native/spotify";
 import { dismissNotification, readActiveNotifications } from "../native/notification-icons";
 import { shell } from "../ui/shell/shell";
 import { toolRegistry, type ToolRegistry, type ToolResult } from "./tool-registry";
@@ -24,7 +25,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
   registered = true;
 
   // Keep a media listener warm so "what's playing" works without opening Music.
-  if (!global.isIOS) void mediaControllerBridge.start();
+  void mediaControllerBridge.start();
 
   registry.registerSystemTool(
     {
@@ -161,9 +162,6 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
     },
   );
 
-  // Phone media and Android notification tools are still platform-specific.
-  if (global.isIOS) return;
-
   registry.registerSystemTool(
     {
       name: "media.now_playing",
@@ -171,7 +169,11 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       proactive: true,
     },
-    () => ok(describeNowPlaying()),
+    async () => {
+      // Spotify's state is polled only while something shows it.
+      await mediaControllerBridge.refresh?.();
+      return ok(describeNowPlaying());
+    },
   );
 
   registry.registerSystemTool(
@@ -181,6 +183,7 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     async () => {
+      await mediaControllerBridge.refresh?.();
       const state = mediaControllerBridge.snapshot();
       if (!state.canPlayPause) return err("No media session can be controlled right now.");
       await mediaControllerBridge.playPause();
@@ -195,12 +198,55 @@ export function registerSystemTools(registry: ToolRegistry = toolRegistry): void
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     async () => {
+      await mediaControllerBridge.refresh?.();
       const state = mediaControllerBridge.snapshot();
       if (!state.canSkipNext) return err("The current media session can't skip to the next track.");
       await mediaControllerBridge.skipNext();
       return ok("Skipped to the next track.");
     },
   );
+
+  const spotify = spotifyService();
+  if (spotify) {
+    registry.register({
+      spec: {
+        name: "media.spotify_play",
+        description:
+          "Search Spotify and start playing the best match on the user's Spotify (this phone or another of their Spotify devices). Use for requests like \"play Daft Punk\" (artist), \"play the album Discovery\" (album) or \"play Harder Better Faster Stronger\" (track).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: { type: "string", description: "What to search for, e.g. an artist, album, song or playlist name." },
+            kind: {
+              type: "string",
+              enum: ["track", "album", "artist", "playlist"],
+              description: "What kind of thing to play (default track).",
+            },
+          },
+          required: ["query"],
+          additionalProperties: false,
+        },
+        availability: "always",
+        // Search, then play (with a device lookup when none is active).
+        timeoutMs: 20_000,
+      },
+      handler: async (args) => {
+        const query = String(args?.query ?? "").trim();
+        if (!query) return err("media.spotify_play requires a query");
+        const kind = ["track", "album", "artist", "playlist"].includes(args?.kind) ? args.kind : "track";
+        try {
+          return ok(`Playing ${await spotify.playSearch(query, kind)} on Spotify.`);
+        } catch (error) {
+          return err(String((error as Error)?.message ?? error));
+        }
+      },
+      // Offered once signed in from the Music app menu.
+      isAvailable: () => spotify.account() !== null,
+    });
+  }
+
+  // Android notification tools are still platform-specific.
+  if (global.isIOS) return;
 
   registry.registerSystemTool(
     {
@@ -250,13 +296,19 @@ function describeState(): string {
     const charging = battery.headsetCharging ? ", charging" : "";
     parts.push(`Headset battery: ${battery.headset}%${charging}.`);
   }
+  if (battery.case !== null) {
+    // caseCharging is null while the glasses are out of the case: the level is the last one seen.
+    const detail = battery.caseCharging === null ? " (last reading, glasses not in the case)"
+      : battery.caseCharging ? ", charging" : "";
+    parts.push(`Charging case battery: ${battery.case}%${detail}.`);
+  }
   parts.push(`Local time: ${formatDateTime(new Date())}.`);
   return parts.join(" ");
 }
 
 function describeNowPlaying(): string {
   const state = mediaControllerBridge.snapshot();
-  if (!state.accessEnabled) return "Notification access isn't granted, so media state is unavailable.";
+  if (!state.accessEnabled) return `Media state is unavailable (${mediaControllerBridge.accessLabel.toLowerCase()}).`;
   if (state.playbackState === "playing" || state.playbackState === "paused") {
     const verb = state.playbackState === "playing" ? "Playing" : "Paused";
     const title = state.title || "(unknown title)";
@@ -273,8 +325,8 @@ function formatEvent(event: CalendarEvent): string {
   return `- ${event.title || "(untitled)"} — ${when}${location}`;
 }
 
-function formatNotification(notification: { key: string; appName: string; title: string; text: string }): string {
-  const title = notification.title || "(no title)";
+function formatNotification(notification: { key: string; appName: string; title: string; text: string; customText?: string[] }): string {
+  const title = notification.title || notification.customText?.join(" ") || "(no title)";
   const body = notification.text ? `: ${notification.text}` : "";
   return `- [${notification.appName}] ${title}${body} (key: ${notification.key})`;
 }

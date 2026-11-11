@@ -57,6 +57,7 @@ function makeLoader(mocks) {
 
 const load = makeLoader({
   'graphics/image': graphics,
+  'graphics/screen-size': { screenWidth: () => W, screenHeight: () => H },
   'graphics/plane': plane,
   'graphics/display-list': displayList,
   'graphics/textwrap': textwrap,

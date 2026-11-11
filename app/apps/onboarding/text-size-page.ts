@@ -3,6 +3,7 @@ import { installedFontPath } from "../../graphics/installed-fonts";
 import { wrapText } from "../../graphics/textwrap";
 import { TtfFont } from "../../graphics/ttf-font";
 import {
+  defaultUiFontSize,
   fontSelectionLabel,
   getDefaultSmallFont,
   getUiFontSelection,
@@ -25,8 +26,6 @@ const ROW_GAP = 2;
 const NOTE_GAP = 8;
 /** The sizes offered here; Settings has the full range. */
 const SIZE_CHOICES = FONT_SIZE_CHOICES.filter((size) => size >= 12 && size <= 18);
-/** Marked as recommended; the first visit selects the current size. */
-const RECOMMENDED_SIZE = 16;
 const RECOMMENDED_NOTE = "Recomendado";
 /** Drawn while they fit, so smaller sizes visibly show more words. */
 const PREVIEW_PARAGRAPHS = [
@@ -41,7 +40,8 @@ type Face =
   | { kind: "fixed"; label: string };
 
 /**
- * The UI font's size, 12 to 18px (16 recommended, and selected at first),
+ * The UI font's size, 12 to 18px (the default size recommended, and
+ * selected at first: 16px, or 14px on the RayNeo iO),
  * beside a preview of text in the selected size. The face and weight stay
  * as they are (they live in the Settings font picker); a bitmap face has
  * only one size, so the page just says so. The size is saved on tap, not
@@ -72,7 +72,7 @@ export class TextSizePage implements OnboardingPage {
         this.face = { kind: "sized", file: selection.file, path, sizes };
         // The current size the first time (the recommended one is only marked);
         // on a return, what was left selected.
-        this.sizeMenu.setItems(sizes, nearestIndex(sizes, this.sizeMenu.selectedItem ?? selection.size ?? RECOMMENDED_SIZE));
+        this.sizeMenu.setItems(sizes, nearestIndex(sizes, this.sizeMenu.selectedItem ?? selection.size ?? defaultUiFontSize()));
         return;
       }
     }
@@ -145,7 +145,7 @@ export class TextSizePage implements OnboardingPage {
     const body = onboardingFont("body");
     const label = sizeLabel(size);
     image.drawText(body, x + 10, y + LIST_ROW_TEXT_INSET, label, selected ? 255 : 190);
-    if (size !== RECOMMENDED_SIZE) return;
+    if (size !== defaultUiFontSize()) return;
     const detail = onboardingFont("detail");
     const noteY = y + Math.round((height - detail.lineHeight) / 2);
     image.drawText(detail, x + 10 + body.measureText(label) + NOTE_GAP, noteY, RECOMMENDED_NOTE, selected ? 210 : 150);

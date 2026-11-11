@@ -9,6 +9,7 @@ import {
 import { type GrayImage, type UiFont } from "../../../graphics/image";
 import { ensureLocationPermission, hasLocationPermission } from "../../../native/location-permissions";
 import { onAndroidNotificationsChanged, readActiveNotificationIcons } from "../../../native/notification-icons";
+import { NOTIFICATION_ICON_SIZE } from "../../../native/notification-types";
 import { readPhoneBatteryState } from "../../../native/phone-battery";
 import { weatherBridge } from "../../../native/weather";
 import { formatClockDate, formatClockTime } from "../../../ui/clock-format";
@@ -17,6 +18,7 @@ import {
   batteryIndicatorVisible,
   ConfigSettingBoolean,
   glassesBatteryVisibilitySetting,
+  glassesModelName,
   onAnySettingChanged,
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
@@ -37,7 +39,6 @@ import { glanceFont } from "../glance-font";
 import { type GlanceWidget } from "../widget";
 
 const PAD = 8;
-const NOTIFICATION_ICON_SIZE = 24;
 const NOTIFICATION_ICON_GAP = 4;
 const BATTERY_ITEM_GAP = 12;
 const BATTERY_LABEL_VALUE = 150;
@@ -328,7 +329,7 @@ function collectBatteryItems(): BatteryItem[] {
   push(phoneBatteryVisibilitySetting.get(), "Phone", "phone", phone.battery, phone.charging);
   const levels = shell.getBatteryLevels();
   push(watchBatteryVisibilitySetting.get(), "Watch", "watch", levels.watch, levels.watchCharging);
-  push(glassesBatteryVisibilitySetting.get(), "G2", "glasses", levels.headset, levels.headsetCharging);
+  push(glassesBatteryVisibilitySetting.get(), glassesModelName(), "glasses", levels.headset, levels.headsetCharging);
   if (levels.ring !== null && Number.isInteger(levels.ring) && levels.ring >= 0 && levels.ring <= 100) {
     push(ringBatteryVisibilitySetting.get(), "R1", "ring", levels.ring, levels.ringCharging);
   }

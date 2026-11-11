@@ -1,5 +1,5 @@
 import { encodeShellScene } from "../../graphics/shell-scene";
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../../graphics/image";
+import { GrayImage } from "../../graphics/image";
 import { singlePlane, type Plane } from "../../graphics/plane";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { EvenAIStatus, EventSourceType, OsEventTypeList, WatchGestureType } from "../../g2/events";
@@ -20,7 +20,7 @@ import {
 import { Layer, LayerActions, LayerContext, LayerStack, noopLayerActions } from "../layers";
 import { CONTEXT_MENU_DIM, MenuLayer, type MenuItem } from "../menu";
 import { VoiceInputLayer, type VoiceSendTarget } from "./voice-input";
-import { KeyboardInputLayer, type KeyboardInputSession } from "./keyboard-input";
+import { KeyboardInputLayer, type KeyboardInputSession, type KeyboardInputVisibility } from "./keyboard-input";
 import { voiceActivity } from "./voice-activity";
 import { assistantAudioPriority } from "../../assistant/audio-priority";
 import { AssistantLayer } from "./assistant";
@@ -40,11 +40,18 @@ import {
   assistantBridgePortSetting,
   assistantBridgeTokenSetting,
   assistantModelSetting,
+  assistantOpenAiCompatibleKeySetting,
+  assistantOpenAiCompatibleModelSetting,
+  assistantOpenAiCompatibleUrlSetting,
   assistantSkipConfirmationSetting,
+  veniceWebSearchSetting,
   batteryIndicatorSettingsKey,
   brightnessSetting,
+  newNotificationDisplaySetting,
+  newNotificationDisplayTimeoutMs,
   onAnySettingChanged,
   openAiApiKeySetting,
+  shouldPopUpNewNotification,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
   timeFormatSetting,
@@ -63,8 +70,8 @@ import {
 } from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
 import { NotificationModalQueue } from "./notification-modal-queue";
+import { NotificationPopupTimeout } from "./notification-popup-timeout";
 import { ALL_NOTIFICATIONS, readActiveNotifications } from "../../native/notification-icons";
-import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
 import type { InProcessWindow } from "./in-process-window";
 import { BrightnessPickerLayer } from "./brightness-picker-layer";
@@ -80,6 +87,8 @@ import {
   windowFramed,
   windowTop,
   type WindowHeightMode,
+  screenHeight,
+  screenWidth,
 } from "./geometry";
 import type { AppSwitcherPosition } from "../dashboard-settings";
 
@@ -161,6 +170,12 @@ export type ShellWindow = {
    * they opened with when the bottom switcher changes height.
    */
   relayout?: () => void;
+  /**
+   * The viewport size the window is laid out at (it changes on relayout), so
+   * the controller can tell a window whose size fell behind the geometry from
+   * one whose surface merely moved.
+   */
+  layoutSize?: () => { width: number; height: number };
   /**
    * A touch from the phone's mirror at (x, y) in app-viewport coordinates.
    * True if the window acted on it; otherwise the controller sends a select.
@@ -324,6 +339,9 @@ const noopActions: LayerActions = noopLayerActions;
  */
 const LONG_PRESS_ESCAPE_MENU_MS = 4000;
 
+/** Settings-store key for the keyboard dialog's last-chosen KeyboardInputVisibility. */
+const KEYBOARD_INPUT_VISIBILITY_KEY = "keyboardInput.visibility";
+
 /** Shell-surface overlay menu (the system menu); closing it returns focus to the sidebar. */
 class ShellOverlayMenuLayer extends MenuLayer {
   /**
@@ -361,7 +379,10 @@ class ShellOverlayMenuLayer extends MenuLayer {
 /** How long a show_alert popup stays before auto-dismissing. */
 const ALERT_DISMISS_MS = 6000;
 const ALERT_X = 40;
-const ALERT_W = G2_LENS_WIDTH - 80;
+/** Alert width: the screen less ALERT_X on each side. */
+function alertW(): number {
+  return screenWidth() - 2 * ALERT_X;
+}
 const ALERT_Y = 96;
 const ALERT_H = 96;
 
@@ -385,14 +406,14 @@ class ShellAlertLayer implements Layer {
     const font = getDefaultSmallFont();
     // Positioned within the min-height window band, like the other shell overlays.
     const alertY = minWindowTop() + ALERT_Y;
-    image.fillRect(ALERT_X, alertY, ALERT_W, ALERT_H, 1);
-    image.drawRect(ALERT_X, alertY, ALERT_W, ALERT_H, 90);
+    image.fillRect(ALERT_X, alertY, alertW(), ALERT_H, 1);
+    image.drawRect(ALERT_X, alertY, alertW(), ALERT_H, 90);
     image.drawText(font, ALERT_X + 16, alertY + 12, "Asistente", 200);
     image.drawTextWrapped({
       font,
       x: ALERT_X + 16,
       y: alertY + 18 + font.lineHeight + 4,
-      width: ALERT_W - 32,
+      width: alertW() - 32,
       text: this.text,
       value: 235,
     });
@@ -459,6 +480,7 @@ class Shell {
   private lastInput: InputEvent | null = null;
   private battery: ShellChromeState["battery"] = {
     headset: null, headsetCharging: null, ring: null, ringCharging: null, watch: null, watchCharging: null,
+    case: null, caseCharging: null,
   };
   private readonly batteryListeners = new Set<() => void>();
   private attention = new Map<string, boolean>();
@@ -476,6 +498,8 @@ class Shell {
   private independentOverlay: { layer: Layer; onYield: () => void; reading: boolean } | null = null;
   /** Retired independent overlays still buried under another layer; dropped once they surface. */
   private readonly retiredOverlays = new WeakSet<Layer>();
+  // Messages sent from keyboard dialogs, newest first; in memory only.
+  private readonly keyboardInputHistory: string[] = [];
   // App-posted notifications that are open or queued, by key.
   private readonly appNotifications = new Map<string, AppNotification>();
   private readonly notificationModals = new NotificationModalQueue<NotificationPopup>({
@@ -483,7 +507,7 @@ class Shell {
     isAvailable: (notificationKey) => {
       if (this.appNotifications.has(notificationKey)) return true;
       const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
-      return !!notification && shouldShowNotificationOnGlasses(notification.packageName);
+      return !!notification && shouldPopUpNewNotification(notification.packageName);
     },
     sleep: () => this.sleep(),
   });
@@ -937,18 +961,36 @@ class Shell {
     const content = appNotification
       ? null
       : new SingleNotificationLayer(notificationKey, { origin: "new-notification-modal", onClose: close });
+    // A phone notification's popup closes once left untouched for the
+    // "Display new notifications" time, as if closed by hand: the notification
+    // stays on the phone and in the status bar. An app's own notification
+    // (e.g. a Nightscout alert) is nowhere else to be found, so it stays up.
+    const timeout = new NotificationPopupTimeout(
+      appNotification ? null : newNotificationDisplayTimeoutMs(newNotificationDisplaySetting.get()),
+      () => {
+        // Something over the popup (a voice dialog, the system menu) is in
+        // use; count that as interaction rather than closing underneath it.
+        if (this.stack.topMatches((layer) => layer === popup.modal)) close();
+        else timeout.restart();
+      },
+    );
     const popup: NotificationPopup = {
       content,
       modal: new ShellModalLayer(
         appNotification ? appNotification.createLayer(close) : content!,
         this.config.actions,
-        () => {
-          this.appNotifications.delete(notificationKey);
-          this.notificationModals.removed(popup, this.screenOn);
+        {
+          removed: () => {
+            timeout.stop();
+            this.appNotifications.delete(notificationKey);
+            this.notificationModals.removed(popup, this.screenOn);
+          },
+          input: () => timeout.restart(),
         },
       ),
     };
     this.stack.push(popup.modal);
+    timeout.restart();
     return popup;
   }
 
@@ -985,7 +1027,7 @@ class Shell {
 
   paintSurface(): Plane[] {
     if (!this.screenOn) {
-      return singlePlane(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
+      return singlePlane(new GrayImage(screenWidth(), screenHeight(), 0));
     }
     return this.stack.paint();
   }
@@ -1230,7 +1272,7 @@ class Shell {
     const foreground = this.foregroundWindow()?.windowId ?? "none";
     if (!this.screenOn) return `fg=${foreground} target=screen-off`;
     if (this.activeVoiceLayer) return `fg=${foreground} target=voice`;
-    if (this.activeKeyboardLayer) return `fg=${foreground} target=keyboard`;
+    if (this.activeKeyboardLayer?.shownOnGlasses) return `fg=${foreground} target=keyboard`;
     if (!this.stack.isAtBase()) return `fg=${foreground} target=shell-overlay`;
     return `fg=${foreground} target=${this.focus}`;
   }
@@ -1619,13 +1661,17 @@ class Shell {
    * continues that conversation; otherwise it goes to the usual destinations
    * with Send to Assistant highlighted. Returns the session the phone types
    * into (the already-open one if there is one), or null while a voice
-   * dialog is up.
+   * dialog is up. The phone can keep the dialog off the glasses (see
+   * KeyboardInputVisibility); that choice persists across dialogs.
    */
   startKeyboardInput(): KeyboardInputSession | null {
     if (this.activeKeyboardLayer) return this.activeKeyboardLayer;
     if (this.activeVoiceLayer || this.foregroundWindow()?.isVoiceCapturing?.()) return null;
     this.yieldIndependentOverlay();
-    if (!this.screenOn) this.wake("sidebar");
+    const storedVisibility = getStringSetting(KEYBOARD_INPUT_VISIBILITY_KEY, "both");
+    const visibility: KeyboardInputVisibility =
+      storedVisibility === "phone" || storedVisibility === "glasses" ? storedVisibility : "both";
+    if (visibility !== "phone" && !this.screenOn) this.wake("sidebar");
     const assistantLayer = this.assistantLayer;
     const assistantSession = this.assistantSession;
     let targets: VoiceSendTarget[];
@@ -1635,7 +1681,15 @@ class Shell {
         {
           id: "assistant",
           label: "Enviar",
-          onSend: (text) => this.runAssistantTurn(assistantSession, assistantLayer, text),
+          // Phone-only, the overlay can close while the dialog is open; the
+          // text then starts a fresh overlay on the same conversation.
+          onSend: (text) => {
+            if (this.assistantLayer === assistantLayer) {
+              this.runAssistantTurn(assistantSession, assistantLayer, text);
+            } else {
+              this.sendToAssistant(text);
+            }
+          },
         },
       ];
     } else {
@@ -1653,16 +1707,29 @@ class Shell {
         }
       },
       dismiss: () => {
-        this.stack.popIfTop((top) => top === layer);
+        // Wherever it sits: a menu opened over the dialog stays open.
+        this.stack.remove(layer);
         // A send or discard from the phone side arrives outside the input
         // path, so nothing else asks for the repaint.
         this.config.requestShellRender();
       },
+      setShownOnGlasses: (shown) => {
+        if (shown) {
+          if (!this.screenOn) this.wake("sidebar");
+          this.stack.push(layer);
+        } else {
+          this.stack.remove(layer);
+        }
+        this.config.requestShellRender();
+      },
+      visibility,
+      onVisibilityChanged: (value) => setStringSetting(KEYBOARD_INPUT_VISIBILITY_KEY, value),
+      history: this.keyboardInputHistory,
       sendTargets: targets,
       defaultTargetIndex: defaultIndex,
     });
     this.activeKeyboardLayer = layer;
-    this.stack.push(layer);
+    if (layer.shownOnGlasses) this.stack.push(layer);
     this.config.onKeyboardInputChanged?.(layer);
     this.config.requestShellRender();
     return layer;
@@ -1671,6 +1738,15 @@ class Shell {
   isAssistantAvailable(): boolean {
     const current = this.getAssistantConversations().current();
     return this.resolveAssistantConfiguration(current.model, current.reasoning) !== null;
+  }
+
+  /** What to set up when isAssistantAvailable() is false. */
+  assistantSetupHint(): string {
+    if (assistantBackendSetting.get() === "external") return "Configure the agent bridge host and token in Settings.";
+    const model = this.getAssistantConversations().current().model;
+    if (model === "hermes") return "Set the Hermes URL in Settings > Assistant.";
+    if (model === "openai-compatible") return "Set the compatible API URL and model ID in Settings > Assistant.";
+    return global.isIOS ? "Configure an assistant model in Settings." : "Set an API key or download the on-phone model in Settings.";
   }
 
   /** Observe assistant turns (see AssistantActivityEvent). */
@@ -1727,6 +1803,10 @@ class Shell {
       openai: openAiApiKeySetting.get(),
       hermesUrl: assistantHermesUrlSetting.get(),
       hermesKey: assistantHermesKeySetting.get(),
+      openAiCompatibleUrl: assistantOpenAiCompatibleUrlSetting.get(),
+      openAiCompatibleKey: assistantOpenAiCompatibleKeySetting.get(),
+      openAiCompatibleModel: assistantOpenAiCompatibleModelSetting.get(),
+      veniceWebSearch: veniceWebSearchSetting.get(),
     });
     if (llm && reasoning !== "default" && llm.effort) llm.effort = reasoning;
     return llm ? { kind: "direct", llm } : null;
@@ -1754,11 +1834,7 @@ class Shell {
     this.yieldIndependentOverlay();
     const session = this.ensureAssistantSession();
     if (!session) {
-      this.showAlert(
-        assistantBackendSetting.get() === "external"
-          ? "Configure the agent bridge host and token in Settings."
-          : global.isIOS ? "Set an OpenAI or Anthropic API key in Settings." : "Set an API key or download the on-phone model in Settings.",
-      );
+      this.showAlert(this.assistantSetupHint());
       return;
     }
     if (session.isTurnActive()) {

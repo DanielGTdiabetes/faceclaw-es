@@ -27,6 +27,11 @@ import java.util.concurrent.atomic.AtomicLong
 class FaceclawBleManager(context: Context) {
     companion object {
         private const val TAG = "FaceclawBle"
+
+        /** Not public API, but long stable, and the only way short of sending the user to Settings. */
+        fun removeBond(device: BluetoothDevice): Boolean =
+            device.bondState == BluetoothDevice.BOND_NONE || device.javaClass.getMethod("removeBond").invoke(device) == true
+
         private val WRITE_RETRY_DELAYS_MS = intArrayOf(1, 1, 1, 2, 4, 8, 12, 20, 35, 100, 200)
 
         // Gap after each LE 2M PHY request before checking whether it landed and asking
@@ -41,7 +46,7 @@ class FaceclawBleManager(context: Context) {
         // devices, so every GATT operation in the process is serialized on this one lock,
         // across manager instances too (the session and each stock-firmware flow own one).
         // An operation holds it until its completion callback; waiting for a connection
-        // to come up does not.
+        // to come up, or backing off before a write retry, does not.
         private val bluetoothApiLock = Any()
 
         // Listener callbacks run here, in arrival order, instead of on the binder thread
@@ -121,6 +126,7 @@ class FaceclawBleManager(context: Context) {
 
     private val links = ConcurrentHashMap<String, GattLink>()
     private val negotiatedMtus = ConcurrentHashMap<String, Int>()
+    private val messageLocks = ConcurrentHashMap<String, Any>()
 
     @Volatile
     private var pendingOp: PendingOp? = null
@@ -160,6 +166,36 @@ class FaceclawBleManager(context: Context) {
     }
 
     /**
+     * Remove this phone's half of a pairing the other side no longer has. False when the platform refused.
+     */
+    fun removeBond(address: String?): Boolean {
+        if (address == null || address.trim().isEmpty()) {
+            return false
+        }
+        return try {
+            removeBond(bluetoothAdapter.getRemoteDevice(address))
+        } catch (t: Throwable) {
+            Log.w(TAG, "removeBond failed: $address", t)
+            false
+        }
+    }
+
+    /** Start bonding, without waiting: the OS may ask the user, and [isBonded] tells when it is done. */
+    fun requestBond(address: String?) {
+        if (address == null || address.trim().isEmpty()) {
+            return
+        }
+        try {
+            val device = bluetoothAdapter.getRemoteDevice(address)
+            if (device.bondState == BluetoothDevice.BOND_NONE) {
+                Log.i(TAG, "requestBond " + address + ": " + device.createBond())
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "requestBond failed: " + address, t)
+        }
+    }
+
+    /**
      * Android's bond state for this address (BluetoothDevice.BOND_NONE /
      * BOND_BONDING / BOND_BONDED), or -1 when it cannot be determined.
      * BOND_BONDING covers the whole OS pairing flow, including a pairing
@@ -192,9 +228,24 @@ class FaceclawBleManager(context: Context) {
         return startConnect(requireAddress(address), background) != null
     }
 
-    fun connect(address: String?, timeoutMs: Int): Boolean {
+    fun connect(address: String?, timeoutMs: Int): Boolean = connect(address, timeoutMs, false)
+
+    /**
+     * EXPERIMENTAL (2026-09-11): the ring specifically needs autoConnect=true.
+     * Even's own vendor app connects the ring with Android's autoConnect flag
+     * set (confirmed via its own BLE debug log, "connect() - device: ...,
+     * auto: true"), while every other faceclaw connection (both glasses arms)
+     * uses autoConnect=false. Direct connect (false) is faster to establish
+     * but Android supervises it less patiently; a live test showed the
+     * ring-only direct connection dying almost exactly 5 seconds in,
+     * repeatedly, with nothing else competing for it. autoConnect=true can
+     * take much longer to actually complete (Android manages it as a
+     * background reconnect, not an immediate attempt), so this needs its own
+     * longer timeout. Like [connect], waits on an attempt already pending.
+     */
+    fun connect(address: String?, timeoutMs: Int, autoConnect: Boolean): Boolean {
         val key = requireAddress(address)
-        val link = startConnect(key, false) ?: return false
+        val link = startConnect(key, autoConnect) ?: return false
         if (link.connected) {
             return true
         }
@@ -348,6 +399,31 @@ class FaceclawBleManager(context: Context) {
         return status == BluetoothGatt.GATT_SUCCESS
     }
 
+    /** After discovery: whether the service table has this characteristic. */
+    fun hasCharacteristic(address: String, characteristicUuid: String): Boolean {
+        synchronized(bluetoothApiLock) {
+            val gatt = links[address]?.gatt ?: return false
+            val target = UUID.fromString(characteristicUuid)
+            return gatt.services.any { it.getCharacteristic(target) != null }
+        }
+    }
+
+    /**
+     * Forget the service table Android remembers for a bonded device and read it again. A G1 arm keeps its address across an
+     * install that changes its services, and a cached table would make new firmware look like the old one.
+     */
+    fun refreshServices(address: String, timeoutMs: Int): Boolean {
+        synchronized(bluetoothApiLock) {
+            val gatt = links[address]?.gatt ?: return false
+            try {
+                gatt.javaClass.getMethod("refresh").invoke(gatt)
+            } catch (t: Throwable) {
+                Log.w(TAG, "refresh failed: $address", t)
+            }
+        }
+        return discoverServices(address, timeoutMs)
+    }
+
     fun enableNotifications(address: String, characteristicUuid: String, enable: Boolean, timeoutMs: Int): Boolean {
         synchronized(bluetoothApiLock) {
             val gatt = requireGatt(address)
@@ -403,6 +479,14 @@ class FaceclawBleManager(context: Context) {
         }
     }
 
+    /**
+     * Writes [frames] in order. The global API lock is held for each frame's
+     * write-and-callback (one GATT operation in flight process-wide), but not
+     * across the whole message or during retry backoff, so a slow or failing
+     * link (the direct ring) can't hold the glasses off the air for a whole
+     * retry cycle. The per-address lock keeps concurrent messages to the same
+     * device from interleaving their frames.
+     */
     fun writeFrames(
         address: String,
         characteristicUuid: String,
@@ -415,9 +499,13 @@ class FaceclawBleManager(context: Context) {
         }
 
         val startMs = System.currentTimeMillis()
-        synchronized(bluetoothApiLock) {
-            val gatt = requireGatt(address)
-            val characteristic = requireCharacteristic(gatt, characteristicUuid)
+        synchronized(messageLock(address)) {
+            val gatt: BluetoothGatt
+            val characteristic: BluetoothGattCharacteristic
+            synchronized(bluetoothApiLock) {
+                gatt = requireGatt(address)
+                characteristic = requireCharacteristic(gatt, characteristicUuid)
+            }
 
             for (i in frames.indices) {
                 val frame = frames[i]
@@ -443,45 +531,49 @@ class FaceclawBleManager(context: Context) {
     ): Boolean {
         var retryCount = 0
         while (true) {
-            val op = PendingOp(address, OpKind.WRITE)
-            pendingOp = op
-            try {
-                if (!isConnected(address)) {
-                    Log.w(TAG, "writeCharacteristic abandoned: link lost: address=$address")
-                    return false
-                }
-                val result = gatt.writeCharacteristic(characteristic, data!!, writeType)
-                if (result != android.bluetooth.BluetoothStatusCodes.SUCCESS) {
-                    if (!isConnected(address)) {
+            val retryReason: String
+            synchronized(bluetoothApiLock) {
+                val op = PendingOp(address, OpKind.WRITE)
+                pendingOp = op
+                try {
+                    // The lock is released between frames and retries, so the client may
+                    // have dropped (or been replaced by a reconnect) since the write started.
+                    if (!isCurrentClient(address, gatt)) {
                         Log.w(TAG, "writeCharacteristic abandoned: link lost: address=$address")
                         return false
                     }
-                    val reason = if (result == android.bluetooth.BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY)
-                        "busy"
-                    else
-                        "start result=$result"
-                    if (!sleepBeforeWriteRetry(address, reason, retryCount++)) {
-                        return false
+                    val result = gatt.writeCharacteristic(characteristic, data!!, writeType)
+                    if (result != android.bluetooth.BluetoothStatusCodes.SUCCESS) {
+                        if (!isCurrentClient(address, gatt)) {
+                            Log.w(TAG, "writeCharacteristic abandoned: link lost: address=$address")
+                            return false
+                        }
+                        retryReason = if (result == android.bluetooth.BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY)
+                            "busy"
+                        else
+                            "start result=$result"
+                    } else {
+                        if (!awaitLatch(op.latch, timeoutMs)) {
+                            Log.w(TAG, "writeCharacteristic timed out after ${timeoutMs}ms waiting for completion: address=$address")
+                            return false
+                        }
+                        val status = op.status
+                        if (status == BluetoothGatt.GATT_SUCCESS) {
+                            return true
+                        }
+                        if (status == STATUS_LINK_LOST) {
+                            Log.w(TAG, "writeCharacteristic abandoned: link lost: address=$address")
+                            return false
+                        }
+                        retryReason = "callback status=$status"
                     }
-                    continue
+                } finally {
+                    pendingOp = null
                 }
-                if (!awaitLatch(op.latch, timeoutMs)) {
-                    Log.w(TAG, "writeCharacteristic timed out after ${timeoutMs}ms waiting for completion: address=$address")
-                    return false
-                }
-                val status = op.status
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    return true
-                }
-                if (status == STATUS_LINK_LOST) {
-                    Log.w(TAG, "writeCharacteristic abandoned: link lost: address=$address")
-                    return false
-                }
-                if (!sleepBeforeWriteRetry(address, "callback status=$status", retryCount++)) {
-                    return false
-                }
-            } finally {
-                pendingOp = null
+            }
+            // Back off outside the lock so other devices' operations proceed.
+            if (!sleepBeforeWriteRetry(address, retryReason, retryCount++)) {
+                return false
             }
         }
     }
@@ -553,6 +645,17 @@ class FaceclawBleManager(context: Context) {
             op.status = status
             op.latch.countDown()
         }
+    }
+
+    /** Whether [gatt] is still the connected client for [address]. */
+    private fun isCurrentClient(address: String, gatt: BluetoothGatt): Boolean {
+        val link = links[address]
+        return link != null && link.connected && link.gatt === gatt
+    }
+
+    /** Serializes whole multi-frame messages per device; taken before [bluetoothApiLock], never after. */
+    private fun messageLock(address: String): Any {
+        return messageLocks.getOrPut(address) { Any() }
     }
 
     private fun requireAddress(address: String?): String {

@@ -11,10 +11,12 @@
         </GridLayout>
         <ActionItem text="{{ buttonLabel }}" tap="{{ onTap }}" isEnabled="{{ connectItemEnabled }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
         <ActionItem text="Emparejar gafas" tap="{{ onPairGlassesTap }}" isEnabled="{{ canRun }}" android.position="popup" />
+        <ActionItem text="Cambiar entre G1 y G2" tap="{{ onSwitchEvenPairTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
         <ActionItem text="Permisos" tap="{{ onPermissionsTap }}" android.position="popup" />
         <ActionItem text="Conversaciones" tap="{{ onConversationsTap }}" android.position="popup" />
         <ActionItem text="Capturar pantalla" tap="{{ onTakeScreenshotTap }}" android.position="popup" />
         <ActionItem text="Grabar pantalla" tap="{{ onRecordScreenTap }}" android.position="popup" />
+        <ActionItem text="Comprobar firmware" tap="{{ onCheckFirmwareTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
         <ActionItem text="Desinstalar firmware modificado" tap="{{ onUninstallFirmwareTap }}" isEnabled="{{ canRun }}" visibility="{{ glassesMenuItemsVisibility }}" android.position="popup" />
     </ActionBar>
 
@@ -188,7 +190,8 @@
              the phone's end of the keyboard dialog on the glasses
              (ui/shell/keyboard-input.ts). Same placement and collapsing rules
              as the setting editor above. Enter inserts a newline; the send
-             buttons pick a destination directly. -->
-        <rc:keyboard-input-panel />
+             buttons pick a destination directly. Bound to its own model
+             (KeyboardInputViewModel, shared with iOS). -->
+        <rc:keyboard-input-panel bindingContext="{{ keyboardInputModel }}" />
     </GridLayout>
 </Page>

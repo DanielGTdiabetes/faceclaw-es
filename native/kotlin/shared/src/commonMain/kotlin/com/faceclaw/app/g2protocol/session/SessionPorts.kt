@@ -17,6 +17,12 @@ interface SessionLink {
     fun connect(address: String, timeoutMs: Int): Boolean
 
     /**
+     * [connect] with the platform's background-reconnect mode (Android's autoConnect) when
+     * [autoConnect] is set. The R1 ring needs it; platforms without the distinction ignore it.
+     */
+    fun connect(address: String, timeoutMs: Int, autoConnect: Boolean): Boolean = connect(address, timeoutMs)
+
+    /**
      * Start connecting without waiting, so the attempt can land while the caller does other
      * work. [background] asks for a low-duty-cycle attempt that stays pending until the
      * device shows up. Returns true while a connection exists or is pending, false when the
@@ -62,6 +68,18 @@ interface SessionLink {
     /** Whether the OS still holds a pairing bond for the address (iOS: always true). */
     fun isBonded(address: String): Boolean
 
+    /** Ask the OS to bond with a connected device, without waiting. A no-op where it pairs on demand only (CoreBluetooth). */
+    fun requestBond(address: String) {}
+
+    /** Remove this phone's half of a pairing; false where the platform can't or refused. */
+    fun removeBond(address: String): Boolean = false
+
+    /** After discovery: whether the service table has this characteristic. Enabling notifications on one it lacks may throw. */
+    fun hasCharacteristic(address: String, characteristicUuid: String): Boolean = true
+
+    /** Read the service table again, past whatever the OS cached for this address. */
+    fun refreshServices(address: String, timeoutMs: Int): Boolean = discoverServices(address, timeoutMs)
+
     /** Bandwidth-benchmark link tuning; 0: current link, 1: HIGH priority, 2: 2M PHY, 3: both. */
     fun prepareBenchmarkLink(address: String, mode: Int)
 
@@ -106,6 +124,31 @@ interface SessionHost {
     fun joinWorker(timeoutMs: Long)
 
     fun log(level: SessionLogLevel, tag: String, message: String, error: Throwable?)
+
+    /**
+     * Start the direct-ring worker thread running [body] once. Ring connect/write/health waits
+     * run there so they never park the glasses sender. The core joins it through its own latch.
+     */
+    fun startRingWorker(body: () -> Unit) = startThread("FaceclawRing", false, body)
+
+    /** Interrupt the ring worker's blocking waits where the platform supports it. */
+    fun interruptRingWorker() {}
+
+    /**
+     * Whether this platform runs the R1 health-data protocol (handshake, pulls, page ACKs).
+     * Requires [appendRingFrameJournal] and a consumer for the decoded records; without
+     * one, ring notifications only feed the gesture decoder.
+     */
+    fun supportsRingHealth(): Boolean = false
+
+    /**
+     * Durably append one line to the private ring-frame journal (health/ring-frames.jsonl in
+     * the app's files directory), syncing before returning. Throws when the line could not be
+     * stored; the caller then withholds the page ACK so the ring keeps the data.
+     */
+    fun appendRingFrameJournal(line: String) {
+        throw UnsupportedOperationException("no ring frame journal on this platform")
+    }
 }
 
 /**

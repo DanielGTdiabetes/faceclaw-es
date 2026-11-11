@@ -43,6 +43,7 @@ function harness(android = true) {
   const files = load('app/native/image-files.ts', common, globals);
   const api = load('app/native/notification-icons.ts', { ...common,
     './frame-timings': { spanCurrent: (_name, fn) => fn(), logCurrent() {} },
+    './notification-types': require('../.test-build/app/native/notification-types.js'),
     './notification-sources': { rememberNotificationSources() {} }, './image-files': files,
   }, globals);
   api.onAndroidNotificationsChanged(() => {});
@@ -57,21 +58,21 @@ test('pictures load only when requested; stale paint and unsupported notificatio
   const h = harness();
   assert.equal(h.api.readNotificationPicture(notification(), 100, 50, true).stale, true);
   assert.equal(h.calls(), 0);
-  assert.equal(h.api.readNotificationPicture({ ...notification(), hasPicture: false }, 100, 50, false).picture, null);
+  assert.equal(h.api.readNotificationPicture({ ...notification(), hasPicture: false }, 100, 50, false).image, null);
   for (const [width, height] of [[0, 10], [10, -1], [NaN, 10], [10, Infinity]]) {
-    assert.equal(h.api.readNotificationPicture(notification(), width, height, false).picture, null);
+    assert.equal(h.api.readNotificationPicture(notification(), width, height, false).image, null);
   }
   assert.equal(h.calls(), 0);
   const ios = harness(false);
-  assert.equal(ios.api.readNotificationPicture(notification(), 100, 50, false).picture, null);
+  assert.equal(ios.api.readNotificationPicture(notification(), 100, 50, false).image, null);
   assert.equal(ios.calls(), 0);
 });
 
 test('cache avoids decoding every paint and refreshes when the same chart is updated', () => {
   const h = harness();
-  const first = h.api.readNotificationPicture(notification(), 100, 50, false).picture;
+  const first = h.api.readNotificationPicture(notification(), 100, 50, false).image;
   assert.equal(first.width, 40);
-  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).picture, first);
+  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).image, first);
   assert.equal(h.calls(), 1);
   h.api.readNotificationPicture(notification('synthetic-chart', 101), 100, 50, false);
   assert.equal(h.calls(), 2);
@@ -83,19 +84,19 @@ test('cache avoids decoding every paint and refreshes when the same chart is upd
 test('an earlier picture is not reused into a smaller viewport', () => {
   const h = harness();
   h.api.readNotificationPicture(notification(), 100, 50, false);
-  assert.equal(h.api.readNotificationPicture(notification(), 10, 10, true).picture, null);
-  const next = h.api.readNotificationPicture(notification(), 10, 10, false).picture;
+  assert.equal(h.api.readNotificationPicture(notification(), 10, 10, true).image, null);
+  const next = h.api.readNotificationPicture(notification(), 10, 10, false).image;
   assert.equal(next.width, 10); assert.equal(next.height, 10);
 });
 
 test('lost native access and missing pictures fall back without crashing or a retry per frame', () => {
   for (const mode of ['fail', 'empty']) {
     const h = harness(); h[mode](true);
-    assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).picture, null);
-    assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).picture, null);
+    assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).image, null);
+    assert.equal(h.api.readNotificationPicture(notification(), 100, 50, false).image, null);
     assert.equal(h.calls(), 1);
     h[mode](false); h.stateChanged();
-    assert.ok(h.api.readNotificationPicture(notification(), 100, 50, false).picture);
+    assert.ok(h.api.readNotificationPicture(notification(), 100, 50, false).image);
     assert.equal(h.calls(), 2);
   }
 });
@@ -104,10 +105,10 @@ test('removal and listener-state changes invalidate pictures, including null res
   const h = harness();
   h.api.readNotificationPicture(notification(), 100, 50, false);
   h.removed('synthetic-chart');
-  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, true).picture, null);
+  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, true).image, null);
   h.api.readNotificationPicture(notification(), 100, 50, false);
   h.stateChanged();
-  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, true).picture, null);
+  assert.equal(h.api.readNotificationPicture(notification(), 100, 50, true).image, null);
 });
 
 test('only eight recently viewed pictures are retained', () => {
@@ -130,7 +131,8 @@ function detailHarness({ picture = true, lineHeight = 12 } = {}) {
     './metrics': { lineStep: () => lineHeight + 4, centeredTextY: (_f, y) => y },
     '../native/notification-icons': { ALL_NOTIFICATIONS: 999,
       readActiveNotifications: () => [chart], readNotificationIconByKey: () => ({ icon: null, stale: false }),
-      readNotificationPicture: (_n, w, h) => { calls++; return { picture: picture ? new Image(w, h) : null, stale: false }; } },
+      readNotificationPicture: (_n, w, h) => { calls++; return { image: picture ? new Image(w, h) : null, stale: false }; } },
+    '../native/notification-types': require('../.test-build/app/native/notification-types.js'),
     '../native/notification-sources': {}, '../native/notification-access': {},
     '../util/render-freshness': { renderPassAllowsStaleData: () => false, noteStaleDataUsed() {} },
     './menu-core': { Menu: class { setItems() {} paint() {} } },

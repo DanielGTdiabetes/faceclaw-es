@@ -648,7 +648,7 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
   const klass = file.statements.find(n => ts.isClassDeclaration(n) && n.name?.text === 'DashboardController');
   const methods = klass.members.filter(m => ['setManualConversationEnabled', 'setConversationCaptureEnabled'].includes(m.name?.getText(file)));
   const calls = [], begins = [];
-  const context = { exports: {}, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional,
+  const context = { exports: {}, manualConversationResumeSetting: { set() {} }, assistantBridge: { conversation: { isSupported: () => true, supportsOptionalIdentity: () => optional,
     supportsDailyContext: () => false, setDailyContextEnabled: value => !value } },
     conversationDailyContextSelected: () => false,
     conversationFiltersEnabled: () => gate,
@@ -663,7 +663,7 @@ function manualOwner({ optional, profile, local = false, hermes = true, ready = 
   const owner = new context.exports.Owner();
   let enabled = false;
   Object.assign(owner, { hermesSelected: false, setConversationHermesSelected(value) { this.hermesSelected = value; return true; },
-    detectorEnvironment: () => ({ available: true }), ensureWearStateTracking() {},
+    detectorEnvironment: () => ({ available: true }), ensureWearStateTracking() {}, stopManualConversationResume() {},
     conversationHermes: { begin: (budget, modality) => { begins.push([budget, modality]); return true; }, stop() {}, snapshot: () => ({ enabled: begins.length > 0 }) },
     conversationDetector: { hasOwnProfile: () => profile,
       snapshot: () => ({ enabled, transcription: {}, participation: {} }),

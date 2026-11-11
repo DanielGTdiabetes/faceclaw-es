@@ -2,6 +2,9 @@ package com.faceclaw.app
 
 import android.annotation.SuppressLint
 import android.app.KeyguardManager
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -34,6 +37,40 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
         fun getActive(): FaceclawBleCommunicator? {
             return activeInstance
         }
+
+        /**
+         * The phone's own Bluetooth view of the ring, independent of whether a
+         * session is running or configured to talk to the ring: bond state,
+         * whether any app on the phone holds a GATT link, and the (hidden-API,
+         * best-effort) ACL connection. JSON; fields are null when unknown.
+         */
+        @JvmStatic
+        fun getSystemBluetoothStateJson(context: Context, address: String?): String {
+            val result = org.json.JSONObject()
+            val trimmed = address?.trim()?.uppercase() ?: ""
+            result.put("address", trimmed)
+            try {
+                val manager = context.applicationContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager?
+                val adapter = manager?.adapter
+                if (manager == null || adapter == null || trimmed.isEmpty() || !android.bluetooth.BluetoothAdapter.checkBluetoothAddress(trimmed)) {
+                    return result.toString()
+                }
+                val device = adapter.getRemoteDevice(trimmed)
+                result.put("bonded", device.bondState == BluetoothDevice.BOND_BONDED)
+                result.put("gattConnected",
+                    manager.getConnectionState(device, BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED)
+                try {
+                    val isConnected = BluetoothDevice::class.java.getMethod("isConnected")
+                    result.put("aclConnected", isConnected.invoke(device) as Boolean)
+                } catch (_: Throwable) {
+                    // Hidden API unavailable; leave unknown.
+                }
+                result.put("name", device.name ?: org.json.JSONObject.NULL)
+            } catch (t: Throwable) {
+                result.put("error", t.message ?: t.toString())
+            }
+            return result.toString()
+        }
     }
 
     private val appContext: Context = context.applicationContext
@@ -46,6 +83,7 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainDispatcher = SessionDispatcher { action -> mainHandler.post { action() } }
     @Volatile private var workerThread: Thread? = null
+    @Volatile private var ringWorkerThread: Thread? = null
     private var g2ScreenWakeLock: PowerManager.WakeLock? = null
     private var phoneLockReceiverRegistered = false
 
@@ -81,6 +119,29 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
                 Thread.currentThread().interrupt()
             }
             workerThread = null
+        }
+
+        override fun startRingWorker(body: () -> Unit) {
+            val thread = Thread(body, "FaceclawRing")
+            ringWorkerThread = thread
+            thread.start()
+        }
+
+        override fun interruptRingWorker() {
+            ringWorkerThread?.interrupt()
+        }
+
+        override fun supportsRingHealth(): Boolean = true
+
+        override fun appendRingFrameJournal(line: String) {
+            val folder = java.io.File(appContext.filesDir, "health")
+            if (!folder.isDirectory && !folder.mkdirs()) {
+                throw java.io.IOException("cannot create health folder")
+            }
+            java.io.FileOutputStream(java.io.File(folder, "ring-frames.jsonl"), true).use { out ->
+                out.write(line.toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
         }
 
         override fun log(level: SessionLogLevel, tag: String, message: String, error: Throwable?) {
@@ -128,6 +189,28 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun setRequiredFirmwareRevision(revision: Int) = core.setRequiredFirmwareRevision(revision)
 
+    /**
+     * Drive a RayNeo iO (constructed with its address as both arms and no ring). The phone's
+     * protocol identity is derived from ANDROID_ID so it survives reinstalls: the glasses bind
+     * to the first identity that authenticates and refuse others until put in pairing mode.
+     */
+    fun useRayNeoIo() {
+        val androidId = try {
+            android.provider.Settings.Secure.getString(appContext.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+        } catch (_: Exception) {
+            null
+        }
+        val seed = "faceclaw-rayneo-phone-id:" + (androidId ?: android.os.Build.FINGERPRINT)
+        val phoneId = java.security.MessageDigest.getInstance("SHA-256").digest(seed.toByteArray(Charsets.UTF_8)).copyOf(6)
+        val model = android.os.Build.MODEL ?: "Android"
+        core.useRayNeoIo(phoneId, model, android.os.Build.MANUFACTURER ?: "Android", model)
+    }
+
+    fun isRayNeoIo(): Boolean = core.isRayNeoIo()
+
+    /** Drive an Even G1 on g1v0 (two arms, as a G2 pair's addresses). */
+    fun useG1() = core.useG1()
+
     fun start() {
         if (core.start()) {
             activeInstance = this
@@ -157,10 +240,25 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun isSessionReady(): Boolean = core.isSessionReady()
 
+    /** See [GlassesSessionCore.requestRingHealthNow]. */
+    fun requestRingHealthNow() = core.requestRingHealthNow()
+
+    /** See [GlassesSessionCore.takeRingHealthBatch]. */
+    fun takeRingHealthBatch(): RingHealthBatch = core.takeRingHealthBatch()
+
+    /** See [GlassesSessionCore.clearRingHealthRecordsBelow]. */
+    fun clearRingHealthRecordsBelow(watermark: Long): Int = core.clearRingHealthRecordsBelow(watermark)
+
+    /** See [GlassesSessionCore.getRingHealthRecords]. */
+    fun getRingHealthRecords(): List<RingProtocol.HealthRecord> = core.getRingHealthRecords()
+
     /** See [GlassesSessionCore.isAudioCaptureActive]. */
     fun isAudioCaptureActive(): Boolean = core.isAudioCaptureActive()
 
     fun setFaceclawWakeLeaseEnabled(enabled: Boolean): Boolean = core.setFaceclawWakeLeaseEnabled(enabled)
+
+    /** See [GlassesSessionCore.setVoiceWakeEnabled]. */
+    fun setVoiceWakeEnabled(enabled: Boolean) = core.setVoiceWakeEnabled(enabled)
 
     fun awaitEvenHubSessionReady(timeoutMs: Int): Boolean = core.awaitEvenHubSessionReady(timeoutMs)
 
@@ -188,6 +286,20 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     /** Status/results of the current or most recent benchmark run, as JSON. */
     fun getBandwidthBenchmarkStatus(): String = core.getBandwidthBenchmarkStatus()
+
+    /** See [GlassesSessionCore.getRingStatus]. */
+    fun getRingStatus(): String = core.getRingStatus()
+
+    /** See [GlassesSessionCore.setGlassesRingLink]. */
+    fun setGlassesRingLink(action: String, fallbackAddress: String?, fallbackName: String?): Boolean =
+        core.setGlassesRingLink(action, fallbackAddress, fallbackName)
+
+    /** See [GlassesSessionCore.sendRingConfigCommand]. */
+    fun sendRingConfigCommand(action: String, fallbackAddress: String?, fallbackName: String?): String =
+        core.sendRingConfigCommand(action, fallbackAddress, fallbackName)
+
+    /** See [GlassesSessionCore.setDirectRingRole]. */
+    fun setDirectRingRole(role: String?) = core.setDirectRingRole(role)
 
     fun addImuListener(listener: FaceclawImuListener?) = core.addImuListener(listener)
 

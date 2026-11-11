@@ -14,13 +14,17 @@ import { normalizeWhisperServerUrl, WHISPER_SERVER_FINAL_TIMEOUT_MS, WhisperServ
  */
 export type VoiceProviderSelection = {
   provider: VoiceProviderKind;
+  /**
+   * Spoken language the provider should expect (ISO 639-1); empty lets it
+   * detect the language. Cloud providers only.
+   */
+  language?: string;
   elevenLabsApiKey: string;
   openAiApiKey: string;
   sonioxApiKey: string;
   /** Self-hosted Whisper ("whisper-server"); the key is optional there. */
   whisperServerUrl?: string;
   whisperServerModel?: string;
-  whisperServerLanguage?: string;
   whisperServerApiKey?: string;
   /** Self-hosted EVO-X2 endpoint and its Bearer key (Android only). */
   evenAsrUrl?: string;
@@ -67,7 +71,7 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
     create: (options, selection) => new WhisperServerSttClient(options, {
       baseUrl: selection.whisperServerUrl ?? "",
       model: selection.whisperServerModel ?? "",
-      language: selection.whisperServerLanguage ?? "",
+      language: selection.language ?? "",
     }),
     finalTimeoutMs: WHISPER_SERVER_FINAL_TIMEOUT_MS,
   },
@@ -82,6 +86,14 @@ const CLOUD_PROVIDERS: Partial<Record<VoiceProviderKind, CloudProvider>> = {
 
 function isConfigured(provider: CloudProvider, selection: VoiceProviderSelection): boolean {
   return provider.configured ? provider.configured(selection) : Boolean(provider.apiKey(selection).trim());
+}
+
+/**
+ * What a capture transcribes with: the provider and the language it is told
+ * to expect. A running capture is shared only by holders asking for the same.
+ */
+export function transcriptionKey(selection: Pick<VoiceProviderSelection, "provider" | "language">): string {
+  return `${selection.provider}:${(selection.language ?? "").trim().toLowerCase()}`;
 }
 
 /** Whether createCloudSttClient would return a cloud client for this selection. */
@@ -106,6 +118,7 @@ export function createCloudSttClient(
 ): CloudSttClient | null {
   const provider = CLOUD_PROVIDERS[selection.provider];
   if (!provider) return null;
+  const language = (selection.language ?? "").trim();
   const apiKey = provider.apiKey(selection).trim();
   const configured = isConfigured(provider, selection);
   const unusable = provider.unusable?.(selection);
@@ -116,7 +129,7 @@ export function createCloudSttClient(
     return new FallbackSttClient((clientOptions) => ({
       start: () => clientOptions.onDisconnected?.(reason),
       acceptPcm() {}, finish() {}, stop() {},
-    }), { ...options, apiKey }, local);
+    }), { ...options, apiKey, language }, local);
   }
   if (!configured) {
     options.onStatus(provider.missing ?? `No ${provider.name} key set; using on-device voice.`);
@@ -128,7 +141,7 @@ export function createCloudSttClient(
   }
   const create = (clientOptions: CloudSttOptions) => provider.create(clientOptions, selection);
   if (provider.localFallback && local && !continuous()) {
-    return new FallbackSttClient(create, { ...options, apiKey }, local);
+    return new FallbackSttClient(create, { ...options, apiKey, language }, local);
   }
-  return new ReconnectingSttClient(create, { ...options, apiKey }, continuous, provider.finalTimeoutMs);
+  return new ReconnectingSttClient(create, { ...options, apiKey, language }, continuous, provider.finalTimeoutMs);
 }

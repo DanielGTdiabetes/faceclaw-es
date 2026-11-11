@@ -1,22 +1,14 @@
 import { Utils } from "@nativescript/core";
 import { ignoredMediaPackages, isMediaAppEnabled, MEDIA_APPS_KEY, rememberMediaApps } from "./media-apps";
 import { onSettingsStoreChanged } from "./settings-store";
+import { parseMediaBrowseItems, type MediaBrowseItem, type MediaBrowserApp, type MediaBrowserBridge } from "./media-types";
+import { spotifyService } from "./spotify";
+import type { SpotifyLibrary } from "./spotify-library";
+import { SPOTIFY_ANDROID_PACKAGE } from "./spotify-player";
 
 declare const com: any;
 
-export type MediaBrowserApp = {
-  packageName: string;
-  serviceClass: string;
-  appName: string;
-};
-
-export type MediaBrowseItem = {
-  mediaId: string;
-  title: string;
-  subtitle: string;
-  browsable: boolean;
-  playable: boolean;
-};
+export type { MediaBrowseItem, MediaBrowserApp } from "./media-types";
 
 type PendingRequest<T> = {
   resolve: (value: T) => void;
@@ -29,7 +21,7 @@ type PendingRequest<T> = {
  * start playback, including starting a player that is not currently running.
  * Holds at most one connection at a time.
  */
-export class FaceclawMediaBrowserBridge {
+export class FaceclawMediaBrowserBridge implements MediaBrowserBridge {
   private browser: any = null;
   private listenerProxy: any = null;
   private nextRequestId = 1;
@@ -155,22 +147,7 @@ export class FaceclawMediaBrowserBridge {
           return;
         }
         try {
-          const raw = JSON.parse(json) as Array<{
-            mediaId?: string;
-            title?: string;
-            subtitle?: string;
-            browsable?: boolean;
-            playable?: boolean;
-          }>;
-          pending.resolve(
-            raw.map((item) => ({
-              mediaId: String(item.mediaId ?? ""),
-              title: String(item.title ?? ""),
-              subtitle: String(item.subtitle ?? ""),
-              browsable: Boolean(item.browsable),
-              playable: Boolean(item.playable),
-            })),
-          );
+          pending.resolve(parseMediaBrowseItems(json));
         } catch (parseError) {
           pending.reject(new Error(`Browse result parse failed: ${parseError}`));
         }
@@ -183,4 +160,54 @@ export class FaceclawMediaBrowserBridge {
   }
 }
 
-export const mediaBrowserBridge = new FaceclawMediaBrowserBridge();
+/**
+ * The Android libraries: apps' media browser services, with Spotify's
+ * library from its Web API instead. Spotify's own browser service admits
+ * only allowlisted callers (Android Auto, Wear, Assistant), so connecting to
+ * it always fails; signed in, its row opens the Web API library, and signed
+ * out, opening it says how to sign in. Signed in with Spotify not installed,
+ * the library is still offered (it plays on the user's other devices).
+ */
+export class AndroidMediaBrowserBridge implements MediaBrowserBridge {
+  private current: MediaBrowserBridge | null = null;
+
+  constructor(
+    private readonly services: MediaBrowserBridge,
+    private readonly spotify: () => SpotifyLibrary | null,
+    private readonly isEnabled: (packageName: string) => boolean = isMediaAppEnabled,
+  ) {}
+
+  listBrowsableApps(refresh = false): MediaBrowserApp[] {
+    const apps = this.services.listBrowsableApps(refresh);
+    const library = this.spotify();
+    if (!library || apps.some((app) => app.packageName === SPOTIFY_ANDROID_PACKAGE) || !this.isEnabled(SPOTIFY_ANDROID_PACKAGE)) {
+      return apps;
+    }
+    return [...apps, ...library.listBrowsableApps()];
+  }
+
+  connect(app: MediaBrowserApp): Promise<string> {
+    this.disconnect();
+    const library = app.packageName === SPOTIFY_ANDROID_PACKAGE ? this.spotify() : null;
+    this.current = library ?? this.services;
+    return this.current.connect(library ? library.app : app);
+  }
+
+  browse(parentId: string): Promise<MediaBrowseItem[]> {
+    return this.current ? this.current.browse(parentId) : Promise.reject(new Error("Not connected"));
+  }
+
+  playFromMediaId(mediaId: string): void {
+    this.current?.playFromMediaId(mediaId);
+  }
+
+  disconnect(): void {
+    this.current?.disconnect();
+    this.current = null;
+  }
+}
+
+export const mediaBrowserBridge: MediaBrowserBridge = new AndroidMediaBrowserBridge(
+  new FaceclawMediaBrowserBridge(),
+  () => spotifyService()?.library ?? null,
+);

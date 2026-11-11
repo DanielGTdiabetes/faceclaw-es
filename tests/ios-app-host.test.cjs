@@ -71,6 +71,30 @@ test('iOS installed apps launch, recover missing packages, and close before unin
   assert.deepEqual(calls, [['launch', 'installed', 'test.app'], ['reinstall', 'test.app'], ['close', 'test.app'], ['uninstall', 'test.app']]);
 });
 
+test('iOS launch failures on a zeroed package fall back to the store page; other failures still report', async () => {
+  const calls = [], failures = [], app = { packageId: 'test.app', name: 'Test' };
+  let zeroed = true;
+  const modules = {
+    "../ui/input-monitor": load("app/ui/input-monitor.ts", {}),
+    '../apps/all-apps': { ALL_APPS: [{ appId: 'evenhub' }] },
+    '../apps/evenhub/installed-apps': { getInstalledEvenHubAppById: () => app,
+      discardZeroedEvenHubPackage: id => { calls.push(['discard', id]); return zeroed; } },
+    '../apps/evenhub/updates': { isInstalledPackagePresent: () => true },
+    '../apps/evenhub': { openEvenHubStoreForPackage: (_ctx, value) => calls.push(['reinstall', value.packageId]) },
+    '../apps/evenhub/manager': { launchInstalledPackage: async () => { calls.push(['launch']); throw new Error('Could not read the EHPK manifest.'); } },
+  };
+  const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: id => modules[id] ?? {} });
+  const host = Object.create(IosPreviewController.prototype);
+  host.buildAppContext = app => app; host.fail = error => failures.push(error.message); host.requestShellRender = () => {};
+  await host.launchApp('installed');
+  assert.deepEqual(calls, [['launch'], ['discard', 'test.app'], ['reinstall', 'test.app']]);
+  assert.deepEqual(failures, []);
+  calls.length = 0; zeroed = false;
+  await host.launchApp('installed');
+  assert.deepEqual(calls, [['launch'], ['discard', 'test.app']]);
+  assert.deepEqual(failures, ['Could not read the EHPK manifest.']);
+});
+
 test('iOS settings prompts honor password input and report cancellation', async () => {
   const prompts = [], writes = [];
   const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', { require: id => id === '@nativescript/core' ? {
@@ -88,7 +112,7 @@ test('iOS host forwards hands-free capture mode to the voice bridge', async () =
     ? { iosVoiceInput: { startGlassesCapture: (_session, _voice, _log, endpointing) => captures.push(endpointing) } }
     : id === '../ui/dashboard-settings' ? voiceSettings : {} });
   const host = Object.create(IosPreviewController.prototype);
-  host.communicator = {}; host.state = { phase: 'connected' };
+  host.communicator = {}; host.state = { phase: 'connected' }; host.continuousClients = new Map();
   await host.startVoiceCapture(true);
   await host.startVoiceCapture();
   assert.deepEqual(captures, [true, false]);
@@ -99,7 +123,7 @@ for (const isIOS of [true, false]) {
     const store = new Map();
     let picker;
     const models = load('app/assistant/models.ts', { global: { isIOS }, require: () => ({
-      LOCAL_MODEL: { label: 'Qwen', id: 'qwen' }, isLocalModelReady: () => false,
+      LOCAL_MODEL: { label: 'Qwen', id: 'qwen' }, isLocalModelReady: () => false, isLocalModelSupported: () => !isIOS,
     }) });
     const settings = load('app/ui/dashboard-settings.ts', { global: { isIOS }, require: id => {
       if (id.includes('settings-store')) return {
@@ -128,8 +152,8 @@ for (const isIOS of [true, false]) {
     const ctx = { stack: { pop() {} }, actions: { requestRender() {} } };
     const row = setting => assistant.items.find(item => item.label === setting.label);
     row(settings.assistantBackendSetting).onSelect(ctx);
-    assert.deepEqual(Array.from(picker, item => item.label), isIOS ? ['API en la nube'] : ['Desde el móvil', 'OpenClaw (agente externo)']);
-    assert.equal(assistant.items.some(item => item.label === 'On-phone model'), !isIOS);
+    assert.deepEqual(Array.from(picker, item => item.label), isIOS ? ['API en la nube'] : ['Desde el móvil', 'Agente externo (puente)']);
+    assert.ok(assistant.items.some(item => item.label === 'On-phone model'));
     assert.equal(!!row(settings.assistantBridgeHostSetting), !isIOS);
     assert.equal(!!row(settings.assistantAllowProactiveSetting), !isIOS);
     row(settings.assistantModelSetting).onSelect(ctx);
@@ -229,10 +253,10 @@ test('background glasses input still composites frames; phone resume preserves t
     constructor() { bridge = this; }
     onStateChange(fn) { this.stateListener = fn; return noop(); }
     onRingEvent(fn) { this.ringListener = fn; return noop(); }
-    onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); } onFrameMetrics() { return noop(); }
+    onBatteryState() { return noop(); } onCaseState() { return noop(); } onFirmwareInfo() { return noop(); } onFrameMetrics() { return noop(); }
     onPreviewAnimationFrame() { return noop(); }
     onWearState() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
-    onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
+    onAncsAuthorization() { return noop(); } setRequiresAncs() {} ancsRelayAvailable() { return true; } rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {}
     async start() { starts++; this.phase = 'connected'; this.stateListener({ phase: 'connected', status: 'Connected.' }); }
     async disconnect() { stops++; this.phase = 'disconnected'; this.stateListener({ phase: 'disconnected', status: 'Disconnected.' }); }
@@ -253,7 +277,7 @@ test('background glasses input still composites frames; phone resume preserves t
     waitForFrameFinished() { return Promise.resolve('composited'); }
     getCompositePreview() { return new Uint8Array([1, 2]); }
   }
-  const settings = { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => true }, onAnySettingChanged: () => () => {}, previewColorSetting: { get: () => 'white' }, ringConnectionModeSetting: { get: () => 'glasses' }, saveTranscribeAudioSetting: { get: () => false } };
+  const settings = { glassesTypeSetting: { get: () => 'g2' }, brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => true }, onAnySettingChanged: () => () => {}, previewColorSetting: { get: () => 'white' }, ringConnectionModeSetting: { get: () => 'glasses' }, saveTranscribeAudioSetting: { get: () => false } };
   const modules = {
     "../ui/input-monitor": load("app/ui/input-monitor.ts", {}),
     '../remote/service': { startRemoteInput() {} },
@@ -265,8 +289,9 @@ test('background glasses input still composites frames; phone resume preserves t
     '../native/notification-icons.ios': { bindIosNotifications() {}, iosNotificationsChanged() {}, onIosNotificationPopup: () => () => {}, readActiveNotifications: () => [] },
     '../native/notification-sources': { shouldShowNotificationOnGlasses: () => true },
     '../native/compass.ios': { bindCompassSession() {}, receiveCompassEvent() {} },
+    '../native/bandwidth-benchmark.ios': { bindBandwidthBenchmarkSession() {} },
     '@nativescript/core': { File: { fromPath: () => ({ writeTextSync() {} }) }, knownFolders: { documents: () => ({ path: '/tmp' }) }, path },
-    '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {}, onSpeechEnd: () => () => {} } },
+    '../native/ios-voice-input': { iosVoiceInput: { setRawSession() {}, handleSessionEnded() {}, stopPhoneCapture() {}, onSpeechEnd: () => () => {} } },
     '../native/faceclaw-communicator.ios': { FaceclawCommunicatorBridge, resolveIosPeripherals: async addresses => addresses },
     '../native/preview-display.ios': { PreviewDisplayTarget },
     './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; start() {} stop() {} stopCommand() { return new Uint8Array(); } receive() { return false; } } },
@@ -276,6 +301,8 @@ test('background glasses input still composites frames; phone resume preserves t
     '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     '../apps/evenhub/manager': { onPhoneShownChanged: () => () => {}, phoneUiButton: () => null },
     '../ui/shell/voice-activity': { voiceActivity: { setActive() {} } },
+    './wear-remote': { WearRemote: class { schedulePublish() {} } },
+    '../native/media-controller': { mediaControllerBridge: { start: async () => {}, stop: async () => {} } },
     './glance-host': { GlanceHost: class { dismiss() {} reset() {} isVisible() { return false; } screenRect() { return null; } } },
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
     './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
@@ -367,12 +394,15 @@ test('iOS bandwidth footer toggles live, polls only in foreground and resets its
     './phone-gestures': { PhoneGestureRecognizer: class { cancel() {} } },
     './ble-bandwidth-meter': require('../.test-build/app/phone-ui/ble-bandwidth-meter.js'),
     '../native/ble-traffic': { sampleBleTraffic: () => totals },
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayLayoutSetting: { displayValue: () => 'Tall' }, showBleBandwidthSetting: { get: () => enabled },
+    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, displayLayoutSetting: { displayValue: () => 'Tall' }, showBleBandwidthSetting: { get: () => enabled }, glassesModelName: () => 'G2',
       onAnySettingChanged: fn => { settingListeners.add(fn); return () => settingListeners.delete(fn); } },
     '../g2/device-addresses': { loadDeviceAddresses: () => ({}) },
     '../g2/ios-peripheral-identity': { deviceAddressError: () => 'no test devices' },
     './onboarding-state': { isPreviewOnlyMode: () => false },
     '../g2/reconnect-policy': { isAutoReconnectSuppressed: () => false },
+    '../g2/glasses-display-state': require('../.test-build/app/g2/glasses-display-state.js'),
+    '../ui/shell/shell': { shell: { onBatteryLevelsChanged: () => () => {}, getBatteryLevels: () => ({
+      headset: null, headsetCharging: null, case: null, caseCharging: null, ring: null, ringCharging: null }) } },
   };
   modules['./keyboard-input-view-model'] = load('app/phone-ui/keyboard-input-view-model.ts', { require: id => modules[id] });
   modules['./remote-controls-view-model'] = load('app/phone-ui/remote-controls-view-model.ts', { require: id => modules[id] });
@@ -506,6 +536,7 @@ test('iOS preview voice uses the phone microphone, while connected capture stays
   });
   const host = Object.create(IosPreviewController.prototype);
   host.active = true; host.glassesLocked = false; host.communicator = null; host.state = { phase: 'disconnected' };
+  host.continuousClients = new Map();
   assert.equal(await host.prepareVoiceCapture(), true);
   await host.startVoiceCapture(true);
   assert.deepEqual(calls, [['prepare', true, true, 'onboard'], ['prepare', true, true, 'onboard'], ['phone', 'onboard', true]]);
@@ -518,25 +549,29 @@ test('iOS preview voice uses the phone microphone, while connected capture stays
 });
 
 test('iOS continuous capture is shared by windows and restarts after a disconnect, a lock or backgrounding', async () => {
-  const calls = [], claims = [];
+  const calls = [], claims = [], providers = [];
   // Models the bridge's continuous state: listening on a source, or draining after a stop.
-  const bridge = { source: null, draining: false, recording: '',
+  const bridge = { source: null, draining: false, recording: '', rawSession: undefined,
     supportsContinuous: voice => voice.provider !== 'onboard',
     get continuousSource() { return this.source; },
     get continuousActive() { return !!this.source || this.draining; },
     prepare: async () => true,
-    startGlassesCapture: async (_session, _voice, _log, _endpointing, continuous) => { calls.push(['glasses', continuous]); bridge.source = 'glasses'; },
+    startGlassesCapture: async (_session, voice, _log, _endpointing, continuous) => {
+      calls.push(['glasses', continuous]); providers.push(`${voice.provider}:${voice.language}`); bridge.source = 'glasses'; },
     startPhoneCapture: async (_voice, _log, _endpointing, continuous) => { calls.push(['phone', continuous]); bridge.source = 'phone'; },
     drain() { if (this.source) { this.source = null; this.draining = true; } },
     stopContinuousCapture: async () => { calls.push(['stop']); bridge.drain(); },
     handleSessionEnded() { if (bridge.source === 'glasses') bridge.drain(); },
     stopPhoneCapture() { if (bridge.source === 'phone') bridge.drain(); },
-    recordTo: name => { bridge.recording = name; } };
+    recordTo: name => { bridge.recording = name; },
+    setRawSession: session => { bridge.rawSession = session; } };
   const settings = { ...voiceSettings, voiceProviderSetting: { get: () => 'whisper-server' },
-    whisperServerUrlSetting: { get: () => 'http://whisper.local:8000' }, saveTranscribeAudioSetting: { get: () => true } };
+    whisperServerUrlSetting: { get: () => 'http://whisper.local:8000' }, whisperServerLanguageSetting: { get: () => 'en' },
+    saveTranscribeAudioSetting: { get: () => true } };
   const { IosPreviewController } = load('app/g2/ios-preview-controller.ts', {
     require: id => id === '../native/ios-voice-input' ? { iosVoiceInput: bridge } : id === '../ui/dashboard-settings' ? settings
-      : id === '../ui/shell/voice-activity' ? { voiceActivity: { setActive: (active, holder) => claims.push([active, holder]) } } : {},
+      : id === '../ui/shell/voice-activity' ? { voiceActivity: { setActive: (active, holder) => claims.push([active, holder]) } }
+      : id === '../native/cloud-stt-provider' ? { transcriptionKey: voice => `${voice.provider}:${voice.language}` } : {},
   });
   const host = Object.create(IosPreviewController.prototype);
   Object.assign(host, { active: true, glassesLocked: false, communicator: {}, state: { phase: 'connected' }, sessionConnected: true,
@@ -548,13 +583,28 @@ test('iOS continuous capture is shared by windows and restarts after a disconnec
   const drained = () => { bridge.draining = false; host.syncContinuousCapture(); };
   const session = phase => { host.state = { phase }; if (phase !== 'connected') bridge.handleSessionEnded(); host.syncContinuousSession(); };
 
-  host.startContinuousVoiceCapture('transcribe', 'transcribe-1'); await settle();
+  host.startContinuousVoiceCapture('transcribe', { recordAs: 'transcribe-1' }); await settle();
   host.startContinuousVoiceCapture('calculator'); await settle();
   assert.deepEqual(calls, [['glasses', true]], 'the second window shares the capture');
   assert.equal(bridge.recording, 'transcribe-1');
   assert.deepEqual(claims.at(-1), [true, 'continuous-capture']);
   host.stopContinuousVoiceCapture('calculator');
   assert.deepEqual(calls, [['glasses', true]], 'closing one window keeps the other listening');
+
+  // Translate needs its own provider and language: the shared capture drains
+  // and restarts on them, again when only the language changes, and moves
+  // back to the main provider (and Whisper's own language) once Translate closes.
+  calls.length = 0; host.startContinuousVoiceCapture('translate', { transcription: { provider: 'soniox', language: '' } }); await settle();
+  assert.deepEqual(calls, [['stop']]);
+  drained(); await settle();
+  assert.deepEqual(calls, [['stop'], ['glasses', true]]);
+  assert.deepEqual(providers.slice(-2), ['whisper-server:en', 'soniox:']);
+  calls.length = 0; host.startContinuousVoiceCapture('translate', { transcription: { provider: 'soniox', language: 'ja' } }); drained(); await settle();
+  assert.deepEqual(calls, [['stop'], ['glasses', true]]);
+  assert.equal(providers.at(-1), 'soniox:ja');
+  calls.length = 0; host.stopContinuousVoiceCapture('translate'); drained(); await settle();
+  assert.deepEqual(calls, [['stop'], ['glasses', true]]);
+  assert.equal(providers.at(-1), 'whisper-server:en');
 
   // A reconnect drains the capture, waits for the glasses, and resumes on them.
   calls.length = 0; session('retrying'); drained(); await settle();
@@ -563,11 +613,13 @@ test('iOS continuous capture is shared by windows and restarts after a disconnec
   session('connected'); await settle();
   assert.deepEqual(calls, [['glasses', true]]);
 
-  // Locking drains; unlocking resumes.
+  // Locking drains; unlocking resumes. EvenHub apps' raw mic tap follows the lock too.
   calls.length = 0; host.setGlassesLocked(true); drained(); await settle();
   assert.deepEqual(calls, []);
+  assert.equal(bridge.rawSession, null, 'locking unbinds the raw mic session');
   host.setGlassesLocked(false); await settle();
   assert.deepEqual(calls, [['glasses', true]]);
+  assert.equal(bridge.rawSession, host.communicator, 'unlocking rebinds it to the connected session');
 
   // A failed capture is not retried in a loop, only on the next session.
   calls.length = 0; bridge.source = null; drained(); await settle();

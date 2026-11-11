@@ -1,11 +1,12 @@
 import { Utils } from "@nativescript/core";
 
 import { type CloudSttTranscriptEvent, CloudSttClient, toJavaBytes } from "./cloud-stt";
-import { createCloudSttClient } from "./cloud-stt-provider";
+import { createCloudSttClient, transcriptionKey } from "./cloud-stt-provider";
 import { SpeechPauseDetector } from "./speech-pause";
 import { toUint8Array } from "../util/array-util";
 import { AudioCaptureArbiter } from "./audio-capture-arbiter";
 import { type DetectorLease } from "../conversation-detection/coordinator";
+import { pcmLevel } from "../util/audio-level";
 
 declare const com: any;
 
@@ -58,10 +59,11 @@ export type PushToTalkOptions = {
   sonioxApiKey: string;
   whisperServerUrl?: string;
   whisperServerModel?: string;
-  whisperServerLanguage?: string;
   whisperServerApiKey?: string;
   evenAsrUrl?: string;
   evenAsrKey?: string;
+  /** Spoken language for cloud providers (see VoiceProviderSelection.language). */
+  language?: string;
   saveRecording: boolean;
   /**
    * Watch the mic and fire onSpeechEnd when the speaker stops. For hands-free
@@ -140,6 +142,9 @@ export class FaceclawVoiceControlBridge {
   private captureEndpointing = false;
   // Non-null while a cloud provider owns the transcript; Java only decodes PCM.
   private cloudClient: CloudSttClient | null = null;
+  // What the running STT stream transcribes with (transcriptionKey); a holder
+  // asking for something else restarts the stream rather than sharing it.
+  private streamProvider: string | null = null;
   // Raw-PCM tap (EvenHub mic apps, the Microphones app): when active, the
   // controller runs in the decode-only "cloud" mode and every decoded PCM
   // frame is broadcast to these listeners. STT capture preempts it — a live
@@ -147,6 +152,7 @@ export class FaceclawVoiceControlBridge {
   // stopped for its duration.
   private readonly rawPcmListeners = new Set<RawPcmListener>();
   private readonly frameMetaListeners = new Set<FrameMetaListener>();
+  private readonly micLevelListeners = new Set<(level: number) => void>();
   private rawActive = false;
   // Set when the current capture session runs "my voice only" verification;
   // a non-wearer verdict arrives just before the final transcript and makes
@@ -209,6 +215,14 @@ export class FaceclawVoiceControlBridge {
     this.controller?.setKeepTranscriberLoaded(enabled);
   }
 
+  /**
+   * Capture could not be started for a reason other than a denied permission.
+   * Without this the dialog keeps showing the idle "Voice control stopped."
+   */
+  reportStartFailed(reason: string): void {
+    this.setStatus("Voice input couldn't start.", reason);
+  }
+
   /** Begin push-to-talk capture (momentary; released with stopPushToTalk). */
   startPushToTalk(options: PushToTalkOptions): void {
     this.acquireCapture("ptt", options);
@@ -231,10 +245,31 @@ export class FaceclawVoiceControlBridge {
     void this.releaseCapture("continuous", false);
   }
 
+  /**
+   * Restart the running continuous capture when it transcribes with another
+   * provider than `options` asks for (a window that needs a multilingual one
+   * opened or closed), keeping every holder on the new stream. A parked
+   * capture is left alone: it takes the options when it resumes.
+   */
+  retargetContinuousCapture(options: PushToTalkOptions): void {
+    if (!this.captureHolders.has("continuous") || !this.micIsLive()) return;
+    this.acquireCapture("continuous", options);
+  }
+
   /** Subscribe to decoded raw mic PCM (16 kHz mono S16LE). */
   onRawPcm(listener: RawPcmListener): () => void {
     this.rawPcmListeners.add(listener);
     return () => this.rawPcmListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to the mic level (meter position in [0,1], see pcmLevel) of
+   * each decoded audio chunk, about every 50 ms, from any capture: STT in
+   * every mode, or the raw tap.
+   */
+  onMicLevel(listener: (level: number) => void): () => void {
+    this.micLevelListeners.add(listener);
+    return () => this.micLevelListeners.delete(listener);
   }
 
   /** Subscribe to per-packet firmware DSP metadata (DOA angle + SSR). */
@@ -390,13 +425,15 @@ export class FaceclawVoiceControlBridge {
     const micLive = this.micIsLive();
     this.suspendedHolders.delete(holder);
     this.captureHolders.add(holder);
-    if (micLive) {
+    if (micLive && this.streamProvider === transcriptionKey(options)) {
       // Mic already running; the new holder just shares the existing stream
       // (transcripts are already broadcast to its listeners).
       return;
     }
-    // Any leftover capture is dead; drop it before starting the new one.
+    // Any leftover capture is dead, or transcribes with another provider than
+    // this holder needs; drop it before starting the new one.
     if (this.started) this.teardownCapture();
+    this.streamProvider = transcriptionKey(options);
     this.ensureController();
     this.controller?.setExperimentalRawMode(false);
     this.controller?.setCommunicator(options.communicator);
@@ -606,6 +643,7 @@ export class FaceclawVoiceControlBridge {
   /** Stop the native capture and any cloud client; leaves holders alone. */
   private teardownCapture(): void {
     this.rawActive = false;
+    this.streamProvider = null;
     if (global.isAndroid) {
       this.controller?.stop();
     }
@@ -643,6 +681,10 @@ export class FaceclawVoiceControlBridge {
         }
         if (this.rawPcmListeners.size > 0) {
           this.rawPcmListeners.forEach((listener) => listener(bytes));
+        }
+        if (this.micLevelListeners.size > 0) {
+          const level = pcmLevel(bytes);
+          this.micLevelListeners.forEach((listener) => listener(level));
         }
       },
       onExperimentalPcm: (pcm: any, captureMs: any) => {

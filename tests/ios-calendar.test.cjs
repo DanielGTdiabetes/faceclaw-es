@@ -214,9 +214,11 @@ test('iOS Calendar is launchable and its permission remains optional during onbo
   const { PermissionsViewModel } = load('app/phone-ui/permissions-view-model.ts', {
     '@nativescript/core': { Observable: class { notifyPropertyChange() {} },
       Application: { on: (_event, fn) => { resumed = fn; }, off() {} } },
-    '../native/ios-bluetooth': { iosBluetooth: () => ({ state: 5 }) },
+    '../native/ios-bluetooth': { iosBluetooth: () => ({ state: 5, isAuthorized: () => true, onEvent: () => () => {} }) },
     '../native/calendar-permissions': f.api,
     '../native/file-access': {},
+    '../native/media-controller': { mediaControllerBridge: { hasAccess: () => true } },
+    './onboarding-navigation': {}, './onboarding-state': { isPreviewOnlyMode: () => false },
     '../g2/android-permissions': {}, '../native/battery-optimization': {}, '../native/notification-access': {},
   }, { global: { isIOS: true } });
   const model = new PermissionsViewModel({ onboarding: true }); model.onPageLoaded();
@@ -252,10 +254,13 @@ test('iOS assistant calendar tool awaits events, reports denied access and failu
   const { registerSystemTools } = load('app/assistant/system-tools.ts', {
     '../native/calendar': f.api, '../native/calendar-permissions': f.permissions,
     '../native/location': {}, '../native/location-permissions': {},
-    '../native/media-controller': {}, '../native/notification-icons': {}, '../ui/shell/shell': {}, './tool-registry': {},
+    '../native/media-controller': { mediaControllerBridge: { start: async () => {} } },
+    '../native/spotify': { spotifyService: () => null },
+    '../native/notification-icons': {}, '../ui/shell/shell': {}, './tool-registry': {},
   }, { global: { isIOS: true } });
   registerSystemTools({ registerSystemTool: (definition, handler) => registered.set(definition.name, handler) });
-  assert.deepEqual([...registered.keys()], ['glasses.get_state', 'glasses.show_alert', 'location.get_current', 'calendar.list_events']);
+  assert.deepEqual([...registered.keys()], ['glasses.get_state', 'glasses.show_alert', 'location.get_current', 'calendar.list_events',
+    'media.now_playing', 'media.play_pause', 'media.next']);
   const list = registered.get('calendar.list_events');
   const result = list({ within_hours: 2, max_events: 3 });
   assert.equal(f.reads[0].max, 3); assert.equal(f.reads[0].window, 7200000);

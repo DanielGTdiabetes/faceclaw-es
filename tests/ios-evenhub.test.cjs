@@ -87,7 +87,8 @@ function sessionHarness(overrides = {}, playBuzzer = () => {}, { packageId = 'te
     '../../ui/dashboard-settings': {}, '../../ui/sound-effects': {}, './api-key-dialog': {},
     './mic-router': { evenHubMicRouter: {} }, './imu-router': { evenHubImuRouter: {} },
     './compass-router': { evenHubCompassRouter: {} }, '../../assistant/tool-registry': {},
-    '../../native/location': {}, '../../native/location-tracker': {}, '../../native/location-permissions': {}, ...overrides,
+    '../../native/location': {}, '../../native/location-tracker': {}, '../../native/location-permissions': {},
+    '../../native/image-rgba': { decodeImageRgba: () => null }, ...overrides,
   });
   const api = load('app/apps/evenhub/session.ts');
   const session = new api.EvenHubSession({ name: 'Probe', packageId, permissions: [] }, '/test/dist', line => logs.push(line), '', playBuzzer);
@@ -105,10 +106,12 @@ function sessionHarness(overrides = {}, playBuzzer = () => {}, { packageId = 'te
 test('injected EvenHub RPC creates, updates and composites an image page with no Android globals', async () => {
   const h = sessionHarness();
   assert.equal(await h.call('createStartUpPageContainer', { containerTotalNum: 1,
-    imageObject: [{ containerID: 1, containerName: 'board', xPosition: 0, yPosition: 0, width: 2, height: 2 }] }), 0);
-  assert.equal(await h.call('updateImageRawData', { containerID: 1, containerName: 'board', imageData: [0, 80, 160, 255] }), 0);
+    imageObject: [{ containerID: 1, containerName: 'board', xPosition: 0, yPosition: 0, width: 20, height: 20 }] }), 0);
+  // Raw 8-bit grey as the SDK sends it (compressMode 2), quantized to 4-bit levels as the Even app does.
+  const raw = new Array(400).fill(0); raw.splice(0, 4, 0, 80, 160, 255);
+  assert.equal(await h.call('updateImageRawData', { containerID: 1, containerName: 'board', imageData: raw, compressMode: 2 }), 0);
   const painted = h.session.paint({ width: 576, height: 288 }, true);
-  assert.deepEqual([painted.pixels[0], painted.pixels[1], painted.pixels[576], painted.pixels[577]], [0, 80, 160, 255]);
+  assert.deepEqual(Array.from(painted.pixels.slice(0, 4)), [0, 5 * 17, 9 * 17, 255]);
   assert.equal(await h.call('setLocalStorage', { key: 'score', value: '42' }), true);
   assert.equal(await h.call('getLocalStorage', { key: 'score' }), '42');
   const events = [];
@@ -259,4 +262,73 @@ test('EvenHub buzzer RPC uses the host action on iOS and chunks and paces long s
   await h.session.dispatchExtension('playBuzzer', [[null, { freq: 'bad', ms: 10 }]]);
   assert.equal(played.length, 2);
   h.session.close();
+});
+
+test('EvenHub buzzer RPC rejects the app promise when sending fails', async () => {
+  const sounds = loader()('app/ui/sound-effects.ts');
+  const h = sessionHarness({ '../../ui/sound-effects': sounds }, () => Promise.reject(new Error('link lost')));
+  await assert.rejects(h.session.dispatchExtension('playBuzzer', [[{ freq: 880, ms: 50 }]]), /link lost/);
+  h.session.close();
+});
+
+test('EvenHub assistant tools skip malformed names and schemas with a warning in the app console', () => {
+  const offered = [];
+  const h = sessionHarness({ '../../assistant/tool-registry': { toolRegistry: { setAppTools: provider => offered.push(provider), removeAppTools() {} } } });
+  const warnings = [];
+  h.web.console = { warn: message => warnings.push(message) };
+  const object = { type: 'object', properties: { n: { type: 'number' } }, required: ['n'] };
+  h.session.dispatchExtension('setAssistantTools', [[
+    { name: 'ok', description: 'fine', parameters: object },
+    { name: 'no_params', description: 'defaults' },
+    { name: 'has space', parameters: object },
+    { name: 'x'.repeat(65), parameters: object },
+    { name: 'untyped', parameters: { properties: {} } },
+    { name: 'string', parameters: { type: 'string' } },
+    { name: 'union', parameters: { type: 'object', anyOf: [object] } },
+    { name: 'bad_props', parameters: { type: 'object', properties: [] } },
+    { name: 'bad_required', parameters: { type: 'object', required: 'n' } },
+  ]]);
+  // Through JSON: the default schema is built in the session's realm.
+  assert.deepEqual(JSON.parse(JSON.stringify(offered[0].specs.map(spec => [spec.name, spec.inputSchema]))), [
+    ['ok', object],
+    ['no_params', { type: 'object', properties: {} }],
+  ]);
+  assert.equal(warnings.length, 7);
+  assert.ok(warnings.every(message => message.startsWith('Faceclaw: setAssistantTools: skipped tool')));
+  assert.match(warnings[0], /"has space": name must be/);
+  assert.match(warnings[2], /"untyped": parameters must be a JSON Schema with type "object"/);
+  assert.match(warnings[4], /"union": parameters can't use oneOf, anyOf or allOf/);
+  h.session.close();
+});
+
+test('iOS binary downloads copy out of the response NSData, which bufferFromData does not retain', async () => {
+  const native = new Uint8Array([0x45, 0x48, 0x50, 0x4b, 1, 2, 3]);
+  const { downloadBinary } = loader({}, {
+    '@nativescript/core': { Http: { request: async () => ({ statusCode: 200, headers: {}, content: { toArrayBuffer: () => native.buffer } }) } },
+    '../util/http': { withUserAgent: headers => headers ?? {} },
+  })('app/native/binary-http.ios.ts');
+  const { bytes } = await downloadBinary('https://cdn.example/app.ehpk', 1000);
+  native.fill(0); // The released NSData's pages are reused or zeroed.
+  assert.deepEqual(Array.from(bytes), [0x45, 0x48, 0x50, 0x4b, 1, 2, 3]);
+});
+
+test('zeroed installed packages are discarded with their registry entry kept; real packages are left alone', () => {
+  const files = new Map(), deleted = [];
+  const installed = loader({}, {
+    fzstd: require('fzstd'),
+    '../../native/file-access': { readBinaryFile: path => files.get(path) ?? null, readTextFile() {}, writeBinaryFile() {},
+      appFilesDirPath: () => '/app', deletePathRecursively: path => { deleted.push(path); files.delete(path); } },
+    '../../native/settings-store': { getStringSetting: (_key, fallback) => fallback, setStringSetting() {} },
+    '../../native/icon-image': {}, '../../graphics/icons': {}, '../../graphics/image': {},
+  })('app/apps/evenhub/installed-apps.ts');
+  const path = installed.installedEvenHubPackagePath('test.app');
+  files.set(path, pack({ 'app.json': '{"package_id":"test.app"}' }));
+  assert.equal(installed.discardZeroedEvenHubPackage('test.app'), false);
+  files.set(path, new Uint8Array([...new Uint8Array(1000), 1]));
+  assert.equal(installed.discardZeroedEvenHubPackage('test.app'), false);
+  assert.equal(installed.discardZeroedEvenHubPackage('missing.app'), false);
+  assert.deepEqual(deleted, []);
+  files.set(path, new Uint8Array(4096));
+  assert.equal(installed.discardZeroedEvenHubPackage('test.app'), true);
+  assert.deepEqual(deleted, [path], 'only the EHPK goes; the icon and registry entry stay for Reinstall');
 });

@@ -36,6 +36,33 @@ export function saveDeviceAddresses(addresses: DeviceAddresses): void {
   ApplicationSettings.setString(ADDRESS_KEYS.ring, normalizeMacAddress(addresses.ring));
 }
 
+export type EvenGlassesModel = "g1" | "g2";
+type SavedEvenPair = { addresses: DeviceAddresses; identity: PairedGlassesIdentity | null };
+
+export function loadSavedEvenPair(model: EvenGlassesModel): SavedEvenPair | null {
+  try {
+    const pair: SavedEvenPair | null = JSON.parse(ApplicationSettings.getString("deviceAddress.saved." + model, "null"));
+    if (pair && isValidMacAddress(pair.addresses.right) && isValidMacAddress(pair.addresses.left) &&
+        isValidMacAddress(pair.addresses.ring, true)) return pair;
+  } catch {
+    // Ignore a malformed saved slot; keep the active pair in place.
+  }
+  return null;
+}
+
+export function rememberEvenPair(model: EvenGlassesModel): void {
+  const addresses = loadDeviceAddresses();
+  if (!isValidMacAddress(addresses.right) || !isValidMacAddress(addresses.left)) return;
+  const identity = loadPairedGlassesIdentityForAddresses(addresses);
+  ApplicationSettings.setString("deviceAddress.saved." + model, JSON.stringify({ addresses, identity }));
+}
+
+export function restoreEvenPair(pair: SavedEvenPair): void {
+  saveDeviceAddresses(pair.addresses);
+  if (pair.identity) savePairedGlassesIdentity(pair.identity);
+  else clearPairedGlassesIdentity();
+}
+
 export function isValidMacAddress(value: string, allowEmpty = false): boolean {
   const trimmed = value.trim();
   if (!trimmed) {

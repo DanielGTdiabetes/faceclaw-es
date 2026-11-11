@@ -1,12 +1,13 @@
 import { shellCrop } from "../../graphics/shell-scene";
 import type { Plane } from "../../graphics/plane";
 import { DrawOp, type ListCall, type ListClip } from "../../graphics/display-list";
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage, grayToNibble } from "../../graphics/image";
+import { GrayImage, grayToNibble } from "../../graphics/image";
 import { getDefaultMediumFont, getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { truncateText } from "../../graphics/textwrap";
 import { activeAmbientCards } from "./ambient-cards";
 import { BATTERY_ICON_WIDTH, DENSE_BATTERY_BLOCK_HEIGHT, drawBattery, drawDenseBatteries, type BatteryDevice } from "../../graphics/battery";
 import { ALL_NOTIFICATIONS, readActiveNotificationIcons } from "../../native/notification-icons";
+import { NOTIFICATION_ICON_SIZE } from "../../native/notification-types";
 import { readPhoneBatteryState } from "../../native/phone-battery";
 import { noteStaleDataUsed, renderPassAllowsStaleData } from "../../util/render-freshness";
 import { renderIcon, renderIconWithGlyph, type IconActivity, type IconName } from "../../graphics/icons";
@@ -14,6 +15,7 @@ import {
   batteryDisplayModeSetting,
   batteryIndicatorVisible,
   glassesBatteryVisibilitySetting,
+  glassesModelName,
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
@@ -28,7 +30,9 @@ import { lineStep } from "../metrics";
 import {
   appViewportRect,
   isImmersive,
-  MIN_WINDOW_HEIGHT,
+  minWindowHeight,
+  screenHeight,
+  screenWidth,
   minWindowTop,
   setSwitcherBarHeight,
   SHELL_OPAQUE_BLACK,
@@ -67,7 +71,10 @@ const TWO_COLUMN: SidebarVariant = { columns: 2, columnWidth: 32, iconSize: 28 }
 const ICON_SPACING = 8;
 /** Icon list top/bottom margins within the sidebar band, below the top bar (and a bottom row's end margins). */
 const LIST_MARGIN = 10;
-const LIST_HEIGHT = MIN_WINDOW_HEIGHT - TOP_BAR_HEIGHT - 2 * LIST_MARGIN;
+/** Height of the sidebar's icon list: the min-height band less its top bar and margins. */
+function listHeight(appId?: string): number {
+  return minWindowHeight(appId) - TOP_BAR_HEIGHT - 2 * LIST_MARGIN;
+}
 
 /** Bottom-row icons: one tall tab's worth of row, the icon inset 2px all round. */
 const ROW_ICON_SIZE = SWITCHER_ROW_HEIGHT - 4;
@@ -122,7 +129,7 @@ const POPUP_DIM = 0.5;
 
 /** Icon rows that fit in one sidebar column. */
 function rowsPerColumn(variant: SidebarVariant): number {
-  return Math.max(1, ((LIST_HEIGHT + ICON_SPACING) / (variant.iconSize + ICON_SPACING)) | 0);
+  return Math.max(1, ((listHeight() + ICON_SPACING) / (variant.iconSize + ICON_SPACING)) | 0);
 }
 
 function sidebarVariant(windowCount: number): SidebarVariant {
@@ -135,7 +142,7 @@ function sidebarVariant(windowCount: number): SidebarVariant {
  */
 function columnLeft(variant: SidebarVariant, column: number, position: AppSwitcherPosition): number {
   return position === "right"
-    ? G2_LENS_WIDTH - SIDEBAR_WIDTH + column * variant.columnWidth
+    ? screenWidth() - SIDEBAR_WIDTH + column * variant.columnWidth
     : SIDEBAR_WIDTH - (column + 1) * variant.columnWidth;
 }
 
@@ -381,7 +388,7 @@ export function sidebarContentSpan(windowCount: number): { left: number; right: 
   const variant = sidebarVariant(windowCount);
   const width = variant.columns * variant.columnWidth;
   return switcherPosition() === "right"
-    ? { left: G2_LENS_WIDTH - SIDEBAR_WIDTH, right: G2_LENS_WIDTH - SIDEBAR_WIDTH + width }
+    ? { left: screenWidth() - SIDEBAR_WIDTH, right: screenWidth() - SIDEBAR_WIDTH + width }
     : { left: SIDEBAR_WIDTH - width, right: SIDEBAR_WIDTH };
 }
 
@@ -395,7 +402,7 @@ function topBarSpan(state: ShellChromeState): { left: number; right: number } {
   if (sidebarStripVisible(state.focus, state.foregroundAppId)) {
     const position = switcherPosition();
     if (position === "left") left = Math.max(left, SIDEBAR_WIDTH);
-    if (position === "right") right = Math.min(right, G2_LENS_WIDTH - SIDEBAR_WIDTH);
+    if (position === "right") right = Math.min(right, screenWidth() - SIDEBAR_WIDTH);
   }
   return { left, right };
 }
@@ -430,7 +437,6 @@ function statusBarPlacement(state: ShellChromeState): StatusBarPlacement | null 
   return { left, right, top, contentTop: atBottom ? top + 1 : top, divider };
 }
 
-const NOTIFICATION_ICON_SIZE = 24;
 const NOTIFICATION_ICON_STEP = NOTIFICATION_ICON_SIZE + 4;
 // Notification icons' top, in the top bar's layout (where any status icon's
 // selection box starts, a row above).
@@ -486,6 +492,14 @@ export type ShellChromeState = {
     /** The Wear OS watch (app/g2/wear-remote.ts); null when no watch is reachable. */
     watch: number | null;
     watchCharging: boolean | null;
+    /**
+     * The glasses' charging case, last known (it only reports while the
+     * glasses are docked); null until it does. caseCharging is null while the
+     * glasses are out of the case, where they can't see whether it is on USB.
+     * Shown on the phone, not here.
+     */
+    case: number | null;
+    caseCharging: boolean | null;
   };
   /** App-provided tray images, drawn between notification icons and batteries. */
   trayIcons: ShellChromeTrayIcon[];
@@ -505,24 +519,55 @@ export function makeLetterWindowIcon(letter: string): ShellChromeWindow["drawIco
 }
 
 /**
+ * Perceptual gamma for inverting icon shades. The G2's levels are roughly
+ * linear in brightness while lightness is perceived roughly as brightness's
+ * 1/2.2 power, so flipping the levels themselves (15 - n) turns a dim stroke
+ * into one barely darker than the white box: level 1 would invert to 14.
+ */
+const ICON_INVERSION_GAMMA = 2.2;
+
+let invertedShadeLut: Uint8Array | null = null;
+
+/**
+ * Gray8 value → its perceptual negative, by the display level it packs to
+ * (so faint fringe values that show as black stay invisible on the white
+ * box): level 1 inverts to 7, and level 6 and up to 1 or 0. Written back as
+ * n*16, which packs to n, except that white is 255 (the box's fill) and
+ * black is SHELL_OPAQUE_BLACK (1) rather than 0, the surface's transparent
+ * color key.
+ */
+function invertedShades(): Uint8Array {
+  if (!invertedShadeLut) {
+    invertedShadeLut = new Uint8Array(256);
+    for (let value = 1; value < 256; value++) {
+      const lightness = Math.pow(grayToNibble(value) / 15, 1 / ICON_INVERSION_GAMMA);
+      const level = Math.round(15 * Math.pow(1 - lightness, ICON_INVERSION_GAMMA));
+      invertedShadeLut[value] = level === 0 ? SHELL_OPAQUE_BLACK : level === 15 ? 255 : level * 16;
+    }
+  }
+  return invertedShadeLut;
+}
+
+/**
  * Inverted (black-on-white) variant of an icon raster, for the focused tab:
- * coverage becomes darkness, with full coverage mapping to SHELL_OPAQUE_BLACK
- * (1) rather than 0, since 0 is the surface's transparent color key. Memoized
- * per source object so the variant is a stable image the texture cache can
- * key on (mode-13's inverse LUT can't reproduce this mapping exactly, so it
- * is simply a separate cached image). Deferred draws (an app widget's text)
- * are baked in first, to be inverted with the rest.
+ * each shade becomes its perceptual negative (invertedShades), so full
+ * coverage is SHELL_OPAQUE_BLACK. Memoized per source object so the variant
+ * is a stable image the texture cache can key on (mode-13's inverse LUT can't
+ * reproduce this mapping, so it is simply a separate cached image). Deferred
+ * draws (an app widget's text) are baked in first, to be inverted with the
+ * rest.
  */
 const invertedIconCache = new WeakMap<GrayImage, GrayImage>();
 function invertedIcon(icon: GrayImage): GrayImage {
   let inverted = invertedIconCache.get(icon);
   if (!inverted) {
     const flat = icon.withDrawsBaked();
+    const shades = invertedShades();
     inverted = new GrayImage(icon.width, icon.height, 0);
     for (let i = 0; i < flat.pixels.length; i++) {
       const coverage = flat.pixels[i]!;
       if (coverage > 0) {
-        inverted.pixels[i] = Math.max(SHELL_OPAQUE_BLACK, 255 - coverage);
+        inverted.pixels[i] = shades[coverage]!;
       }
     }
     invertedIconCache.set(icon, inverted);
@@ -593,7 +638,7 @@ export class ShellChromeLayer implements Layer {
   ) {}
 
   paint(): GrayImage {
-    const image = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+    const image = new GrayImage(screenWidth(), screenHeight(), 0);
     const state = this.getState();
     this.statusEntries = [];
     this.bottomBar = this.layoutBottomBar(state);
@@ -620,7 +665,7 @@ export class ShellChromeLayer implements Layer {
     this.statusEntries = [];
     this.bottomBar = this.layoutBottomBar(state);
     const statusInRow = statusInSwitcherRow(state.foregroundAppId);
-    const canvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+    const canvas = new GrayImage(screenWidth(), screenHeight(), 0);
     const span = topBarSpan(state);
     const bar = statusBarPlacement(state);
     if (bar) {
@@ -633,7 +678,7 @@ export class ShellChromeLayer implements Layer {
       return parts;
     }
     if (switcherShown) {
-      const stripCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+      const stripCanvas = new GrayImage(screenWidth(), screenHeight(), 0);
       const statusLeft = this.drawSidebar(stripCanvas, state, statusInRow ? canvas : undefined);
       // The window frame rides on the switcher row, whose top edge is its
       // bottom side, and so replays after any top bar, whose bottom row is
@@ -673,14 +718,14 @@ export class ShellChromeLayer implements Layer {
       // to be sent at all, so the frame rides on one at its top-left corner,
       // outside its curve, which it paints black anyway. As in the bottom
       // row's case, it plays at the screen's own depth.
-      const frameCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+      const frameCanvas = new GrayImage(screenWidth(), screenHeight(), 0);
       frameCanvas.fillRect(frame.x, frame.y, 1, 1, SHELL_OPAQUE_BLACK);
       drawWindowFrame(frameCanvas, frame, false, true);
       parts.push(shellCrop(frameCanvas, frame.x, frame.y, 1, 1, 1));
     }
     drawAmbientCards(canvas, topBarSpan(state).right, parts);
     if (!switcherShown) return;
-    const popupCanvas = new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0);
+    const popupCanvas = new GrayImage(screenWidth(), screenHeight(), 0);
     const box = this.drawPopup(popupCanvas, state);
     this.popupKey ??= LayerStack.allocateShellKey();
     parts.push({ ...shellCrop(popupCanvas, box.x, box.y, box.width, box.height, this.popupKey), depth: POPUP_DEPTH });
@@ -861,8 +906,8 @@ export class ShellChromeLayer implements Layer {
     const batteries = batteryItems(state);
     if (batteries.length) {
       // Measured by drawing it: each battery style lays itself out as it draws.
-      const scratch = new GrayImage(G2_LENS_WIDTH, TOP_BAR_HEIGHT, 0);
-      const width = G2_LENS_WIDTH - BATTERY_BLOCK_RIGHT_MARGIN - drawBatteryBlock(scratch, batteries, 0, G2_LENS_WIDTH);
+      const scratch = new GrayImage(screenWidth(), TOP_BAR_HEIGHT, 0);
+      const width = screenWidth() - BATTERY_BLOCK_RIGHT_MARGIN - drawBatteryBlock(scratch, batteries, 0, screenWidth());
       // The block keeps its usual right margin inside the edge it's given.
       items.push({ kind: "batteries", width,
         draw: (image, x, top) => drawBatteryBlock(image, batteries, top, x + width + BATTERY_BLOCK_RIGHT_MARGIN) });
@@ -1045,7 +1090,7 @@ function batteryItems(state: ShellChromeState): BatteryItem[] {
       Boolean(state.battery.watchCharging));
   }
   if (state.battery.headset !== null && Number.isFinite(state.battery.headset)) {
-    pushBatteryItem(items, glassesBatteryVisibilitySetting.get(), "G2", "glasses", state.battery.headset,
+    pushBatteryItem(items, glassesBatteryVisibilitySetting.get(), glassesModelName(), "glasses", state.battery.headset,
       Boolean(state.battery.headsetCharging));
   }
   if (state.battery.ring !== null && Number.isInteger(state.battery.ring)
@@ -1206,7 +1251,7 @@ function drawAmbientCards(image: GrayImage, right: number, parts?: Plane[]): voi
   if (!cards.length) return;
   const font = getDefaultSmallFont();
   const bandTop = minWindowTop();
-  const bandBottom = bandTop + MIN_WINDOW_HEIGHT - windowFooterHeight();
+  const bandBottom = bandTop + minWindowHeight() - windowFooterHeight();
   // Right-aligned with the top bar: clear of a right-hand sidebar.
   const x = right - AMBIENT_CARD_WIDTH - AMBIENT_CARD_MARGIN;
   const textWidth = AMBIENT_CARD_WIDTH - 2 * AMBIENT_CARD_PADDING_X;

@@ -16,6 +16,13 @@ class ConnectionOptions {
         const val DESCRIPTOR_TIMEOUT_MS = 5_000
         const val RING_DESIRED_MTU = 247
         const val RING_RECONNECT_DELAY_MS = 2_000
+        // Cap for the exponential backoff on repeated direct-ring connect failures.
+        const val RING_RECONNECT_MAX_DELAY_MS = 60_000L
+        // The ring connects with autoConnect=true (see SessionLink.connect's
+        // 3-arg overload) - Android manages that as a background reconnect rather
+        // than an immediate attempt, so it needs far more room than the glasses'
+        // direct-connect CONNECT_TIMEOUT_MS. Untuned guess, not measured.
+        const val RING_CONNECT_TIMEOUT_MS = 20_000
         const val WRITE_TIMEOUT_MS = 2_000
         const val PRELUDE_TIMEOUT_MS = 2_000
         // Application security-auth exchange (sid 0x80). The success notification
@@ -35,6 +42,9 @@ class ConnectionOptions {
         // Poll cadence while in charging mode; also bounds how quickly we notice
         // the glasses coming back out of the case.
         const val CHARGING_BATTERY_POLL_MS = 30_000
+        // After the case reports the glasses docking, read the battery this
+        // soon (rather than at the next refresh) so charging mode follows.
+        const val DOCKED_BATTERY_CHECK_DELAY_MS = 3_000
         const val IMAGE_FRAGMENT_SIZE = 3800
         const val IMAGE_RETRY_DELAY_MS = 2_000
         const val MAX_CONSECUTIVE_ACK_TIMEOUTS = 8

@@ -175,7 +175,7 @@ test(`${provider}: native completion follows the final and is capture-specific`,
     '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
     './speech-pause': { SpeechPauseDetector: class { reset() {} } },
     './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
-    './cloud-stt-provider': { createCloudSttClient: () => null },
+    './cloud-stt-provider': { createCloudSttClient: () => null, transcriptionKey: options => options.provider },
   }, { global: { isAndroid: true }, com: { faceclaw: { app: {
     FaceclawVoiceController: Controller,
     FaceclawVoiceControllerListener: function (listener) { return listener; },
@@ -218,7 +218,7 @@ test('EVO-X2: native PCM drains before commit and the bridge waits for remote/lo
     './speech-pause': { SpeechPauseDetector: class { reset() {} } },
     './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
     '../util/array-util': { toUint8Array: bytes => bytes },
-    './cloud-stt-provider': { createCloudSttClient(_selection, options) {
+    './cloud-stt-provider': { transcriptionKey: options => options.provider, createCloudSttClient(_selection, options) {
       remoteOptions = options;
       return { start() {}, stop() {}, acceptPcm(bytes) { calls.push([...bytes]); },
         finish() { calls.push('commit'); return result; } };
@@ -280,4 +280,45 @@ test('authoritative local silence never resurrects a stale remote partial for au
   await env.complete(); env.timeout();
   assert.deepEqual(env.sent, []);
   assert.equal(env.frame().text.includes('stale remote partial'), false);
+});
+
+function androidBridge() {
+  const controller = {
+    starts: 0,
+    setListener(listener) { this.listener = listener; },
+    setCommunicator() {}, setUsePhoneMic() {}, setSaveRecordings() {}, setEndpointing() {},
+    setNoiseSuppression() {}, setBeamFilter() {}, clearSpeakerVerification() {},
+    setExperimentalRawMode() {}, setOnboardModelKind() {},
+    start(_mode, id) { this.captureId = id; this.active = true; this.starts++; },
+    stop() { this.active = false; },
+    isCapturing() { return this.active; },
+  };
+  const { FaceclawVoiceControlBridge } = load('app/native/voice-control.ts', {
+    '@nativescript/core': { Utils: { android: { getApplicationContext: () => ({}) } } },
+    './speech-pause': { SpeechPauseDetector: class { reset() {} } },
+    './audio-capture-arbiter': require('../.test-build/app/native/audio-capture-arbiter.js'),
+    './cloud-stt-provider': { createCloudSttClient: () => null, transcriptionKey: options => options.provider },
+  }, { global: { isAndroid: true }, com: { faceclaw: { app: {
+    FaceclawVoiceController: function () { return controller; },
+    FaceclawVoiceControllerListener: function (listener) { return listener; },
+  } } } });
+  return { bridge: new FaceclawVoiceControlBridge(), controller };
+}
+
+test('a shared capture restarts for a holder that needs another provider, and is shared otherwise', () => {
+  const { bridge, controller } = androidBridge();
+  bridge.retargetContinuousCapture({ provider: 'soniox' }); // nothing continuous to retarget
+  assert.equal(controller.starts, 0);
+  bridge.startPushToTalk({ provider: 'onboard' });
+  bridge.startContinuousCapture({ provider: 'onboard' });
+  assert.equal(controller.starts, 1);
+  bridge.retargetContinuousCapture({ provider: 'soniox' });
+  assert.equal(controller.starts, 2);
+  bridge.retargetContinuousCapture({ provider: 'soniox' });
+  bridge.startPushToTalk({ provider: 'soniox' });
+  assert.equal(controller.starts, 2);
+  // Push-to-talk still holds the restarted stream once continuous lets go.
+  bridge.stopContinuousCapture();
+  assert.equal(controller.active, true);
+  assert.equal(bridge.holdsCapture('ptt'), true);
 });

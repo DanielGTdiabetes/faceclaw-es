@@ -16,6 +16,7 @@ function harness({ permission = true, lookup = async () => fix(), ios = false } 
     '../native/location': { getCurrentLocation: () => { reads++; return lookup(); } },
     '../native/location-permissions': { hasLocationPermission: () => granted },
     '../native/media-controller': { mediaControllerBridge: { start: async () => {} } },
+    '../native/spotify': { spotifyService: () => null },
     '../native/notification-icons': {}, '../ui/shell/shell': {},
   });
   const { ToolRegistry } = load('app/assistant/tool-registry.ts');

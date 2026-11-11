@@ -21,12 +21,17 @@ const planes = load('app/graphics/plane.ts', { './image': images });
 const timings = load('app/native/frame-timings.ts', {});
 const LAUNCHER_GRAY = 75;
 
+let glassesType = 'g2';
+
 function fixture() {
+  const relay = { available: true, starts: 0, client: null, message: undefined };
   const observers = new Map(), phoneState = { protectedDataAvailable: true };
   let settingsChanged, remoteHost, controller, bridge = null;
   let now = 1000, nextTask = 0, screenOn = true, shellOptions;
+  const battery = {};
   const tasks = new Map(), sent = [], previews = [], received = [], errors = [];
   const boardStats = { starts: 0, stops: 0, paints: 0 };
+  const registered = [], inProcessApps = [];
   const settings = { lock: true, enabled: true, tap: true, hold: true, tilt: true, duration: 3000, depth: 0 };
   const clock = { Date: class extends Date { static now() { return now; } },
     setTimeout: (fn, ms) => { tasks.set(++nextTask, { fn, at: now + ms }); return nextTask; },
@@ -43,11 +48,11 @@ function fixture() {
     // The launcher repaints into whichever display target the controller has after a switch.
     requestRender() { void controller?.displayReady.then(() => controller.display?.submitSurfaceFrame('launcher', launcherPixels, fullRect, 'launcher')); }, setScreenOn() {} };
   const shell = {
-    configure: options => { shellOptions = options; }, registerWindow() {}, focusWindow() {},
+    configure: options => { shellOptions = options; }, registerWindow: window => registered.push(window), focusWindow() {},
     wake: () => { screenOn = true; shellOptions.onScreenStateChanged(true); },
     sleep: () => { screenOn = false; shellOptions.onScreenStateChanged(false); },
     isScreenOn: () => screenOn, getWindows: () => [window], foregroundWindow: () => window,
-    setBatteryLevels() {}, underlayDim: () => 1, getFocus: () => 'app', hasOverlay: () => false,
+    setBatteryLevels: levels => Object.assign(battery, levels), underlayDim: () => 1, getFocus: () => 'app', hasOverlay: () => false,
     describeInputTarget: () => 'test app',
     paintScene: () => new Uint8Array([0, 0]), paintSurface: () => [{ image: new images.GrayImage(640, 480, 0), x: 0, y: 0 }],
     receiveInput: async input => {
@@ -102,16 +107,18 @@ function fixture() {
   const noop = () => () => {};
   class FaceclawCommunicatorBridge extends Display {
     phase = 'disconnected'; listeners = {};
-    constructor() { super(); bridge = this; }
+    constructor(addresses) { super(); bridge = this; this.addresses = addresses; }
     on(kind, fn) { this.listeners[kind] = fn; return () => { if (this.listeners[kind] === fn) delete this.listeners[kind]; }; }
     onStateChange(fn) { return this.on('state', fn); } onRingEvent(fn) { return this.on('ring', fn); }
-    onWearState(fn) { return this.on('wear', fn); } onBatteryState() { return noop(); } onFirmwareInfo() { return noop(); }
+    onWearState(fn) { return this.on('wear', fn); } onBatteryState(fn) { return this.on('battery', fn); } onCaseState(fn) { return this.on('case', fn); } onFirmwareInfo(fn) { return this.on('firmware', fn); }
     onFrameMetrics() { return noop(); } onPreviewAnimationFrame() { return noop(); } addCompassListener() { return noop(); } onAncsRelayFrame() { return noop(); }
-    onAncsAuthorization() { return noop(); } setRequiresAncs() {} rightWriteLimit() { return 20; } onPhoneLockSignal() {}
+    onAncsAuthorization() { return noop(); } setRequiresAncs() {} ancsRelayAvailable() { return relay.available; } rightWriteLimit() { return 20; } onPhoneLockSignal() {}
     async writeRawToRight() {} async configureBrightness() {} async setBrightness() {} async enableWearDetectionAndRequestState() {} async playBuzzerSequence() {} async close() {}
     emitState(phase, status = phase) { if (phase === 'connected' || phase === 'disconnected') this.phase = phase; this.listeners.state?.({ phase, status }); }
     emitRing(input) { this.listeners.ring?.(input); }
     emitWear(wearing) { this.listeners.wear?.(wearing); }
+    emitBattery(state) { this.listeners.battery?.(state); }
+    emitCase(state) { this.listeners.case?.(state); }
     async start() { this.emitState('connected', 'Connected.'); }
     async disconnect() { this.emitState('disconnected', 'Disconnected.'); }
     waitForFrameFinished() { return Promise.resolve('sent'); }
@@ -136,13 +143,18 @@ function fixture() {
     '../native/notification-icons.ios': { bindIosNotifications() {}, iosNotificationsChanged() {}, onIosNotificationPopup: () => () => {}, readActiveNotifications: () => [] },
     '../native/notification-sources': { shouldShowNotificationOnGlasses: () => true },
     "../native/compass.ios": { bindCompassSession() {}, receiveCompassEvent() {} },
+    '../native/bandwidth-benchmark.ios': { bindBandwidthBenchmarkSession() {} },
     '@nativescript/core': { File: { fromPath: () => ({ writeTextSync() {} }) },
       knownFolders: { documents: () => ({ path: '/tmp' }) }, path },
-    '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {}, onSpeechEnd: () => () => {} } },
+    '../native/ios-voice-input': { iosVoiceInput: { handleSessionEnded() {}, stopPhoneCapture() {}, setRawSession() {}, onSpeechEnd: () => () => {} } },
+    '../native/cloud-stt-provider': { transcriptionKey: voice => voice.provider },
     '../ui/shell/voice-activity': { voiceActivity: { setActive() {}, isActive: () => false, subscribe: () => () => {} } },
     '../native/faceclaw-communicator.ios': { FaceclawCommunicatorBridge, resolveIosPeripherals: async addresses => addresses },
     '../native/preview-display.ios': { PreviewDisplayTarget },
-    './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; start() {} stop() {} stopCommand() { return new Uint8Array(); } receive() { return false; } } },
+    '../g1/firmware/g1v0-image': { G1V0_IMAGE: { version: '0.5.65' } },
+    './ancs-client': { ANCS_FIRMWARE_VERSION: 16, AncsClient: class { state = 'disconnected'; constructor() { relay.client = this; }
+      start() { this.state = 'starting'; relay.starts++; } stop(message) { this.state = 'disconnected'; relay.message = message; }
+      stopCommand() { return new Uint8Array(); } receive() { return false; } } },
     '../native/nightscout-bridge': { nightscoutBridge: { async start() {}, async stop() {} } },
     '../native/weather': { weatherBridge: { setSessionActive() {} } },
     './glance-host': { GlanceHost }, './events': events,
@@ -151,15 +163,22 @@ function fixture() {
     './lock-screen': { LOCK_SCREEN_SURFACE_ID: 'lock-screen', createLockScreenImage: () => new images.GrayImage(640, 480, 123) },
     './glasses-presence': load('app/g2/glasses-presence.ts', {}),
     './device-addresses': { loadDeviceAddresses: () => ({ right: 'AA', left: 'BB', ring: '' }) }, './ios-peripheral-identity': { deviceAddressError: () => null },
+    './wear-remote': { WearRemote: class { schedulePublish() {} } },
     './firmware-compat': load('app/g2/firmware-compat.ts', {}), './reconnect-policy': load('app/g2/reconnect-policy.ts', {}),
     '../apps/launcher': { launcherEntries: () => [] },
     '../apps/evenhub/installed-apps': {}, '../apps/evenhub/manager': { onPhoneShownChanged: () => () => {}, phoneUiButton: () => null },
     '../apps/evenhub/updates': {}, '../apps/evenhub': {},
     '../apps/launcher/launcher-app': { createLauncherWindow: () => window, LAUNCHER_SURFACE_ID: 'launcher' },
+    '../apps/notifications/notifications-app': { NOTIFICATIONS_SURFACE_ID: 'window:notifications', NOTIFICATIONS_WINDOW_ID: 'notifications',
+      createNotificationsAppWindow: options => {
+        const app = { options, window: { windowId: 'notifications', surfaceId: 'window:notifications', appId: 'notifications', heightMode: 'min' } };
+        inProcessApps.push(app);
+        return app;
+      } },
     '../apps/all-apps': { ALL_APPS: [{ appId: 'glanceboard', glanceboard: provider }] },
     '../apps/onboarding/onboarding-progress': { claimGlassesOnboardingAutoLaunch: () => false },
     '../ui/shell/worker-window': {}, '../ui/shell/in-process-window': {},
-    '../ui/dashboard-settings': { brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' } },
+    '../ui/dashboard-settings': { glassesTypeSetting: { get: () => glassesType }, brightnessSetting: { get: () => 'auto' }, brightnessSettingToLevel: () => null, getBrightnessPreferences: () => ({ auto: true, level: 50, minimum: 2, maximum: 100, curve: '0:0,1000:100', fadeMs: 280 }), lockScreenEnabledSetting: { get: () => settings.lock }, ringConnectionModeSetting: { get: () => 'glasses' }, onAnySettingChanged: fn => { settingsChanged = fn; return () => {}; }, previewColorSetting: { get: () => 'white' } },
     '../native/phone-battery': { readPhoneBatteryState: () => ({ battery: 80, charging: false }) },
     '../apps/ios-availability': { iosAppUnavailableReason: () => null },
     '../graphics/glyph-wire': { prepareFrameDraws: () => null },
@@ -201,9 +220,41 @@ function fixture() {
   }
   async function phone(type, origin = 'ring') { controller.gesture(type, origin); await render(); }
   async function connect() { await controller.connect(); await render(); }
-  return { controller, shell, remoteHost, keyboardChanged: session => shellOptions.onKeyboardInputChanged(session), settings, phoneState, observers,
+  return { relay, controller, shell, battery, remoteHost, keyboardChanged: session => shellOptions.onKeyboardInputChanged(session), settings, phoneState, observers,
+    get shellOptions() { return shellOptions; }, registered, inProcessApps,
     get bridge() { return bridge; }, connect, wear: wearing => bridge.emitWear(wearing), settingsChanged: () => settingsChanged(), sent, previews, received, boardStats, hardware, phone, advance, render };
 }
+test('the session is told which glasses it drives, as a G2 session gets nowhere on a G1', async () => {
+  for (const type of ['g1', 'g2']) {
+    glassesType = type;
+    const f = fixture();
+    await f.connect();
+    assert.equal(f.bridge.addresses.glassesType, type);
+    assert.ok('right' in f.bridge.addresses && 'left' in f.bridge.addresses, 'the arms still come with it');
+  }
+  glassesType = 'g2';
+});
+
+test('a link that comes back asks for the notification relay again; a G1 without one is told to update', async () => {
+  const f = fixture();
+  await f.connect();
+  const firmware = { leftVersion: 'g1v0 0.5.65', rightVersion: 'g1v0 0.5.65', extension: 'Faceclaw/38' };
+  f.bridge.listeners.firmware(firmware);
+  assert.equal(f.relay.starts, 1);
+  // Connected and running: nothing to do.
+  f.bridge.emitState('connected');
+  assert.equal(f.relay.starts, 1);
+  // The firmware's relay ended with the link, so the client must not go on thinking it's ready.
+  f.bridge.emitState('retrying', 'Reconnecting');
+  assert.equal(f.relay.client.state, 'disconnected');
+  f.bridge.emitState('connected');
+  assert.equal(f.relay.starts, 2);
+  f.bridge.emitState('retrying', 'Reconnecting');
+  f.relay.available = false;
+  f.bridge.emitState('connected');
+  assert.equal(f.relay.starts, 2);
+  assert.match(f.relay.message, /firmware 0\.5\.65/);
+});
 const assertBlank = pixels => assert.ok(pixels.every(p => p === 0));
 const assertBoard = pixels => {
   assert.equal(pixels[48 * 640 + 270], 200);
@@ -241,3 +292,56 @@ test('keyboard sessions cannot deliver text after the glasses lock or phone leav
   editor.discard(); assert.deepEqual(calls.at(-1), ['discard']);
 });
 
+
+test('ring battery reported through the glasses reaches the shell while connected', async () => {
+  const f = fixture();
+  await f.connect();
+  f.bridge.emitBattery({ battery: 70, chargingStatus: 0, ringBattery: 55, ringChargingStatus: 1 });
+  assert.deepEqual([f.battery.headset, f.battery.ring, f.battery.ringCharging], [70, 55, true]);
+  // An unavailable ring reading clears the indicator; the headset keeps its last level.
+  f.bridge.emitBattery({ battery: -1, chargingStatus: 0, ringBattery: -1, ringChargingStatus: -1 });
+  assert.deepEqual([f.battery.headset, f.battery.ring, f.battery.ringCharging], [70, null, null]);
+  f.bridge.emitBattery({ battery: 70, chargingStatus: 0, ringBattery: 40, ringChargingStatus: 0 });
+  assert.deepEqual([f.battery.ring, f.battery.ringCharging], [40, false]);
+  await f.controller.disconnect(); await f.render();
+  assert.deepEqual([f.battery.ring, f.battery.ringCharging], [null, null]);
+});
+
+test('the charging case reading reaches the shell and keeps its level once the glasses leave the case', async () => {
+  const f = fixture();
+  await f.connect();
+  f.bridge.emitCase({ battery: 64, charging: true, docked: true });
+  assert.deepEqual([f.battery.case, f.battery.caseCharging], [64, true]);
+  // Out of the case there is no level, and whether the case is on USB is unknown.
+  f.bridge.emitCase({ battery: null, charging: false, docked: false });
+  assert.deepEqual([f.battery.case, f.battery.caseCharging], [64, null]);
+});
+
+test('the switcher can open the Notifications window in the background, once, with a live surface', async () => {
+  const f = fixture();
+  await f.render();
+  const opened = f.shellOptions.openNotificationsWindow();
+  assert.equal(opened.opened, true);
+  const [app] = f.inProcessApps;
+  assert.equal(opened.window, app);
+  assert.ok(f.registered.includes(app.window), 'registered with the shell for the switcher to foreground');
+  // A frame painted at once (the shell foregrounds and repaints the window
+  // straight away) lands on the surface configured ahead of it.
+  void app.options.submitFrame([{ image: new images.GrayImage(640, 480, 90), x: 0, y: 0 }], 0, 1);
+  await f.render();
+  const surface = f.controller.display.surfaces.get('window:notifications');
+  assert.ok(surface, 'surface configured');
+  assert.equal(surface.pixels[0], 90);
+  assert.equal(surface.visible, false, 'stays hidden until the shell foregrounds it');
+  // Already open: the same window, nothing new created or registered.
+  const registeredBefore = f.registered.length;
+  const again = f.shellOptions.openNotificationsWindow();
+  assert.deepEqual([again.opened, again.window, f.inProcessApps.length, f.registered.length], [false, app, 1, registeredBefore]);
+  // Closed (the selection moved on): frames stop, and the next open makes a new window.
+  app.options.removeSurface(); app.options.onClosed();
+  void app.options.submitFrame([{ image: new images.GrayImage(640, 480, 90), x: 0, y: 0 }], 0, 2);
+  await f.render();
+  assert.equal(f.controller.display.surfaces.has('window:notifications'), false);
+  assert.equal(f.shellOptions.openNotificationsWindow().opened, true);
+  assert.equal(f.inProcessApps.length, 2);
+});

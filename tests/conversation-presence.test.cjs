@@ -14,6 +14,8 @@ function harness(lockEnabled = false, notifications = { backend: 'local', connec
   let presence = { connected: true, worn: null, charging: false }, queries = 0, starts = 0, stops = 0, microphone = true;
   const begins = [];
   const context = { exports: {}, global: { isAndroid: true },
+    glassesTypeSetting: { get: () => 'g2' },
+    manualConversationResumeSetting: { set() {} },
     lockScreenEnabledSetting: { get: () => lockEnabled }, getGlassesPresence: () => presence,
     hasMicrophonePermission: () => microphone, voiceActivity: { isActive: () => false },
     // Manual ON prerequisites outside presence: conv/2 bridge (optional identity) and a Soniox key.
@@ -38,7 +40,7 @@ function harness(lockEnabled = false, notifications = { backend: 'local', connec
   const instance = new context.exports.Harness();
   Object.assign(instance, { phase: 'connected', customFirmwareConfirmed: true, keyboardInput: false,
     communicator: { enableWearDetectionAndRequestState: () => { queries++; return Promise.resolve(); } },
-    appendLog: () => {},
+    appendLog: () => {}, stopManualConversationResume() {},
     // Hermes is not selected in these presence checks; the owner still exists on the controller.
     hermesSelected: false, setConversationHermesSelected() { this.hermesSelected = true; return true; },
     conversationHermes: { begin: (...args) => { begins.push(args); return true; }, stop() { begins.length = 0; },

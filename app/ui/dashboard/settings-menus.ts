@@ -12,7 +12,7 @@ import {
   localModelState,
   onLocalModelStateChanged,
   startLocalModelDownload,
-} from "../../native/llama";
+} from "../../native/local-llm";
 import {
   ASR_MODELS,
   asrModelState,
@@ -42,14 +42,20 @@ import {
   assistantBridgePortSetting,
   assistantBridgeTokenSetting,
   assistantModelSetting,
+  assistantOpenAiCompatibleKeySetting,
+  assistantOpenAiCompatibleModelSetting,
+  assistantOpenAiCompatibleUrlSetting,
   assistantSkipConfirmationSetting,
+  veniceWebSearchSetting,
   batteryDisplayModeSetting,
   brightnessSetting,
   autoBrightnessMinSetting,
   autoBrightnessMaxSetting,
   autoBrightnessCurveSetting,
   dataCollectionSetting,
+  distanceUnitSetting,
   glassesBatteryVisibilitySetting,
+  glassesModelName,
   phoneBatteryVisibilitySetting,
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
@@ -62,6 +68,7 @@ import {
   previewScalingSetting,
   phoneRotationSetting,
   ringConnectionModeSetting,
+  glassesTypeSetting,
   sonioxApiKeySetting,
   saveTranscribeAudioSetting,
   whisperServerApiKeySetting,
@@ -75,6 +82,7 @@ import {
   firmwareDebugFlagsSetting,
   lockScreenEnabledSetting,
   menuAnimationSetting,
+  newNotificationDisplaySetting,
   saveVoiceRecordingsSetting,
   showBleBandwidthSetting,
   suspendEvenHubWhenScreenOffSetting,
@@ -90,10 +98,18 @@ import {
   watchCrownClockwiseNextSetting,
   watchMirrorAssistantSetting,
   watchRemoteEnabledSetting,
+  watchSoundEffectsSetting,
+  watchVibrateOnInputSetting,
 } from "../dashboard-settings";
 import { wearBridge } from "../../native/wear-bridge";
 import { openSettingsSubMenu, SettingsPanelLayer, type SettingsSection } from "./settings-panel";
 import { uiFontPickerMenuItem } from "../font-picker";
+import { NotificationFilterLayer } from "../notification-filter";
+import { compatibleModelDiscoveryMenuItem } from "../openai-compatible-model-picker";
+import { isVeniceApiBaseUrl } from "../../native/openai-chat";
+
+/** The Settings section the Notifications app's "Settings" menu item opens. */
+export const NOTIFICATIONS_SETTINGS_SECTION = "Notifications";
 
 /** The Settings app's master-detail panel (sections on the left, contents on the right). */
 export function createSettingsPanelLayer(): SettingsPanelLayer {
@@ -131,6 +147,14 @@ function settingsSections(): SettingsSection[] {
       },
     },
     {
+      // Also opened from the Notifications app's menu (deep link by label).
+      label: NOTIFICATIONS_SETTINGS_SECTION,
+      items: [
+        enumSettingMenuItem(newNotificationDisplaySetting),
+        notificationFilterMenuItem(),
+      ],
+    },
+    {
       label: "Voz",
       items: [
         enumSettingMenuItem(wakeWordActionSetting),
@@ -146,22 +170,42 @@ function settingsSections(): SettingsSection[] {
     },
     {
       label: "Asistente",
-      items: [
-        // iOS offers cloud APIs; Android also supports local models and the bridge.
-        enumSettingMenuItem(assistantBackendSetting),
-        enumSettingMenuItem(assistantModelSetting),
-        textSettingMenuItem(assistantHermesUrlSetting),
-        textSettingMenuItem(assistantHermesKeySetting),
-        ...(!global.isIOS ? [localModelMenuItem()] : []),
-        toggleSettingMenuItem(assistantSkipConfirmationSetting),
-        // iOS has no local LLM or agent bridge yet.
-        ...(!global.isIOS ? [
-          textSettingMenuItem(assistantBridgeHostSetting),
-          textSettingMenuItem(assistantBridgePortSetting),
-          textSettingMenuItem(assistantBridgeTokenSetting),
-          toggleSettingMenuItem(assistantAllowProactiveSetting),
-        ] : []),
-      ],
+      // Re-read on every paint: provider-specific rows follow the selected
+      // model (and, for Venice, the compatible URL).
+      get items() {
+        const selectedModel = assistantModelSetting.get();
+        return [
+          // iOS's on-phone model is Apple Intelligence; Android downloads one. Only Android has the bridge.
+          enumSettingMenuItem(assistantBackendSetting),
+          enumSettingMenuItem(assistantModelSetting),
+          ...(selectedModel === "hermes" ? [
+            textSettingMenuItem(assistantHermesUrlSetting),
+            textSettingMenuItem(assistantHermesKeySetting),
+          ] : []),
+          ...(selectedModel === "openai-compatible" ? [
+            textSettingMenuItem(assistantOpenAiCompatibleUrlSetting),
+            textSettingMenuItem(assistantOpenAiCompatibleKeySetting),
+            compatibleModelDiscoveryMenuItem({
+              getBaseUrl: () => assistantOpenAiCompatibleUrlSetting.get(),
+              getApiKey: () => assistantOpenAiCompatibleKeySetting.get(),
+              getModel: () => assistantOpenAiCompatibleModelSetting.get(),
+              setModel: (model) => assistantOpenAiCompatibleModelSetting.set(model),
+            }, assistantOpenAiCompatibleModelSetting),
+            textSettingMenuItem(assistantOpenAiCompatibleModelSetting),
+            ...(isVeniceApiBaseUrl(assistantOpenAiCompatibleUrlSetting.get())
+              ? [toggleSettingMenuItem(veniceWebSearchSetting)] : []),
+          ] : []),
+          global.isIOS ? systemModelMenuItem() : localModelMenuItem(),
+          toggleSettingMenuItem(assistantSkipConfirmationSetting),
+          // iOS has no agent bridge yet.
+          ...(!global.isIOS ? [
+            textSettingMenuItem(assistantBridgeHostSetting),
+            textSettingMenuItem(assistantBridgePortSetting),
+            textSettingMenuItem(assistantBridgeTokenSetting),
+            toggleSettingMenuItem(assistantAllowProactiveSetting),
+          ] : []),
+        ];
+      },
     },
     {
       label: "Claves API",
@@ -187,11 +231,16 @@ function settingsSections(): SettingsSection[] {
     },
     {
       label: "Reloj",
-      // Wear OS remote (wear/); the status line above the items says whether
-      // a watch running the companion app is currently reachable.
+      // Watch remote (wear/, apple-watch/); the status line above the items says
+      // whether a watch running the companion app is currently reachable.
       items: [
         toggleSettingMenuItem(watchRemoteEnabledSetting),
-        toggleSettingMenuItem(watchCrownClockwiseNextSetting),
+        ...(global.isIOS ? [
+          toggleSettingMenuItem(watchVibrateOnInputSetting),
+          toggleSettingMenuItem(watchSoundEffectsSetting),
+        ] : [
+          toggleSettingMenuItem(watchCrownClockwiseNextSetting),
+        ]),
         toggleSettingMenuItem(watchCanUnlockSetting),
         toggleSettingMenuItem(watchMirrorAssistantSetting),
       ],
@@ -200,9 +249,9 @@ function settingsSections(): SettingsSection[] {
     {
       label: "Desarrollador",
       items: [
-        // Whether the phone opens its own BLE link to the R1 ring; the
-        // glasses relay ring gestures either way. Applied at connect time.
-        enumSettingMenuItem(ringConnectionModeSetting),
+        // Whether and how the phone opens its own BLE link to the R1 ring.
+        // Applied at connect time.
+        ringConnectionMenuItem(),
         toggleSettingMenuItem(saveVoiceRecordingsSetting),
         toggleSettingMenuItem(firmwareDebugFlagsSetting),
         toggleSettingMenuItem(suspendEvenHubWhenScreenOffSetting),
@@ -250,17 +299,12 @@ function settingsSections(): SettingsSection[] {
     },
   ];
   if (!global.isIOS) return sections;
-  const deferred = new Set(["Reloj"]);
   return sections.map(section => {
     if (section.label === "Desarrollador") return { ...section, items: [enumSettingMenuItem(ringConnectionModeSetting),
       toggleSettingMenuItem(showBleBandwidthSetting)] };
     // No downloadable on-device models: iOS's on-device option is Apple's recognizer.
     if (section.label === "Voz") return { label: "Voz", items: [enumSettingMenuItem(wakeWordActionSetting),
       enumSettingMenuItem(voiceProviderSetting), toggleSettingMenuItem(saveTranscribeAudioSetting), ...whisperServerMenuItems()] };
-    if (deferred.has(section.label)) return { label: section.label, items: [{
-      label: "Not available on iOS yet", disabled: true, onSelect: () => {},
-      description: `${section.label} integration has not been ported to iOS.`,
-    }] };
     if (section.label === "Pantalla") return { ...section, items: section.items.filter(item =>
       item.label !== screenTimeoutSetting.label) };
     return section;
@@ -295,6 +339,8 @@ function customizationRows(): () => MenuItem[] {
     animationsMenuItem(),
     // Controls the top-bar clock (24-hour vs 12-hour).
     enumSettingMenuItem(timeFormatSetting),
+    // Miles or kilometers: Weather's wind speed and Navigate's distances.
+    enumSettingMenuItem(distanceUnitSetting),
   ];
   const bottomRows = [font, position, depth, statusBar, ...rest];
   const popupRows = [font, position, depth, statusBar, statusBarVisibility, windowBorder, ...rest];
@@ -309,6 +355,17 @@ function customizationRows(): () => MenuItem[] {
         return sideRows;
     }
   };
+}
+
+/** Notifications > Notification filter: per-app toggles for which notifications pop up. */
+function notificationFilterMenuItem(): MenuItem {
+  return submenuItem(
+    "Notification filter",
+    (ctx) => {
+      ctx.stack.push(new NotificationFilterLayer());
+    },
+    { description: "Choose which apps' new notifications pop up on the glasses. All of them still appear in the Notifications app." },
+  );
 }
 
 function autoBrightnessMenuItem(): MenuItem {
@@ -334,13 +391,14 @@ function batteryIndicatorsMenuItem(): MenuItem {
   return {
     label: "Indicadores de batería",
     description:
-      "Top-bar battery indicators for the phone, Wear OS watch, glasses, and ring: their style, and whether each shows always, only when low, or never.",
+      "Top-bar battery indicators for the phone, watch, glasses, and ring: their style, and whether each shows always, only when low, or never.",
     onSelect: (ctx) => {
       openSettingsSubMenu(ctx, "Indicadores de batería", [
         enumSettingMenuItem(batteryDisplayModeSetting),
         enumSettingMenuItem(phoneBatteryVisibilitySetting),
         enumSettingMenuItem(watchBatteryVisibilitySetting),
-        enumSettingMenuItem(glassesBatteryVisibilitySetting),
+        // Named as the top bar names this indicator.
+        enumSettingMenuItem(glassesBatteryVisibilitySetting, { label: glassesModelName() }),
         enumSettingMenuItem(ringBatteryVisibilitySetting),
       ]);
     },
@@ -397,6 +455,29 @@ function localModelStatusText(): string {
     return `${pct}% of ${LOCAL_MODEL_GB}`;
   }
   return "not downloaded";
+}
+
+/**
+ * iOS: the on-phone model is the Apple Intelligence system model, which iOS
+ * installs and manages; the row only reports whether it can be used.
+ */
+function systemModelMenuItem(): MenuItem {
+  const statusText = (): string => {
+    const state = localModelState();
+    return state.status === "ready" ? "ready" : state.detail ?? "unavailable";
+  };
+  return {
+    label: "On-phone model",
+    description:
+      "Apple Intelligence's on-device model answers assistant queries on the phone itself, with no API key or cloud service. " +
+      "Needs iOS 26 and an iPhone that supports Apple Intelligence, with Apple Intelligence turned on in iOS Settings. " +
+      "Faster and more private than the cloud models, but simpler, with a short memory. " +
+      "Used automatically when no API key is set.",
+    onSelect: () => {},
+    render: ({ image, x, y, width }) => {
+      drawRightValueMenuItem(image, getDefaultSmallFont(), x, y, width, "On-phone model", statusText());
+    },
+  };
 }
 
 /** Download/cancel/delete management for the on-phone assistant model. */
@@ -548,17 +629,44 @@ function readBundledDoc(fileName: string): string {
   }
 }
 
+/**
+ * Developer > Ring connection: the setting, except with a RayNeo iO, which
+ * always takes the ring directly (effectiveRingConnectionMode): then a fixed,
+ * disabled "Direct" row, the stored choice kept for G2 glasses.
+ */
+function ringConnectionMenuItem(): MenuItem {
+  const item = enumSettingMenuItem(ringConnectionModeSetting);
+  const io = () => glassesTypeSetting.get() !== "g2";
+  return {
+    ...item,
+    disabled: io,
+    render: (args) => {
+      if (!io()) return item.render?.(args);
+      drawRightValueMenuItem(args.image, getDefaultSmallFont(), args.x, args.y, args.width, item.label, glassesTypeSetting.get() === "g1" ? "Direct (Even G1)" : "Direct (RayNeo iO)");
+    },
+  };
+}
+
 function renderWatchStatus(args: { image: GrayImage; x: number; y: number; width: number }): number {
   const { image, x, y, width } = args;
   const font = getDefaultSmallFont();
   let status: string;
   if (!wearBridge.isAvailable()) {
-    status = "Google Play services is unavailable on this phone, so no watch can connect.";
+    status = global.isIOS
+      ? "This device can't pair with an Apple Watch."
+      : "Google Play services is unavailable on this phone, so no watch can connect.";
   } else {
     const connection = wearBridge.getWatchConnection();
-    status = connection.reachable
-      ? `Connected to ${connection.watchName || "a watch"}.`
-      : "No watch connected. Install the Faceclaw watch app (wear/ in the source tree) on a Wear OS watch paired with this phone.";
+    if (global.isIOS) {
+      // iOS only says whether the app is installed; it may not be running.
+      status = connection.reachable
+        ? "The Faceclaw app is installed on your Apple Watch."
+        : "No watch connected. Install the Faceclaw watch app (apple-watch/ in the source tree) on an Apple Watch paired with this iPhone.";
+    } else {
+      status = connection.reachable
+        ? `Connected to ${connection.watchName || "a watch"}.`
+        : "No watch connected. Install the Faceclaw watch app (wear/ in the source tree) on a Wear OS watch paired with this phone.";
+    }
   }
   const lines = wrapText(font, status, width);
   for (let i = 0; i < lines.length; i++) {

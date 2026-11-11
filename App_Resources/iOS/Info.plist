@@ -13,8 +13,7 @@
   <key>CFBundleDisplayName</key>
   <string>Faceclaw</string>
   <key>CFBundleShortVersionString</key>
-  <!-- Apple requires a numeric version; the app displays 0.8.3-rc1. -->
-  <string>0.8.3</string>
+  <string>0.9.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSRequiresIPhoneOS</key>
@@ -31,6 +30,8 @@
   <string>Faceclaw reads your upcoming calendar events to display them in Calendar and Glanceboard on your glasses.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>Faceclaw reads your upcoming calendar events to display them in Calendar and Glanceboard on your glasses.</string>
+  <key>NSAppleMusicUsageDescription</key>
+  <string>Faceclaw shows what is playing in Apple Music on your glasses, controls playback, and lets you browse and play your music library from the glasses.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>Faceclaw uses your location for local weather, turn-by-turn navigation, and true north on the glasses compass.</string>
   <key>NSLocationTemporaryUsageDescriptionDictionary</key>
@@ -56,6 +57,26 @@
   <string>Faceclaw connects to the terminal servers and developer app URLs you configure on your local network.</string>
   <key>UILaunchScreen</key>
   <dict/>
+  <!-- Required: an app built with the iOS 27 SDK crashes at launch without the scene
+       life cycle. @nativescript/core switches to it when it sees this key. Its side effect:
+       the root page only loads once a scene connects, not on a background launch. -->
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+          <key>UISceneConfigurationName</key>
+          <string>Default Configuration</string>
+          <key>UISceneDelegateClassName</key>
+          <string>SceneDelegate</string>
+        </dict>
+      </array>
+    </dict>
+  </dict>
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>

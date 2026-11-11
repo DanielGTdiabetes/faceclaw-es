@@ -107,7 +107,7 @@ function realShell({ wakeWordAction = 'voice-input', conversationControl, traceL
     onRemoved() { this.options?.onClosed?.(); this.options?.onRemoved?.(); }
   }
   class VoiceInputLayer extends Leaf { startCapture() { this.capturing = true; } endCapture() {} }
-  class KeyboardInputLayer extends Leaf {}
+  class KeyboardInputLayer extends Leaf { get shownOnGlasses() { return this.options.visibility !== 'phone'; } }
   const session = { isTurnActive: () => false, sendUtterance() {}, cancel() {} };
   const setting = (value) => ({ get: () => value });
   const mocks = {
@@ -859,6 +859,7 @@ function phoneHarness(f) {
   vm.runInNewContext(ts.transpileModule(`export class Manual { ${methods.map(m => m.getText(source)).join('\n')} }`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText, { module, exports: module.exports,
+    manualConversationResumeSetting: { set() {} },
     assistantBridge: { conversation: { isSupported: () => f.supported, supportsOptionalIdentity: () => f.optional === true,
       supportsDailyContext: () => false } },
     sonioxApiKeySetting: { get: () => 'synthetic' }, setConversationTextEngine() {},
@@ -869,7 +870,7 @@ function phoneHarness(f) {
   });
   const owner = { ...f.controller,
     conversationDetector: { hasOwnProfile: () => f.profile !== false, snapshot: () => ({ enabled: detectorOn, state: detectorOn ? 'escuchando' : 'desactivado', remainingMs: 1200000 }) },
-    detectorEnvironment: () => ({ available: true }),
+    detectorEnvironment: () => ({ available: true }), stopManualConversationResume() {},
     setConversationCaptureEnabled(enabled, ...args) { detectorOn = enabled; captureCalls.push([enabled, ...args]); if (enabled) f.arm(); else f.off(); },
     toggleManualConversation: module.exports.Manual.prototype.toggleManualConversation,
     setManualConversationEnabled: module.exports.Manual.prototype.setManualConversationEnabled,
@@ -880,7 +881,7 @@ function phoneHarness(f) {
   const tracked = (name) => () => () => unsubscribed.push(name);
   const notified = [];
   const load = makeLoader({
-    '@nativescript/core': { Dialogs: {}, Application: {}, Frame: {}, ImageSource: {}, Screen: { mainScreen: {} }, SwipeDirection: {} },
+    '@nativescript/core': { Observable: class {}, Dialogs: {}, Application: {}, Frame: {}, ImageSource: {}, Screen: { mainScreen: {} }, SwipeDirection: {} },
     'phone-ui/remote-controls-view-model': { RemoteControlsViewModel: class {} },
     'g2/dashboard-controller': { dashboardController: { ...owner,
       conversationDetector: { ...owner.conversationDetector, subscribe: tracked('detector') },

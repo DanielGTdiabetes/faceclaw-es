@@ -8,8 +8,10 @@ import t3codeApp from "./t3code";
 import filesApp from "./files";
 import musicApp from "./music";
 import nightscoutApp from "./nightscout";
+import healthApp from "./health";
 import transcribeApp from "./transcribe";
 import localConversationApp from "./local-conversation";
+import translateApp from "./translate";
 import teleprompterApp from "./teleprompter";
 import microphonesApp from "./microphones";
 import notificationsApp from "./notifications";
@@ -44,8 +46,10 @@ export const ALL_APPS: readonly AppDefinition[] = [
   filesApp,
   musicApp,
   nightscoutApp,
+  healthApp,
   transcribeApp,
   localConversationApp,
+  translateApp,
   teleprompterApp,
   microphonesApp,
   notificationsApp,

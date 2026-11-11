@@ -1,4 +1,5 @@
 import { RemoteControlsViewModel } from './remote-controls-view-model';
+import { KeyboardInputViewModel } from './keyboard-input-view-model';
 import { BleBandwidthMeter } from "./ble-bandwidth-meter";
 import {
   Application,
@@ -14,17 +15,20 @@ import {
   type View,
 } from "@nativescript/core";
 import { dashboardController, type MirrorTouchKind } from "../g2/dashboard-controller";
+import { formatBatteryLine } from "../g2/glasses-display-state";
 import {
+  glassesModelName,
+  glassesTypeSetting,
   mirrorTouchSetting,
   onAnySettingChanged,
   showBleBandwidthSetting, sonioxApiKeySetting,
 } from "../ui/dashboard-settings";
 import { sampleBleTraffic } from "../native/ble-traffic";
-import { isValidMacAddress, loadDeviceAddresses } from "../g2/device-addresses";
+import { isValidMacAddress, loadDeviceAddresses, loadSavedEvenPair, rememberEvenPair, restoreEvenPair } from "../g2/device-addresses";
 import { isAutoReconnectSuppressed, resumeAutoReconnect } from "../g2/reconnect-policy";
 import { isPreviewOnlyMode } from "./onboarding-state";
 import { formatErrorMessage } from "../util/format-error";
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
+import { screenHeight, screenWidth } from "../ui/shell/geometry";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
 import { asrModelState, onAsrModelStateChanged, startAsrModelDownload, cancelAsrModelDownload } from "../native/asr-model";
 import { conversationModelOption, conversationModelState } from "../native/conversation-model-options";
@@ -48,7 +52,10 @@ import { speakerProbeSummary } from "../conversation-detection/speaker-probe-sum
 import { type DiagnosticPhase } from "../conversation-detection/phase-diagnostics";
 import { assistantBridge } from "../assistant/bridge-client";
 
-const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
+/** The paired glasses' screen aspect (4:3 on the G2, 27:11 on the RayNeo iO). */
+function lensAspectRatio(): number {
+  return screenWidth() / screenHeight();
+}
 
 type LayoutOrientation = "portrait" | "landscape";
 
@@ -75,8 +82,6 @@ export class MainViewModel extends RemoteControlsViewModel {
   private _activeTextEditorToggleValue = false;
   private _activeTextEditorToggleVisible = false;
   private _keyboardInputActive = false;
-  private _keyboardInputTargets: ReadonlyArray<{ id: string; label: string }> = [];
-  private _keyboardInputText = "";
   private _evenAppConflictMessage = "";
   private _evenAppConflictWarningVisible = false;
   private _firmwareWarningMessage = "";
@@ -120,6 +125,11 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.displayPreview = snapshot.displayPreview;
       this.displayPreviewMessage = snapshot.displayPreviewMessage;
       this.phase = snapshot.phase;
+      this.batteryLine = formatBatteryLine(
+        snapshot.batteries,
+        snapshot.phase === "connected" || snapshot.phase === "charging",
+        glassesModelName(),
+      );
       this.activeTextSettingId = snapshot.activeTextSettingId;
       this.activeTextEditorTitle = snapshot.activeTextEditorTitle;
       this.activeTextSettingTitle = snapshot.activeTextSettingTitle;
@@ -132,8 +142,8 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.activeTextEditorToggleLabel = snapshot.activeTextEditorToggleLabel;
       this.activeTextEditorToggleValue = snapshot.activeTextEditorToggleValue;
       this.activeTextEditorToggleVisible = snapshot.activeTextEditorToggleVisible;
-      // Targets before active: the panel's buttons are labelled when it appears.
-      this.keyboardInputTargets = snapshot.keyboardInputTargets;
+      // Session before active: the panel is filled in when it appears.
+      this.keyboardInputModel.setSession(dashboardController.keyboardInputSession);
       this.keyboardInputActive = snapshot.keyboardInputActive;
       this.evenAppConflictMessage = snapshot.evenAppConflictMessage;
       this.evenAppConflictWarningVisible = snapshot.evenAppConflictWarningVisible;
@@ -797,7 +807,7 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   get displayPreviewHeight(): number {
-    return Screen.mainScreen.widthDIPs / LENS_ASPECT_RATIO;
+    return Screen.mainScreen.widthDIPs / lensAspectRatio();
   }
 
   get landscapeDisplayPreviewWidth(): number {
@@ -813,8 +823,8 @@ export class MainViewModel extends RemoteControlsViewModel {
     // and controls, and updates for rotation, split-screen, and the keyboard.
     const { width, height } = args.object.getActualSize();
     if (width <= 0 || height <= 0) return;
-    const previewHeight = Math.min(height, width / LENS_ASPECT_RATIO);
-    const previewWidth = previewHeight * LENS_ASPECT_RATIO;
+    const previewHeight = Math.min(height, width / lensAspectRatio());
+    const previewWidth = previewHeight * lensAspectRatio();
     if (previewWidth === this._landscapePreviewWidth && previewHeight === this._landscapePreviewHeight) return;
     this._landscapePreviewWidth = previewWidth;
     this._landscapePreviewHeight = previewHeight;
@@ -1062,11 +1072,13 @@ export class MainViewModel extends RemoteControlsViewModel {
 
   // ---- keyboard-input panel (the keyboard button beside the mic button) ----
   //
-  // The dialog lives on the glasses (ui/shell/keyboard-input.ts); this panel
-  // is the phone's end of it: the text field the IME types into and a send
-  // button per destination. The field's text is the panel's own state, never
-  // echoed back from the controller (see setActiveTextSettingValue for why);
-  // it is cleared whenever a dialog opens or closes.
+  // The dialog lives on the glasses (ui/shell/keyboard-input.ts); the panel
+  // is the phone's end of it, bound to keyboardInputModel (shared with iOS).
+  // Its text is the panel's own state, never echoed back from the controller
+  // (see setActiveTextSettingValue for why); it is cleared whenever a dialog
+  // opens or closes.
+
+  readonly keyboardInputModel = new KeyboardInputViewModel();
 
   get keyboardInputActive(): boolean {
     return this._keyboardInputActive;
@@ -1075,76 +1087,12 @@ export class MainViewModel extends RemoteControlsViewModel {
   set keyboardInputActive(value: boolean) {
     if (this._keyboardInputActive === value) return;
     this._keyboardInputActive = value;
-    this.keyboardInputText = "";
     this.notifyPropertyChange("keyboardInputActive", value);
-    this.notifyPropertyChange("keyboardInputVisibility", this.keyboardInputVisibility);
     this.notifyPropertyChange("controlsVisibility", this.controlsVisibility);
-  }
-
-  get keyboardInputVisibility(): "visible" | "collapse" {
-    return this._keyboardInputActive ? "visible" : "collapse";
-  }
-
-  get keyboardInputText(): string {
-    return this._keyboardInputText;
-  }
-
-  set keyboardInputText(value: string) {
-    if (this._keyboardInputText === value) return;
-    this._keyboardInputText = value;
-    this.notifyPropertyChange("keyboardInputText", value);
-  }
-
-  set keyboardInputTargets(value: ReadonlyArray<{ id: string; label: string }>) {
-    this._keyboardInputTargets = value;
-    this.notifyPropertyChange("keyboardInputPrimaryTargetLabel", this.keyboardInputPrimaryTargetLabel);
-    this.notifyPropertyChange("keyboardInputPrimaryTargetVisibility", this.keyboardInputPrimaryTargetVisibility);
-    this.notifyPropertyChange("keyboardInputSecondaryTargetLabel", this.keyboardInputSecondaryTargetLabel);
-    this.notifyPropertyChange("keyboardInputSecondaryTargetVisibility", this.keyboardInputSecondaryTargetVisibility);
-  }
-
-  // The glasses menu has at most two destinations (assistant, app), so the
-  // panel has a fixed pair of buttons rather than a repeater.
-  get keyboardInputPrimaryTargetLabel(): string {
-    return this._keyboardInputTargets[0]?.label ?? "";
-  }
-
-  get keyboardInputPrimaryTargetVisibility(): "visible" | "collapse" {
-    return this._keyboardInputTargets[0] ? "visible" : "collapse";
-  }
-
-  get keyboardInputSecondaryTargetLabel(): string {
-    return this._keyboardInputTargets[1]?.label ?? "";
-  }
-
-  get keyboardInputSecondaryTargetVisibility(): "visible" | "collapse" {
-    return this._keyboardInputTargets[1] ? "visible" : "collapse";
   }
 
   onKeyboardTap(): void {
     dashboardController.startKeyboardInput();
-  }
-
-  onKeyboardInputTextChange(args: { value?: string; object?: { text?: string } }): void {
-    const text = args.object?.text ?? args.value ?? "";
-    // Track the draft so closing the dialog emits a clear even when the
-    // binding hasn't updated the model. Avoid echoing edits into the IME.
-    this._keyboardInputText = text;
-    dashboardController.setKeyboardInputText(text);
-  }
-
-  onKeyboardInputPrimarySendTap(): void {
-    const target = this._keyboardInputTargets[0];
-    if (target) dashboardController.sendKeyboardInput(target.id);
-  }
-
-  onKeyboardInputSecondarySendTap(): void {
-    const target = this._keyboardInputTargets[1];
-    if (target) dashboardController.sendKeyboardInput(target.id);
-  }
-
-  onKeyboardInputDiscardTap(): void {
-    dashboardController.discardKeyboardInput();
   }
 
   get evenAppConflictMessage(): string {
@@ -1285,6 +1233,14 @@ export class MainViewModel extends RemoteControlsViewModel {
    * auto-reconnect suppression right away.
    */
   async onPrepareFontsTap(): Promise<void> {
+    await this.openFirmwareCheck();
+  }
+
+  async onCheckFirmwareTap(): Promise<void> {
+    await this.openFirmwareCheck();
+  }
+
+  private async openFirmwareCheck(): Promise<void> {
     this.setWarningsModalVisible(false);
     if (this.phase === "connected" || this.phase === "charging" || this.phase === "connecting") {
       try {
@@ -1522,6 +1478,28 @@ export class MainViewModel extends RemoteControlsViewModel {
     Frame.topmost()?.navigate({ moduleName: "phone-ui/pairing-page", context: { onboarding: false } });
   }
 
+  async onSwitchEvenPairTap(): Promise<void> {
+    if (!this.canRun || isPreviewOnlyMode()) return;
+    const current = glassesTypeSetting.get();
+    if (current !== "g1" && current !== "g2") return;
+    const target = current === "g1" ? "g2" : "g1";
+    const saved = loadSavedEvenPair(target);
+    if (!saved) {
+      await Dialogs.alert({ title: "Cambiar de gafas", message: "Empareja el otro modelo una vez para guardarlo.", okButtonText: "Cerrar" });
+      return;
+    }
+    try {
+      await dashboardController.disconnect();
+      if (this.phase !== "disconnected" || glassesTypeSetting.get() !== current) return;
+      rememberEvenPair(current);
+      restoreEvenPair(saved);
+      glassesTypeSetting.set(target);
+      await dashboardController.connect();
+    } catch (error) {
+      this.status = this.formatError(error);
+    }
+  }
+
   async onInstallFirmwareTap(): Promise<void> {
     this.setWarningsModalVisible(false);
     await this.openFlashPage("install");
@@ -1532,8 +1510,9 @@ export class MainViewModel extends RemoteControlsViewModel {
   }
 
   private async openFlashPage(mode: "install" | "uninstall"): Promise<void> {
-    // The flasher needs the glasses to itself, so drop the main connection first.
-    if (this.phase === "connected" || this.phase === "charging") {
+    // The flasher needs the glasses to itself, so drop the main connection first. That includes a session
+    // still retrying: an install brings arms back at the addresses it is dialling.
+    if (this.phase === "connected" || this.phase === "charging" || this.phase === "connecting") {
       try {
         await dashboardController.disconnect();
       } catch {
@@ -1700,10 +1679,16 @@ export class MainViewModel extends RemoteControlsViewModel {
     return dashboardController.glassesDisplayAsleep();
   }
 
+  override get padDetailLine(): string {
+    return dashboardController.glassesDisplayDetail();
+  }
+
   private refreshPadFocusLine(): void {
     this.notifyPropertyChange("padFocusLine", this.padFocusLine);
     this.notifyPropertyChange("padFocusClass", this.padFocusClass);
     this.notifyPropertyChange("padWakeHintVisibility", this.padWakeHintVisibility);
+    this.notifyPropertyChange("padDetailLine", this.padDetailLine);
+    this.notifyPropertyChange("padDetailVisibility", this.padDetailVisibility);
   }
 
   async onPadTap(): Promise<void> {

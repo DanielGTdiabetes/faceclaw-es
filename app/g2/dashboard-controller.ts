@@ -1,4 +1,3 @@
-import { watchNotificationListenerBinding } from "../native/notification-access";
 import { startRemoteInput } from "../remote/service";
 import { acceptInput, resetRingInputFilter } from "../ui/input-monitor";
 import { Application, Dialogs, ImageSource } from "@nativescript/core";
@@ -17,8 +16,10 @@ import { mediaControllerBridge } from "../native/media-controller";
 import { nightscoutBridge } from "../native/nightscout-bridge";
 import { weatherBridge } from "../native/weather";
 import { ALL_NOTIFICATIONS, onAndroidNotificationPosted, onAndroidNotificationRemoved, readActiveNotifications } from "../native/notification-icons";
-import { shouldShowNotificationOnGlasses } from "../native/notification-sources";
+import { watchNotificationListenerBinding } from "../native/notification-access";
 import { openEvenAppSettings, readEvenAppNotificationState } from "../native/even-app-conflict";
+import { defaultRingName, setGlassesRingLink } from "../native/ring-status";
+import { getBooleanSetting, setBooleanSetting } from "../native/settings-store";
 import { grayImageToPreviewSource } from "../native/gray-image-preview";
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmware-compat";
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
@@ -80,7 +81,7 @@ import { evenSttUrl } from "../native/even-stt";
 import { micModelState } from "../apps/microphones/mic-models";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { assistantAudioPriority } from "../assistant/audio-priority";
-import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
+import { GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { ShellResourceLimitError } from "../graphics/shell-scene";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
@@ -104,10 +105,10 @@ import { ALL_APPS } from "../apps/all-apps";
 import { type AppContext, type AppDefinition, type AppLaunchParams, type TextEditorHost } from "../apps/app-definition";
 import { type InProcessAppOptions, type InProcessWindow } from "../ui/shell/in-process-window";
 import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-apps-persistence";
-import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
-import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
+import { appViewportRect, isOnSwitcherEdge, screenHeight, screenWidth, sidebarStripVisible, type ScreenRect, type WindowHeightMode } from "../ui/shell/geometry";
+import { type ContinuousCaptureOptions, type LayerActions, type TextSettingsEditToggle, type TranscriptionChoice } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, ConfigSettingBoolean, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, glassesModelName, glassesTypeSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayLayoutSetting, navigateDisplayLayoutSetting, terminalDisplayLayoutSetting, elevenLabsApiKeySetting, evenAsrKeySetting, evenAsrUrlSetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, whisperServerApiKeySetting, whisperServerLanguageSetting, whisperServerModelSetting, whisperServerUrlSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, effectiveRingConnectionMode, type RingConnectionMode, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, shouldPopUpNewNotification, suspendEvenHubWhenScreenOffSetting, voiceProviderSetting, wakeWordActionSetting, ConfigSettingBoolean, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -127,13 +128,21 @@ import { createNotificationsAppWindow, NOTIFICATIONS_SURFACE_ID, NOTIFICATIONS_W
 import { isInstalledPackagePresent } from "../apps/evenhub/updates";
 import { wearerVerificationOptions } from "../apps/microphones/speakers";
 import { micSession } from "../apps/microphones/mic-session";
-import { glassesDisplayAsleep, glassesDisplayLabel, type GlassesDisplayState } from "./glasses-display-state";
+import {
+  chargingPreviewMessage,
+  glassesDisplayAsleep,
+  glassesDisplayDetail,
+  glassesDisplayLabel,
+  type GlassesDisplayState,
+} from "./glasses-display-state";
 import { PreviewDisplayTarget, type DisplayTarget } from "../native/preview-display";
 
 type ConnectionPhase = "disconnected" | "connecting" | "connected" | "charging" | "disconnecting";
 
 export type DashboardSnapshot = {
   phase: ConnectionPhase;
+  /** Last-known battery levels: the glasses, their charging case, the R1 ring and a Wear OS watch. */
+  batteries: ReturnType<typeof shell.getBatteryLevels>;
   status: string;
   displayPreview: ImageSource | null;
   /**
@@ -155,12 +164,10 @@ export type DashboardSnapshot = {
   activeTextEditorToggleValue: boolean;
   activeTextEditorToggleVisible: boolean;
   /**
-   * The keyboard dialog is up on the glasses (opened by the phone's keyboard
-   * button): the phone shows its typing panel, with a send button per
-   * destination in the glasses menu's row order.
+   * The keyboard dialog is open (opened by the phone's keyboard button): the
+   * phone shows its typing panel, driven by keyboardInputSession.
    */
   keyboardInputActive: boolean;
-  keyboardInputTargets: ReadonlyArray<{ id: string; label: string }>;
   evenAppConflictMessage: string;
   evenAppConflictWarningVisible: boolean;
   firmwareWarningMessage: string;
@@ -218,12 +225,12 @@ const LOW_BATTERY_PERCENT = 5;
 const EVEN_APP_DETECTED_MESSAGE =
   "The Even Realities app appears to be running. If Faceclaw has trouble connecting, open its app settings and force stop it.";
 
-// The launcher grid's app list; also fixes the app ids apps.launch accepts.
-const LAUNCHABLE_APPS = ALL_APPS.filter((app) => app.showInLauncher !== false);
+// The launcher grid's app list for the paired glasses; also fixes the app ids apps.launch accepts.
+const launchableApps = () => ALL_APPS.filter((app) => app.showInLauncher !== false && app.isSupported?.() !== false);
 
 /**
- * The global settings window viewport sizes depend on: the display mode's
- * size (a band's position only moves windows), whether the app switcher
+ * The global settings window viewport sizes depend on: the paired glasses'
+ * screen, the display mode's size (a band's position only moves windows), whether the app switcher
  * takes width beside windows, height below them or neither (a popup), and
  * the chrome rows each window loses to it: below them, whether the status
  * bar joins the row (dropping the top bar); with a popup, whether the
@@ -236,7 +243,7 @@ function viewportSizesKey(): string {
     : position === "popup" ? `popup|${statusBarVisibilitySetting.get()}|${windowBorderSetting.get()}`
     : "strip";
   const layout = displayLayoutSetting.get();
-  return `${layout.startsWith("band-") ? "band" : layout}|${switcher}`;
+  return `${screenWidth()}x${screenHeight()}|${layout.startsWith("band-") ? "band" : layout}|${switcher}`;
 }
 
 /** The global settings that move window surfaces without resizing them. */
@@ -245,7 +252,7 @@ function windowPlacementKey(): string {
 }
 
 function createInitialDisplayPreview(): ImageSource | null {
-  return grayImageToPreviewSource(new GrayImage(G2_LENS_WIDTH, G2_LENS_HEIGHT, 0));
+  return grayImageToPreviewSource(new GrayImage(screenWidth(), screenHeight(), 0));
 }
 
 /** Echo the controller's appendLog() trace to the console. */
@@ -277,6 +284,9 @@ function eventLabel(kind: string, eventType: number): string {
 function sourceName(eventSource: number): string {
   return EventSourceTypeName[eventSource] ?? `SOURCE_${eventSource}`;
 }
+
+/** Set while a Direct ring session may have taken the R1 from the glasses; see handRingBackToGlassesIfNeeded. */
+const RING_TAKEN_FROM_GLASSES_KEY = "developer.ringTakenFromGlasses";
 
 class DashboardController {
   private phase: ConnectionPhase = "disconnected";
@@ -356,6 +366,8 @@ class DashboardController {
   /** Faceclaw's firmware at the required revision reported in; its extensions can be used. */
   private customFirmwareConfirmed = false;
   private faceclawWakeLeaseState: boolean | null = null;
+  /** Ring connection mode the current session was started with (it applies per connection). */
+  private ringModeAtConnect: RingConnectionMode = "glasses";
   private glassesWorn: boolean | null = null;
   /** Put on while charging: Java reconnects on that, and the wake waits for the new session. */
   private wakeAfterChargingReconnect = false;
@@ -368,6 +380,7 @@ class DashboardController {
   private offState: (() => void) | null = null;
   private offRing: (() => void) | null = null;
   private offBattery: (() => void) | null = null;
+  private offCaseBattery: (() => void) | null = null;
   private offSilentMode: (() => void) | null = null;
   private offWearState: (() => void) | null = null;
   private offPhoneLockState: (() => void) | null = null;
@@ -460,7 +473,8 @@ class DashboardController {
       endTextSettingEdit: () => this.endTextSettingEdit(),
       startVoiceCapture: (endpointing = false) => this.startVoiceCapture(endpointing),
       stopVoiceCapture: () => this.stopVoiceCapture(),
-      startContinuousVoiceCapture: (client: string) => this.startContinuousVoiceCapture(client),
+      startContinuousVoiceCapture: (client: string, options?: ContinuousCaptureOptions) =>
+        this.startContinuousVoiceCapture(client, options),
       stopContinuousVoiceCapture: (client: string) => this.stopContinuousVoiceCapture(client),
       playBuzzerSequence: (payload: Uint8Array) => this.playBuzzerSequence(payload),
     };
@@ -474,7 +488,7 @@ class DashboardController {
     registerRoamTools((appId) => this.launchApp(appId));
     // apps.* tools mirror the launcher grid and sidebar (launch, focus, close).
     registerWindowTools({
-      apps: LAUNCHABLE_APPS,
+      apps: launchableApps,
       launchApp: (appId) => this.launchApp(appId),
       requestShellRender: () => this.requestShellRender(),
     });
@@ -510,7 +524,8 @@ class DashboardController {
         this.emit();
       },
       openNotificationsWindow: () =>
-        this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
+        this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID,
+          (options) => createNotificationsAppWindow(options, (section) => this.openSettings(section))),
       onSwitcherBarHeightChanged: () => this.applySwitcherBarHeight(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
@@ -539,6 +554,7 @@ class DashboardController {
       this.pushFirmwareDebugFlags();
       this.pushBrightness();
       this.syncEvenHubScreenOffSetting();
+      this.syncVoiceWake();
       // Display mode size first: a reflow repositions every surface too, so
       // the band-position check after it then has nothing left to do.
       this.applyDisplayModeIfChanged();
@@ -568,7 +584,7 @@ class DashboardController {
       assistant: text => shell.sendToAssistant(text),
     });
     this.wearRemote = new WearRemote({
-      apps: LAUNCHABLE_APPS,
+      apps: launchableApps,
       injectInput: (kind) => this.injectSyntheticRingInput(kind, "watch"),
       launchApp: (appId) => this.launchApp(appId),
       connect: () => this.connect(),
@@ -714,14 +730,28 @@ class DashboardController {
    * are. Windows that can't resize keep the surface they have, the switcher
    * covering any of it that it now overlaps, rather than being relaunched
    * for it.
+   *
+   * A window is judged by its own size as well as its surface's rect: other
+   * paths (connect, a launch) configure surfaces from the geometry without
+   * resizing windows, so a window laid out before the row's height was known
+   * (restored at startup, at the default height) can sit behind a surface
+   * that already matches, and its frames would not fit it.
    */
   private applySwitcherBarHeight(): void {
     void (async () => {
       for (const window of Array.from(shell.getWindows())) {
-        const rect = JSON.stringify(appViewportRect(window.heightMode, window.appId));
-        if (!window.relayout || this.windowSurfaceRects.get(window.surfaceId) === rect) continue;
-        window.relayout();
-        await this.configureWindowSurface(window.surfaceId, this.isForegroundWindow(window.windowId), window.heightMode);
+        if (!window.relayout) continue;
+        const rect = appViewportRect(window.heightMode, window.appId);
+        const size = window.layoutSize?.();
+        const resized = !!size && (size.width !== rect.width || size.height !== rect.height);
+        if (!resized && this.windowSurfaceRects.get(window.surfaceId) === JSON.stringify(rect)) continue;
+        try {
+          window.relayout();
+          await this.configureWindowSurface(window.surfaceId, this.isForegroundWindow(window.windowId), window.heightMode);
+        } catch (error) {
+          // The rest still need to follow the row.
+          this.appendLog(`switcher height change failed for ${window.windowId}: ${this.formatError(error)}`);
+        }
       }
       shell.foregroundWindow()?.requestRender();
       this.requestShellRender();
@@ -948,8 +978,8 @@ class DashboardController {
     await communicator.configureSurface(LOCK_SCREEN_SURFACE_ID, {
       x: 0,
       y: 0,
-      width: G2_LENS_WIDTH,
-      height: G2_LENS_HEIGHT,
+      width: screenWidth(),
+      height: screenHeight(),
       zOrder: 1000,
       transparency: "opaque",
     });
@@ -1055,6 +1085,24 @@ class DashboardController {
       this.faceclawWakeLeaseState = applied || !enabled ? enabled : null;
     }
     return applied;
+  }
+
+  /** What the communicator was last told about the glasses' own wake word (null: not yet). */
+  private voiceWakeSent: boolean | null = null;
+
+  /**
+   * The glasses' own wake word follows the wake action: on a RayNeo iO, its
+   * "Hey RayNeo" switch (G2 glasses use the wake lease, syncFaceclawWakeLease).
+   */
+  private syncVoiceWake(communicator = this.communicator): void {
+    if (!communicator) return;
+    const enabled = wakeWordActionSetting.get() !== "off";
+    if (this.voiceWakeSent === enabled) return;
+    this.voiceWakeSent = enabled;
+    void communicator.setVoiceWakeEnabled(enabled).catch((error) => {
+      this.voiceWakeSent = null;
+      this.appendLog(`wake word sync failed: ${this.formatError(error)}`);
+    });
   }
 
   private syncEvenHubScreenOffSetting(): void {
@@ -1173,6 +1221,27 @@ class DashboardController {
     this.evenHubSuspendTimer = null;
   }
 
+  /**
+   * A Direct-mode session may have unpaired the R1 from the glasses (see
+   * GlassesSessionRing.releaseRingFromGlassesLocked), and a RayNeo iO
+   * session (always Direct) may have cleared the ring's glasses targets.
+   * The first G2 session in another mode asks the glasses to connect to it
+   * again; the ring's own glasses targets were cleared, so it accepts them.
+   * Called on connect.
+   */
+  private handRingBackToGlassesIfNeeded(): void {
+    if (this.ringModeAtConnect === "direct" || !getBooleanSetting(RING_TAKEN_FROM_GLASSES_KEY, false)) return;
+    const ring = loadDeviceAddresses().ring;
+    if (!ring) {
+      setBooleanSetting(RING_TAKEN_FROM_GLASSES_KEY, false);
+      return;
+    }
+    if (setGlassesRingLink("connect", ring, defaultRingName(ring))) {
+      setBooleanSetting(RING_TAKEN_FROM_GLASSES_KEY, false);
+      this.appendLog(`Handing the R1 ring ${ring} back to the glasses`);
+    }
+  }
+
   private pushFirmwareDebugFlags(): void {
     if (!this.communicator) return;
     void this.communicator
@@ -1269,7 +1338,6 @@ class DashboardController {
       activeTextEditorToggleValue: this.activeTextEditorToggle?.setting.get() ?? false,
       activeTextEditorToggleVisible: this.activeTextEditorToggle !== null,
       keyboardInputActive: this.keyboardInput !== null,
-      keyboardInputTargets: this.keyboardInput?.targets ?? [],
       evenAppConflictMessage: this.evenAppConflictMessage,
       evenAppConflictWarningVisible: this.evenAppConflictMessage.length > 0,
       firmwareWarningMessage: this.firmwareWarningMessage,
@@ -1280,6 +1348,7 @@ class DashboardController {
       alarmReliabilityMessage: this.alarmReliabilityMessage,
       previewMode: this.isPreviewDisplayActive(),
       evenHubPhoneUi: phoneUiButton(),
+      batteries: shell.getBatteryLevels(),
     };
   }
 
@@ -1297,7 +1366,7 @@ class DashboardController {
    */
   private displayPreviewMessage(): string {
     if (this.phase === "charging") {
-      return this.glassesDisplayLabel();
+      return chargingPreviewMessage(this.glassesDisplayState());
     }
     if (this.silentMode && this.phase === "connected") {
       // Say how to leave it. Silent mode is entered and exited only by the
@@ -1329,17 +1398,26 @@ class DashboardController {
     return glassesDisplayLabel(this.glassesDisplayState());
   }
 
+  /** The smaller line the watch face shows under that one, or "" (the case level while charging). */
+  glassesDisplayDetail(): string {
+    return glassesDisplayDetail(this.glassesDisplayState());
+  }
+
   /** Whether that line reads "Display off" (the watch face adds a wake hint under it). */
   glassesDisplayAsleep(): boolean {
     return glassesDisplayAsleep(this.glassesDisplayState());
   }
 
   private glassesDisplayState(): GlassesDisplayState {
+    const batteries = shell.getBatteryLevels();
     return {
       phase: this.phase,
       silentMode: this.silentMode,
       screenOn: shell.isScreenOn(),
       battery: this.lastHeadsetBattery,
+      glassesModel: glassesModelName(),
+      caseBattery: batteries.case,
+      caseCharging: batteries.caseCharging,
       foregroundTitle: shell.getForegroundApp()?.title ?? null,
       previewMode: this.isPreviewDisplayActive(),
     };
@@ -1468,23 +1546,9 @@ class DashboardController {
     shell.startKeyboardInput();
   }
 
-  /** The phone's typing panel changed: mirror the text on the glasses. */
-  setKeyboardInputText(text: string): void {
-    shell.noteUserActivity();
-    this.keyboardInput?.setText(text);
-  }
-
-  /** Send to one destination, or (no id: the IME's send key) the one highlighted on the glasses. */
-  sendKeyboardInput(targetId?: string): void {
-    if (targetId) {
-      this.keyboardInput?.sendTo(targetId);
-    } else {
-      this.keyboardInput?.send();
-    }
-  }
-
-  discardKeyboardInput(): void {
-    this.keyboardInput?.discard();
+  /** The open keyboard dialog, for the phone's typing panel (KeyboardInputViewModel). */
+  get keyboardInputSession(): KeyboardInputSession | null {
+    return this.keyboardInput;
   }
 
   setActiveTextEditorToggleValue(value: boolean): void {
@@ -1524,12 +1588,12 @@ class DashboardController {
     // is in place before any real render can reach the compositor.
     this.previewTarget = target;
     try {
-      await target.configureCompositorScreen(G2_LENS_WIDTH, G2_LENS_HEIGHT);
+      await target.configureCompositorScreen(screenWidth(), screenHeight());
       await target.configureSurface(SHELL_SURFACE_ID, {
         x: 0,
         y: 0,
-        width: G2_LENS_WIDTH,
-        height: G2_LENS_HEIGHT,
+        width: screenWidth(),
+        height: screenHeight(),
         zOrder: SHELL_SURFACE_Z_ORDER,
         transparency: "color-key",
       });
@@ -1612,13 +1676,21 @@ class DashboardController {
     this.refreshEvenAppStatus();
     this.setPhase("connecting");
     this.setStatus("Connecting to the glasses...");
-    // "Only via glasses" (the default) means the phone never opens its own
-    // link to the ring: the glasses relay its gestures to us anyway, and the
-    // direct link is currently unreliable. An empty address disables every
-    // direct-ring code path in the communicator.
-    const ringAddress = ringConnectionModeSetting.get() === "direct" ? addresses.ring : "";
-    this.appendLog(
-      `Using configured arms: R=${addresses.right} L=${addresses.left}${ringAddress ? ` ring=${ringAddress}` : ""}`,
+    // "Only via glasses" (the G2's default) means the phone never opens its
+    // own link to the ring: the glasses relay its gestures to us anyway. An
+    // empty address disables every direct-ring code path in the communicator.
+    // A RayNeo iO (one link, its address in both arm slots) can't relay a
+    // ring, so with one the phone always takes the ring directly.
+    const ringMode = effectiveRingConnectionMode();
+    this.ringModeAtConnect = ringMode;
+    const glassesType = glassesTypeSetting.get();
+    const ringAddress = ringMode !== "glasses" ? addresses.ring : "";
+    // Direct mode may unpair the ring from the glasses; remember to hand it
+    // back once a later session runs in another mode.
+    if (ringMode === "direct" && ringAddress) setBooleanSetting(RING_TAKEN_FROM_GLASSES_KEY, true);
+    this.appendLog((glassesType === "rayneo-io"
+      ? `Using configured RayNeo iO: ${addresses.right}`
+      : `Using configured arms: R=${addresses.right} L=${addresses.left}`) + (ringAddress ? ` ring=${ringAddress}` : ""),
     );
 
     let communicator: FaceclawCommunicatorBridge | null = null;
@@ -1636,6 +1708,11 @@ class DashboardController {
         right: addresses.right,
         left: addresses.left,
         ring: ringAddress,
+        // Direct mode acts as the ring's glasses (gestures, battery). Health
+        // sync needs the phone role, which the session borrows briefly for
+        // each pull (GlassesSessionRing.beginRingHealthWindowLocked).
+        ringRole: ringMode === "direct" ? "glasses" : "phone",
+        glassesType,
       });
       this.communicator = communicator;
       // Size the compositor before anything else is awaited: windows opened
@@ -1643,8 +1720,11 @@ class DashboardController {
       // configure their surfaces through this.communicator, and the Java call
       // queue is FIFO, so enqueuing the screen size first guarantees it lands
       // ahead of them. Mirrors ensurePreviewDisplay.
-      await communicator.configureCompositorScreen(G2_LENS_WIDTH, G2_LENS_HEIGHT);
+      // The paired glasses' screen: the G2's 640x480 or the RayNeo iO's 540x220.
+      await communicator.configureCompositorScreen(screenWidth(), screenHeight());
       await communicator.configureBrightness(getBrightnessPreferences());
+      this.voiceWakeSent = null;
+      this.syncVoiceWake(communicator);
       this.offState = communicator.onStateChange((state) => {
         if (state.phase !== "connected") resetRingInputFilter();
         if (isHaltedSessionPhase(state.phase)) {
@@ -1682,6 +1762,7 @@ class DashboardController {
           // mode-7 control message once the dashboard container is warmed up.
           this.pushFirmwareDebugFlags();
           this.pushBrightness(true);
+          this.handRingBackToGlassesIfNeeded();
         }
         if (mappedPhase !== "connected" && mappedPhase !== "charging") {
           // A wear snapshot is session-scoped. CFW reports a fresh value when
@@ -1746,6 +1827,17 @@ class DashboardController {
         }
         // Battery belongs in the charging stand-in on the phone as well as in
         // the watch state, so refresh both consumers on every report.
+        this.emit();
+      });
+      this.offCaseBattery = communicator.onCaseState((state) => {
+        // The level is kept when a reading has none (the glasses left the case)
+        // and across disconnects: the case only reports while the glasses are
+        // docked and only drains while charging them, so the last level holds.
+        // Whether the case is on USB is only known while they are docked.
+        shell.setBatteryLevels({
+          ...(state.battery !== null ? { case: state.battery } : {}),
+          caseCharging: state.docked ? state.charging : null,
+        });
         this.emit();
       });
       this.offEvenAppConflict = communicator.onEvenAppConflict((message) => {
@@ -1824,8 +1916,8 @@ class DashboardController {
       await communicator.configureSurface(SHELL_SURFACE_ID, {
         x: 0,
         y: 0,
-        width: G2_LENS_WIDTH,
-        height: G2_LENS_HEIGHT,
+        width: screenWidth(),
+        height: screenHeight(),
         zOrder: SHELL_SURFACE_Z_ORDER,
         transparency: "color-key",
       });
@@ -1868,6 +1960,8 @@ class DashboardController {
       this.offRing = null;
       this.offBattery?.();
       this.offBattery = null;
+      this.offCaseBattery?.();
+      this.offCaseBattery = null;
       this.offSilentMode?.();
       this.offSilentMode = null;
       this.offWearState?.();
@@ -1980,6 +2074,8 @@ class DashboardController {
     this.offRing = null;
     this.offBattery?.();
     this.offBattery = null;
+    this.offCaseBattery?.();
+    this.offCaseBattery = null;
     this.offSilentMode?.();
     this.offSilentMode = null;
     this.offWearState?.();
@@ -2128,8 +2224,8 @@ class DashboardController {
       return;
     }
     const at = mirrorToPanelFraction(this.displayPreviewCrop, nx, ny);
-    const x = Math.round(Math.min(1, Math.max(0, at.nx)) * G2_LENS_WIDTH);
-    const y = Math.round(Math.min(1, Math.max(0, at.ny)) * G2_LENS_HEIGHT);
+    const x = Math.round(Math.min(1, Math.max(0, at.nx)) * screenWidth());
+    const y = Math.round(Math.min(1, Math.max(0, at.ny)) * screenHeight());
     const foreground = shell.foregroundWindow();
     const stripShown = sidebarStripVisible(shell.getFocus(), foreground?.appId);
     this.appendLog(`mirror tap at ${x},${y}`);
@@ -2405,8 +2501,9 @@ class DashboardController {
     const presence = getGlassesPresence();
     const session = this.communicator;
     let reason = "";
-    if (!global.isAndroid) reason = "Este ensayo requiere Android y audio BLE de las G2.";
+    if (!global.isAndroid) reason = "Conversación requiere Android y un micrófono compatible de las gafas.";
     else if (this.phase !== "connected" || !session) reason = "Gafas desconectadas; sin captura.";
+    else if (glassesTypeSetting.get() === "rayneo-io") reason = "Conversación requiere unas Even G1 o G2.";
     else if (!this.customFirmwareConfirmed) reason = "Esperando confirmación del firmware Faceclaw.";
     else if (presence.charging) reason = "Gafas en carga; sin captura.";
     else if (!ignoreWear && presence.worn !== true) reason = "Esperando un estado nuevo de gafas puestas.";
@@ -2437,21 +2534,28 @@ class DashboardController {
     return voiceControlBridge.stopPushToTalk();
   }
 
-  // Windows that want continuous capture. They share one stream, which runs
-  // while any of them wants it: one window letting go must not cut off another.
-  private readonly continuousClients = new Set<string>();
+  // Windows that want continuous capture, and what each needs of it. They
+  // share one stream, which runs while any of them wants it: one window
+  // letting go must not cut off another.
+  private readonly continuousClients = new Map<string, ContinuousCaptureOptions>();
   // The connection a continuous-capture start was last tried on (undefined:
   // none since the last teardown), so a window waiting on the glasses is
   // retried once per new session rather than on every frame.
   private continuousAttemptedOn: FaceclawCommunicatorBridge | null | undefined = undefined;
 
-  private startContinuousVoiceCapture(client: string): void {
-    this.continuousClients.add(client);
+  private startContinuousVoiceCapture(client: string, options: ContinuousCaptureOptions = {}): void {
+    this.continuousClients.set(client, options);
+    this.retargetContinuousCapture();
     this.ensureContinuousCapture(true);
   }
 
   private stopContinuousVoiceCapture(client: string): void {
-    if (!this.continuousClients.delete(client) || this.continuousClients.size > 0) return;
+    if (!this.continuousClients.delete(client)) return;
+    if (this.continuousClients.size > 0) {
+      // The window that needed its own provider may be the one that left.
+      this.retargetContinuousCapture();
+      return;
+    }
     try {
       voiceControlBridge.stopContinuousCapture();
     } finally {
@@ -2470,6 +2574,19 @@ class DashboardController {
     if (!force && this.continuousAttemptedOn === this.communicator) return;
     this.continuousAttemptedOn = this.communicator;
     void this.beginVoiceCapture("continuous").finally(() => this.syncContinuousClaim());
+  }
+
+  /** Move a running continuous capture onto the provider its windows now call for. */
+  private retargetContinuousCapture(): void {
+    voiceControlBridge.retargetContinuousCapture(this.voiceCaptureOptions(this.communicator));
+  }
+
+  /** The provider and language a continuous-capture window needs (Translate's), if any. */
+  private transcriptionChoice(): TranscriptionChoice | undefined {
+    for (const options of this.continuousClients.values()) {
+      if (options.transcription) return options.transcription;
+    }
+    return undefined;
   }
 
   /**
@@ -2492,16 +2609,21 @@ class DashboardController {
    * stands in for the G2 mic.
    */
   private voiceCaptureOptions(communicator: FaceclawCommunicatorBridge | null) {
+    // A window that needs its own provider and language sets them for every
+    // capture while it is open, so push-to-talk still shares its stream.
+    // Otherwise only Whisper server is told a language (its own setting).
+    const choice = this.transcriptionChoice();
+    const provider = choice?.provider ?? voiceProviderSetting.get();
     return {
       communicator: communicator?.getNativeCommunicator() ?? null,
       usePhoneMic: communicator === null,
-      provider: voiceProviderSetting.get(),
+      provider,
+      language: choice ? choice.language : provider === "whisper-server" ? whisperServerLanguageSetting.get() : "",
       elevenLabsApiKey: elevenLabsApiKeySetting.get(),
       openAiApiKey: openAiApiKeySetting.get(),
       sonioxApiKey: sonioxApiKeySetting.get(),
       whisperServerUrl: whisperServerUrlSetting.get(),
       whisperServerModel: whisperServerModelSetting.get(),
-      whisperServerLanguage: whisperServerLanguageSetting.get(),
       whisperServerApiKey: whisperServerApiKeySetting.get(),
       evenAsrUrl: evenAsrUrlSetting.get(),
       evenAsrKey: evenAsrKeySetting.get(),
@@ -2585,6 +2707,7 @@ class DashboardController {
       .catch((error) => {
         this.appendLog(`voice permission failed: ${this.formatError(error)}`);
         if (!hasMicrophonePermission()) voiceControlBridge.reportPermissionDenied();
+        else voiceControlBridge.reportStartFailed(this.formatError(error));
       });
   }
 
@@ -2908,11 +3031,7 @@ class DashboardController {
       setSurfaceVisible: (surfaceId, visible) => this.setWindowSurfaceVisible(surfaceId, visible),
       removeSurface: (surfaceId) => this.removeWindowSurface(surfaceId),
       requestShellRender: () => this.requestShellRender(),
-      openSettings: (section) => {
-        void this.launchApp("settings", { section }).catch((error) => {
-          this.appendLog(`settings launch failed: ${this.formatError(error)}`);
-        });
-      },
+      openSettings: (section) => this.openSettings(section),
       startTextSettingEdit: (settingId) => {
         const setting = getStringSettingById(settingId);
         if (setting) {
@@ -2994,6 +3113,13 @@ class DashboardController {
     // Re-save the canonical post-restore state (drops apps that failed to open).
     this.persistOpenApps();
     this.requestShellRender();
+  }
+
+  /** Open or focus the Settings app, optionally on a section (by label). */
+  private openSettings(section?: string): void {
+    void this.launchApp("settings", { section }).catch((error) => {
+      this.appendLog(`settings launch failed: ${this.formatError(error)}`);
+    });
   }
 
   /**
@@ -3244,7 +3370,7 @@ class DashboardController {
     // The tray shows the notification at once; its popup waits out a short
     // delay, so one withdrawn right away (see NotificationPopupDelay) never shows.
     const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
-    if (notification && shouldShowNotificationOnGlasses(notification.packageName)) {
+    if (notification && shouldPopUpNewNotification(notification.packageName)) {
       this.notificationPopups.post(notificationKey, notificationPopupDelayMs(notification));
     }
     this.requestShellRender();
@@ -3266,7 +3392,7 @@ class DashboardController {
   private popUpAndroidNotification(notificationKey: string): void {
     try {
       const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
-      if (!notification || !shouldShowNotificationOnGlasses(notification.packageName)) return;
+      if (!notification || !shouldPopUpNewNotification(notification.packageName)) return;
       // New notifications open a shell modal over the app viewport; if the
       // screen was off, wake for it and go back to sleep when it is closed.
       // Waking while already on would steal focus, so only wake from sleep.

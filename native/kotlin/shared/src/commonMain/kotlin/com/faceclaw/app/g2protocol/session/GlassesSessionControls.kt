@@ -86,13 +86,16 @@ internal fun GlassesSessionCore.enqueueBenchmarkMessageLocked() {
     kotlin.random.Random.nextBytes(payload)
     payload[0] = CFW_MSG_DIAGNOSTICS.toByte()             // CFW diagnostic-control mode...
     payload[1] = 0x7f.toByte()   // ...with an unused sub-op: acked, no effect
+    // A G1's arms are two links and every frame goes down both, so the run alternates between them.
+    val leftArm = if (isG1) benchmarkMessageCounter++ % 2 == 0 else connectionOptions.sendImagesToLeft
     val message = messageBuilder.imagePayload(
         "bandwidth",
         DASHBOARD_TILE,
         nextMapSessionId(),
         payload,
         "bandwidth no-op " + payload.size + "B",
-        connectionOptions.sendImagesToLeft)
+        leftArm)
+    if (isG1) message.cfwRequiredLenses = if (leftArm) G1Timings.LENS_LEFT else G1Timings.LENS_RIGHT
     val payloadBytes = payload.size
     // Logical custom-message bytes; excludes length tag and packet framing.
     val wireBytes = message.message.size
@@ -345,6 +348,8 @@ internal fun GlassesSessionCore.releaseFaceclawFramebufferLease(): Boolean {
 
 /** The address of a configured arm the OS no longer holds a bond for, or null. */
 internal fun GlassesSessionCore.firstUnpairedArm(): String? {
+    // The iO identifies the phone by its protocol id, not an OS bond.
+    if (isIo) return null
     if (!link.isBonded(rightAddress)) return rightAddress
     if (!link.isBonded(leftAddress)) return leftAddress
     return null
@@ -491,7 +496,7 @@ internal fun GlassesSessionCore.scheduleReconnectLocked(sessionWasReady: Boolean
     if (sessionWasReady && now - lastSessionReadyAtMs >= ConnectionOptions.STABLE_SESSION_MS) {
         consecutiveReconnects = 0
     }
-    val schedule = ConnectionOptions.RECONNECT_BACKOFF_MS
+    val schedule = if (isG1) G1Timings.RECONNECT_BACKOFF_MS else ConnectionOptions.RECONNECT_BACKOFF_MS
     val delayMs = schedule[minOf(consecutiveReconnects, schedule.size - 1)].toLong()
     consecutiveReconnects++
     reconnectAfterMs = now + delayMs
@@ -501,6 +506,8 @@ internal fun GlassesSessionCore.scheduleReconnectLocked(sessionWasReady: Boolean
 internal fun GlassesSessionCore.resetSessionStateLocked() {
     ringBattery = -1
     ringCharging = -1
+    directRingBattery = -1
+    directRingCharging = -1
     sessionReady = false
     shutdownRequested = false
     fixedLayoutCreated = false
@@ -710,14 +717,61 @@ internal fun GlassesSessionCore.emitPhoneLockStateIfChanged(force: Boolean) {
 }
 
 internal fun GlassesSessionCore.emitBatteryState(headsetBattery: Int, headsetCharging: Int) {
-    val reportedRingBattery = ringBattery
-    val reportedRingCharging = ringCharging
+    // A missing glasses-side report must not erase a verified direct
+    // reading. Fall back to the glasses cache when the direct link drops.
+    val useDirect = ringConnected && directRingBattery >= 0
+    val reportedRingBattery = if (useDirect) directRingBattery else ringBattery
+    val reportedRingCharging = if (useDirect) directRingCharging else ringCharging
     val current = listener ?: return
     host.postToMain {
         try {
             current.onBatteryState(headsetBattery, headsetCharging, reportedRingBattery, reportedRingCharging)
         } catch (t: Throwable) {
             logWarn("listener onBatteryState failed", t)
+        }
+    }
+}
+
+/**
+ * Report a charging-case reading when it differs from the last one. Docked, a reading counts
+ * only once it carries a level (docking pushes {inCaseStatus=1} first and the level about 0.7 s
+ * later). Undocked -- the empty reply to a read, or an undock push -- it is reported even without
+ * a level, so the listener learns the case's charge state is no longer known.
+ */
+internal fun GlassesSessionCore.updateCaseInfoLocked(info: BleProtocol.CaseInfoSnapshot) {
+    if (info.errorCode != 0) {
+        return
+    }
+    val docked = info.isDocked()
+    if (docked && !info.hasLevel()) {
+        return
+    }
+    val level = if (info.hasLevel()) info.soc else -1
+    // Out of the case the glasses can't see the case's USB state.
+    val charging = if (docked && info.isCaseCharging()) 1 else 0
+    val dockedState = if (docked) 1 else 0
+    if (level == caseBattery && charging == caseCharging && dockedState == caseDocked) {
+        return
+    }
+    val wasOutOfCase = caseDocked == 0
+    caseBattery = level
+    caseCharging = charging
+    caseDocked = dockedState
+    logLine("charging case: $info")
+    if (docked && wasOutOfCase && !chargingMode) {
+        // The glasses just went into the case. Only the battery reply says
+        // they are charging, and the regular poll is minutes away (and skipped
+        // altogether while the display is suspended, as it is once they come
+        // off the face), so read it shortly: charging mode then follows.
+        dockedBatteryCheckAtMs = now() + ConnectionOptions.DOCKED_BATTERY_CHECK_DELAY_MS
+        logLine("glasses docked; battery check scheduled")
+    }
+    val current = listener ?: return
+    host.postToMain {
+        try {
+            current.onCaseState(level, charging, docked)
+        } catch (t: Throwable) {
+            logWarn("listener onCaseState failed", t)
         }
     }
 }

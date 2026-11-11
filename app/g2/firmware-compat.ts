@@ -25,7 +25,11 @@ export type FirmwareInfo = {
   extension: string;
 };
 
-/** The Faceclaw firmware revision this build of the app needs. */
+/**
+ * Minimum G2 firmware. Revision 38 improves link timing and sends head-down
+ * events, but neither is required by the app. G1 is checked against its own
+ * firmware version in the native session, before it reports compatibility.
+ */
 export const REQUIRED_FACECLAW_FIRMWARE_VERSION = 37;
 
 const FACECLAW_PREFIX = "Faceclaw/";
@@ -36,7 +40,7 @@ const LEGACY_PREFIX = "EVENCFW";
 // unrecognized (its layout may differ from what our patch set targets).
 export const BASE_STOCK_VERSION = [2, 3, 0, 24];
 export const BASE_STOCK_VERSION_TEXT = BASE_STOCK_VERSION.join(".");
-export const VALIDATED_STOCK_VERSION = [2, 3, 2, 14];
+export const VALIDATED_STOCK_VERSION = [2, 4, 0, 24];
 export const VALIDATED_STOCK_VERSION_TEXT = VALIDATED_STOCK_VERSION.join(".");
 
 export type FirmwareExtension =
@@ -116,6 +120,11 @@ export function firmwareIncompatibilityMessage(info: FirmwareInfo): string | nul
 
   const versionsText = `L=${info.leftVersion || "unknown"} R=${info.rightVersion || "unknown"}`;
   const required = `Faceclaw firmware revision ${REQUIRED_FACECLAW_FIRMWARE_VERSION}`;
+
+  // A G1's session names what the arms run instead of a revision (GlassesSessionG1.kt).
+  if (extension.kind === "none" && reportedVersions.some((version) => /^(g1v0|Even's firmware)/.test(version))) {
+    return `These G1 glasses run ${versionsText}. This version of Faceclaw needs the firmware it comes with: install it to continue.`;
+  }
 
   switch (extension.kind) {
     case "faceclaw":

@@ -6,6 +6,9 @@ import android.bluetooth.BluetoothGatt
 class AndroidSessionLink(private val bleManager: FaceclawBleManager) : SessionLink {
     override fun connect(address: String, timeoutMs: Int): Boolean = bleManager.connect(address, timeoutMs)
 
+    override fun connect(address: String, timeoutMs: Int, autoConnect: Boolean): Boolean =
+        bleManager.connect(address, timeoutMs, autoConnect)
+
     override fun beginConnect(address: String, background: Boolean): Boolean = bleManager.beginConnect(address, background)
 
     override fun isConnected(address: String): Boolean = bleManager.isConnected(address)
@@ -42,6 +45,15 @@ class AndroidSessionLink(private val bleManager: FaceclawBleManager) : SessionLi
     override fun close() = bleManager.close()
 
     override fun isBonded(address: String): Boolean = bleManager.isBonded(address)
+
+    override fun requestBond(address: String) = bleManager.requestBond(address)
+
+    override fun removeBond(address: String): Boolean = bleManager.removeBond(address)
+
+    override fun hasCharacteristic(address: String, characteristicUuid: String): Boolean =
+        bleManager.hasCharacteristic(address, characteristicUuid)
+
+    override fun refreshServices(address: String, timeoutMs: Int): Boolean = bleManager.refreshServices(address, timeoutMs)
 
     override fun prepareBenchmarkLink(address: String, mode: Int) = bleManager.prepareBenchmarkLink(address, mode)
 
