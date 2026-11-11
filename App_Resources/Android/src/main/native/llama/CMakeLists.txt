@@ -29,3 +29,9 @@ add_subdirectory(${LLAMA_CPP_SOURCE_DIR} llama.cpp-build EXCLUDE_FROM_ALL)
 
 add_library(faceclaw_llama SHARED faceclaw_llama.cpp)
 target_link_libraries(faceclaw_llama PRIVATE llama android log)
+# Keep ELF load segments usable on Android devices with 16 KiB pages,
+# including when building with NDK 27, where 4 KiB is the default.
+target_link_options(faceclaw_llama PRIVATE
+  "LINKER:-z,max-page-size=16384"
+  "LINKER:-z,common-page-size=16384"
+)
