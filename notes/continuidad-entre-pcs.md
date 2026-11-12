@@ -1,3 +1,14 @@
+## Faceclaw 0.9.0 RC3 menú instalada y archivada — 12/11/2026
+
+RC3 instalada en el Pixel el 11/11/2026 a las 05:32:01 con `adb install -r`. Versión `0.9.0-es.1-s2.34-g1-rc3-menu`, paquete `com.faceclaw.app`, código 805 y firma original. El hash de la APK instalada coincidió con la RC3 firmada. Se conservaron la fecha de primera instalación, los directorios de datos y las 62 entradas de ajustes comparadas. El rearme estaba OFF y no había wakelock activo de Conversación. Queda pendiente la comprobación visual del menú y del indicador del perfil en RC3, además de la validación física de las gafas.
+
+Fuente exacta de la APK en `eeb8a02878611e0d39b18017c5cda65048632b4b`, rama `codex/faceclaw-conversation-menu-20261111`. La RC3 pasó 1.785 pruebas Node, con dos omisiones y cero fallos. TypeScript y Android release pasaron. Los ocho archivos SO y los dos DEX coinciden byte a byte con RC2.
+
+Carpeta privada del NAS `Faceclaw/apk-builds/0.9.0-es.1-s2.34-g1-rc3-menu/`. El 12/11 se comprobaron ambas APK con `sha256sum -c SHA256SUMS`.
+
+- `FACECLAW_0.9.0_ES_S234_G1_RC3_MENU.apk` · `e05886e9eff67a1d5d3fb9a967391c9319bfb433a3d02791301a90a4c43546c3`
+- `FACECLAW_0.9.0_ES_S234_G1_RC2.apk` (retorno inmediato) · `9d31b5924cea502f222c6421650085948af16cdcbc622b734581d3d3b27c64cd`
+
 ## Faceclaw 0.9.0 + S2.34 RC2 instalada — 11/11/2026
 
 Actualizada a las 05:15:10 en el Pixel con `adb install -r`. Paquete `com.faceclaw.app`, código 805, versión `0.9.0-es.1-s2.34-g1-rc2` y firma original. SHA-256 de la APK instalada `9d31b5924cea502f222c6421650085948af16cdcbc622b734581d3d3b27c64cd`. La primera instalación y los directorios de datos se conservaron.
